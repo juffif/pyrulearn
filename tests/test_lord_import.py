@@ -81,7 +81,7 @@ def test_import_binds_to_given_spec_and_maps_zero_to_the_negation_feature():
 def test_provenance_tagged():
     rules = LORDImporter(dataspec=_bool_spec(4)).parse(EG_OUTPUT)
     for r in rules.rules:
-        assert r.provenance.source == "LORD (Huynh & Fürnkranz, 2023)"
+        assert r.provenance.source == "LORD (Huynh, Fürnkranz & Beck, 2023)"
         assert r.provenance.learner == "LORDImporter"
     print("LORD import provenance tagged on every rule: OK")
 

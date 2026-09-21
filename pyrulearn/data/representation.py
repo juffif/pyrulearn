@@ -10,8 +10,8 @@ pointing back at the `DataSpec` it was built against.
 
 `BooleanDataRepresentation` is the canonical one: a `numpy.packbits`-
 packed Boolean matrix (plus labels). `NListRepresentation` is the same
-data as a PPC-tree / N-list vertical index (the one Huynh &
-Fürnkranz's LORD builds); `SparseDataRepresentation` is a `scipy`
+data as a PPC-tree / N-list vertical index (the one Huynh,
+Fürnkranz & Beck's LORD builds); `SparseDataRepresentation` is a `scipy`
 CSR/CSC encoding -- the N-list without the prefix tree. All three sit
 behind the identical interface, so every `pyrulearn.learners.seco` learner runs
 on any of them. All point at an ordinary `DataSpec`; further encodings
@@ -436,7 +436,7 @@ class _NListMaskContext:
 
 class NListRepresentation(DataRepresentation):
     """A PPC-tree / N-list encoding of a Boolean dataset -- the vertical
-    index Huynh & Fürnkranz's LORD builds before learning -- exposed
+    index Huynh, Fürnkranz & Beck's LORD builds before learning -- exposed
     behind the same `DataRepresentation` interface as
     `BooleanDataRepresentation`, so every `pyrulearn.learners.seco` learner (CN2,
     AQR, `pyrulearn.learners.pylord.PyLORD`, ...) runs on it unchanged.

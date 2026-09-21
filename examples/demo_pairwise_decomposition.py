@@ -3,7 +3,7 @@ examples/demo_pairwise_decomposition.py
 ======================================
 
 Multi-class decomposition for **one** rule learner -- Pypper
-(`RIPPER._stage_learner()`: native IREP* growth + replace/revise
+(`Pypper._stage_learner()`: native IREP* growth + replace/revise
 optimization) -- across **5 fitted models** and, for the pairwise ones,
 **3 voting schemes** = **11 accuracy results**.
 
@@ -56,7 +56,7 @@ import numpy as np
 import examples.demo_ripper_comparison as drc
 from pyrulearn.models import AccuracyWeightedVote, MajorityVote, WeightedVote
 from pyrulearn.learners.multiclass import OneVsRest, OrderedOneVsRest, Pairwise
-from pyrulearn.learners.seco import RIPPER
+from pyrulearn.learners.seco import Pypper
 
 RANDOM_STATE = 0
 MAX_ROWS = None
@@ -72,7 +72,7 @@ DATASETS = [
 
 def pypper():
     """A fresh per-class-targetable Pypper stage learner."""
-    return RIPPER(random_state=RANDOM_STATE)._stage_learner()
+    return Pypper(random_state=RANDOM_STATE)._stage_learner()
 
 
 PAIRWISE_FITS = [("pw_min", "smaller"), ("pw_maj", "larger"), ("pw_both", "both")]
@@ -169,7 +169,7 @@ def _mean(rows, key, field):
 
 def write_report(results):
     L = ["# Pairwise vs. one-vs-rest decomposition for Pypper", "",
-         "One inner learner (`RIPPER._stage_learner()`), shared binarized features, 70/30 "
+         "One inner learner (`Pypper._stage_learner()`), shared binarized features, 70/30 "
          "stratified split, seed 0. 5 fitted models; the 3 pairwise ones are each scored under "
          "`MajorityVote` (`:vote`), `WeightedVote` (`:wv`), `AccuracyWeightedVote` (`:awv`) on "
          "the *same fit* -- their `train s` is 0 (shared). `pw_min`/`pw_maj`/`pw_both` = "

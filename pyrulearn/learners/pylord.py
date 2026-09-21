@@ -3,7 +3,7 @@ pyrulearn.learners.pylord
 =============================
 
 `PyLORD` -- a native (`pyrulearn.learners.NativeRuleLearner`), deliberately
-simplified reimplementation of Huynh & Fürnkranz's LORD (*Efficient
+simplified reimplementation of Huynh, Fürnkranz & Beck's LORD (*Efficient
 learning of large sets of locally optimal classification rules*, Machine
 Learning 112 (2023) 571-610), built from `pyrulearn.learners.seco`'s composable
 pieces rather than LORD's own machinery. The reference implementation is
@@ -97,7 +97,7 @@ from .seco import (
 
 
 class PyLORD(DecomposingLearner, NativeRuleLearner):
-    """Simplified locally-optimal-rules learner (after Huynh & Fürnkranz,
+    """Simplified locally-optimal-rules learner (after Huynh, Fürnkranz & Beck,
     2023), reimplemented on `pyrulearn.learners.seco`'s building blocks. See the
     module docstring for what's faithful and what the "Py" leaves out.
 
@@ -299,7 +299,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
     # example essentially in parallel (one seed each), so there's no
     # unforced "first rule" the way a sequential-covering loop has one --
     # only "best of the pool by some score", which bakes in a selection
-    # criterion the algorithm itself never makes. See seco.py's SeCo/RIPPER
+    # criterion the algorithm itself never makes. See seco.py's SeCo/Pypper
     # `_fit_one_rule` for the contrast: a genuine single search call, not a
     # pick among already-computed candidates.
 

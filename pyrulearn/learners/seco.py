@@ -1059,7 +1059,7 @@ class RuleSetOptimizer(ABC):
     `target_class`, negatives = everything else within `example_mask`.
     RIPPER runs it per class, inside a class-ordered decomposition
     (`pyrulearn.learners.multiclass.OrderedOneVsRest`), which is exactly how
-    `RIPPER` composes it.
+    `Pypper` composes it.
     """
 
     @abstractmethod
@@ -1892,10 +1892,11 @@ class PFossil(SeCo):
         )
 
 
-class RIPPER(DecomposingLearner, NativeRuleLearner):
-    """RIPPER (Cohen, 1995, *Fast Effective Rule Induction*) -- IREP\\*
-    growth-and-pruning plus the `ReplaceReviseOptimization` phase, run
-    per class. (`Pypper` is an alias.)
+class Pypper(DecomposingLearner, NativeRuleLearner):
+    """Pypper -- a re-implementation of RIPPER (Cohen, 1995, *Fast Effective
+    Rule Induction*), not a port of Cohen's code: IREP\\* growth-and-pruning
+    plus the `ReplaceReviseOptimization` phase, run per class. See the
+    covering-loop stop below for how it differs from the original.
 
     `fit(data)` returns a `pyrulearn.models.ConceptCascade`: rules for the
     rarest class first, then the next, ..., the most frequent class as the
@@ -1903,16 +1904,16 @@ class RIPPER(DecomposingLearner, NativeRuleLearner):
     (least-frequent-first ordered peeling). Other model types via
     `fit(data, model=...)`:
 
-    - `ConceptModel` -- binary RIPPER for one class (`label=` / a
+    - `ConceptModel` -- binary Pypper for one class (`label=` / a
       `target_class`), IREP\\* + optimization, no peeling.
     - `SingleRule` -- just one grown-and-pruned rule for a class, no
       covering loop and no optimization phase.
-    - `ConceptSet` -- one-vs-rest RIPPER (each class its own full loop).
-    - `PairwiseModel` -- round-robin RIPPER.
+    - `ConceptSet` -- one-vs-rest Pypper (each class its own full loop).
+    - `PairwiseModel` -- round-robin Pypper.
     - `FlatRuleSet` / `DecisionList` -- via the `ConceptSet -> FlatRuleSet`
       / `ConceptCascade -> DecisionList` converters.
 
-    (RIPPER has no `FlatRuleSet` seed-covering producer -- it is not a
+    (Pypper has no `FlatRuleSet` seed-covering producer -- it is not a
     seed-covering algorithm -- but still reaches `FlatRuleSet` by
     flattening its one-vs-rest `ConceptSet`.)
 
@@ -2000,7 +2001,7 @@ class RIPPER(DecomposingLearner, NativeRuleLearner):
     @produces(ConceptModel)
     def _fit_concept(self, data: BooleanDataRepresentation, *,
                      label: Any = None, fallback: Any = None) -> ConceptModel:
-        """`fit(data, model=ConceptModel, label="a")` -- binary RIPPER
+        """`fit(data, model=ConceptModel, label="a")` -- binary Pypper
         for one class: the configured IREP* + optimization covering loop,
         no peeling."""
         target = label if label is not None else self.target_class
@@ -2017,5 +2018,3 @@ class RIPPER(DecomposingLearner, NativeRuleLearner):
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
 
-
-Pypper = RIPPER

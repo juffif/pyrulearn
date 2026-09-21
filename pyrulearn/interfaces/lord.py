@@ -215,7 +215,7 @@ class LORDImporter(StringRuleImporter):
     condition to its column ``i`` by position instead of by name.
     """
 
-    SOURCE = "LORD (Huynh & Fürnkranz, 2023)"
+    SOURCE = "LORD (Huynh, Fürnkranz & Beck, 2023)"
 
     def __init__(self, dataspec: Optional[DataSpec] = None, placeholder_features: bool = False):
         self.dataspec = dataspec
@@ -349,7 +349,7 @@ def run_lord(
 # =============================================== LORD as a fit() learner ======
 
 class LordJar(RelabelingExternalLearner):
-    """LORD (Huynh & Fürnkranz, 2023) driven as a subprocess against its
+    """LORD (Huynh, Fürnkranz & Beck, 2023) driven as a subprocess against its
     committed Java build -- the reference-implementation counterpart of
     the native `pyrulearn.learners.pylord.PyLORD`.
 

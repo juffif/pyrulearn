@@ -865,7 +865,7 @@ class JRip(_WekaRuleLearner):
         printed order whose target is `label`. JRip processes one class
         at a time, each fully covered before the next, so that rule is
         exactly what `label`'s covering-loop segment would find first --
-        the same "first rule of a covering run" reading `SeCo`/`RIPPER`
+        the same "first rule of a covering run" reading `SeCo`/`Pypper`
         use for their own native `SingleRule`, not a best-of-many pick
         (JRip's induction has no per-class covering primitive we could
         call directly, unlike our own SeCo family, so this is the
@@ -876,7 +876,7 @@ class JRip(_WekaRuleLearner):
         always leaves exactly one class (typically the most frequent) as
         the trailing catch-all default, with zero rules of its own; that
         falls back to an empty (always-true) rule for `label`, the same
-        "search found nothing" fallback `SeCo`/`RIPPER`'s own
+        "search found nothing" fallback `SeCo`/`Pypper`'s own
         `_fit_one_rule` uses.
         """
         if label is None:

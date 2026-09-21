@@ -26,7 +26,7 @@ Models:
   pre-binarized data with placeholder feature names (Weka's ARFF parser
   chokes on `ds1`'s own condition-style names, e.g. `"age>=30"` --
   see that module's docstring, wrinkle 3).
-- **`lord`** -- LORD (Huynh & Fürnkranz, 2023), the reference Java
+- **`lord`** -- LORD (Huynh, Fürnkranz & Beck, 2023), the reference Java
   implementation, via subprocess (needs `$LORD_CLASSPATH` = `<repo>/bin`
   + `<repo>/libs/weka_3.8_stable.jar`; n/a otherwise, same as `jrip`
   needs `weka.jar`). Runs `run.LordRun -mt mestimate -ma 0.1` on the

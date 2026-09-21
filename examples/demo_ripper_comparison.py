@@ -17,8 +17,8 @@ Four RIPPER runs, three of them on the *same* binarized feature set:
                     `pyrulearn.interfaces.wittgenstein.RIPPERk`
                     (`pos_class`-restricted, so multi-class is a manual
                     one-vs-rest here -- one fit per class, rules pooled).
-- **pypper**     -- pyrulearn's own `pyrulearn.learners.seco.RIPPER` (a.k.a.
-                    `Pypper`): IREP* growth/pruning + `ReplaceReviseOptimization`,
+- **pypper**     -- pyrulearn's own `pyrulearn.learners.seco.Pypper` (a RIPPER
+                    re-implementation): IREP* growth/pruning + `ReplaceReviseOptimization`,
                     per class inside a least-frequent-first ordered
                     decomposition.
 
@@ -52,7 +52,7 @@ from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 from pyrulearn.interfaces.weka import JRipImporter
 from pyrulearn.interfaces.wittgenstein import RIPPERk
-from pyrulearn.learners.seco import RIPPER as Pypper
+from pyrulearn.learners.seco import Pypper
 
 WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
 WEKA_JAR = r"C:\Program Files\Weka-3-8-7\weka.jar"

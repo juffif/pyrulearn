@@ -17,7 +17,7 @@ from pyrulearn.pruning import AllOf, AnyOf, EncodingLengthRestriction, Threshold
 from pyrulearn.learners.seco import (
     AQR, BeamSearch, CN2, EmptyRuleAllFeatures, FeatureSubset, GainAscentHillClimbing, HillClimbing,
     NoSplit, GrowPruneSplit,
-    NoPostProcessing, PFoil, PFossil, Pypper, ReducedErrorPruning, ReplaceReviseOptimization, RIPPER,
+    NoPostProcessing, PFoil, PFossil, Pypper, ReducedErrorPruning, ReplaceReviseOptimization,
     SeCo, SeedExample, SingleRuleLearner, rule_set_description_length,
 )
 from pyrulearn.heuristics import Precision
@@ -933,7 +933,7 @@ def test_seco_rules_carry_measured_stats_not_a_stored_weight():
 
 def test_ripper_rules_carry_measured_stats():
     data, ds, y = _noisy_3class()
-    model = RIPPER(random_state=0).fit(data)
+    model = Pypper(random_state=0).fit(data)
     assert model.rules
     # each stage measures its own rules against its own (row-sliced)
     # subproblem, so a rule's own Laplace is >= its Laplace on the full
@@ -942,7 +942,7 @@ def test_ripper_rules_carry_measured_stats():
         full = Laplace().score_rule(r, data, positive_class=r.target)
         own = Laplace().score(r.stats().confusion.rule_stats(r.target))
         assert 0.0 <= own <= 1.0 and own >= full - 1e-9
-    print("RIPPER rules carry measured stats (Laplace per stage subproblem): OK")
+    print("Pypper rules carry measured stats (Laplace per stage subproblem): OK")
 
 
 def test_seco_no_target_class_dispatches_the_model_type():
@@ -1556,7 +1556,7 @@ def test_pfossil_fits_a_disjunctive_concept_with_the_threshold_disabled():
     print("PFossil with the correlation threshold disabled fits a disjunctive concept perfectly: OK")
 
 
-# -- RIPPER / Pypper ------------------------------------------------------------
+# -- Pypper ------------------------------------------------------------
 
 def _noisy_3class(n=500, seed=0):
     rng = np.random.default_rng(seed)
@@ -1570,25 +1570,24 @@ def _noisy_3class(n=500, seed=0):
 
 def test_ripper_returns_a_least_frequent_first_concept_cascade():
     data, ds, y = _noisy_3class()
-    model = RIPPER(random_state=0).fit(data)
+    model = Pypper(random_state=0).fit(data)
     assert type(model) is ConceptCascade
     assert model.default_prediction == "c"                  # most frequent -> catch-all
     assert set(r.target for r in model.rules) <= {"a", "b"}  # rarer classes get rules
     assert np.mean(np.asarray(model.predict(data)) == y) > 0.85
-    assert Pypper is RIPPER
-    print("RIPPER -> least-frequent-first ConceptCascade, majority is the default: OK")
+    print("Pypper -> least-frequent-first ConceptCascade, majority is the default: OK")
 
 
 def test_ripper_is_reproducible():
     data, ds, y = _noisy_3class()
-    a = RIPPER(random_state=1).fit(data)
-    b = RIPPER(random_state=1).fit(data)
+    a = Pypper(random_state=1).fit(data)
+    b = Pypper(random_state=1).fit(data)
     assert [r.pos for r in a.rules] == [r.pos for r in b.rules]
-    print("RIPPER(random_state=) is reproducible: OK")
+    print("Pypper(random_state=) is reproducible: OK")
 
 
 def test_ripper_stage_learner_wires_the_irep_grow_phase():
-    stage = RIPPER(random_state=0)._stage_learner()
+    stage = Pypper(random_state=0)._stage_learner()
     srl = stage.single_rule_learner
     assert isinstance(srl.search, GainAscentHillClimbing)
     assert srl.search.stop_at_local_optimum is False  # grow to consistency, not to the gain peak
@@ -1601,7 +1600,7 @@ def test_ripper_stage_learner_wires_the_irep_grow_phase():
     assert EncodingLengthRestriction in kinds and ThresholdPrePruning in kinds
     irep = next(c for c in stage.stop_covering.criteria if isinstance(c, ThresholdPrePruning))
     assert isinstance(irep.heuristic, Precision) and irep.threshold == 0.5 and irep.operator == "<"
-    print("RIPPER stage learner: grow-to-consistency search + REP + minNo + IREP covering stop: OK")
+    print("Pypper stage learner: grow-to-consistency search + REP + minNo + IREP covering stop: OK")
 
 
 def test_irep_covering_stop_prevents_a_coin_flip_rule_from_being_kept():
@@ -1665,10 +1664,10 @@ def test_ripper_on_binary_data():
     data, ds, y = _noisy_3class()
     yb = np.where(y == "a", "a", "rest")
     db = BooleanDataRepresentation(ds, np.asarray(data.X), yb)
-    model = RIPPER(random_state=0).fit(db)
+    model = Pypper(random_state=0).fit(db)
     assert type(model) is ConceptCascade and model.default_prediction == "rest"
     assert np.mean(np.asarray(model.predict(db)) == yb) > 0.9
-    print("RIPPER on a binary problem: rules for the minority class, majority default: OK")
+    print("Pypper on a binary problem: rules for the minority class, majority default: OK")
 
 
 # ------------------------------------------------------------- fit-time stats ---
