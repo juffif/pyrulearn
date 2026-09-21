@@ -7,9 +7,11 @@ A Python library for **representing, learning, combining and analyzing
 propositional rule models** over Boolean data. It provides a common model
 hierarchy (rule sets, decision lists, concept sets, ensembles), a shared
 data representation, pluggable rule-evaluation heuristics and combiners,
-[native implementations of a range of rule learners](#algorithms) (the
-separate-and-conquer family, RIPPER, locally optimal rules, and the
-associative classifiers CBA, CMAR and IDS), and
+[native implementations of a range of rule learners](#algorithms) (a
+configurable separate-and-conquer (SeCo) framework and the algorithms that
+are instantiations of it, such as CN2, AQR, PFOIL, FOSSIL and Pypper, a
+RIPPER re-implementation; plus locally optimal rules and the associative
+classifiers CBA, CMAR and IDS), and
 [interfaces to external learners](#algorithms) (scikit-learn, wittgenstein,
 imodels, Weka, LORD, pyarc), so that native and external algorithms can be
 run and compared through one API.
@@ -55,13 +57,13 @@ already-fitted external model (or its text output) into a `RuleModel`.
 
 | Algorithm | Class | Notes | Reference |
 |---|---|---|---|
-| **CN2** | `pyrulearn.learners.seco.CN2` | separate-and-conquer with Laplace heuristic and likelihood-ratio significance test | Clark & Niblett 1989; Clark & Boswell 1991 |
-| **AQR** | `pyrulearn.learners.seco.AQR` | Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
-| **PFOIL** | `pyrulearn.learners.seco.PFoil` | propositional FOIL: information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
-| **FOSSIL** | `pyrulearn.learners.seco.PFossil` | correlation heuristic with a quality threshold | Fürnkranz 1994 |
-| **RIPPER** | `pyrulearn.learners.seco.RIPPER` (alias `Pypper`) | IREP\* growth and pruning plus the replace/revise optimization phase, per class | Cohen 1995; Fürnkranz & Widmer 1994 |
-| **LORD** (simplified) | `pyrulearn.learners.pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks; a simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh & Fürnkranz 2023 |
-| **SeCo framework** | `pyrulearn.learners.seco.SeCo` | the separate-and-conquer engine the algorithms above are configurations of: composable search, heuristics, pruning, stopping and optimization building blocks | Fürnkranz & Flach 2005 |
+| **SeCo framework** | `pyrulearn.learners.seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
+| **CN2** | `pyrulearn.learners.seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test | Clark & Niblett 1989; Clark & Boswell 1991 |
+| **AQR** | `pyrulearn.learners.seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
+| **PFOIL** | `pyrulearn.learners.seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
+| **FOSSIL** | `pyrulearn.learners.seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
+| **Pypper** | `pyrulearn.learners.seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
+| **LORD** (simplified, `PyLORD`) | `pyrulearn.learners.pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `pyrulearn.learners.associative.ClassAssociationRuleMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `pyrulearn.learners.cba.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `pyrulearn.learners.cmar.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
@@ -87,30 +89,33 @@ random forest — and returns its own, much smaller model.
 | **JRip** (Weka's RIPPER) | `pyrulearn.interfaces.weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
 | **PART** | `pyrulearn.interfaces.weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
 | **J48** (Weka's C4.5) | `pyrulearn.interfaces.weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
-| **LORD** (reference implementation) | `pyrulearn.interfaces.lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh & Fürnkranz 2023 |
+| **LORD** (reference implementation) | `pyrulearn.interfaces.lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
 | **CBA** | `pyrulearn.interfaces.pyarc.PyarcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
 | **Pattern strings** | `pyrulearn.interfaces.PatternStringImporter` (reference `StringRuleImporter`) | | |
 
-Complete bibliographic entries are in [`references.bib`](references.bib).
+Many of the ideas behind this library, such as the separate-and-conquer
+algorithms and rule-evaluation heuristics, are described in Fürnkranz,
+Gamberger & Lavrač, *Foundations of Rule Learning* (Springer, 2012). Complete bibliographic entries are in
+[`references.bib`](references.bib).
 
 ## Module map
 
+One row per package or top-level module, in alphabetical order; submodules
+are named inline. The module docstrings and the sections below carry the
+details.
+
 | Module | What it's for |
 |---|---|
-| `pyrulearn.data` | Everything about representing data, split by concern (all re-exported at the package level except `io`, which needs `pandas`): `pyrulearn.data.spec` — `DataSpec`, a pure feature-space specification (names, typed attributes, constraints, missing-value policy), no data — built plain or via `DataSpecBuilder` from typed attributes; also `merge_dataspecs`, unioning two `DataSpec`s over the same attributes. `pyrulearn.data.representation` — `DataRepresentation` (ABC) / `BooleanDataRepresentation` — the actual data bound to a `DataSpec` (a `numpy.packbits`-packed Boolean matrix plus labels, built plain or via `BooleanDataRepresentation.from_xy` from ordinary array-like `X, y`); also `NListRepresentation` (FP-tree/N-list vertical index, LORD's; `PrePostNListRepresentation` adds LORD's pre/post ancestor codes to its search fast path, opt-in since it doesn't measure out faster at this library's data scales) and `SparseDataRepresentation` (scipy CSR/CSC = the N-list without the tree) — different internal encodings behind the identical `coverage(rule)` / `features_of(row)` interface, so every SeCo learner runs on any of them unchanged and gets identical rules; `rep.without_negations()` / `.with_negations()` switch a representation between paired-negation and positive-only feature encodings in place. The same `DataSpec` instance can be shared by several representations (e.g. a train split and a test split), guaranteeing identical feature indexing between them. `pyrulearn.data.io` — see its own row below. |
-| `pyrulearn.attributes` | Typed attributes (boolean/nominal/numeric/set/hierarchical/relational), the derived Boolean features they generate, the constraints among them (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), `evaluate_feature` (raw value -> bit, for importers), and `MissingStrategy` (how `pyrulearn.data.io.binarize` handles missing raw values). |
-| `pyrulearn.rule` | `Rule` — a conjunction of Boolean literals, with optional ordering, multiple output formats, and constraint-aware consistency checks. No dependencies beyond numpy. |
-| `pyrulearn.models` | `RuleModel` (shared ABC, with a `default_prediction` fallback policy — bare label, `None`, or a `DefaultPrediction` object like `MajorityClass` — plus `to_string`, `covered_by`, `coverage_matrix`/`coverage_space`, `is_disjoint`/`is_exhaustive`, `stats`/`annotate`, and `filter`/`remap`) organised by resolution: `RuleSet` (unordered — `FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`), `RuleList` (ordered, first-match-wins — `DecisionList`, `ConceptCascade`), and `CompositeModel` (members that are themselves `RuleModel`s — `EnsembleModel`, `PairwiseModel`, `DeepModel`). `SingleRule` wraps one `Rule` as the hierarchy's base case. Also `Provenance` (what built a model), `annotate_rules`/`annotate_default_rule` (fit-time stats population), and the model→model converters (`can_convert`/`convert`). |
-| `pyrulearn.interfaces.sklearn` | This package's two-way relationship with scikit-learn: `RuleSetClassifier`, wrapping a `FlatRuleSet` (or any `RuleModel`) as an `sklearn.base.BaseEstimator`/`ClassifierMixin` for `cross_val_score`/`GridSearchCV`/pipelines, plus the sklearn tree importers described in the `pyrulearn.interfaces` row below. |
-| `pyrulearn.combiners` | `RuleCombiner` — how `RuleSet.predict` combines several simultaneously-covering rules into one prediction: `ListCombiner` (list order); `CountVoteCombiner` (plain majority vote); `HeuristicCombiner`'s `HeuristicMaxCombiner`/`HeuristicVoteCombiner` (a `RuleHeuristic` scored against each rule's own measured stats); `DistributionCombiner`'s `MicroVoteCombiner`/`MacroVoteCombiner`/`MicroMaxCombiner`/`MacroMaxCombiner` (each rule's full per-class distribution — `MacroVoteCombiner` matches sklearn's own soft-voting ensembles). |
-| `pyrulearn.interfaces` | `RuleImporter` — shared base for everything that brings rules into pyrulearn from an external source, plus its two shapes: `ObjectRuleImporter` (`import_model(model, dataspec) -> RuleModel(s)`, for an already-fitted live model object) and `StringRuleImporter` (`parse(source) -> RuleModel`, for a string/serialized rule format, e.g. the reference `PatternStringImporter`). Both tag produced rules with import provenance (a per-rule/per-model `Provenance`) and register in one shared lookup (`register_importer`/`get_importer`). Concrete importers live in their own submodules, e.g. `pyrulearn.interfaces.sklearn` (`SklearnTreeImporter`/`from_sklearn_tree` → `DisjointRuleSet`, and `tree_thresholds` for single-feature decision-tree numeric discretization) , `pyrulearn.interfaces.wittgenstein` (`IREPImporter`/`RIPPERImporter` → `ConceptModel`, an optional dependency), `pyrulearn.interfaces.imodels` (`BayesianRuleListImporter` → `DecisionList` and `BayesianRuleSetImporter` → `FlatRuleSet`; optional dependency on `imodels`), `pyrulearn.interfaces.weka` (`JRipImporter`/`PARTImporter` → `DecisionList`, and `J48Importer` → `DisjointRuleSet`; no Python dependency, Weka itself is external), `pyrulearn.interfaces.pyarc` (`PyarcCBAImporter` → `DecisionList` and its `ExternalRuleLearner` `PyarcCBA`, the external `pyarc` CBA as a drop-in, ~10x faster reference for the native `pyrulearn.learners.cba.CBA` — optional, and `pyarc` itself needs Borgelt's `fim`/`pyfim` C extension), and `pyrulearn.interfaces.lord` (`LORDImporter` for Huynh & Fürnkranz's LORD, plus `run_lord` to drive its jar → a best-rule-wins `FlatRuleSet`). |
-| `pyrulearn.models.PooledRuleSet` | (in the `pyrulearn.models` hierarchy, next to `FlatRuleSet`) A `FlatRuleSet` over flat numpy columns (~36 B/rule instead of ~1.1 KB) whose `.rules` is a lazy read-only `RuleView`: each `SingleRule` (fully filled, stats stamped from counts) is built on first access and cached. Vectorized `precedence_sorted()`/`for_target()`/`head_per_target()` reorder and filter without building rules, and `iter_transient()` streams without caching, so `CBA`/`CMAR`/`IDS` over a mined pool of hundreds of thousands of rules stay small. What `ClassAssociationRuleMiner` returns. |
-| `pyrulearn.learners` | `RuleLearner` — shared base for anything that turns a `DataRepresentation` into rules via `fit(data, model=None) -> RuleModel`: `ExternalRuleLearner` runs an external algorithm and converts its output via an existing `ObjectRuleImporter` (composed via `IMPORTER`, not reimplemented — e.g. `pyrulearn.interfaces.sklearn.DecisionTree`/`RandomForest`, living right next to their corresponding importer); `NativeRuleLearner` induces rules directly, no importer involved. Also `DecomposingLearner` — the `fit(data, model=ConceptSet \| ConceptCascade \| PairwiseModel)` multiclass-by-binary-decomposition switcher, mixed into both native and external learners alike (see Multiclass Classification). |
-| `pyrulearn.learners.seco` | `SeCo` — the separate-and-conquer framework: a per-class covering loop around five composable building blocks (`single_rule_learner`, `stop_covering`, `max_rules`, `optimization`, `random_state`). Named algorithms as configured `SeCo` subclasses: `CN2` (Clark & Niblett/Boswell, Laplace heuristic + significance-test stopping), `AQR` (Clark & Niblett, 1989 — seed-restricted `BeamSearch` approximating AQ's literal star search, consistency-filtered), `PFoil`, `PFossil`, and `RIPPER`/`Pypper` (Cohen, 1995 — IREP\* growth + `ReducedErrorPruning`, a covering loop that stops on FOIL's MDL restriction or IREP's below-0.5-precision rule, then `ReplaceReviseOptimization`'s replace/revise/MDL-prune phase, inside a least-frequent-first ordered decomposition). `DecomposingLearner` is mixed in throughout, so any of them also takes `model=ConceptSet \| ConceptCascade \| PairwiseModel`. |
-| `pyrulearn.learners.pylord` | `PyLORD` — a simplified take on Huynh & Fürnkranz's LORD (2023), reusing `SeCo`'s building blocks outside the covering loop: every training row seeds a rule search (not just a covering loop's residual positives), scored and pruned by an m-estimate (`m=` / `metric=`), pooled into a `combiner="max"` `RuleSet` rather than a first-match list. Runs on any `pyrulearn.data` representation, including the N-list ones LORD itself introduced. |
-| `pyrulearn.data.io` | `read_arff`/`read_csv` -- read a file into a `BooleanDataRepresentation`: validate against an existing `DataSpec` (`validate_dataspec`), binarize with one already given, or infer one from the file's declared/heuristic column types (numeric columns discretized via `interfaces.sklearn.tree_thresholds`). `write_arff`/`write_csv` are the write-side counterparts (from a plain `DataFrame`, not a `DataSpec`); both take an optional `feature_names=` to override the written column names by position -- e.g. safe placeholder names instead of a `DataSpec`'s own `>=`/`<=`/`=`-laden ones, which would otherwise corrupt a downstream text-based rule parser like `pyrulearn.interfaces.weka`'s. Requires `pandas`. |
-| `pyrulearn.heuristics` | `RuleHeuristic` — pluggable rule-evaluation heuristics scored from `RuleStats` (confusion-matrix quartet `tp`/`fp`/`fn`/`tn`, plus optional `length`), with an inherited `plot_isometrics` for drawing one into a `pyrulearn.evaluation.CoverageSpace`; `CoveredPositives`, `CoveredNegatives`, `UncoveredPositives`, `UncoveredNegatives`, `Precision`, `Recall`, `FBeta`, `Laplace`, `MEstimate`, `GeneralizedMEstimate`, `GHeuristic`, `WRAcc`, `YoudenJ`, `Accuracy`, `CoverageDifference`, `Support`, `Coverage`, `LinearCost`, `LinearCostRates`, `Correlation`, `Entropy`, `LikelihoodRatio`, `LengthPenalized`, `MinimalLength`, `FoilGain`. Higher score = more preferred, uniformly, so any of them can be dropped in as a ranking key. `LEF` (Michalski's Lexicographic Evaluation Functional -- an ordered list of heuristics, first one decides unless it ties) is itself a `RuleHeuristic` and works anywhere one is expected. `GainHeuristic` (e.g. `FoilGain`, or `DeltaGain` wrapping any of the above) is the one exception -- its `score(stats, parent_stats)` takes the parent rule's own stats as a second, mandatory argument, since a gain score is only meaningful relative to one specific parent. |
-| `pyrulearn.evaluation` | `RuleStats`/`ConfusionMatrix` (measured confusion-matrix stats -- one designated-positive-class and general N-label, respectively) and `ModelStats` (the per-model, per-split snapshot `pyrulearn.models.RuleModel.stats()` returns); `sort_rules` (rank a rule list by a `RuleHeuristic`, callable, or `None` for descending Laplace-on-measured-stats); plus coverage-space plotting: `CoverageSpace` (a composable coverage-space/ROC-space plot -- owns dimensions + `Axes`, with `plot_ruleset`/`plot_rule_refinement` methods to draw layers into it; also the shared implementation behind the two functions below and `RuleHeuristic.plot_isometrics`), `coverage_space_plot` (standalone-figure `RuleModel` coverage-space plot -- scatter for a `RuleSet`, cumulative path for a `RuleList`), `coverage_space_auc` (convex-hull AUC for one target class), `build_refinement_graph`, `rule_refinement_plot`/`rule_refinement_path` (one `Rule`'s own specialization path), `summarize`, `rule_length_distribution`. |
+| `pyrulearn.attributes` | Typed attributes (boolean, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
+| `pyrulearn.combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
+| `pyrulearn.data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
+| `pyrulearn.evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
+| `pyrulearn.heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
+| `pyrulearn.interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
+| `pyrulearn.learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`ClassAssociationRuleMiner` and the `RuleDistiller` mixin), `learners.cba`, `learners.cmar`, `learners.ids`, and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `pyrulearn.models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `ClassAssociationRuleMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
+| `pyrulearn.pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
+| `pyrulearn.rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
 
 ## Representation
 
@@ -148,8 +153,8 @@ Two more encodings of the same data implement the same `coverage` /
 `PFoil`, `PFossil`, `AQR`, `pyrulearn.learners.pylord.PyLORD`) runs on any of
 them unchanged and produces byte-identical rules:
 
-- `NListRepresentation` -- the FP-tree / N-list vertical index Huynh &
-  Fürnkranz's LORD builds. Each row's true-feature set is inserted
+- `NListRepresentation` -- the FP-tree / N-list vertical index Huynh,
+  Fürnkranz & Beck's LORD builds. Each row's true-feature set is inserted
   (most-frequent-first) into a prefix trie with shared prefixes; a
   rule's coverage is a vectorized `uint64` word-AND over one item's
   N-list, no `(n_rows, n_features)` matrix ever materialized.
@@ -253,7 +258,8 @@ rules apply:
   by `self.resolution` (a `Combine` over a `combiner`, or an `Exclusive`
   disjointness assumption). Concrete subclasses:
   - `FlatRuleSet` -- a plain bag of mixed-head rules plus one `combiner`
-    (the generic, directly-instantiable case).
+    (the generic, directly-instantiable case). `PooledRuleSet` is its
+    memory-compact variant for huge mined rule pools.
   - `ConceptModel` -- rules that all share one head (one **concept**);
     `predict` returns that label where covered, `default_prediction`
     otherwise.
@@ -267,12 +273,21 @@ rules apply:
 - **`RuleList`** (abstract) -- *ordered*; the first matching rule wins
   (RIPPER/CN2-style sequential covering). This rule-level order is
   unrelated to `Rule.ordered`, which is about condition order *within*
-  one rule. Concrete subclasses: `DecisionList` (a linear list) and
-  `ConceptCascade` (ordered `ConceptModel`s, "peeling" one-vs-rest).
+  one rule. Concrete subclasses:
+  - `DecisionList` -- a linear list of rules; the first that matches
+    decides.
+  - `ConceptCascade` -- ordered `ConceptModel`s, "peeling" one-vs-rest:
+    the first concept that fires decides, and concept k only sees the
+    rows concepts 1..k-1 didn't take.
 - **`CompositeModel`** (abstract) -- members that are themselves
-  `RuleModel`s: `EnsembleModel` (flat, optionally weighted vote),
-  `PairwiseModel` (one binary member per label pair, round robin), and a
-  `DeepModel` stub.
+  `RuleModel`s, combined at prediction time. Concrete subclasses:
+  - `EnsembleModel` -- a flat, optionally weighted vote over independent
+    members (bagging / boosting-style ensembles, e.g. one member per
+    random-forest tree).
+  - `PairwiseModel` -- round robin: one binary member per label pair,
+    each voting for one of its two labels.
+  - `DeepModel` -- members wired into a dependency DAG ("stacking");
+    currently a stub, structure only, with no `predict` yet.
 - **`SingleRule`** -- one rule, wrapped so it carries its own `stats`/
   `provenance` and predicts on its own; the hierarchy's base case, and
   what every container actually stores (`.rules` is a list of
@@ -1248,7 +1263,7 @@ for learner in learners:
 ```
 
 **`NativeRuleLearner`** -- for a rule-induction algorithm implemented
-directly in pyrulearn (e.g. `pyrulearn.learners.seco`'s from-scratch RIPPER/CN2/
+directly in pyrulearn (e.g. `pyrulearn.learners.seco`'s from-scratch Pypper/CN2/
 AQR, or `pyrulearn.learners.pylord.PyLORD`): `fit` induces straight against
 `data`, with no external algorithm call and no `RuleImporter`
 round-trip at all.
@@ -1314,7 +1329,7 @@ calls, for the older call style or to bundle a `random_state`/non-default
 The `SeCo` family reaches for this itself: `fit(data)` with no
 `target_class` and no `model=` builds each learner's own multi-class
 default (`_MULTICLASS_DEFAULT`) — `ConceptSet` (one-vs-rest) for
-`CN2`/`PFoil`/`PFossil`/`RIPPER`, so `CN2().fit(iris_rep)` just works;
+`CN2`/`PFoil`/`PFossil`/`Pypper`, so `CN2().fit(iris_rep)` just works;
 `FlatRuleSet` for `AQR` (one seed-covering loop over all classes at
 once, each rule seeded on a random uncovered example and headed with
 its own label — AQ's multi-class covering, the same per-example seeding
@@ -1503,7 +1518,7 @@ against it).
 - `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
   (both currently approximated by a seed-restricted `BeamSearch` -- see
   `pyrulearn.learners.seco`/`pyrulearn.learners.pylord` in the module map), a greedy
-  sequential-covering rule list, and `RIPPER`'s residual IREP\* re-growth
+  sequential-covering rule list, and `Pypper`'s residual IREP\* re-growth
   pass (its whole-ruleset optimization phase, `ReplaceReviseOptimization`,
   is already implemented -- this is the one piece still missing from it).
 - Rule bodies beyond pure conjunctions (e.g. general CNF/DNF rules).
