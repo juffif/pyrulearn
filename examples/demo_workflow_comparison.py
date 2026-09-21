@@ -149,6 +149,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from pyrulearn.combiners import MacroVoteCombiner
 from pyrulearn.data import merge_dataspecs
+from pyrulearn.models import FlatRuleSet, annotate_rules
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 # BayesianRuleList/BayesianRuleSet are imported lazily, inside _fit_brl_binarized/_fit_brs
 # below (not here) -- they run much longer than the rest of the models and pull in
@@ -483,7 +484,10 @@ def _fit_tree_binarized(rep):
 
 
 def _fit_forest_binarized(rep):
-    return RandomForest(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(rep)
+    # the flat single-bag view (not the per-tree EnsembleModel default): its predict takes
+    # a combiner=, so this is evaluated with MacroVoteCombiner exactly like the Original path
+    return RandomForest(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(
+        rep, model=FlatRuleSet)
 
 
 def _fit_ripper_binarized(rep, pos_class):
@@ -515,7 +519,10 @@ def _fit_forest_native(X, y, feature_names):
     ).fit(X, y)
     importer = RandomForestImporter()
     ds = importer.infer_dataspec(forest, feature_names=feature_names)
-    rules = importer.import_model(forest, ds, feature_names=feature_names)
+    # data= measures each leaf's own training stats -- MacroVoteCombiner (see run_fold's
+    # `combiners`) is a DistributionCombiner and raises on stat-less rules
+    train_rep = BooleanDataRepresentation(ds, binarize(ds, pd.DataFrame(X, columns=feature_names)), y)
+    rules = importer.import_model(forest, ds, feature_names=feature_names, data=train_rep)
     return rules, ds
 
 
@@ -576,6 +583,7 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
     `TimeoutRunner`/`_run_weka_safe`. `merged_ok` is False for the rare fold
     where group 1's "Original" DataSpecs couldn't be merged (see the module
     docstring's wrinkle 2)."""
+    os.makedirs(ARFF_DIR, exist_ok=True)  # gitignored scratch dir, absent in a fresh checkout
     feature_cols = [c for c in train_df.columns if c != target_col]
     nominal_cols = [c for c in feature_cols if not pd.api.types.is_numeric_dtype(train_df[c])]
     categories = {c: sorted(train_df[c].dropna().unique().tolist()) for c in nominal_cols}
@@ -790,8 +798,15 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
 
         if merged_ok:
             test_rep2 = BooleanDataRepresentation(merged, binarize(merged, test_df_oh), test_y)
+            train_rep2 = None
             for name, rules, _, fit_time in per_model:
                 remapped = rules.remap(merged)
+                if name in combiners:
+                    # remap drops measured stats; a DistributionCombiner (MacroVoteCombiner)
+                    # needs them, so re-measure each leaf on the training rows under `merged`
+                    if train_rep2 is None:
+                        train_rep2 = BooleanDataRepresentation(merged, binarize(merged, train_df_oh), train_y)
+                    remapped = FlatRuleSet(annotate_rules(remapped.rules, train_rep2))
                 record("Original", name, *_eval(remapped, test_rep2, test_y, combiner=combiners.get(name)), fit_time)
         else:
             for name, rules, ds, fit_time in per_model:

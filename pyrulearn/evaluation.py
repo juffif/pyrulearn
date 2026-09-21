@@ -841,7 +841,10 @@ class CoverageSpace:
             for k, (nx, ny) in enumerate(path):
                 label = "∅" if k == 0 else Rule([conds[k - 1]], dataspec=data.spec).to_string("conditions")
                 dx, dy = self._display(np.array([nx]), np.array([ny]))
-                self.ax.annotate(label, (dx[0], dy[0]), fontsize=8, xytext=(3, 3), textcoords="offset points")
+                # the start point sits in the top-right corner, where a
+                # up-right offset would run into the title -- tuck it inside
+                offset, ha = ((-4, -12), "right") if k == 0 else ((3, 3), "left")
+                self.ax.annotate(label, (dx[0], dy[0]), fontsize=8, xytext=offset, textcoords="offset points", ha=ha)
 
         if self.show_labels:
             xlabel = "FPR" if self.normalized else f"not {positive_class!r} covered (of {self.n_neg})"
@@ -911,11 +914,12 @@ def _resolve_positive_class(rule: Rule, positive_class: Optional[Any]) -> Any:
     rule" default requested for single-rule plots: a rule's own true
     positives are examples of the class *it* predicts, not some
     externally-fixed class. Raises if neither is available."""
-    if positive_class is not None:
-        return positive_class
-    if rule.target is not None:
-        return rule.target
-    raise ValueError("positive_class must be given for a rule with no target")
+    if positive_class is None:
+        positive_class = rule.target
+    if positive_class is None:
+        raise ValueError("positive_class must be given for a rule with no target")
+    # unwrap numpy scalars (e.g. np.str_) so axis labels show 'neg', not np.str_('neg')
+    return positive_class.item() if isinstance(positive_class, np.generic) else positive_class
 
 
 def rule_refinement_path(rule: Rule, data: DataRepresentation, positive_class: Optional[Any] = None) -> np.ndarray:

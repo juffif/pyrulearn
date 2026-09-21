@@ -90,13 +90,8 @@ text = "1 0 - - - - => pos\n- - 1 1 - - => neg\n"
 imported = importer.parse(text)
 print("\nimported rules:", list(imported))
 
-# 5. analysis: coverage-space plots. RuleSet scatter (with convex hull) and
-# refinement graph (uses tree rules, more of them than r1/r2)
-ax = coverage_space_plot(tree_rules, rep, positive_class="pos", annotate=True, show_convex_hull=True)
-out_path = os.path.join(os.path.dirname(__file__), "coverage_space.png")
-ax.figure.savefig(out_path, dpi=120)
-print(f"\nSaved {out_path}")
-
+# 5. analysis: coverage-space plots. An ordered decision list (below) and one
+# rule's refinement path; uses tree rules (more of them than r1/r2)
 # same rules, as an ordered decision list (most-general-first) -- a connected,
 # arrow-annotated cumulative-coverage path starting at (0, 0)
 tree_rulelist = tree_rules.to_rulelist(key=lambda r: int(r.covers_data(rep).sum()))
@@ -105,11 +100,12 @@ out_path2 = os.path.join(os.path.dirname(__file__), "coverage_space_rulelist.png
 ax2.figure.savefig(out_path2, dpi=120)
 print(f"Saved {out_path2}")
 
-# one rule's own specialization path: order its conditions by incremental
-# precision, then plot how coverage narrows as each one is added.
-# positive_class defaults to the rule's own target/head -- this rule
-# predicts "neg", so its refinement path is plotted in "neg" terms, not "pos"
-complex_rule = max(tree_rules, key=lambda r: r.length())
+# one rule's own specialization path, the way a greedy learner (HillClimbing /
+# SeCo) builds it: order its conditions by incremental precision, then plot how
+# coverage shrinks from the full space (upper right) toward the rule's own
+# coverage (lower left), one condition at a time. positive_class defaults to
+# the rule's own target/head, so pick a "pos" rule to match the plot above
+complex_rule = max((r for r in tree_rules if r.target == "pos"), key=lambda r: r.length())
 ordered_rule = complex_rule.order_by_precision(rep)
 ax3 = rule_refinement_plot(ordered_rule, rep)
 out_path3 = os.path.join(os.path.dirname(__file__), "rule_refinement.png")
