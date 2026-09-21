@@ -4,7 +4,7 @@ import pytest
 from pyrulearn.combiners import HeuristicVoteCombiner
 from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation
 from pyrulearn.heuristics import ChiSquare
-from pyrulearn.learners.cmar import CMAR
+from pyrulearn.learners.associative import CMAR
 from pyrulearn.models import ConceptCascade, ConceptSet, ConceptModel, FlatRuleSet, PairwiseModel
 
 from _negation_helpers import neg_spec, neg_X

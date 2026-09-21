@@ -6,7 +6,7 @@ pyrulearn.learners.ids
 2016): consume a pool of class association rules (a `FlatRuleSet`, via
 `pyrulearn.learners.associative.RuleDistiller` -- either given directly or
 mined by default via `ClassAssociationRuleMiner`, the same shared miner
-`pyrulearn.learners.cba.CBA` and `pyrulearn.learners.cmar.CMAR` also
+`pyrulearn.learners.associative.CBA` and `CMAR` also
 consume from), then select an *unordered* subset of them by approximately
 maximizing IDS's own 7-term
 submodular objective -- trading off number of rules, rule length,

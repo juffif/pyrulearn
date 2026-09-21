@@ -16,10 +16,10 @@ Concrete learners live in their own submodules, same
 group-by-shared-implementation convention as `pyrulearn.interfaces`:
 `pyrulearn.learners.seco` (`SeCo` framework -- `CN2`, `AQR`, `PFoil`,
 `PFossil`, `Pypper`), `pyrulearn.learners.pylord` (`PyLORD`),
-`pyrulearn.learners.associative` (`ClassAssociationRuleMiner`, and the
+`pyrulearn.learners.associative` (`ClassAssociationRuleMiner`, the
 `RuleDistiller` mixin shared by the classifiers that consume a rule
-pool), `pyrulearn.learners.cba` (`CBA`), `pyrulearn.learners.cmar`
-(`CMAR`), `pyrulearn.learners.ids` (`IDS`), and
+pool, and the `CBA` and `CMAR` classifiers built on it),
+`pyrulearn.learners.ids` (`IDS`), and
 `pyrulearn.learners.multiclass` (`OneVsRest`/`OrderedOneVsRest`/
 `Pairwise` -- thin sugar over `DecomposingLearner`). External-tool
 learners (sklearn/wittgenstein/imodels/Weka/LORD) live next to their

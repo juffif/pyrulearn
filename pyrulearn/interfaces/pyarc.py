@@ -4,7 +4,7 @@ pyrulearn.interfaces.pyarc
 
 `PyarcCBAImporter` (an `ObjectRuleImporter`) and `PyarcCBA` (its
 `ExternalRuleLearner`) for the *external* `pyarc` package's CBA -- the
-same algorithm `pyrulearn.learners.cba.CBA` implements natively. The two
+same algorithm `pyrulearn.learners.associative.CBA` implements natively. The two
 exist side by side on purpose: `PyarcCBA` is the reference to cross-check
 the native one against (runtime and soundness; agreement on the same
 input has been verified rule for rule, see `memory`/README), and a fast
@@ -122,7 +122,7 @@ class PyarcCBA(ExternalRuleLearner):
       the support of body + head (see the module docstring).
     - `max_len` -- longest rule *body* (converted to `pyarc`'s
       class-item-inclusive `maxlen` internally), same meaning as
-      `pyrulearn.learners.cba.CBA(max_len=)`.
+      `pyrulearn.learners.associative.CBA(max_len=)`.
     - `algorithm` -- `"m1"` (default) or `"m2"`, `pyarc`'s two
       classifier-building variants.
 

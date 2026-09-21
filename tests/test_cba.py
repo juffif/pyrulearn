@@ -3,7 +3,7 @@ import pytest
 
 from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
 from pyrulearn.learners.associative import generate_cars, sort_by_measured_precedence
-from pyrulearn.learners.cba import CBA
+from pyrulearn.learners.associative import CBA
 from pyrulearn.models import (
     ConceptCascade, ConceptSet, DecisionList, ConceptModel, FlatRuleSet, PairwiseModel, annotate_rules,
 )

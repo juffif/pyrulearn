@@ -3,8 +3,7 @@ import pytest
 
 from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
 from pyrulearn.learners.associative import ClassAssociationRuleMiner, sort_by_measured_precedence
-from pyrulearn.learners.cba import CBA
-from pyrulearn.learners.cmar import CMAR
+from pyrulearn.learners.associative import CBA, CMAR
 from pyrulearn.learners.ids import IDS
 from pyrulearn.models import DecisionList, FlatRuleSet, PooledRuleSet, RuleView, convert
 

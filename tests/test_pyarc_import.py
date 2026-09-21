@@ -10,7 +10,7 @@ from pyarc.data_structures import TransactionDB
 
 from pyrulearn.data import BooleanDataRepresentation, DataSpec
 from pyrulearn.interfaces.pyarc import PyarcCBA, PyarcCBAImporter
-from pyrulearn.learners.cba import CBA
+from pyrulearn.learners.associative import CBA
 from pyrulearn.models import DecisionList
 
 from _negation_helpers import neg_spec, neg_X
