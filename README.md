@@ -17,7 +17,8 @@ imodels, Weka, LORD, pyarc), so that native and external algorithms can be
 run and compared through one API.
 
 > **Status: early development (alpha).** The APIs are still changing, and
-> some demos need revising.
+> some demos need revising. Changes between versions are listed in the
+> [changelog](CHANGELOG.md).
 
 ## Install
 
@@ -48,7 +49,7 @@ their tests skip themselves when the tool is not available.
 ## Algorithms
 
 All learners below share the `learner.fit(data)` entry point (see
-*Learning rules uniformly across algorithms*); multiclass decompositions
+*Learning algorithms*); multiclass decompositions
 (`model=ConceptSet | ConceptCascade | PairwiseModel`) work for the native
 and most of the external learners. Importers on their own convert an
 already-fitted external model (or its text output) into a `RuleModel`.
@@ -117,60 +118,42 @@ details.
 | `pyrulearn.pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `pyrulearn.rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
 
-## Representation
+## Data representation
 
-A `Rule` is a conjunction of Boolean literals over a fixed feature space
-(`Literal(feature)` -- a literal is just a feature index; there are no
-negative literals). "Feature absent" is expressed by conditioning on a
-separate *negation feature* (`not f`, `age<30`, `color!=red`), paired
-with its positive counterpart by a `MutuallyExclusive` / `NominalGroup`
-/ `NumericGroup` constraint -- `DataSpecBuilder` generates these by
-default (`negation=False` opts out). A rule reads back out as one tuple
-of feature indices (`pos`, the features that must be True) plus a single
-integer bitmask, so coverage of one example is a genuine O(1)-ish subset
-check:
+A `DataSpec` (pure schema: feature names, typed attributes, constraints,
+missing-value policy) defines the Boolean feature space; a
+`DataRepresentation` binds actual data to one. There are **three base
+representations**, all implementing the same `coverage(rule)` /
+`features_of(row)` interface, so every native rule learner
+(`pyrulearn.learners.seco`'s `CN2`, `PFoil`, `PFossil`, `AQR` and `Pypper`,
+`pyrulearn.learners.pylord.PyLORD`, ...) runs on any of them unchanged and
+produces byte-identical rules:
 
-```python
-covers = (x_bits & mask) == mask
-```
-
-`Rule.from_pos_neg(pos=..., neg=...)` is still the convenient
-constructor: each `neg` index is translated to its negation feature via
-`DataSpec.negation_of`, so a negation-enabled `dataspec` is required
-when `neg` is non-empty.
-
-For whole datasets, a `BooleanDataRepresentation` (in
-`pyrulearn.data` -- the actual data bound to a `DataSpec`,
-which is itself pure schema) keeps a `numpy.packbits`-packed copy of the
-feature matrix and checks every example with vectorized bitwise NumPy
-ops instead of per-feature Python loops. Coverage dispatches on the
-`DataRepresentation` subclass: `Rule.covers_data` /
-`Rule.covers_data_packed` both forward to `data.coverage(rule)`, so a
-`Rule` needs to know nothing about how the data is stored.
-
-Two more encodings of the same data implement the same `coverage` /
-`features_of` interface, so every `pyrulearn.learners.seco` learner (`CN2`,
-`PFoil`, `PFossil`, `AQR`, `pyrulearn.learners.pylord.PyLORD`) runs on any of
-them unchanged and produces byte-identical rules:
-
+- `BooleanDataRepresentation` -- the default: a `numpy.packbits`-packed copy
+  of the feature matrix; every example is checked with vectorized bitwise
+  NumPy ops instead of per-feature Python loops.
+- `SparseDataRepresentation` -- `scipy` CSR/CSC; a rule's coverage is
+  the intersection of its features' column index-sets (Eclat's vertical
+  tid-lists), rarest feature first. This is the N-list *without* the
+  prefix tree.
 - `NListRepresentation` -- the FP-tree / N-list vertical index Huynh,
   Fürnkranz & Beck's LORD builds. Each row's true-feature set is inserted
   (most-frequent-first) into a prefix trie with shared prefixes; a
   rule's coverage is a vectorized `uint64` word-AND over one item's
   N-list, no `(n_rows, n_features)` matrix ever materialized.
-- `SparseDataRepresentation` -- `scipy` CSR/CSC; a rule's coverage is
-  the intersection of its features' column index-sets (Eclat's vertical
-  tid-lists), rarest feature first. This is the N-list *without* the
-  prefix tree.
-- `PrePostNListRepresentation` -- `NListRepresentation` plus pre/post
-  visit codes, giving its search fast path (see below) a second way to
-  narrow a common feature's occurrences down to the current search
-  branch. A deliberate opt-in, not a flag on `NListRepresentation`: it's
-  correct (see `examples/demo_representations.py`, which runs it
-  alongside the other three) but measured to be roughly break-even to
-  slightly *slower* than plain `NListRepresentation` at the data scales
-  this library deals with -- see its own docstring for the numbers and
-  when it might actually help.
+  `PrePostNListRepresentation` adds pre/post visit codes, giving its search
+  fast path a second way to narrow a common feature's occurrences down to
+  the current search branch. A deliberate opt-in, not a flag on
+  `NListRepresentation`: it's correct (see `examples/demo_representations.py`,
+  which runs it alongside the other three) but measured to be roughly
+  break-even to slightly *slower* than plain `NListRepresentation` at the
+  data scales this library deals with -- see its own docstring for the
+  numbers and when it might actually help.
+
+Coverage dispatches on the `DataRepresentation` subclass:
+`Rule.covers_data` / `Rule.covers_data_packed` both forward to
+`data.coverage(rule)`, so a `Rule` needs to know nothing about how the data
+is stored.
 
 Build any of the three with `.from_boolean(bool_rep)` (or `from_xy` /
 `from_dataframe`); see `examples/demo_representations.py`, which also
@@ -185,19 +168,6 @@ schema-only versions. `rep.select_rows(mask)` gives a same-type
 representation over a row subset (feature space unchanged, so learned
 rules still apply to the full data) -- rebuilt from scratch, used by
 `OrderedOneVsRest` to train each stage on the not-yet-peeled classes.
-
-A rule can optionally carry the order its conditions were added/tested
-in (`ordered=True`), and renders via `to_string(fmt=...)` as logic
-notation, a Prolog-style clause, a positional pattern string, or a bare
-condition list. `fmt` is optional: omitted, `to_string` (and `__repr__`,
-so this is also what you see printed) falls back to that rule's own
-`default_fmt` if set at construction (`Rule(..., default_fmt="logic")`),
-else the class-wide `Rule.DEFAULT_FORMAT` (`"prolog"`) -- an explicit
-`fmt=` always overrides both. `reorder`/`generalize` carry a rule's
-`default_fmt` over to the result. A bare `Rule` carries no weight or
-free-form metadata; measured per-rule statistics live on `SingleRule.stats()`,
-what built a rule on `SingleRule.provenance`, and the one remaining
-declarative per-rule value (a stored weight) on `WeightedRule.weight`.
 
 ### Typed attributes
 
@@ -247,13 +217,185 @@ is a sufficient outcome for rules read in from an external source (see
 `pyrulearn.interfaces.weka.JRipImporter`, below, for exactly this
 use case).
 
-## Rule models: the `pyrulearn.models` hierarchy
+### Merging DataSpecs
+
+`merge_dataspecs(a, b)` (in `pyrulearn.data`) merges two `DataSpec`s
+describing the same underlying attributes -- e.g. two different
+discretizations of the same numeric attribute -- into one
+`DataSpecBuilder` with the union of nominal categories, numeric
+thresholds, and set values for attributes present in both; attributes
+present in only one side are carried over as-is. It's deliberately
+strict about anything that isn't a straightforward union: a type
+mismatch, a different `Hierarchy`, or (for relational attributes)
+different sources/expression all raise rather than guessing -- reconcile
+such conflicts by hand before merging. It returns a builder (spec only
+-- `DataSpec` never carries data to begin with); existing `Rule`s built
+against `a`/`b` don't automatically carry over to the merged feature
+space -- see `remap` below for that.
+
+#### Rebasing rules onto a different DataSpec
+
+`Rule.remap(new_dataspec)` rebuilds a rule's conditions against a
+different, compatible `DataSpec`, translating each condition's feature
+index **by name** (`old_idx -> self.dataspec.feature_name(old_idx) ->
+new_dataspec.feature_index(name)`) -- the same name-based identity
+`merge_dataspecs` already relies on. It's a pure structural translation
+(no data touched, nothing recomputed) and raises rather than silently
+dropping a condition if a name has no match in `new_dataspec`.
+`RuleModel.remap(new_dataspec)` applies it to every rule and carries the
+`default_prediction` policy (and `.provenance`) over unchanged (the
+materialized `default_rule` re-derives against the remapped rules'
+dataspec on demand, dropping any stats measured against the old one --
+re-annotate against whatever data comes next), returning a new instance
+of the same concrete class.
+
+This is the fix for reading in several rule-based models over "the same"
+dataset when each was imported against its own per-model `DataSpec`
+(different attribute/threshold choices, different feature order): build
+the shared target with `merge_dataspecs`, `remap` each model onto it,
+then binarize the real dataset **once** against that shared `DataSpec`
+and score/compare/combine all the remapped models against it --
+
+```python
+from pyrulearn.data import BooleanDataRepresentation
+
+shared = merge_dataspecs(model1.rules[0].dataspec, model2.rules[0].dataspec).build()
+model1 = model1.remap(shared)
+model2 = model2.remap(shared)
+shared_rep = BooleanDataRepresentation(shared, binarize(shared, df))
+```
+
+Only `shared` ever needs a full Boolean data matrix built for it; the
+per-model DataSpecs used during import don't (`remap` needs nothing but
+their feature *names*), which keeps memory to one dataset's worth
+regardless of how many models get combined. `remap` deliberately drops
+any stats measured before the rebase (a rule's `stats()` was computed
+against the *old* dataspec's rows, which no longer applies) --
+re-annotate against `shared_rep` (`annotate_rules`, or a fresh
+`to_string(data=shared_rep)`/`stats(shared_rep)` call) for fresh numbers.
+
+### Reading ARFF / CSV data
+
+```python
+from pyrulearn.data.io import read_arff, read_csv
+
+# infer a DataSpec from the file's own column types, discretizing numeric
+# columns against `target` with a decision tree (max_intervals - 1 thresholds,
+# capped at DEFAULT_MAX_INTERVALS = 8 by default -- a full 3-level binary tree)
+rep = read_arff("weather.arff", target="play")
+rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
+
+# or binarize against a DataSpec you already have (thresholds and all)
+rep = read_csv("data.csv", dataspec=my_dataspec, target="label")
+# rep.spec is my_dataspec; rep.X / rep.y hold the binarized data
+```
+
+Numeric columns without pre-given thresholds need a `target` column to
+discretize against (decision-tree splits are the only strategy
+implemented so far -- equal-width/equal-frequency and FUSINTER are
+planned). `validate_dataspec(dataspec, df)` checks an existing `DataSpec`
+against a file's header without reading data (missing attributes, type
+mismatches, unknown nominal categories); `strict=True` (the default on
+`read_arff`/`read_csv`) raises on anything `validate_dataspec` reports
+rather than binarizing against a `DataSpec` that doesn't actually match.
+
+Not yet handled: set-valued/hierarchical/relational attributes (ARFF/CSV
+headers can't declare them, so they're never inferred, and relational
+features can't be evaluated from raw data at all -- see
+`pyrulearn.attributes.evaluate_feature`).
+
+### Missing values
+
+A missing raw value (`None`/NaN, or an attribute's declared
+`missing_values`, e.g. `("?",)` for the common ARFF/UCI convention) is
+handled per `pyrulearn.attributes.MissingStrategy`, resolved (explicit
+`binarize`/`read_arff`/`read_csv` argument > the `DataSpec`'s own
+`missing_strategy` > `DataSpec.DEFAULT_MISSING_STRATEGY`) the same way
+`Rule.to_string`'s `fmt` resolves:
+
+- **`NEVER_COVERS`** (the default) -- every feature derived from the
+  missing attribute is False for that example, so it never satisfies
+  *any* literal conditioning on it, positive or negated. This is a
+  closed-world "we don't know" reading, not "the negation holds" -- the
+  cheaper alternative to genuinely tracking a third "unknown" state
+  through `Rule`'s coverage checks, which isn't implemented.
+- **`MAJORITY`** -- impute the raw value before evaluating: the column
+  median for a NUMERIC attribute, the most frequent value (mode)
+  otherwise.
+- **`RANDOM`** -- impute with another, uniformly randomly chosen
+  non-missing example's value from the same column (`random_state=`
+  seeds this).
+- **`SEPARATE`** -- route into a dedicated feature, treating "missing"
+  as its own value alongside the attribute's declared domain. Requires
+  the attribute to have been built with `missing_name=`
+  (`add_nominal`/`add_numeric`) -- raises if none was declared. For a
+  NOMINAL attribute the dedicated feature rides in the same exhaustive
+  `ExactlyOne` group as the declared domain (missing is just one more
+  category); for a NUMERIC attribute it's a standalone feature outside
+  the `ThresholdChain`, deliberately with no constraint linking the two
+  (a numeric value can be simultaneously "missing" and fail every `>=`
+  test).
+
+```python
+b = DataSpecBuilder()
+b.add_nominal("color", ["red", "green", "blue"], missing_name="<missing>", missing_values=("?",))
+b.add_numeric("age", [20, 30, 40], missing_name="<missing>")
+ds = b.build(missing_strategy=MissingStrategy.SEPARATE)
+```
+
+`add_boolean`/`add_set`/`add_hierarchical` accept `missing_values=` too
+(for sentinel recognition) but not `missing_name=` -- `SEPARATE` isn't
+supported for those attribute types.
+
+## Rule models
+
+A `Rule` is a conjunction of Boolean literals over a fixed feature space
+(`Literal(feature)` -- a literal is just a feature index; there are no
+negative literals). "Feature absent" is expressed by conditioning on a
+separate *negation feature* (`not f`, `age<30`, `color!=red`), paired
+with its positive counterpart by a `MutuallyExclusive` / `NominalGroup`
+/ `NumericGroup` constraint -- `DataSpecBuilder` generates these by
+default (`negation=False` opts out). A rule reads back out as one tuple
+of feature indices (`pos`, the features that must be True) plus a single
+integer bitmask, so coverage of one example is a genuine O(1)-ish subset
+check:
+
+```python
+covers = (x_bits & mask) == mask
+```
+
+`Rule.from_pos_neg(pos=..., neg=...)` is still the convenient
+constructor: each `neg` index is translated to its negation feature via
+`DataSpec.negation_of`, so a negation-enabled `dataspec` is required
+when `neg` is non-empty.
+
+A rule can optionally carry the order its conditions were added/tested
+in (`ordered=True`), and renders via `to_string(fmt=...)` as logic
+notation, a Prolog-style clause, a positional pattern string, or a bare
+condition list. `fmt` is optional: omitted, `to_string` (and `__repr__`,
+so this is also what you see printed) falls back to that rule's own
+`default_fmt` if set at construction (`Rule(..., default_fmt="logic")`),
+else the class-wide `Rule.DEFAULT_FORMAT` (`"prolog"`) -- an explicit
+`fmt=` always overrides both. `reorder`/`generalize` carry a rule's
+`default_fmt` over to the result. A bare `Rule` carries no weight or
+free-form metadata; measured per-rule statistics live on `SingleRule.stats()`,
+and what built a rule on `SingleRule.provenance`.
+
+`WeightedRule` is the `Rule` subclass that adds a weight: one declarative
+number that is *part of the model* (e.g. a ProbLog-style probability), as
+opposed to statistics measured against a dataset. Weights are meant to be
+used when they are part of a model, but nothing in prediction uses them yet:
+a clear strategy for that is still to be found.
 
 `RuleModel` (in `pyrulearn.models`) is the shared abstract base for
 collections of `Rule`s that make predictions together. The hierarchy is
 organised by **resolution** -- how a prediction is decided when several
 rules apply:
 
+- **`SingleRule`** -- one rule, wrapped so it carries its own `stats`/
+  `provenance` and predicts on its own; the hierarchy's base case, and
+  what every container actually stores (`.rules` is a list of
+  `SingleRule`s, never bare `Rule`s).
 - **`RuleSet`** (abstract) -- *unordered*; covering rules are reconciled
   by `self.resolution` (a `Combine` over a `combiner`, or an `Exclusive`
   disjointness assumption). Concrete subclasses:
@@ -288,67 +430,16 @@ rules apply:
     each voting for one of its two labels.
   - `DeepModel` -- members wired into a dependency DAG ("stacking");
     currently a stub, structure only, with no `predict` yet.
-- **`SingleRule`** -- one rule, wrapped so it carries its own `stats`/
-  `provenance` and predicts on its own; the hierarchy's base case, and
-  what every container actually stores (`.rules` is a list of
-  `SingleRule`s, never bare `Rule`s).
 
-`combiner` (a `RuleCombiner` in `pyrulearn.combiners`, or a shortcut
-string) is the strategy a `RuleSet` uses to reconcile several rows
-covering one row -- `"list"` (`ListCombiner`, list order), `"max"`
-(`HeuristicMaxCombiner`, a `RuleHeuristic` scored against each rule's own
-*measured* stats), `"vote"` (`CountVoteCombiner`, plain majority vote),
-or `"micro_vote"`/`"macro_vote"`/`"micro_max"`/`"macro_max"`
-(`DistributionCombiner`'s four variants, from each rule's full per-class
-distribution) -- pass either the string shortcut or a `RuleCombiner`
-instance directly to the constructor, or override per call via
-`predict(data, combiner=...)`. These are the ones to reach for when
-importing a whole random forest as one `FlatRuleSet`
-(`pyrulearn.interfaces.sklearn.RandomForestImporter`): each tree
-contributes one always-firing rule per example, so a k-tree forest
-always has exactly k covering rules, and combining across all of them is
-what actually reproduces the forest's own prediction (`MacroVoteCombiner`
-in particular matches sklearn's own soft-voting mechanism almost
-exactly). `HeuristicMaxCombiner`/`HeuristicVoteCombiner`/
-`DistributionCombiner` all **require** every covering rule to have
-measured stats when they genuinely disagree in target (raising
-`ValueError` otherwise) -- see `pyrulearn.models.annotate_rules` below.
-
-Not necessarily *exhaustive* (some rows may match no rule) -- call
-`is_disjoint(data)`/`is_exhaustive(data)` (available on any `RuleModel`,
-not just `DisjointRuleSet`, so a plain `FlatRuleSet` can be checked
-*before* deciding whether it's safe to convert, not only verified after
-the fact) to check either property against real data (disjointness isn't
-enforced at construction, the same way `Rule.is_consistent()` is a check
-you call, not a built-in guarantee).
-
-Every `RuleModel` has a `default_prediction` (settable at construction or
-afterward) -- the *policy* for rows no rule in `self.rules` decides. It
-is one of: a bare label (`predict` returns it), `None` (abstain,
-`predict` returns `None`), or a `DefaultPrediction` object consulted per
-uncovered row via `predict(rules, data, example_idx)` -- not vectorized,
-so different rows can genuinely get different fallbacks. `MajorityClass`
-(the built-in one) resolves a fixed majority label at construction from a
-chosen row subset; "predict via whichever rule is most similar to this
-row" would be another. `filter`/`to_rulelist`/`remap` all carry the
-policy over unchanged, and so does `.provenance` (what built this model
--- a `RuleLearner`/`RuleImporter` stamps it; narrowing/rebasing/
-repackaging doesn't change who built the rules, so it survives all
-three).
-
-`default_rule` is a read-only, lazily-materialized `SingleRule` view of
-that policy -- `target` is the policy's constant label (a bare label, or
-a `DefaultPrediction`'s `constant_target`), or `None` for a `None` policy
-or a non-constant strategy. Being a real `SingleRule`, it carries its own
-`stats`/`provenance` like any other rule. Reassigning `default_prediction`
-discards the materialized rule and its stats.
+### Printing a model
 
 `to_string(fmt=None, ascii=False, data=None)` renders a whole model,
 applying one resolved format (explicit `fmt=`, else `Rule.DEFAULT_FORMAT`)
-to *every* rule, regardless of any individual rule's own `default_fmt` --
-this is what keeps a printed model internally consistent even when its
+to *every* rule, regardless of any individual rule's own `default_fmt`.
+This is what keeps a printed model internally consistent even when its
 rules weren't all built with the same `default_fmt`. Structure differs by
 family:
+
 - `RuleSet` (`FlatRuleSet`/`ConceptModel`/`DisjointRuleSet`/`ConceptSet`)
   groups rules by target label, each section headed by `% class:
   <target>`. For `fmt="logic"`, a label's rules collapse into one DNF
@@ -369,56 +460,341 @@ family:
   `RuleList` output, or the pseudocode's own `else` line for `RuleList` +
   `fmt="logic"`.
 
-One optional decoration -- there is no `show_weight` flag: a
-`WeightedRule` already renders its own weight natively, in every format,
-so wrap a rule as one if you want that shown:
-- `data=<a DataRepresentation>` suffixes every rule with a trailing
-  `% (n_covered/n_errors) [n_unique_covered/n_unique_errors]` comment,
-  computed *fresh* against it (no separate annotation call needed first)
-  -- the classic C4.5/RIPPER "(covered/errors)" rule-quality notation (0
-  errors reads as a perfect rule), with a second bracket for this
-  library's own unique-coverage extension (rows this rule -- and no
-  other same-target rule in an unordered model, or no *earlier* rule in
-  an ordered one -- covers). Error counts need labels (`data.y`) to
-  compute and a target to check correctness against; where either is
-  missing, just the bare counts: `% (n_covered) [n_unique_covered]`.
+A `WeightedRule` prints its weight as part of the rule: in front of it in
+the default Prolog format (`0.8::head :- body`), and appended in the other
+formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). The one optional
+decoration is `data=<a DataRepresentation>`, which suffixes every rule with
+a trailing
+`% (n_covered/n_errors) [n_unique_covered/n_unique_errors]` comment,
+computed *fresh* against it (no separate annotation call needed first).
+This is the classic C4.5/RIPPER "(covered/errors)" rule-quality notation (0
+errors reads as a perfect rule), with a second bracket for this library's
+own unique-coverage extension (rows this rule -- and no other same-target
+rule in an unordered model, or no *earlier* rule in an ordered one --
+covers). Error counts need labels (`data.y`) to compute and a target to
+check correctness against; where either is missing, just the bare counts:
+`% (n_covered) [n_unique_covered]`.
 
-`coverage_space(data, positive_class)` gives the classic (negatives
-covered, positives covered) coordinates for one-vs-rest analysis -- using
-the raw, order-independent coverage, the same for every type. `RuleList`
-additionally has `coverage_path(data, positive_class)`: the *cumulative*
-(negatives, positives) coverage as rules are tried in order, starting at
-`(0, 0)` -- point i is what's been decided after the first i rules, using
-each one's unique/fired coverage. `FlatRuleSet`/`ConceptSet`/
-`DisjointRuleSet` (any `RuleSet`) also have `to_rulelist(key=None,
-reverse=True)`, converting to an ordered `DecisionList` by
-`pyrulearn.evaluation.sort_rules` (default: descending
-Laplace-on-measured-stats -- pass `key=`/`reverse=` for another order).
+### Converting between model types
+
+`pyrulearn.models.convert(model, dst)` converts a model to another type when
+a direct converter exists (`can_convert(src, dst)` checks; there is no
+transitive closure, so chain converters explicitly). The registered ones:
+
+- `FlatRuleSet` to `DecisionList` -- adopts the insertion order, so
+  prediction changes from combiner resolution to first-match.
+- `FlatRuleSet` to `ConceptSet` -- groups the rules by head; with an
+  order-independent combiner, prediction is unchanged.
+- `ConceptSet` to `FlatRuleSet` -- drops the per-concept structure.
+- `ConceptCascade` to `DecisionList` -- prediction is preserved.
+- `EnsembleModel` to `FlatRuleSet` -- lossy: pools every member's rules under
+  one combiner (default `"vote"`), dropping the per-member grouping and any
+  member weights.
+
+Any `RuleSet` also has `to_rulelist(key=None, reverse=True)`, which orders
+its rules with `pyrulearn.evaluation.sort_rules` (default: descending
+Laplace-on-measured-stats -- pass `key=`/`reverse=` for another order) into
+a `DecisionList`.
+
+### Conflict resolution
+
+When several rules cover the same row, a `RuleSet` reconciles them with its
+`combiner` (a `RuleCombiner` in `pyrulearn.combiners`, or a string shortcut).
+Pass either the string shortcut or a `RuleCombiner` instance directly to the
+constructor, or override it per call via `predict(data, combiner=...)`.
+Omitted, `predict` falls back to the set's own `self.combiner` (settable at
+construction, itself defaulting to `"max"`), so a `RuleSet` built with a
+particular strategy keeps it without every `predict` call re-passing it.
+
+`RuleCombiner.resolve(rules, covering)` is the one abstract method
+(`covering`: non-empty indices into `rules`). `ListCombiner` and
+`CountVoteCombiner` stand alone; everything else falls under one of two
+intermediate bases, matching two different kinds of per-rule information a
+combiner can use:
+
+- `"list"` -- `ListCombiner`: rule position, i.e. list order.
+- `"vote"` -- `CountVoteCombiner`: plain, unweighted majority vote.
+- `HeuristicCombiner` -- scores a `RuleHeuristic` against each rule's own
+  measured stats (`SingleRule.stats()`'s `ConfusionMatrix`, rotated to the
+  rule's own target), computed fresh at combine time, not baked into the
+  model beforehand. Both take a `heuristic=` (default `Laplace()`):
+  - `"max"` -- `HeuristicMaxCombiner`: the classic ensemble "max rule",
+    which picks the single covering rule with the highest heuristic score.
+  - `HeuristicVoteCombiner`: majority vote across every covering rule, each
+    vote weighted by that rule's heuristic score.
+- `DistributionCombiner` -- for rules scored by a full per-class breakdown
+  rather than one scalar: each rule's own measured stats
+  (`ConfusionMatrix.predicted_as(rule.target)`, the true-label distribution
+  among the rows it actually fired on). Two independent axes give four
+  concrete combiners. *Which* per-rule numbers get used: `Micro` pools every
+  covering rule's raw counts (larger leaves count for more), `Macro`
+  normalizes each rule's own counts to proportions first (every rule counts
+  equally regardless of leaf size) -- the same micro/macro distinction used
+  for multi-class F1 scores. *How* the rules' numbers are combined: `Vote`
+  sums them (total support per class), `Max` takes the highest per class
+  across covering rules (the classic ensemble "max rule" in its full
+  per-class form, distinct from `HeuristicMaxCombiner`, which picks one whole
+  rule rather than comparing per class).
+  - `"micro_vote"` -- `MicroVoteCombiner`.
+  - `"macro_vote"` -- `MacroVoteCombiner`. **This is the one that matches
+    `sklearn.ensemble.RandomForestClassifier.predict()`'s own mechanism**:
+    each tree contributes one class-probability vector (its own leaf counts
+    normalized), averaged (equivalently, summed) across trees -- unlike every
+    `HeuristicCombiner`/`CountVoteCombiner`, which collapses each rule down
+    to a single hard vote/score before combining, discarding how confident a
+    leaf actually was.
+  - `"micro_max"` -- `MicroMaxCombiner`.
+  - `"macro_max"` -- `MacroMaxCombiner`.
+
+The distribution combiners are the ones to reach for when importing a whole
+random forest as one `FlatRuleSet`
+(`pyrulearn.interfaces.sklearn.RandomForestImporter`): each tree contributes
+one always-firing rule per example, so a k-tree forest always has exactly k
+covering rules, and combining across all of them is what actually reproduces
+the forest's own prediction (`MacroVoteCombiner` in particular matches
+sklearn's own soft-voting mechanism almost exactly).
+
+`HeuristicMaxCombiner`, `HeuristicVoteCombiner` and `DistributionCombiner`
+all **require** every covering rule to have measured stats when the covering
+rules genuinely disagree in target, and raise `ValueError` otherwise (an
+unmeasured rule contributing a silently wrong score is exactly the kind of
+quiet wrong answer this stats-based design exists to rule out). Annotate
+first: `pyrulearn.models.annotate_rules` (see *Statistics*, below), or a
+`fit()`/importer `data=` call, which already do. A *unanimous* covering block
+(every covering rule already agreeing on the target) never needs stats at all,
+as there is no actual disagreement to resolve. `DistributionCombiner` also
+raises if a covering rule has neither measured stats nor `class_counts` --
+there is no further fallback.
+
+Whether conflicts can occur at all is a check you can run: `is_disjoint(data)`
+is available on any `RuleModel`, not just `DisjointRuleSet`, so a plain
+`FlatRuleSet` can be checked *before* deciding whether it's safe to
+convert, not only verified after the fact. Disjointness isn't enforced at
+construction, the same way `Rule.is_consistent()` is a check you call, not a
+built-in guarantee.
+
+### Default predictions
+
+A model isn't necessarily *exhaustive*: some rows may match no rule.
+`is_exhaustive(data)` checks that against real data (like `is_disjoint`, on
+any `RuleModel`).
+
+Every `RuleModel` has a `default_prediction` (settable at construction or
+afterward), the *policy* for rows no rule in `self.rules` decides. It is one
+of:
+
+- a bare label -- `predict` returns it;
+- `None` -- abstain, `predict` returns `None`;
+- a `DefaultPrediction` object -- consulted per uncovered row via
+  `predict(rules, data, example_idx)`. This is not vectorized, so different
+  rows can genuinely get different fallbacks. `MajorityClass` (the built-in
+  one) resolves a fixed majority label at construction from a chosen row
+  subset; "predict via whichever rule is most similar to this row" would be
+  another.
+
+`filter`/`to_rulelist`/`remap` all carry the policy over unchanged, and so
+does `.provenance` (what built this model -- a `RuleLearner`/`RuleImporter`
+stamps it; narrowing/rebasing/repackaging doesn't change who built the
+rules, so it survives all three).
+
+`default_rule` is a read-only, lazily-materialized `SingleRule` view of that
+policy: its `target` is the policy's constant label (a bare label, or a
+`DefaultPrediction`'s `constant_target`), or `None` for a `None` policy or a
+non-constant strategy. Being a real `SingleRule`, it carries its own
+`stats`/`provenance` like any other rule. Reassigning `default_prediction`
+discards the materialized rule and its stats.
+
+### Explaining a prediction
 
 `RuleModel.covered_by(data, by=None)` returns, per row, every rule whose
-body holds, ordered as an explanation of the prediction -- the predicted
+body holds, ordered as an explanation of the prediction: the predicted
 label's block first, other labels' blocks after (each ordered by its
 strongest rule), rules within a block sorted by `by` (a per-rule key
-callable; default: descending Laplace on the rule's own *measured*
-stats -- raises if a genuine multi-rule block has a rule with none).
-Uncovered rows yield `[default_rule]` or `[]`. For a richer
-heuristic-based ranking (needing `data=` to score against), use
-`pyrulearn.evaluation.sort_rules(rules, by=<a RuleHeuristic>,
-data=data)` directly on `model.covered_by(data)`'s output, or as
-`covered_by`'s own `by=` argument.
+callable; default: descending Laplace on the rule's own *measured* stats --
+raises if a genuine multi-rule block has a rule with none). Uncovered rows
+yield `[default_rule]` or `[]`. For a richer heuristic-based ranking
+(needing `data=` to score against), use
+`pyrulearn.evaluation.sort_rules(rules, by=<a RuleHeuristic>, data=data)`
+directly on `model.covered_by(data)`'s output, or as `covered_by`'s own
+`by=` argument.
 
-`stats(data=None, split="data")` -- every `RuleModel` (down to each
-`SingleRule` leaf) can measure its own performance against `data`: a
-`pyrulearn.evaluation.ModelStats` snapshot (a `ConfusionMatrix` from
-`predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`), cached under
-`split` (pass a different `split` name, e.g. `"train"` then `"test"`, to
-keep several side by side). `pyrulearn.models.annotate_rules(rules,
-data)` wraps a plain rule list and stats each one against `data` in one
-call -- what every native learner and importer `fit()`/`data=` round trip
-already does, so combiners/`sort_rules`/`covered_by` have real measured
-stats to score from.
+### Statistics
 
-### Coverage-space plotting
+`stats(data=None, split="data")`: every `RuleModel` (down to each
+`SingleRule` leaf) can measure its own performance against `data`. It
+returns a `pyrulearn.evaluation.ModelStats` snapshot (a `ConfusionMatrix`
+from `predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`), cached
+under `split` (pass a different `split` name, e.g. `"train"` then
+`"test"`, to keep several side by side).
+
+`pyrulearn.models.annotate_rules(rules, data)` wraps a plain rule list and
+stats each one against `data` in one call. This is what every native
+learner and importer `fit()`/`data=` round trip already does, so
+combiners/`sort_rules`/`covered_by` have real measured stats to score from.
+
+### Rule-evaluation heuristics
+
+`RuleHeuristic` (in `pyrulearn.heuristics`) is a pluggable rule-quality
+score, evaluated against `RuleStats` -- the confusion-matrix quartet
+`tp`/`fp`/`fn`/`tn` (treating "covers" as "predicts positive"), plus
+optional `length` and `parent` -- rather than positional args, so adding
+a new stat later doesn't force every heuristic's signature to change.
+`length`/`parent` deliberately aren't part of `Rule` itself: they're
+heuristic-search context (a bare rule has no inherent notion of its own
+refinement history), not coverage information, which is why `RuleStats`
+lives here rather than in `pyrulearn.rule`.
+
+```python
+class RuleHeuristic(ABC):
+    @abstractmethod
+    def score(self, stats: RuleStats) -> float: ...   # higher = more preferred
+    def score_rule(self, rule, data, positive_class=None) -> float: ...  # convenience
+```
+
+Every heuristic follows the same "higher = more preferred" convention,
+so any of them can be dropped in as a ranking key without the caller
+caring which one is active -- `Rule.order_by_precision`'s greedy
+criterion is one hardcoded instance of this general idea. `pyrulearn.
+evaluation.sort_rules(rules, by=None, data=None, descending=True)` is
+the general-purpose consumer: `by=None` ranks by descending
+Laplace-on-measured-stats (the same default `HeuristicMaxCombiner`
+uses), a `RuleHeuristic` scores fresh against `data` (unless
+`needs_data` is `False`, e.g. `MinimalLength`), or pass a plain callable.
+`RuleStats.from_rule(rule, data, positive_class=None, example_mask=None)`
+computes `tp`/`fp`/`fn`/`tn` from a rule's actual coverage
+(`positive_class` defaulting to `rule.target`) and `length` from
+`rule.length()`. A gain-style heuristic needing a *parent* rule's stats
+too (see `GainHeuristic`, below) just calls this a second time on the
+parent rule -- there's no dedicated parameter for it here.
+
+Built in (all in `pyrulearn.heuristics`). The four confusion-matrix quadrant
+counts ("covered/uncovered" x "positives/negatives"); the sign follows whether
+the quadrant is a correct outcome (`CoveredPositives`/`UncoveredNegatives`,
+scored directly) or an error (`CoveredNegatives`/`UncoveredPositives`,
+negated), so more of it is never accidentally "better":
+
+- `CoveredPositives` -- tp alone; ignores fp entirely.
+- `CoveredNegatives` -- -fp alone; ignores tp entirely.
+- `UncoveredPositives` -- -fn.
+- `UncoveredNegatives` -- tn.
+
+Precision-like heuristics:
+
+- `Precision` -- tp/(tp+fp); also called Confidence in association-rule-mining
+  terminology.
+- `Recall` -- tp/n_pos, a.k.a. sensitivity/TPR/hit rate. `CoveredPositives`'s
+  own rate-normalized twin (the same relationship `Support` has to
+  `Coverage`); not to be confused with raw `CoveredPositives`, a count, not a
+  rate.
+- `FBeta(beta=1.0)` -- the weighted harmonic mean of `Precision` and `Recall`;
+  `beta=1`, the default, is the standard F1 score, weighing them equally,
+  `beta<1` favors precision, `beta>1` favors recall. Rewritten as
+  `(1+beta**2)*tp / (tp+fp+beta**2*n_pos)`, its isometrics turn out to be a
+  pencil pivoting at `(-beta**2*n_pos, 0)`, the same fp-axis sub-family as
+  `GHeuristic`, just tied to the dataset's actual class balance instead of a
+  free constant.
+- `Laplace` -- Laplace-smoothed precision.
+- `MEstimate(m)` -- generalizes `Precision` at m=0, pulled toward the prior
+  positive rate as m grows. Isometrics: a pencil pivoting at
+  `(-m*(1-p0), -m*p0)`.
+- `GeneralizedMEstimate(m, cost)` -- replaces `MEstimate`'s prior `p0` with a
+  free `cost` parameter (`MEstimate(m)` is exactly
+  `GeneralizedMEstimate(m, cost=p0)`); freeing `cost` lets the pivot land
+  anywhere on the line `fp+tp=-m`, not just at the single point the dataset's
+  own prior would put it.
+- `GHeuristic(g)` -- Gamberger & Lavrač's expert-guided subgroup discovery "g
+  heuristic", used in CN2-SD: tp/(fp+g), where `g` is meant to be a positive
+  constant; larger `g` tolerates more covered negatives, favoring more
+  general rules.
+
+Accuracy-, coverage- and cost-style heuristics:
+
+- `WRAcc` -- weighted relative accuracy.
+- `YoudenJ` -- Youden's J statistic (Youden, 1950), tpr - fpr =
+  tp/n_pos - fp/n_neg; an alternative to `WRAcc` that trades off true/false
+  positive *rates* rather than raw coverage-weighted counts. Also known as
+  informedness, the vertical distance above the random-guess diagonal in ROC
+  space.
+- `Accuracy`.
+- `CoverageDifference` -- tp - fp; ranks identically to `Accuracy` (same
+  isometrics) but skips the normalizing division, so prefer it when only
+  relative order matters and `Accuracy` when the actual percentage does. Also
+  exactly `LinearCost(cost_ratio=1.0)`, kept as its own name for
+  discoverability.
+- `Support` -- coverage rate, ignoring purity.
+- `Coverage` -- tp + fp; the unnormalized version of `Support`, the same
+  relationship `CoverageDifference` has to `Accuracy`.
+- `LinearCost(cost_ratio=1.0)` -- tp - cost_ratio*fp.
+- `LinearCostRates(cost_ratio=1.0)` -- tpr - cost_ratio*fpr; the rate-space
+  counterpart to `LinearCost`, the same way `YoudenJ` is to
+  `CoverageDifference` (`YoudenJ` is exactly `LinearCostRates(cost_ratio=1.0)`).
+
+Statistical and information-theoretic heuristics:
+
+- `Correlation` -- FOSSIL's four-field/Matthews correlation coefficient
+  between "rule covers this example" and "example is positive",
+  `(tp*tn - fp*fn) / sqrt((tp+fp)(tp+fn)(fp+tn)(fn+tn))`, in `[-1, 1]`.
+- `ChiSquare` -- Pearson's chi-square statistic for the same 2x2 table
+  (`n * phi**2`, optionally Yates-corrected); CMAR's significance test.
+- `Entropy` -- CN2's original heuristic: the *negated* binary entropy of the
+  covered class distribution, `p*log2(p) + (1-p)*log2(1-p)` with
+  `p = tp/(tp+fp)`. Negated so a pure rule scores 0, the best, and an even
+  50/50 split scores -1 bit, the worst, matching this module's convention
+  where CN2 itself minimizes plain entropy directly.
+- `LikelihoodRatio` -- CN2's significance-testing statistic: the G-test /
+  log-likelihood-ratio comparing a rule's covered class counts against what
+  the dataset's prior alone would predict, `2*(tp*ln(tp/e_tp) + fp*ln(fp/e_fp))`
+  with `e_tp`/`e_fp` the prior-implied expected counts. Higher means further
+  from chance, already matching the higher-is-better convention with no sign
+  flip.
+
+Heuristics that read past `tp`/`fp`/`fn`/`tn`, or compose others:
+
+- `LengthPenalized(base, penalty)` -- wraps another heuristic and subtracts
+  `penalty * stats.length` (a simple Occam's-razor-style complexity penalty).
+- `MinimalLength` -- `-length`: shorter rules score higher. Meant purely as a
+  lexicographic tie-break inside a `LEF`, not as a heuristic on its own.
+- `LEF` -- Michalski's Lexicographic Evaluation Functional (AQ): an ordered
+  list of heuristics, where the first one decides unless it ties. It is itself
+  a `RuleHeuristic`, so it works anywhere one is expected.
+- `FoilGain` -- Quinlan's information gain, `tp * (log2(tp/(tp+fp)) -
+  log2(parent.tp/(parent.tp+parent.fp)))`, the one built-in `GainHeuristic`.
+- `DeltaGain(base)` -- turns any ordinary heuristic into a `GainHeuristic`:
+  scores a refinement by how much `base`'s own score improved relative to its
+  parent.
+
+A `GainHeuristic`'s `score(stats, parent_stats)` takes the parent rule's
+`RuleStats` as a *mandatory second argument*, not an optional field read off
+`stats`: a gain score is only meaningful relative to one specific parent, not
+on a shared scale comparable across different parents/search steps, so a
+caller needs to know it's holding a `GainHeuristic` (`isinstance(heuristic,
+GainHeuristic)`) and supply the parent explicitly; calling
+`FoilGain().score(stats)` with one argument raises `TypeError`.
+`RuleStats.universal(n_pos, n_neg)`/`RuleStats.empty(n_pos, n_neg)` give the
+"covers everyone"/"covers no one" degenerate stats directly from a dataset's
+totals, without needing an actual `Rule` on hand -- the natural parent when
+there's no specific prior refinement to compare against, e.g. for
+`RuleHeuristic.plot_isometrics`'s `parent=` argument, below.
+
+How heuristics differ geometrically -- whether their isometrics (curves of
+constant score in coverage space) are a pencil of lines, parallel lines, or
+curves -- is described under *Isometrics* in *Coverage space*, below.
+
+### Coverage space
+
+Rules and rule models can be analysed in coverage space (Fürnkranz & Flach,
+2005): a rule is a point (negatives covered, positives covered), so a rule
+set, a decision list or a single rule's refinement can be read off a plot.
+Every `RuleModel` gives the coordinates, and `pyrulearn.evaluation` adds the
+plots and the convex-hull AUC:
+
+- `coverage_space(data, positive_class)` gives the classic (negatives
+  covered, positives covered) coordinates for one-vs-rest analysis, using
+  the raw, order-independent coverage, the same for every type.
+- `RuleList.coverage_path(data, positive_class)` gives the *cumulative*
+  (negatives, positives) coverage as rules are tried in order, starting at
+  `(0, 0)`: point i is what's been decided after the first i rules, using
+  each one's unique/fired coverage.
 
 `coverage_space_plot(ruleset, data, positive_class)` (in
 `pyrulearn.evaluation`) adapts to the classifier type: a `RuleSet` is drawn
@@ -460,7 +836,46 @@ remaining condition gives the highest precision *in combination with*
 what's already chosen) if the rule doesn't already have one --
 `Rule.reorder(...)` sets one explicitly instead.
 
-### CoverageSpace: layering heuristics, rulesets, and refinement paths
+#### Isometrics: pencil, parallel and curved
+
+An *isometric* is a curve of constant heuristic score in coverage space
+(`RuleHeuristic.plot_isometrics`, below, draws them), and its shape sorts the
+heuristics into three groups (see Fürnkranz & Flach, *"ROC 'n' Rule
+Learning"*, Machine Learning 2005, for the full analysis). In their
+terminology the isometrics of the first two groups, pencil and parallel, are
+both *linear* (straight lines), and those of the third are *non-linear*.
+
+- **Pencil: straight lines through a common pivot point.** `Precision`,
+  `Laplace`, `MEstimate`, `GeneralizedMEstimate`, `GHeuristic` and `FBeta`.
+  The pivot is the origin for `Precision`, `(-1,-1)` for `Laplace`, a
+  prior-dependent sliding point on the line `fp+tp=-m` for `MEstimate`
+  (freely placeable on that same line via `GeneralizedMEstimate`'s `cost`
+  parameter), `(-g, 0)` on the fp-axis for `GHeuristic`, and
+  `(-beta**2*n_pos, 0)`, also on the fp-axis, for `FBeta`. Because the lines
+  are not parallel, these heuristics can prefer a lucky low-coverage rule
+  over a robust one. `Entropy` belongs here too -- same pivot as `Precision`
+  (it also depends only on `p = tp/(tp+fp)`, constant along any ray from the
+  origin) -- but each score value is a symmetric *pair* of rays, not one:
+  `h(p) == h(1-p)`, so entropy alone can't tell a 90%-positive rule from a
+  90%-*negative* one apart.
+- **Parallel: parallel lines.** `CoveredPositives`, `CoveredNegatives`,
+  `UncoveredPositives`, `UncoveredNegatives`, `Recall`, `WRAcc`, `Accuracy`,
+  `CoverageDifference`, `Support`, `Coverage`, `LinearCost`, `YoudenJ` and
+  `LinearCostRates`. `CoveredPositives`/`CoveredNegatives` are this group's
+  two degenerate limits, horizontal/vertical, i.e. zero weight on the other
+  variable, with `UncoveredPositives`/`UncoveredNegatives` in the same two
+  groups, just affine-shifted by the constant `n_pos`/`n_neg`; `Recall` is
+  `CoveredPositives`'s rate-normalized twin. A rule is optimal for *some* such
+  heuristic if and only if it lies on `coverage_space_plot`'s convex hull.
+- **Curved (non-linear).** `Correlation` (hyperbolic isometrics) and
+  `LikelihoodRatio` (isometrics that bow away from the origin, since it
+  depends on absolute covered counts, not just their ratio); and `FoilGain`,
+  which, once made plottable via a fixed `parent`, isn't even a single smooth
+  curve -- its `tp *` factor can make a low-tp, low-precision point score the
+  same as a higher-tp, higher-precision one, producing a visibly non-convex,
+  "hooked" isometric.
+
+#### CoverageSpace: layering heuristics, rulesets, and refinement paths
 
 `coverage_space_plot`/`rule_refinement_plot` are thin, standalone-figure
 wrappers around `CoverageSpace` (also in `pyrulearn.evaluation`) -- the
@@ -542,7 +957,7 @@ hyperbolic curves -- and, empirically, that `Entropy`'s isometrics are
 *also* a pencil through the origin (same pivot as `Precision`), just
 with each score value split into a symmetric pair of rays, and that
 `FoilGain`'s (with a fixed parent) aren't even a single smooth curve
-(see the heuristics section above). See `examples/demo_heuristics.py`
+(see *Isometrics*, above). See `examples/demo_heuristics.py`
 for all of this in practice, including layering `Precision`/`Accuracy`
 isometrics under a rule's own refinement path.
 
@@ -559,227 +974,197 @@ positive_class)` -- sized to the real data the rule was scored against,
 not the dataset-agnostic default. Both accept the same styling `**kwargs`
 as `plot_isometrics` (they're built on it).
 
-## Combining rules
+## Learning algorithms
 
-`RuleCombiner` (in `pyrulearn.combiners`) is what `RuleSet.predict`
-consults for an example covered by more than one rule. `ListCombiner`
-(rule position) and `CountVoteCombiner` (plain, unweighted majority
-vote) stand alone; everything else falls under one of two intermediate
-bases, matching two different kinds of per-rule information a combiner
-can use:
+`RuleLearner` (in `pyrulearn.learners`) is the shared entry point for
+running a comparative experiment across several rule-learning
+algorithms without the driver caring which is which:
 
 ```python
-class RuleCombiner(ABC):
-    @abstractmethod
-    def resolve(self, rules, covering) -> Any: ...   # covering: non-empty indices into rules
-
-class HeuristicCombiner(RuleCombiner): ...       # scores a RuleHeuristic against each rule's own measured stats
-class DistributionCombiner(RuleCombiner): ...    # reads each rule's full per-class distribution
+class RuleLearner(ABC):
+    def fit(self, data: DataRepresentation, model: Optional[type] = None, **model_kwargs) -> RuleModel: ...
 ```
 
-**`HeuristicCombiner`** -- `HeuristicMaxCombiner` (the classic ensemble
-"max rule": pick the single covering rule with the highest heuristic
-score) and `HeuristicVoteCombiner` (majority vote across every covering
-rule, each one's vote weighted by its heuristic score). Both take a
-`heuristic=` (default `Laplace()`) and score each covering rule by
-running it against `SingleRule.stats()`'s measured `ConfusionMatrix`
-(rotated to the rule's own target) -- computed fresh at combine time,
-not baked into the model beforehand. Every covering rule **must** have
-measured stats when the covering rules genuinely disagree in target --
-`ValueError` otherwise (an unmeasured rule contributing a silently wrong
-score is exactly the kind of quiet wrong answer this stats-based design
-exists to rule out); annotate first (`pyrulearn.models.annotate_rules`,
-or a `fit()`/importer `data=` call, which already do). A *unanimous*
-covering block (every covering rule already agreeing on the target)
-never needs stats at all -- there's no actual disagreement to resolve.
+**`ExternalRuleLearner`** -- runs an external algorithm (e.g. a
+scikit-learn estimator) on `data`'s data, then hands the
+fitted model to an existing `ObjectRuleImporter` (declared via the
+`IMPORTER` class attribute) to convert it into rules. This is
+deliberately *not* a second hierarchy parallel to `RuleImporter`: a
+learner reuses its importer's rule-extraction logic via composition
+rather than duplicating it, and lives in the *same file* as that
+importer -- `pyrulearn.interfaces.sklearn.DecisionTree`/
+`RandomForest` sit right next to `SklearnTreeImporter`/
+`RandomForestImporter`. So adding support for one more external
+algorithm means adding one file (or, if its importer already exists,
+one small class in it) -- never two separately registered/maintained
+class hierarchies to keep in sync.
 
-**`DistributionCombiner`** -- for rules scored by a full per-class
-breakdown rather than one scalar: each rule's own measured stats
-(`ConfusionMatrix.predicted_as(rule.target)` -- the true-label
-distribution among the rows it actually fired on). Raises `ValueError`
-if a rule has none -- annotate first, same as `HeuristicCombiner`. Two
-independent axes give four concrete combiners:
-- **which** per-rule numbers get used: `Micro` pools every covering
-  rule's *raw* counts (larger leaves count for more), `Macro`
-  normalizes each rule's own counts to proportions first (every rule
-  counts equally regardless of leaf size) -- the same micro/macro-
-  averaging distinction used for multi-class F1 scores.
-- **how** several rules' numbers get combined: `Vote` sums them (total
-  support per class), `Max` takes the highest per class across covering
-  rules (the classic ensemble "max rule", in its full per-class form --
-  distinct from `HeuristicMaxCombiner`, which picks one whole rule
-  rather than comparing per class).
-
-Giving `MicroVoteCombiner`, `MacroVoteCombiner`, `MicroMaxCombiner`,
-`MacroMaxCombiner`. **`MacroVoteCombiner` is the one that matches
-`sklearn.ensemble.RandomForestClassifier.predict()`'s own mechanism**:
-each tree contributes one class-probability vector (its own leaf counts
-normalized), averaged (equivalently, summed) across trees -- unlike
-every `HeuristicCombiner`/`CountVoteCombiner`, which collapses each
-rule down to a single hard vote/score before combining, discarding how
-confident a leaf actually was. Like `HeuristicCombiner`, raises
-`ValueError` on a genuine disagreement if a covering rule has neither
-measured stats nor `class_counts` -- no further fallback.
-
-`RuleSet.predict`'s `combiner=` argument accepts either a `RuleCombiner`
-instance or a string shortcut: `"list"`, `"max"` (`HeuristicMaxCombiner`),
-`"vote"` (`CountVoteCombiner`), `"micro_vote"`/`"macro_vote"`/`"micro_max"`/
-`"macro_max"` (`DistributionCombiner`'s four). Omitted, it falls back to
-the set's own `self.combiner` (settable at construction, itself
-defaulting to `"max"`) — so a `RuleSet` built with a particular
-combination strategy keeps it without every `predict` call re-passing it.
-
-## Rule-evaluation heuristics
-
-`RuleHeuristic` (in `pyrulearn.heuristics`) is a pluggable rule-quality
-score, evaluated against `RuleStats` -- the confusion-matrix quartet
-`tp`/`fp`/`fn`/`tn` (treating "covers" as "predicts positive"), plus
-optional `length` and `parent` -- rather than positional args, so adding
-a new stat later doesn't force every heuristic's signature to change.
-`length`/`parent` deliberately aren't part of `Rule` itself: they're
-heuristic-search context (a bare rule has no inherent notion of its own
-refinement history), not coverage information, which is why `RuleStats`
-lives here rather than in `pyrulearn.rule`.
+Breaks down into three named steps: `prepare` (converts a
+`DataRepresentation` into the algorithm's own native input format; default
+is `data.X` as-is, right for most estimators) -> `fit_external` (calls the
+algorithm) -> `import_model`, bound to the *existing* `DataSpec` (no new
+features, just lookups). `fit(data)` composes them automatically and is the
+only method most callers need. Concrete subclasses implement `fit_external`
+(required) and `prepare` (only if the native format genuinely differs from
+`data.X`).
 
 ```python
-class RuleHeuristic(ABC):
-    @abstractmethod
-    def score(self, stats: RuleStats) -> float: ...   # higher = more preferred
-    def score_rule(self, rule, data, positive_class=None) -> float: ...  # convenience
+from pyrulearn.interfaces.sklearn import DecisionTree, RandomForest
+
+learners = [
+    DecisionTree(max_depth=4, random_state=0),
+    RandomForest(n_estimators=10, max_depth=4, random_state=0),
+]
+for learner in learners:
+    rules = learner.fit(train_rep)   # DisjointRuleSet or RuleSet, depending on the algorithm
+    print(type(rules).__name__, len(rules), "rules")
 ```
 
-Every heuristic follows the same "higher = more preferred" convention,
-so any of them can be dropped in as a ranking key without the caller
-caring which one is active -- `Rule.order_by_precision`'s greedy
-criterion is one hardcoded instance of this general idea. `pyrulearn.
-evaluation.sort_rules(rules, by=None, data=None, descending=True)` is
-the general-purpose consumer: `by=None` ranks by descending
-Laplace-on-measured-stats (the same default `HeuristicMaxCombiner`
-uses), a `RuleHeuristic` scores fresh against `data` (unless
-`needs_data` is `False`, e.g. `MinimalLength`), or pass a plain callable.
-`RuleStats.from_rule(rule, data, positive_class=None, example_mask=None)`
-computes `tp`/`fp`/`fn`/`tn` from a rule's actual coverage
-(`positive_class` defaulting to `rule.target`) and `length` from
-`rule.length()`. A gain-style heuristic needing a *parent* rule's stats
-too (see `GainHeuristic`, below) just calls this a second time on the
-parent rule -- there's no dedicated parameter for it here.
+An algorithm can also be fit directly on its own raw, un-pre-binarized
+input (numeric, already-encoded categorical, or a mix -- whatever sklearn
+itself was trained on; no threshold cap chosen ahead of time), with no
+`DataSpec` yet: call `fit_external` yourself, discover a `DataSpec` from the
+fitted model (`ObjectRuleImporter.infer_dataspec`, see below), then
+`import_model` against it, this time actually adding features as they're
+found:
 
-Built in: `CoveredPositives` (tp alone -- ignores fp entirely),
-`CoveredNegatives` (-fp alone -- ignores tp entirely),
-`UncoveredPositives` (-fn), and `UncoveredNegatives` (tn) -- the four
-confusion-matrix quadrant counts, "covered/uncovered" x
-"positives/negatives"; sign follows whether the quadrant is a correct
-outcome (`CoveredPositives`/`UncoveredNegatives`, scored directly) or
-an error (`CoveredNegatives`/`UncoveredPositives`, negated) so more of
-it is never accidentally "better"; `Precision`
-(tp/(tp+fp) -- also called Confidence in association-rule-mining
-terminology), `Recall` (tp/n_pos, a.k.a. sensitivity/TPR/hit rate --
-`CoveredPositives`'s own rate-normalized twin, the same relationship
-`Support` has to `Coverage`; not to be confused with raw
-`CoveredPositives`, a count, not a rate),
-`FBeta(beta=1.0)` (the weighted harmonic mean of `Precision` and
-`Recall`; `beta=1`, the default, is the standard F1 score, weighing
-them equally, `beta<1` favors precision, `beta>1` favors recall --
-rewritten as `(1+beta**2)*tp / (tp+fp+beta**2*n_pos)`, its isometrics
-turn out to be a pencil pivoting at `(-beta**2*n_pos, 0)`, the same
-fp-axis sub-family as `GHeuristic`, just tied to the dataset's actual
-class balance instead of a free constant),
-`Laplace` (Laplace-smoothed precision), `MEstimate(m)`
-(generalizes `Precision` at m=0, pulled toward the prior positive rate
-as m grows -- isometrics: a pencil pivoting at `(-m*(1-p0), -m*p0)`),
-`GeneralizedMEstimate(m, cost)` (replaces `MEstimate`'s prior `p0` with
-a free `cost` parameter -- `MEstimate(m)` is exactly
-`GeneralizedMEstimate(m, cost=p0)`; freeing `cost` lets the pivot land
-anywhere on the line `fp+tp=-m`, not just at the single point the
-dataset's own prior would put it), `GHeuristic(g)` (Gamberger & Lavrač's expert-guided
-subgroup discovery "g heuristic", used in CN2-SD: tp/(fp+g), where `g`
-is meant to be a positive constant; larger `g` tolerates more covered
-negatives, favoring more general rules), `WRAcc` (weighted relative
-accuracy), `YoudenJ`
-(Youden's J statistic (Youden, 1950), tpr - fpr = tp/n_pos - fp/n_neg --
-an alternative to `WRAcc` that trades off true/false positive *rates*
-rather than raw coverage-weighted counts; also known as informedness,
-the vertical distance above the random-guess diagonal in ROC space),
-`Accuracy`,
-`CoverageDifference` (tp - fp -- ranks identically to `Accuracy`, same
-isometrics, but skips the normalizing division, so prefer it when only
-relative order matters and `Accuracy` when the actual percentage does;
-also exactly `LinearCost(cost_ratio=1.0)`, kept as its own name for
-discoverability), `Support` (coverage rate, ignoring purity), `Coverage`
-(tp + fp -- the unnormalized version of `Support`, same relationship
-`CoverageDifference` has to `Accuracy`), `LinearCost(cost_ratio=1.0)`
-(tp - cost_ratio*fp), `LinearCostRates(cost_ratio=1.0)` (tpr -
-cost_ratio*fpr -- the rate-space counterpart to `LinearCost`, the same
-way `YoudenJ` is to `CoverageDifference`; `YoudenJ` is exactly
-`LinearCostRates(cost_ratio=1.0)`), `Correlation` (FOSSIL's four-field/
-Matthews correlation coefficient between "rule covers this example" and
-"example is positive", `(tp*tn - fp*fn) / sqrt((tp+fp)(tp+fn)(fp+tn)(fn+tn))`,
-in `[-1, 1]`), `Entropy` (CN2's original heuristic: the *negated* binary
-entropy of the covered class distribution, `p*log2(p) + (1-p)*log2(1-p)`
-with `p = tp/(tp+fp)` -- negated so a pure rule scores 0, the best, and
-an even 50/50 split scores -1 bit, the worst, matching this module's
-convention where CN2 itself minimizes plain entropy directly),
-`LikelihoodRatio` (CN2's significance-testing statistic: the G-test/
-log-likelihood-ratio comparing a rule's covered class counts against
-what the dataset's prior alone would predict, `2*(tp*ln(tp/e_tp) +
-fp*ln(fp/e_fp))` with `e_tp`/`e_fp` the prior-implied expected counts --
-higher means further from chance, already matching the higher-is-better
-convention with no sign flip), and two that read past `tp`/`fp`/`fn`/`tn`:
-`LengthPenalized(base, penalty)`, which wraps another heuristic and
-subtracts `penalty * stats.length` (a simple Occam's-razor-style
-complexity penalty), and `FoilGain` (Quinlan's information gain, `tp *
-(log2(tp/(tp+fp)) - log2(parent.tp/(parent.tp+parent.fp)))`). `FoilGain`
-is the one built-in `GainHeuristic`: its `score(stats, parent_stats)`
-takes the parent rule's `RuleStats` as a *mandatory second argument*,
-not an optional field read off `stats` -- a gain score is only
-meaningful relative to one specific parent, not on a shared scale
-comparable across different parents/search steps, so a caller needs to
-know it's holding a `GainHeuristic` (`isinstance(heuristic,
-GainHeuristic)`) and supply the parent explicitly; calling
-`FoilGain().score(stats)` with one argument raises `TypeError`.
-`RuleStats.universal(n_pos, n_neg)`/`RuleStats.empty(n_pos, n_neg)` give
-the "covers everyone"/"covers no one" degenerate stats directly from a
-dataset's totals, without needing an actual `Rule` on hand -- the
-natural parent when there's no specific prior refinement to compare
-against, e.g. for `RuleHeuristic.plot_isometrics`'s `parent=` argument,
-below.
+```python
+from pyrulearn.interfaces.sklearn import DecisionTree, SklearnTreeImporter
 
-Most fall into one of two families (see Fürnkranz & Flach, *"ROC 'n'
-Rule Learning"*, Machine Learning 2005, for the full analysis; use
-`RuleHeuristic.plot_isometrics`, below, to actually see them): `Precision`/
-`Laplace`/`MEstimate`/`GeneralizedMEstimate`/`GHeuristic`/`FBeta` are
-non-linear in `(tp, fp)` --
-their isometrics (curves of constant score) are a pencil of lines
-through a common pivot point (the origin, `(-1,-1)`, a prior-dependent
-sliding point on the line `fp+tp=-m` -- freely placeable on that same
-line via `GeneralizedMEstimate`'s `cost` parameter --, `(-g, 0)` on the
-fp-axis, or `(-beta**2*n_pos, 0)` also on the fp-axis, respectively),
-which is why they can
-prefer a lucky low-coverage rule over a robust one. `Entropy` belongs
-here too -- same pivot as `Precision` (it also depends only on
-`p = tp/(tp+fp)`, constant along any ray from the origin) -- but each
-score value is a symmetric *pair* of rays, not one: `h(p) == h(1-p)`, so
-entropy alone can't tell a 90%-positive rule from a 90%-*negative* one
-apart. `CoveredPositives`/`CoveredNegatives`/`UncoveredPositives`/
-`UncoveredNegatives`/`Recall`/`WRAcc`/`Accuracy`/
-`CoverageDifference`/`Support`/`Coverage`/`LinearCost`/`YoudenJ`/
-`LinearCostRates` are all linear -- isometrics
-are parallel lines (`CoveredPositives`/`CoveredNegatives` are this
-family's two degenerate limits, horizontal/vertical, i.e. zero weight
-on the other variable, with `UncoveredPositives`/`UncoveredNegatives`
-sitting in the same two families, just affine-shifted by the constant
-`n_pos`/`n_neg`; `Recall` is `CoveredPositives`'s rate-normalized
-twin) -- and a
-rule is optimal for *some* such heuristic if and only if it lies on
-`coverage_space_plot`'s convex hull. `Correlation` (hyperbolic
-isometrics) and `LikelihoodRatio` (isometrics that bow away from the
-origin, since it depends on absolute covered counts, not just their
-ratio) belong to neither family; `FoilGain`, once made plottable via a
-fixed `parent`, isn't even a single smooth curve -- its `tp *` factor
-can make a low-tp, low-precision point score the same as a higher-tp,
-higher-precision one, producing a visibly non-convex, "hooked" isometric.
+learner = DecisionTree(max_depth=4, random_state=0)
+model = learner.fit_external(X_raw, y, feature_names=["age", "income", "score"])
 
-## Importing external rule models
+importer = SklearnTreeImporter()
+ds = importer.infer_dataspec(model, feature_names=["age", "income", "score"])
+rules = importer.import_model(model, ds, feature_names=["age", "income", "score"])
+```
+
+`pyrulearn.interfaces.wittgenstein.IREP`/`RIPPERk` are the same
+idea, wrapping `wittgenstein.IREP`/`wittgenstein.RIPPER`. `pos_class` is
+required (pyrulearn never guesses which class is "positive"); `neg_class`
+is optional and, if omitted, auto-resolved from `data.y` when
+there's exactly one other label besides `pos_class` -- with more than
+one other label present (real multi-class, which wittgenstein itself
+doesn't support natively), `default_prediction` is left `None` unless
+`neg_class` is given explicitly:
+
+```python
+from pyrulearn.interfaces.wittgenstein import IREP, RIPPERk
+
+learners = [
+    IREP(pos_class="pos"),
+    RIPPERk(pos_class="pos", k=2, random_state=0),
+]
+for learner in learners:
+    rules = learner.fit(train_rep)  # RuleSet, default_prediction wired up automatically
+```
+
+**`NativeRuleLearner`** -- for a rule-induction algorithm implemented
+directly in pyrulearn (e.g. `pyrulearn.learners.seco`'s from-scratch Pypper/CN2/
+AQR, or `pyrulearn.learners.pylord.PyLORD`): `fit` induces straight against
+`data`, with no external algorithm call and no `RuleImporter`
+round-trip at all.
+
+### Multiclass classification
+
+Multiclass support is one `fit(data, model=...)` switcher
+(`pyrulearn.learners.DecomposingLearner`) shared by every learner family
+-- native (the SeCo family, `PyLORD`) and external alike
+(`RelabelingExternalLearner` -- sklearn's `DecisionTree`/`RandomForest`;
+`_WittgensteinLearner` -- wittgenstein's `IREP`/`RIPPERk`). `fit(data,
+model=ConceptSet | ConceptCascade | PairwiseModel)` decomposes into
+per-class binary sub-fits, each through the learner's own `_fit_binary`.
+`pyrulearn.learners.multiclass` wraps these three as thin sugar over the same
+calls, for the older call style or to bundle a `random_state`/non-default
+`combiner`:
+
+- `model=ConceptSet` (`OneVsRest(base_learner)`) — one `ConceptModel`
+  per class, pooled into a `ConceptSet`; `default_prediction =
+  MajorityClass(data)` (fires only for a row no class's rules cover),
+  `combiner = "max"`. Reassign either on the result.
+- `model=ConceptCascade, order="least_frequent"`
+  (`OrderedOneVsRest(base_learner, order=...)`) — peel the classes off
+  one at a time (`least_frequent` / `most_frequent` / `"random"` / an
+  explicit sequence): model c1 vs. the rest, then c2 vs. `{c3..cn}` on
+  the rows not yet peeled (`DataRepresentation.select_rows`), … the
+  last class becomes the cascade's catch-all `default_prediction`.
+  `least_frequent` (default) leaves the majority class as the catch-all
+  and tends to give the most compact list.
+- `model=PairwiseModel, positive="smaller"`
+  (`Pairwise(base_learner, positive=...)`) — one binary model per
+  unordered class pair ("round robin"; Fürnkranz, JMLR 2002), each
+  trained on just that pair's rows, `positive` picking the pair's
+  positive label: `"smaller"` (default) / `"larger"` / `"random"` /a
+  callable `f(a, b) -> pos`, or `"both"` (double round robin — one
+  model per *ordered* pair, `2·C(n,2)` models, so an asymmetric learner
+  gets a member for every class). At predict time each member votes and
+  a `PairwiseCombiner` (`pyrulearn.models`) turns the votes into a
+  label:
+  - `combiner="vote"` → `MajorityVote` — one hard vote per member;
+    `tie_break` `"direct"`/`"prior"`/`"first"`/callable.
+  - `combiner="weighted_vote"` → `WeightedVote` — the deciding rule's
+    weight `p_ij` (`Laplace` on its own *measured* stats, computed
+    fresh at predict time, 0.5 if it has none) goes to the predicted
+    label, `1 - p_ij` to the other (clamped to `[0, 1]`; pulled per row
+    via `covered_by`). Swap it onto an already-fitted model
+    (`pm.combiner = WeightedVote()`) --
+    no retraining, just re-predict. `WeightedVote` is a real gain when
+    per-rule reliability varies (`PyLORD`'s m-estimate scoring;
+    imprecise base learners on many-class sets) but roughly neutral
+    otherwise — `MajorityVote` stays the default.
+  - `combiner="accuracy_vote"` → `AccuracyWeightedVote` — same
+    `p_ij` / `1 - p_ij` split, but `p_ij` is the *member's* accuracy on
+    its own two-class sub-problem (one scalar per member, constant over
+    rows, recorded once at fit time as `PairwiseModel.member_weights`
+    by `DecomposingLearner._fit_pairwise`), so a cleaner pair pulls
+    harder -- also a no-retrain combiner swap.
+
+  `MajorityVote.scores()` / `WeightedVote.scores()` return a per-label
+  score vector, so the same aggregation feeds a future label-ranking
+  layer (argsort instead of argmax).
+
+The `SeCo` family reaches for this itself: `fit(data)` with no
+`target_class` and no `model=` builds each learner's own multi-class
+default (`_MULTICLASS_DEFAULT`) — `ConceptSet` (one-vs-rest) for
+`CN2`/`PFoil`/`PFossil`/`Pypper`, so `CN2().fit(iris_rep)` just works;
+`FlatRuleSet` for `AQR` (one seed-covering loop over all classes at
+once, each rule seeded on a random uncovered example and headed with
+its own label — AQ's multi-class covering, the same per-example seeding
+`PyLORD` does). Pass `model=ConceptCascade`/`PairwiseModel` explicitly
+for the other decompositions on any of them.
+
+## Interfacing with external learners
+
+An external learner is a two-way bridge. `fit(data)` first hands the
+`DataRepresentation` to the tool in the format it expects
+(`ExternalRuleLearner.prepare`, then `fit_external`), and then an importer
+reads the fitted model, or the tool's printed output, back as rules bound to
+the same `DataSpec`. This section covers both directions: first what each tool
+receives, then the importers.
+
+### What each tool receives
+
+| Package | Learner classes | Rules imported | What is handed over | Feature names |
+|---|---|---|---|---|
+| scikit-learn | `DecisionTree`, `RandomForest` | directly | `data.X` as-is: the Boolean feature matrix, in memory | not needed to fit; the importer binds the thresholds back to the `DataSpec` |
+| wittgenstein | `IREP`, `RIPPERk` | directly | `data.X` and the labels, in memory; binary only, so `pos_class` is required | the `DataSpec`'s own feature names |
+| imodels | `BayesianRuleList`, `BayesianRuleSet` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL); BRS refuses anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
+| Weka | `JRip`, `PART`, `J48` | by parsing text | an ARFF file in a temporary directory: every feature a `{False,True}` nominal attribute, plus a `class` column; run as `java -cp weka.jar <classifier> -t train.arff -no-cv` | placeholders `f0..fN` |
+| LORD | `LordJar` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
+| pyarc | `PyarcCBA` | directly | transactions (via `TransactionDB.from_DataFrame`) holding only each row's True features plus the class; False cells are dropped, which matches this library's own item semantics | placeholders `f0..fN` |
+
+Rules are imported either directly from the fitted model object (an
+`ObjectRuleImporter`) or by parsing text the tool printed or wrote (a
+`StringRuleImporter`); see *Importer base classes* and *Text formats*, below.
+
+Tools that can't cope with a `DataSpec`'s feature names (`age>=30`,
+`color=red`, ...) get the placeholders instead, and the matching importer is
+then created with `placeholder_features=True` so that the rules bind back to
+the real `DataSpec` by column position. Files are written to temporary
+directories that are removed after the run. The Weka and LORD runners can also
+be used on their own (`run_weka`, `run_lord`).
+
+### Importer base classes
 
 `RuleImporter` (in `pyrulearn.interfaces`) is the shared base for
 everything that brings rules into pyrulearn from an external source --
@@ -816,6 +1201,27 @@ display/constraints and object identity with the rest of the pipeline
 (no separate object to `remap` later, if you're already using one
 shared `DataSpec`).
 
+**`StringRuleImporter`** -- for a string/serialized rule format (RIPPER/JRip,
+CN2, FOIL, CBA/CMAR-style association rules, decision-list text dumps,
+...); named after the Python-level shape of the input, same as
+`ObjectRuleImporter` (`object` vs. `str`), so a hypothetical future
+importer of some other shape (e.g. an image) wouldn't be ambiguously
+grouped in with either. `pyrulearn.interfaces.base.PatternStringImporter`
+is the reference implementation -- one rule per line, a whitespace-/
+comma-separated pattern of 0/1/`-` tokens (`Rule.from_pattern_string`),
+where `1` at position i means feature i is a condition of the rule and
+`0`/`-` mean it is not (there is no "required-False" token any more --
+negation is its own feature), optionally followed by `=> target`:
+
+```python
+from pyrulearn import PatternStringImporter
+
+importer = PatternStringImporter(feature_names=["f0", "f1", "f2"])
+rules = importer.parse("1 - - => pos\n- 1 1 => neg\n")
+```
+
+### scikit-learn: decision trees and random forests
+
 `SklearnTreeImporter` extracts one `DecisionTreeClassifier`'s leaves as
 a `DisjointRuleSet` (a tree's leaves are pairwise disjoint by
 construction):
@@ -835,15 +1241,15 @@ hook -- see `pyrulearn.interfaces.base`): fit directly on *raw* numeric
 data and this discovers a `DataSpec` from the thresholds actually used,
 rather than requiring them fixed in advance by a separate discretizer.
 Pass `feature_names=` to `import_model` too when using a discovered
-`DataSpec` this way -- see `pyrulearn.learners`'s workflow-2 example,
-below.
+`DataSpec` this way -- see the raw-input example under *Learning
+algorithms*, above.
 
 `RandomForestImporter` extracts every tree's leaves from a
 `RandomForestClassifier` and combines them all into one flat `RuleSet`
 -- not a sequence of one `DisjointRuleSet` per tree. Each tree is
 individually exhaustive+disjoint, so a k-tree forest always has exactly
 k covering rules per example; `pyrulearn.combiners` is what turns that
-into forest-style prediction (see the combiners section above) -- either
+into forest-style prediction (see *Conflict resolution*, above) -- either
 `CountVoteCombiner` for hard voting (or `HeuristicVoteCombiner` for a
 heuristic-weighted one), or `MacroVoteCombiner` for soft voting straight
 from each leaf's own measured per-class distribution (requires
@@ -866,6 +1272,8 @@ rules = RandomForestImporter().import_model(fitted_forest, my_dataspec)
 my_rep = BooleanDataRepresentation(my_dataspec, X, y)
 preds = rules.predict(my_rep, combiner=MacroVoteCombiner())  # soft voting, ~matches sklearn
 ```
+
+### wittgenstein: IREP and RIPPER
 
 `IREPImporter`/`RIPPERImporter` (`pyrulearn.interfaces.wittgenstein`,
 an optional dependency -- only importing that module pulls in
@@ -902,10 +1310,10 @@ Use `IREP`/`RIPPERk` (below) instead of the bare importer to get that
 fallback wired up automatically from training labels.
 
 Fit on **raw** numeric/categorical columns and there are two ways to
-still get a correct conversion, same two workflows as
-`pyrulearn.interfaces.sklearn` (see `pyrulearn.learners`'s module docstring):
+still get a correct conversion, the same two as for
+`pyrulearn.interfaces.sklearn`:
 
-- **Workflow 1** -- binarize first, via `pyrulearn.data.io.
+- **Binarize first**, via `pyrulearn.data.io.
   build_dataspec`/`binarize` (the same pipeline the
   `RandomForestImporter` demo above uses), so wittgenstein only ever
   sees already-Boolean columns named after real `DataSpec` features
@@ -923,7 +1331,7 @@ still get a correct conversion, same two workflows as
   rules = RIPPERk(pos_class="pos").fit(rep)
   ```
 
-- **Workflow 2** -- fit directly on raw columns and let
+- **Fit on raw columns** directly and let
   `IREPImporter`/`RIPPERImporter.infer_dataspec` parse wittgenstein's
   *own* discretization/nominal output back into typed attributes: a
   bin-range `Cond` like `num_feat=0.53 - 0.84` becomes two `<=`-family
@@ -949,6 +1357,8 @@ still get a correct conversion, same two workflows as
   rules = importer.import_model(model, ds, feature_names=["age", "color"])
   ```
 
+### imodels: Bayesian rule lists and rule sets
+
 `BayesianRuleListImporter` (`pyrulearn.interfaces.imodels`, an
 optional dependency on `imodels`) extracts Letham et al.'s Bayesian
 Rule Lists from a fitted `imodels.BayesianRuleListClassifier` — and is
@@ -962,7 +1372,7 @@ No discretization wrinkle here, unlike wittgenstein: `imodels`' own
 `fit` *requires* strictly 0/1 input (it raises `"All numeric features
 must be discretized prior to fitting!"` otherwise) — exactly what a
 `BooleanDataRepresentation` already holds — so `infer_dataspec` is
-inherited unchanged and both workflows collapse to the same thing.
+inherited unchanged and both approaches collapse to the same thing.
 Confirmed directly (not just from the error message): a categorical
 column has to go through `build_dataspec`/`binarize`'s **one-hot**
 nominal encoding first, same as any numeric attribute — a raw string
@@ -1025,24 +1435,7 @@ from pyrulearn.interfaces.imodels import BayesianRuleSet
 rules = BayesianRuleSet(random_state=0, maxlen=3).fit(train_rep)   # a RuleSet
 ```
 
-**`StringRuleImporter`** -- for a string/serialized rule format (RIPPER/JRip,
-CN2, FOIL, CBA/CMAR-style association rules, decision-list text dumps,
-...); named after the Python-level shape of the input, same as
-`ObjectRuleImporter` (`object` vs. `str`), so a hypothetical future
-importer of some other shape (e.g. an image) wouldn't be ambiguously
-grouped in with either. `pyrulearn.interfaces.base.PatternStringImporter`
-is the reference implementation -- one rule per line, a whitespace-/
-comma-separated pattern of 0/1/`-` tokens (`Rule.from_pattern_string`),
-where `1` at position i means feature i is a condition of the rule and
-`0`/`-` mean it is not (there is no "required-False" token any more --
-negation is its own feature), optionally followed by `=> target`:
-
-```python
-from pyrulearn import PatternStringImporter
-
-importer = PatternStringImporter(feature_names=["f0", "f1", "f2"])
-rules = importer.parse("1 - - => pos\n- 1 1 => neg\n")
-```
+### weka: JRip, PART and J48
 
 `pyrulearn.interfaces.weka.JRipImporter` is a real, non-reference
 example of the shape: it parses `weka.classifiers.rules.JRip`'s printed
@@ -1163,308 +1556,48 @@ layout can produce a line reading as both a `` |   ``-indented node
 pos``) -- `parse` instead anchors explicitly on the `` J48 ... tree``
 header and its `` ---- `` divider before reading the tree body.
 
+### LORD: the reference implementation
+
+`pyrulearn.interfaces.lord` runs the Java implementation of LORD (Huynh,
+Fürnkranz & Beck, 2023; [vqphuynh/LORD](https://github.com/vqphuynh/LORD)) as
+a subprocess. `LordJar` is the `fit()` learner (`variant=` selects
+`run.LordRun`, `LordStarRun` or `LordLoopRun`; `metric=`/`metric_arg=` are
+LORD's `-mt`/`-ma`), `LORDImporter` parses the `eg_output.txt` it writes, and
+`run_lord` is the function that drives the jar. `classpath=` (else
+`$LORD_CLASSPATH`, or `$LORD_JAR` for a fat jar) and `java=` (else
+`$LORD_JAVA`) locate the build.
+
+The result is a `FlatRuleSet`: LORD predicts with the single covering rule
+with the highest metric value, so pass the same metric to
+`HeuristicMaxCombiner` if you want an identical ranking (its default is
+`Laplace`). LORD does not print its default class, so `fit` sets the
+training-majority class. A condition `(f3=0)` imports as a positive literal on
+the paired negation feature of `f3`, so the bound `DataSpec` must have
+negation features (`DataSpecBuilder`'s default). LORD is natively multi-class.
+
+### pyarc: CBA
+
+`pyrulearn.interfaces.pyarc.PyarcCBA` fits the external `pyarc` package's CBA
+and returns a `DecisionList`; `PyarcCBAImporter` reads an already-fitted
+`pyarc.CBA`. It is the reference that the native
+`pyrulearn.learners.associative.CBA` is cross-checked against, and a faster
+drop-in (the C library `fim` that `pyarc` mines with is roughly 10x faster than
+this package's pure-Python miner). Its defaults (`min_support=0.01`,
+`min_confidence=0.5`, `max_len=4`) mirror the native `CBA`'s, and `max_len`
+means the same in both (`pyarc`'s own `maxlen` also counts the class item,
+which `PyarcCBA` adjusts for); `algorithm=` picks `pyarc`'s `"m1"` (default)
+or `"m2"` classifier builder. `pyarc` needs Borgelt's `pyfim` C extension,
+which has no Windows wheels and must be built separately; importing the module
+needs neither.
+
+### Provenance of imported rules
+
 Either shape's `import_model`/`parse` should end by calling
 `self._stamp_rule_provenance(rules, **params)` and
 `self._stamp_provenance(model, **params)`, which give every produced
 rule (and the model itself) their own `Provenance(source=..., learner=...,
 params={...})` -- how you tell which base learner produced which rule
 once you're comparing many imported models from many sources at once.
-
-## Learning rules uniformly across algorithms
-
-`RuleLearner` (in `pyrulearn.learners`) is the shared entry point for
-running a comparative experiment across several rule-learning
-algorithms without the driver caring which is which:
-
-```python
-class RuleLearner(ABC):
-    def fit(self, data: DataRepresentation, model: Optional[type] = None, **model_kwargs) -> RuleModel: ...
-```
-
-**`ExternalRuleLearner`** -- runs an external algorithm (e.g. a
-scikit-learn estimator) on `data`'s data, then hands the
-fitted model to an existing `ObjectRuleImporter` (declared via the
-`IMPORTER` class attribute) to convert it into rules. This is
-deliberately *not* a second hierarchy parallel to `RuleImporter`: a
-learner reuses its importer's rule-extraction logic via composition
-rather than duplicating it, and lives in the *same file* as that
-importer -- `pyrulearn.interfaces.sklearn.DecisionTree`/
-`RandomForest` sit right next to `SklearnTreeImporter`/
-`RandomForestImporter`. So adding support for one more external
-algorithm means adding one file (or, if its importer already exists,
-one small class in it) -- never two separately registered/maintained
-class hierarchies to keep in sync.
-
-Breaks down into three named steps, matching two workflows (full
-rationale in `pyrulearn.learners`'s module docstring): **workflow 1**,
-starting from an existing `DataSpec` + already-Boolean data --
-`prepare` (converts a `DataRepresentation` into the algorithm's own
-native input format; default is `data.X` as-is, right for
-most estimators) -> `fit_external` (calls the algorithm) -> `import_model`
-bound to the *existing* `DataSpec` (no new features, just lookups) --
-composed automatically by `fit(data)`, the only method most
-callers need. **Workflow 2**, starting from data already in the
-algorithm's own native format with no `DataSpec` yet -- discover one
-directly from the fitted model (`ObjectRuleImporter.infer_dataspec`,
-see below) -> the *same* `fit_external` call, invoked directly (an
-algorithm doesn't care which workflow its input came from) ->
-`import_model(model, ds, feature_names=...)` against the
-just-discovered `DataSpec`, this time actually adding features as
-they're found. Concrete subclasses implement `fit_external` (required)
-and `prepare` (only if the native format genuinely differs from
-`data.X`).
-
-```python
-from pyrulearn.interfaces.sklearn import DecisionTree, RandomForest
-
-learners = [
-    DecisionTree(max_depth=4, random_state=0),
-    RandomForest(n_estimators=10, max_depth=4, random_state=0),
-]
-for learner in learners:
-    rules = learner.fit(train_rep)   # DisjointRuleSet or RuleSet, depending on the algorithm
-    print(type(rules).__name__, len(rules), "rules")
-```
-
-Workflow 2 -- fit directly on the tree's own raw, un-pre-binarized
-input (numeric, already-encoded categorical, or a mix -- whatever
-sklearn itself was trained on; no threshold cap chosen ahead of time)
-and discover the `DataSpec` afterward from what the tree actually used:
-
-```python
-from pyrulearn.interfaces.sklearn import DecisionTree, SklearnTreeImporter
-
-learner = DecisionTree(max_depth=4, random_state=0)
-model = learner.fit_external(X_raw, y, feature_names=["age", "income", "score"])
-
-importer = SklearnTreeImporter()
-ds = importer.infer_dataspec(model, feature_names=["age", "income", "score"])
-rules = importer.import_model(model, ds, feature_names=["age", "income", "score"])
-```
-
-`pyrulearn.interfaces.wittgenstein.IREP`/`RIPPERk` are the same
-idea, wrapping `wittgenstein.IREP`/`wittgenstein.RIPPER`. `pos_class` is
-required (pyrulearn never guesses which class is "positive"); `neg_class`
-is optional and, if omitted, auto-resolved from `data.y` when
-there's exactly one other label besides `pos_class` -- with more than
-one other label present (real multi-class, which wittgenstein itself
-doesn't support natively), `default_prediction` is left `None` unless
-`neg_class` is given explicitly:
-
-```python
-from pyrulearn.interfaces.wittgenstein import IREP, RIPPERk
-
-learners = [
-    IREP(pos_class="pos"),
-    RIPPERk(pos_class="pos", k=2, random_state=0),
-]
-for learner in learners:
-    rules = learner.fit(train_rep)  # RuleSet, default_prediction wired up automatically
-```
-
-**`NativeRuleLearner`** -- for a rule-induction algorithm implemented
-directly in pyrulearn (e.g. `pyrulearn.learners.seco`'s from-scratch Pypper/CN2/
-AQR, or `pyrulearn.learners.pylord.PyLORD`): `fit` induces straight against
-`data`, with no external algorithm call and no `RuleImporter`
-round-trip at all.
-
-## Multiclass Classification
-
-Multiclass support is one `fit(data, model=...)` switcher
-(`pyrulearn.learners.DecomposingLearner`) shared by every learner family
--- native (the SeCo family, `PyLORD`) and external alike
-(`RelabelingExternalLearner` -- sklearn's `DecisionTree`/`RandomForest`;
-`_WittgensteinLearner` -- wittgenstein's `IREP`/`RIPPERk`). `fit(data,
-model=ConceptSet | ConceptCascade | PairwiseModel)` decomposes into
-per-class binary sub-fits, each through the learner's own `_fit_binary`.
-`pyrulearn.learners.multiclass` wraps these three as thin sugar over the same
-calls, for the older call style or to bundle a `random_state`/non-default
-`combiner`:
-
-- `model=ConceptSet` (`OneVsRest(base_learner)`) — one `ConceptModel`
-  per class, pooled into a `ConceptSet`; `default_prediction =
-  MajorityClass(data)` (fires only for a row no class's rules cover),
-  `combiner = "max"`. Reassign either on the result.
-- `model=ConceptCascade, order="least_frequent"`
-  (`OrderedOneVsRest(base_learner, order=...)`) — peel the classes off
-  one at a time (`least_frequent` / `most_frequent` / `"random"` / an
-  explicit sequence): model c1 vs. the rest, then c2 vs. `{c3..cn}` on
-  the rows not yet peeled (`DataRepresentation.select_rows`), … the
-  last class becomes the cascade's catch-all `default_prediction`.
-  `least_frequent` (default) leaves the majority class as the catch-all
-  and tends to give the most compact list.
-- `model=PairwiseModel, positive="smaller"`
-  (`Pairwise(base_learner, positive=...)`) — one binary model per
-  unordered class pair ("round robin"; Fürnkranz, JMLR 2002), each
-  trained on just that pair's rows, `positive` picking the pair's
-  positive label: `"smaller"` (default) / `"larger"` / `"random"` /a
-  callable `f(a, b) -> pos`, or `"both"` (double round robin — one
-  model per *ordered* pair, `2·C(n,2)` models, so an asymmetric learner
-  gets a member for every class). At predict time each member votes and
-  a `PairwiseCombiner` (`pyrulearn.models`) turns the votes into a
-  label:
-  - `combiner="vote"` → `MajorityVote` — one hard vote per member;
-    `tie_break` `"direct"`/`"prior"`/`"first"`/callable.
-  - `combiner="weighted_vote"` → `WeightedVote` — the deciding rule's
-    weight `p_ij` (`Laplace` on its own *measured* stats, computed
-    fresh at predict time, 0.5 if it has none) goes to the predicted
-    label, `1 - p_ij` to the other (clamped to `[0, 1]`; pulled per row
-    via `covered_by`). Swap it onto an already-fitted model
-    (`pm.combiner = WeightedVote()`) --
-    no retraining, just re-predict. `WeightedVote` is a real gain when
-    per-rule reliability varies (`PyLORD`'s m-estimate scoring;
-    imprecise base learners on many-class sets) but roughly neutral
-    otherwise — `MajorityVote` stays the default.
-  - `combiner="accuracy_vote"` → `AccuracyWeightedVote` — same
-    `p_ij` / `1 - p_ij` split, but `p_ij` is the *member's* accuracy on
-    its own two-class sub-problem (one scalar per member, constant over
-    rows, recorded once at fit time as `PairwiseModel.member_weights`
-    by `DecomposingLearner._fit_pairwise`), so a cleaner pair pulls
-    harder -- also a no-retrain combiner swap.
-
-  `MajorityVote.scores()` / `WeightedVote.scores()` return a per-label
-  score vector, so the same aggregation feeds a future label-ranking
-  layer (argsort instead of argmax).
-
-The `SeCo` family reaches for this itself: `fit(data)` with no
-`target_class` and no `model=` builds each learner's own multi-class
-default (`_MULTICLASS_DEFAULT`) — `ConceptSet` (one-vs-rest) for
-`CN2`/`PFoil`/`PFossil`/`Pypper`, so `CN2().fit(iris_rep)` just works;
-`FlatRuleSet` for `AQR` (one seed-covering loop over all classes at
-once, each rule seeded on a random uncovered example and headed with
-its own label — AQ's multi-class covering, the same per-example seeding
-`PyLORD` does). Pass `model=ConceptCascade`/`PairwiseModel` explicitly
-for the other decompositions on any of them.
-
-## Merging DataSpecs
-
-`merge_dataspecs(a, b)` (in `pyrulearn.data`) merges two `DataSpec`s
-describing the same underlying attributes -- e.g. two different
-discretizations of the same numeric attribute -- into one
-`DataSpecBuilder` with the union of nominal categories, numeric
-thresholds, and set values for attributes present in both; attributes
-present in only one side are carried over as-is. It's deliberately
-strict about anything that isn't a straightforward union: a type
-mismatch, a different `Hierarchy`, or (for relational attributes)
-different sources/expression all raise rather than guessing -- reconcile
-such conflicts by hand before merging. It returns a builder (spec only
--- `DataSpec` never carries data to begin with); existing `Rule`s built
-against `a`/`b` don't automatically carry over to the merged feature
-space -- see `remap` below for that.
-
-### Rebasing rules onto a different DataSpec
-
-`Rule.remap(new_dataspec)` rebuilds a rule's conditions against a
-different, compatible `DataSpec`, translating each condition's feature
-index **by name** (`old_idx -> self.dataspec.feature_name(old_idx) ->
-new_dataspec.feature_index(name)`) -- the same name-based identity
-`merge_dataspecs` already relies on. It's a pure structural translation
-(no data touched, nothing recomputed) and raises rather than silently
-dropping a condition if a name has no match in `new_dataspec`.
-`RuleModel.remap(new_dataspec)` applies it to every rule and carries the
-`default_prediction` policy (and `.provenance`) over unchanged (the
-materialized `default_rule` re-derives against the remapped rules'
-dataspec on demand, dropping any stats measured against the old one --
-re-annotate against whatever data comes next), returning a new instance
-of the same concrete class.
-
-This is the fix for reading in several rule-based models over "the same"
-dataset when each was imported against its own per-model `DataSpec`
-(different attribute/threshold choices, different feature order): build
-the shared target with `merge_dataspecs`, `remap` each model onto it,
-then binarize the real dataset **once** against that shared `DataSpec`
-and score/compare/combine all the remapped models against it --
-
-```python
-from pyrulearn.data import BooleanDataRepresentation
-
-shared = merge_dataspecs(model1.rules[0].dataspec, model2.rules[0].dataspec).build()
-model1 = model1.remap(shared)
-model2 = model2.remap(shared)
-shared_rep = BooleanDataRepresentation(shared, binarize(shared, df))
-```
-
-Only `shared` ever needs a full Boolean data matrix built for it; the
-per-model DataSpecs used during import don't (`remap` needs nothing but
-their feature *names*), which keeps memory to one dataset's worth
-regardless of how many models get combined. `remap` deliberately drops
-any stats measured before the rebase (a rule's `stats()` was computed
-against the *old* dataspec's rows, which no longer applies) --
-re-annotate against `shared_rep` (`annotate_rules`, or a fresh
-`to_string(data=shared_rep)`/`stats(shared_rep)` call) for fresh numbers.
-
-## Reading ARFF / CSV data
-
-```python
-from pyrulearn.data.io import read_arff, read_csv
-
-# infer a DataSpec from the file's own column types, discretizing numeric
-# columns against `target` with a decision tree (max_intervals - 1 thresholds,
-# capped at DEFAULT_MAX_INTERVALS = 8 by default -- a full 3-level binary tree)
-rep = read_arff("weather.arff", target="play")
-rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
-
-# or binarize against a DataSpec you already have (thresholds and all)
-rep = read_csv("data.csv", dataspec=my_dataspec, target="label")
-# rep.spec is my_dataspec; rep.X / rep.y hold the binarized data
-```
-
-Numeric columns without pre-given thresholds need a `target` column to
-discretize against (decision-tree splits are the only strategy
-implemented so far -- equal-width/equal-frequency and FUSINTER are
-planned). `validate_dataspec(dataspec, df)` checks an existing `DataSpec`
-against a file's header without reading data (missing attributes, type
-mismatches, unknown nominal categories); `strict=True` (the default on
-`read_arff`/`read_csv`) raises on anything `validate_dataspec` reports
-rather than binarizing against a `DataSpec` that doesn't actually match.
-
-Not yet handled: set-valued/hierarchical/relational attributes (ARFF/CSV
-headers can't declare them, so they're never inferred, and relational
-features can't be evaluated from raw data at all -- see
-`pyrulearn.attributes.evaluate_feature`).
-
-### Missing values
-
-A missing raw value (`None`/NaN, or an attribute's declared
-`missing_values`, e.g. `("?",)` for the common ARFF/UCI convention) is
-handled per `pyrulearn.attributes.MissingStrategy`, resolved (explicit
-`binarize`/`read_arff`/`read_csv` argument > the `DataSpec`'s own
-`missing_strategy` > `DataSpec.DEFAULT_MISSING_STRATEGY`) the same way
-`Rule.to_string`'s `fmt` resolves:
-
-- **`NEVER_COVERS`** (the default) -- every feature derived from the
-  missing attribute is False for that example, so it never satisfies
-  *any* literal conditioning on it, positive or negated. This is a
-  closed-world "we don't know" reading, not "the negation holds" -- the
-  cheaper alternative to genuinely tracking a third "unknown" state
-  through `Rule`'s coverage checks, which isn't implemented.
-- **`MAJORITY`** -- impute the raw value before evaluating: the column
-  median for a NUMERIC attribute, the most frequent value (mode)
-  otherwise.
-- **`RANDOM`** -- impute with another, uniformly randomly chosen
-  non-missing example's value from the same column (`random_state=`
-  seeds this).
-- **`SEPARATE`** -- route into a dedicated feature, treating "missing"
-  as its own value alongside the attribute's declared domain. Requires
-  the attribute to have been built with `missing_name=`
-  (`add_nominal`/`add_numeric`) -- raises if none was declared. For a
-  NOMINAL attribute the dedicated feature rides in the same exhaustive
-  `ExactlyOne` group as the declared domain (missing is just one more
-  category); for a NUMERIC attribute it's a standalone feature outside
-  the `ThresholdChain`, deliberately with no constraint linking the two
-  (a numeric value can be simultaneously "missing" and fail every `>=`
-  test).
-
-```python
-b = DataSpecBuilder()
-b.add_nominal("color", ["red", "green", "blue"], missing_name="<missing>", missing_values=("?",))
-b.add_numeric("age", [20, 30, 40], missing_name="<missing>")
-ds = b.build(missing_strategy=MissingStrategy.SEPARATE)
-```
-
-`add_boolean`/`add_set`/`add_hierarchical` accept `missing_values=` too
-(for sentinel recognition) but not `missing_name=` -- `SEPARATE` isn't
-supported for those attribute types.
 
 ## Try it
 
@@ -1476,12 +1609,10 @@ python -m pytest tests/test_models.py  # or a single file
 
 `examples/demo.py` exercises the whole surface: manual rules, dataset
 coverage annotation, decision-tree rule extraction, `cross_val_score`,
-a pattern-string import round-trip, and three
-coverage-space plots -- a `FlatRuleSet` scatter with refinement-graph
-edges and convex hull (`coverage_space.png`), the same rules as a
-`DecisionList`'s arrow-connected cumulative path
-(`coverage_space_rulelist.png`), and one rule's own precision-ordered
-refinement path (`rule_refinement.png`).
+a pattern-string import round-trip, and two
+coverage-space plots -- a rule set as a `DecisionList`'s arrow-connected
+cumulative path (`coverage_space_rulelist.png`), and one rule's own
+precision-ordered refinement path (`rule_refinement.png`).
 
 Other demos: `examples/demo_heuristics.py` (heuristic isometrics),
 `examples/demo_workflow_comparison.py` and
@@ -1498,15 +1629,14 @@ against it).
 
 ## Not yet implemented (left as clear extension points)
 
-- Concrete importers for more real rule-learner formats (CN2, foil,
-  CBA-style association rules) beyond the reference
-  `PatternStringImporter`, `pyrulearn.interfaces.weka`'s
+- Concrete importers for more rule-learner text formats (e.g. FOIL output)
+  beyond the reference `PatternStringImporter`, `pyrulearn.interfaces.weka`'s
   `JRipImporter`/`PARTImporter`/`J48Importer`, and
   `pyrulearn.interfaces.lord.LORDImporter` — subclass
   `pyrulearn.interfaces.StringRuleImporter`.
 - Concrete `ObjectRuleImporter`s beyond decision trees, random forests,
-  `wittgenstein`'s IREP/RIPPER, and `imodels`' Bayesian Rule Lists/Rule
-  Sets (other sklearn tree ensembles -- gradient boosting, AdaBoost --
+  `wittgenstein`'s IREP/RIPPER, `imodels`' Bayesian Rule Lists/Rule
+  Sets, and `pyarc`'s CBA (other sklearn tree ensembles -- gradient boosting, AdaBoost --
   lower priority; `imodels`' `BoostedRulesClassifier`, also lower
   priority, would belong in `pyrulearn.interfaces.imodels`
   alongside the existing two). Deliberately *not* planned:
@@ -1517,9 +1647,8 @@ against it).
   cleanly.
 - `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
   (both currently approximated by a seed-restricted `BeamSearch` -- see
-  `pyrulearn.learners.seco`/`pyrulearn.learners.pylord` in the module map), a greedy
-  sequential-covering rule list, and `Pypper`'s residual IREP\* re-growth
-  pass (its whole-ruleset optimization phase, `ReplaceReviseOptimization`,
+  `pyrulearn.learners.seco`/`pyrulearn.learners.pylord` in the module map), and
+  `Pypper`'s residual IREP\* re-growth pass (its whole-ruleset optimization phase, `ReplaceReviseOptimization`,
   is already implemented -- this is the one piece still missing from it).
 - Rule bodies beyond pure conjunctions (e.g. general CNF/DNF rules).
 - A logic/SAT interface (export to `sympy`/DIMACS, SAT-based analysis): an
@@ -1599,7 +1728,7 @@ If you use pyrulearn, please cite it via [`CITATION.cff`](CITATION.cff)
   author  = {F{\"u}rnkranz, Johannes},
   title   = {pyrulearn},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.1.1},
   url     = {https://github.com/juffif/pyrulearn}
 }
 ```

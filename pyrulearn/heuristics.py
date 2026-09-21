@@ -41,9 +41,10 @@ Background: Fürnkranz & Flach, "ROC 'n' Rule Learning -- Towards a
 Better Understanding of Covering Algorithms" (Machine Learning, 2005)
 analyze these heuristics via their *isometrics* in coverage space (the
 (fp, tp) plane) -- curves along which a heuristic scores constantly (see
-`RuleHeuristic.plot_isometrics` to actually draw them). Most fall into
-one of two families, plus a couple whose isometrics are genuinely
-curved:
+`RuleHeuristic.plot_isometrics` to actually draw them). Their shape sorts
+the heuristics into three groups -- pencil, parallel and curved. (In
+Fürnkranz & Flach's terminology the isometrics of the first two are
+*linear*, i.e. straight lines, and those of the third *non-linear*.)
 
 - **Pencil heuristics** -- isometrics are a family of straight lines
   through one common pivot point (`Precision`: pivot at the origin;
@@ -66,8 +67,8 @@ curved:
   that's 90% positive from one that's 90% *negative* apart, only how
   skewed the split is either way -- part of why CN2 assigns the covered
   majority class as the rule's actual prediction separately, rather
-  than reading it off the entropy score. All of these are non-linear in
-  (tp, fp), so they can prefer points *inside* coverage space's convex
+  than reading it off the entropy score. Because their isometrics are
+  not parallel, these can prefer points *inside* coverage space's convex
   hull, not just on it -- part of why plain `Precision` is prone to
   overfitting: it can't distinguish a lucky single positive from a
   robust, larger-coverage rule.
@@ -84,13 +85,13 @@ curved:
   positives/negatives" quadrant naming);
   `Recall` is `CoveredPositives`'s own rate-normalized twin (`tp/n_pos`
   vs. raw `tp`), the same relationship `Support` has to `Coverage`.
-  These are all linear in (tp, fp), and a
+  Since their isometrics are parallel, a
   rule is optimal for *some* such heuristic if and only if it lies on
   the convex hull.
 - **Curved-isometric heuristics** -- `Correlation` (hyperbolic
   isometrics) and `LikelihoodRatio` (isometrics that bow away from the
-  origin, since -- unlike the pencil family -- it depends on absolute
-  covered counts, not just their ratio) belong to neither family above.
+  origin, since -- unlike the pencil group -- it depends on absolute
+  covered counts, not just their ratio) belong to neither group above.
   `FoilGain`, with a fixed parent (see `plot_isometrics`'s `parent=`),
   isn't even a single smooth curve -- its `tp *` factor can make a
   low-tp, low-precision point score the same as a higher-tp, higher-
