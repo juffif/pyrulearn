@@ -1,0 +1,223 @@
+% References for the heuristics/algorithms implemented in pyrulearn
+% (see pyrulearn/heuristics.py and README.md for where each is used).
+%
+% NOTE: entries are from recollection, not freshly verified against the
+% primary sources in this session -- double-check volume/page/venue
+% details before relying on them for anything formal.
+
+@article{furnkranz2005roc,
+  author  = {F{\"u}rnkranz, Johannes and Flach, Peter A.},
+  title   = {{ROC} 'n' Rule Learning -- Towards a Better Understanding of Covering Algorithms},
+  journal = {Machine Learning},
+  volume  = {58},
+  number  = {1},
+  pages   = {39--77},
+  year    = {2005},
+  note    = {Isometrics-in-coverage-space framework used throughout pyrulearn.heuristics},
+}
+
+@article{clark1989cn2,
+  author  = {Clark, Peter and Niblett, Tim},
+  title   = {The {CN2} Induction Algorithm},
+  journal = {Machine Learning},
+  volume  = {3},
+  number  = {4},
+  pages   = {261--283},
+  year    = {1989},
+  note    = {Source of the Entropy and LikelihoodRatio heuristics},
+}
+
+@article{quinlan1990foil,
+  author  = {Quinlan, J. Ross},
+  title   = {Learning Logical Definitions from Relations},
+  journal = {Machine Learning},
+  volume  = {5},
+  number  = {3},
+  pages   = {239--266},
+  year    = {1990},
+  note    = {Source of FoilGain (FOIL's information gain)},
+}
+
+@inproceedings{furnkranz1994fossil,
+  author    = {F{\"u}rnkranz, Johannes},
+  title     = {{FOSSIL}: A Robust Relational Learner},
+  booktitle = {Proceedings of the European Conference on Machine Learning (ECML)},
+  year      = {1994},
+  note      = {Source of the Correlation (four-field/Matthews correlation) heuristic},
+}
+
+@article{gamberger2002expert,
+  author  = {Gamberger, Dragan and Lavra{\v{c}}, Nada},
+  title   = {Expert-Guided Subgroup Discovery: Methodology and Application},
+  journal = {Journal of Artificial Intelligence Research},
+  volume  = {17},
+  pages   = {501--527},
+  year    = {2002},
+  note    = {Source of the "g heuristic" (GHeuristic)},
+}
+
+@article{lavrac2004cn2sd,
+  author  = {Lavra{\v{c}}, Nada and Kav{\v{s}}ek, Branko and Flach, Peter and Todorovski, Ljup{\v{c}}o},
+  title   = {Subgroup Discovery with {CN2-SD}},
+  journal = {Journal of Machine Learning Research},
+  volume  = {5},
+  pages   = {153--188},
+  year    = {2004},
+  note    = {CN2-SD, which popularized the g heuristic (see gamberger2002expert)},
+}
+
+@article{youden1950index,
+  author  = {Youden, William J.},
+  title   = {Index for Rating Diagnostic Tests},
+  journal = {Cancer},
+  volume  = {3},
+  number  = {1},
+  pages   = {32--35},
+  year    = {1950},
+  note    = {Youden's J statistic, J = TPR - FPR, used in the YoudenJ heuristic},
+}
+
+@techreport{powers2007evaluation,
+  author      = {Powers, David M. W.},
+  title       = {Evaluation: From Precision, Recall and F-Factor to {ROC}, Informedness, Markedness \& Correlation},
+  institution = {Flinders University},
+  number      = {SIE-07-001},
+  year        = {2007},
+  note        = {"Informedness" as a synonym for TPR - FPR; journal version 2011 in J. Machine Learning Technologies 2(1):37--63},
+}
+﻿
+@inproceedings{liu1998cba,
+author    = {Liu, Bing and Hsu, Wynne and Ma, Yiming},
+title     = {Integrating Classification and Association Rule Mining},
+booktitle = {Proceedings of the 4th International Conference on Knowledge Discovery and Data Mining (KDD)},
+year      = {1998},
+pages     = {80--86},
+}
+
+@inproceedings{li2001cmar,
+author    = {Li, Wenmin and Han, Jiawei and Pei, Jian},
+title     = {{CMAR}: Accurate and Efficient Classification Based on Multiple Class-Association Rules},
+booktitle = {Proceedings of the IEEE International Conference on Data Mining (ICDM)},
+year      = {2001},
+pages     = {369--376},
+}
+
+@inproceedings{lakkaraju2016ids,
+author    = {Lakkaraju, Himabindu and Bach, Stephen H. and Leskovec, Jure},
+title     = {Interpretable Decision Sets: A Joint Framework for Description and Prediction},
+booktitle = {Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD)},
+year      = {2016},
+pages     = {1675--1684},
+}
+
+@inproceedings{agrawal1994apriori,
+author    = {Agrawal, Rakesh and Srikant, Ramakrishnan},
+title     = {Fast Algorithms for Mining Association Rules in Large Databases},
+booktitle = {Proceedings of the 20th International Conference on Very Large Data Bases (VLDB)},
+year      = {1994},
+pages     = {487--499},
+}
+
+@inproceedings{cohen1995ripper,
+author    = {Cohen, William W.},
+title     = {Fast Effective Rule Induction},
+booktitle = {Proceedings of the 12th International Conference on Machine Learning (ICML)},
+year      = {1995},
+pages     = {115--123},
+}
+
+@inproceedings{furnkranz1994irep,
+author    = {F{\"u}rnkranz, Johannes and Widmer, Gerhard},
+title     = {Incremental Reduced Error Pruning},
+booktitle = {Proceedings of the 11th International Conference on Machine Learning (ICML)},
+year      = {1994},
+pages     = {70--77},
+}
+
+@inproceedings{clark1991cn2improved,
+author    = {Clark, Peter and Boswell, Robin},
+title     = {Rule Induction with {CN2}: Some Recent Improvements},
+booktitle = {Proceedings of the 5th European Working Session on Learning (EWSL)},
+year      = {1991},
+pages     = {151--163},
+}
+
+@article{mooney1995pfoil,
+author  = {Mooney, Raymond J.},
+title   = {Encouraging Experimental Results on Learning {CNF}},
+journal = {Machine Learning},
+volume  = {19},
+number  = {1},
+year    = {1995},
+pages   = {79--92},
+}
+
+@article{huynh2023lord,
+author  = {Huynh, Q.-V. P. and F{\"u}rnkranz, Johannes},
+title   = {Efficient Learning of Large Sets of Locally Optimal Classification Rules},
+journal = {Machine Learning},
+volume  = {112},
+year    = {2023},
+pages   = {571--610},
+}
+
+@article{letham2015brl,
+author  = {Letham, Benjamin and Rudin, Cynthia and McCormick, Tyler H. and Madigan, David},
+title   = {Interpretable Classifiers Using Rules and {B}ayesian Analysis: Building a Better Stroke Prediction Model},
+journal = {Annals of Applied Statistics},
+volume  = {9},
+number  = {3},
+year    = {2015},
+pages   = {1350--1371},
+}
+
+@article{wang2017brs,
+author  = {Wang, Tong and Rudin, Cynthia and Doshi-Velez, Finale and Liu, Yimin and Klampfl, Erica and MacNeille, Perry},
+title   = {A {B}ayesian Framework for Learning Rule Sets for Interpretable Classification},
+journal = {Journal of Machine Learning Research},
+volume  = {18},
+number  = {70},
+year    = {2017},
+pages   = {1--37},
+}
+
+@inproceedings{frank1998part,
+author    = {Frank, Eibe and Witten, Ian H.},
+title     = {Generating Accurate Rule Sets Without Global Optimization},
+booktitle = {Proceedings of the 15th International Conference on Machine Learning (ICML)},
+year      = {1998},
+pages     = {144--151},
+}
+
+@book{quinlan1993c45,
+author    = {Quinlan, J. Ross},
+title     = {{C4.5}: Programs for Machine Learning},
+publisher = {Morgan Kaufmann},
+year      = {1993},
+}
+
+@article{breiman2001rf,
+author  = {Breiman, Leo},
+title   = {Random Forests},
+journal = {Machine Learning},
+volume  = {45},
+number  = {1},
+year    = {2001},
+pages   = {5--32},
+}
+
+@article{furnkranz2002roundrobin,
+author  = {F{\"u}rnkranz, Johannes},
+title   = {Round Robin Classification},
+journal = {Journal of Machine Learning Research},
+volume  = {2},
+year    = {2002},
+pages   = {721--747},
+}
+
+@book{breiman1984cart,
+author    = {Breiman, Leo and Friedman, Jerome H. and Olshen, Richard A. and Stone, Charles J.},
+title     = {Classification and Regression Trees},
+publisher = {Wadsworth},
+year      = {1984},
+}

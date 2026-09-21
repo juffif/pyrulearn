@@ -1,0 +1,196 @@
+from pyrulearn.data import DataSpecBuilder, merge_dataspecs
+
+
+def test_merge_numeric_union():
+    a = DataSpecBuilder()
+    a.add_numeric("age", [20, 30])
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_numeric("age", [25, 30, 40])
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    # negation is the builder default now, so each ge feature is paired
+    # with its exact "<" negation feature -- merge must carry both through
+    assert set(merged.feature_names) == {
+        "age>=20", "age>=25", "age>=30", "age>=40",
+        "age<20", "age<25", "age<30", "age<40",
+    }
+    print("merge numeric union: OK")
+
+
+def test_merge_nominal_union():
+    a = DataSpecBuilder()
+    a.add_nominal("color", ["red", "green"])
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["green", "blue"])
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert set(merged.feature_names) == {
+        "color=red", "color=green", "color=blue",
+        "color!=red", "color!=green", "color!=blue",
+    }
+    print("merge nominal union: OK")
+
+
+def test_merge_one_sided_attribute():
+    a = DataSpecBuilder()
+    a.add_boolean("smoker")
+    a.add_numeric("age", [30])
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_boolean("smoker")
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert set(merged.feature_names) == {"smoker", "not smoker", "age>=30", "age<30"}
+    print("merge one-sided attribute: OK")
+
+
+def test_merge_boolean():
+    a = DataSpecBuilder()
+    a.add_boolean("smoker")
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_boolean("smoker")
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert merged.feature_names == ["smoker", "not smoker"]
+    print("merge boolean: OK")
+
+
+def test_merge_type_conflict_raises():
+    a = DataSpecBuilder()
+    a.add_numeric("code", [1, 2])
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_nominal("code", ["x", "y"])
+    ds_b = b.build()
+
+    try:
+        merge_dataspecs(ds_a, ds_b)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    print("merge type conflict raises: OK")
+
+
+def test_merge_hierarchical_identical_ok():
+    tree = {"Europe": {"France": {}, "Germany": {}}, "Asia": {}}
+    a = DataSpecBuilder()
+    a.add_hierarchical("region", tree)
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_hierarchical("region", tree)
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert set(merged.feature_names) == {
+        "region=Europe", "region=France", "region=Germany", "region=Asia",
+    }
+    print("merge identical hierarchy: OK")
+
+
+def test_merge_hierarchical_mismatch_raises():
+    a = DataSpecBuilder()
+    a.add_hierarchical("region", {"Europe": {"France": {}}})
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_hierarchical("region", {"Europe": {"Germany": {}}})
+    ds_b = b.build()
+
+    try:
+        merge_dataspecs(ds_a, ds_b)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    print("merge hierarchy mismatch raises: OK")
+
+
+def test_merge_carries_over_missing_name_and_values():
+    a = DataSpecBuilder()
+    a.add_nominal("color", ["red", "green"], missing_name="<missing>", missing_values=("?",))
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["green", "blue"])
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert "color=<missing>" in merged.feature_names
+    assert merged.attributes["color"].missing_name == "<missing>"
+    assert merged.attributes["color"].missing_values == ("?",)
+    print("merge carries over missing_name/missing_values: OK")
+
+
+def test_merge_conflicting_missing_name_raises():
+    a = DataSpecBuilder()
+    a.add_nominal("color", ["red"], missing_name="<missing>")
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["blue"], missing_name="unknown")
+    ds_b = b.build()
+
+    try:
+        merge_dataspecs(ds_a, ds_b)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    print("merge conflicting missing_name raises: OK")
+
+
+def test_merge_relational_identical_ok_and_mismatch_raises():
+    a = DataSpecBuilder()
+    a.add_numeric("age", [30])
+    a.add_numeric("income", [50000])
+    a.add_relational("rich_for_age", ["income", "age"], expression="income > age * 1000")
+    ds_a = a.build()
+
+    b = DataSpecBuilder()
+    b.add_numeric("age", [40])
+    b.add_numeric("income", [60000])
+    b.add_relational("rich_for_age", ["income", "age"], expression="income > age * 1000")
+    ds_b = b.build()
+
+    merged = merge_dataspecs(ds_a, ds_b).build()
+    assert "rich_for_age" in merged.feature_names
+    assert merged.feature_names.count("age>=30") == 1
+    assert "age>=40" in merged.feature_names
+
+    c = DataSpecBuilder()
+    c.add_numeric("age", [30])
+    c.add_numeric("income", [50000])
+    c.add_relational("rich_for_age", ["income", "age"], expression="income > age * 2000")  # different expression
+    ds_c = c.build()
+
+    try:
+        merge_dataspecs(ds_a, ds_c)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+    print("merge relational identical/mismatch: OK")
+
+
+if __name__ == "__main__":
+    test_merge_numeric_union()
+    test_merge_nominal_union()
+    test_merge_one_sided_attribute()
+    test_merge_boolean()
+    test_merge_type_conflict_raises()
+    test_merge_hierarchical_identical_ok()
+    test_merge_hierarchical_mismatch_raises()
+    test_merge_carries_over_missing_name_and_values()
+    test_merge_conflicting_missing_name_raises()
+    test_merge_relational_identical_ok_and_mismatch_raises()
+    print("\nAll tests passed.")

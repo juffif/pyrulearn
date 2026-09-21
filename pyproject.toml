@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrulearn"
+version = "0.1.0"
+description = "Representing, learning, combining and analyzing propositional rule models: native rule learners (separate-and-conquer, RIPPER, CBA, CMAR, IDS, ...) and interfaces to external ones."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Johannes Fürnkranz", email = "juffi@faw.jku.at" }]
+keywords = ["rule learning", "machine learning", "interpretable machine learning", "association rules", "decision lists"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy",
+    "scikit-learn",   # RuleSetClassifier inherits from sklearn.base.BaseEstimator (hence `import pyrulearn` needs it)
+]
+
+[project.optional-dependencies]
+data = ["pandas", "scipy"]                 # pyrulearn.data.io (scipy: ARFF / sparse representations)
+plot = ["matplotlib", "networkx"]          # pyrulearn.evaluation plotting
+wittgenstein = ["wittgenstein"]            # interfaces.wittgenstein: IREP, RIPPER
+imodels = ["imodels"]                      # interfaces.imodels: Bayesian rule lists / sets
+pyarc = ["pyarc"]                          # interfaces.pyarc: CBA (pyarc itself also needs Borgelt's `pyfim`, a C extension)
+test = ["pytest"]
+all = ["pandas", "scipy", "matplotlib", "networkx", "wittgenstein", "imodels", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/juffif/pyrulearn"
+Repository = "https://github.com/juffif/pyrulearn"
+Issues = "https://github.com/juffif/pyrulearn/issues"
+
+[tool.setuptools.packages.find]
+include = ["pyrulearn*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

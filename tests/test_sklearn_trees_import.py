@@ -1,0 +1,316 @@
+import numpy as np
+from pyrulearn import BooleanDataRepresentation, DataSpec, DataSpecBuilder, Rule
+
+from _negation_helpers import neg_spec, neg_X
+
+
+def test_stamp_rule_provenance_gives_each_rule_its_own_instance():
+    from pyrulearn.interfaces.base import PatternStringImporter
+    from pyrulearn.models import SingleRule
+
+    ds = DataSpec(["a", "b"])
+    r1 = Rule.from_pattern_string("1 0", dataspec=ds, target="pos")
+    r2 = Rule.from_pattern_string("0 1", dataspec=ds, target="pos")
+    importer = PatternStringImporter()
+    wrapped = importer._stamp_rule_provenance([r1, r2], n_rules=2)
+
+    assert all(type(r) is SingleRule for r in wrapped)
+    assert [r.rule for r in wrapped] == [r1, r2]           # same underlying Rule, just wrapped
+    assert all(r.provenance.learner == "PatternStringImporter" for r in wrapped)
+    assert all(r.provenance.params == {"n_rules": 2} for r in wrapped)
+    assert wrapped[0].provenance is not wrapped[1].provenance     # distinct instances (Option B)
+
+    # an already-SingleRule item passes through, gets re-stamped in place
+    already = SingleRule(r1)
+    same_object = importer._stamp_rule_provenance([already], tag="x")[0]
+    assert same_object is already
+    assert same_object.provenance.params == {"tag": "x"}
+    print("_stamp_rule_provenance wraps + gives each rule a fresh Provenance instance: OK")
+
+
+def test_from_sklearn_tree_returns_disjoint_ruleset():
+    from sklearn.tree import DecisionTreeClassifier
+    from pyrulearn.interfaces.sklearn import from_sklearn_tree
+    from pyrulearn.models import DisjointRuleSet
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(100, 4)).astype(bool)
+    y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
+    ds = neg_spec([f"f{i}" for i in range(4)])
+    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+
+    clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
+    rules = from_sklearn_tree(clf, dataspec=ds)
+    assert isinstance(rules, DisjointRuleSet)
+    assert rules.is_disjoint(rep)
+    assert rules.is_exhaustive(rep)  # every example reaches exactly one leaf
+    # importer used directly (no learner) still stamps model-level provenance
+    assert rules.provenance.learner == "SklearnTreeImporter"
+    assert rules.provenance.source == "sklearn.tree.DecisionTreeClassifier"
+    assert rules.provenance.params["max_depth"] == 3
+    # ... and every individual rule now carries its own provenance too
+    assert all(r.provenance is not None for r in rules.rules)
+    assert rules.rules[0].provenance.learner == "SklearnTreeImporter"
+    assert rules.rules[0].provenance.source == "sklearn.tree.DecisionTreeClassifier"
+    assert len({id(r.provenance) for r in rules.rules}) == len(rules.rules)  # one instance each, not shared
+    print("from_sklearn_tree returns a genuinely disjoint, exhaustive DisjointRuleSet: OK")
+
+
+def test_sklearn_tree_importer_binds_to_given_dataspec_and_tags_provenance():
+    from sklearn.tree import DecisionTreeClassifier
+    from pyrulearn.interfaces.sklearn import SklearnTreeImporter, from_sklearn_tree
+    from pyrulearn.models import DisjointRuleSet
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(100, 4)).astype(bool)
+    y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
+    b = DataSpecBuilder(negation=True)
+    for i in range(4):
+        b.add_boolean(f"f{i}")
+    ds = b.build()
+
+    clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
+
+    # dataspec= binds rules directly to the caller's own DataSpec object
+    # (not a throwaway shadow copy built from just its feature names)
+    rules_a = from_sklearn_tree(clf, dataspec=ds)
+    assert all(r.dataspec is ds for r in rules_a)
+
+    rules_b = SklearnTreeImporter().import_model(clf, ds)
+    assert isinstance(rules_b, DisjointRuleSet)
+    for r in rules_b:
+        assert r.provenance.source == "sklearn.tree.DecisionTreeClassifier"
+        assert r.provenance.learner == "SklearnTreeImporter"
+        assert r.provenance.params["max_depth"] == 3
+    print("SklearnTreeImporter binds to given dataspec + tags provenance: OK")
+
+
+def test_sklearn_tree_importer_raises_on_feature_count_mismatch():
+    from sklearn.tree import DecisionTreeClassifier
+    from pyrulearn.interfaces.sklearn import SklearnTreeImporter
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(50, 4)).astype(bool)
+    y = np.where(X[:, 0], "pos", "neg")
+    clf = DecisionTreeClassifier(max_depth=2, random_state=0).fit(X, y)
+
+    wrong_ds = DataSpec(["only", "three", "features"])
+    try:
+        SklearnTreeImporter().import_model(clf, wrong_ds)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "features" in str(e)
+    print("SklearnTreeImporter raises on feature-count mismatch: OK")
+
+
+def test_sklearn_tree_infer_dataspec_matches_tree_exactly_on_raw_data():
+    # the whole point of infer_dataspec: fit directly on RAW continuous
+    # data (no pre-binarization, no artificial threshold cap) and still
+    # get a faithful rule-set re-expression of the tree
+    from sklearn.tree import DecisionTreeClassifier
+    from pyrulearn.interfaces.sklearn import SklearnTreeImporter
+    from pyrulearn.data.io import binarize
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(300, 3))
+    y = np.where((X[:, 0] > 0.5) & (X[:, 1] < -0.2), "pos", "neg")
+    names = ["age", "income", "score"]
+
+    clf = DecisionTreeClassifier(max_depth=4, random_state=0).fit(X, y)
+    importer = SklearnTreeImporter()
+    ds = importer.infer_dataspec(clf, feature_names=names)
+
+    # every discovered threshold is one the tree actually used -- not a
+    # fixed, pre-chosen cap
+    real_thresholds = {float(t) for f, t in zip(clf.tree_.feature, clf.tree_.threshold) if f != -2}
+    discovered_thresholds = {spec.value for spec in ds.feature_specs}
+    assert discovered_thresholds == real_thresholds
+
+    rules = importer.import_model(clf, ds, feature_names=names)
+    Xb = binarize(ds, pd.DataFrame(X, columns=names))
+    rep = BooleanDataRepresentation(ds, Xb, y)
+
+    tree_preds = clf.predict(X)
+    rule_preds = rules.predict(rep)
+    assert np.array_equal(tree_preds, rule_preds)
+    print("SklearnTreeImporter.infer_dataspec matches the tree exactly on raw data: OK")
+
+
+def test_random_forest_infer_dataspec_unions_thresholds_across_trees():
+    from sklearn.ensemble import RandomForestClassifier
+    from pyrulearn.interfaces.sklearn import RandomForestImporter, SklearnTreeImporter
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(400, 3))
+    y = np.where((X[:, 0] > 0.5) & (X[:, 1] < -0.2), "pos", "neg")
+    names = ["age", "income", "score"]
+
+    rf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(X, y)
+    importer = RandomForestImporter()
+    ds = importer.infer_dataspec(rf, feature_names=names)
+    rules = importer.import_model(rf, ds, feature_names=names)
+
+    # rule count matches importing each tree individually against the
+    # SAME shared, forest-discovered dataspec and summing -- same
+    # faithfulness check as the plain-Boolean forest test above
+    expected_total = sum(
+        len(SklearnTreeImporter().import_model(t, ds, feature_names=names)) for t in rf.estimators_
+    )
+    assert len(rules) == expected_total
+    print("RandomForestImporter.infer_dataspec unions thresholds across trees, stays faithful: OK")
+
+
+def test_random_forest_importer_returns_single_ruleset():
+    from sklearn.ensemble import RandomForestClassifier
+    from pyrulearn.interfaces.sklearn import RandomForestImporter, SklearnTreeImporter, from_random_forest
+    from pyrulearn.models import DisjointRuleSet, FlatRuleSet
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(200, 4)).astype(bool)
+    y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
+    ds = neg_spec([f"f{i}" for i in range(4)])
+    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+
+    rf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(X, y)
+    rules = RandomForestImporter().import_model(rf, ds)
+
+    assert isinstance(rules, FlatRuleSet)
+    assert not isinstance(rules, DisjointRuleSet)  # overlapping across trees, not disjoint
+
+    # rule count matches importing each tree individually and summing
+    expected_total = sum(len(SklearnTreeImporter().import_model(t, ds)) for t in rf.estimators_)
+    assert len(rules) == expected_total
+
+    # provenance: every rule knows which tree it came from
+    tree_indices = {r.provenance.params["tree_index"] for r in rules}
+    assert tree_indices == set(range(5))
+    for r in rules:
+        assert r.provenance.source == "sklearn.ensemble.RandomForestClassifier"
+        assert r.provenance.params["n_estimators"] == 5
+
+    # every example gets exactly n_estimators covering rules -- each
+    # tree is individually exhaustive, so the combined set always is too
+    cov = rules.coverage_matrix(rep)
+    assert list(cov.sum(axis=0)) == [5] * rep.n_samples
+
+    # unweighted majority vote reasonably tracks the true labels (sanity
+    # check, not exactness -- sklearn's own predict() does soft/
+    # probability-averaged voting, not hard majority voting)
+    preds = rules.predict(rep, combiner="vote")
+    assert np.mean(preds == y) > 0.9
+
+    rules2 = from_random_forest(rf, dataspec=ds)
+    assert isinstance(rules2, FlatRuleSet)
+    print("RandomForestImporter returns a single combined, exhaustive FlatRuleSet: OK")
+
+
+def test_random_forest_import_model_with_data_gives_every_leaf_measured_stats():
+    # DistributionCombiner (micro_vote/macro_vote/micro_max/macro_max)
+    # requires every covering rule to have measured stats -- for a forest,
+    # that means passing data= to import_model (see its docstring); the
+    # actual micro-vs-macro divergence mechanics are unit-tested directly,
+    # with hand-crafted differently-sized leaves, in
+    # test_combiners.py::test_distribution_combiners_micro_vs_macro_genuinely_diverge.
+    from sklearn.ensemble import RandomForestClassifier
+    from pyrulearn.interfaces.sklearn import RandomForestImporter
+    from pyrulearn.combiners import MicroVoteCombiner, MacroVoteCombiner
+
+    rng = np.random.default_rng(1)
+    X = rng.integers(0, 2, size=(300, 6)).astype(bool)
+    noise = rng.random(300) < 0.3
+    y_clean = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
+    y = np.where(noise, np.where(y_clean == "pos", "neg", "pos"), y_clean)
+    ds = neg_spec([f"f{i}" for i in range(6)])
+    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+
+    rf = RandomForestClassifier(n_estimators=10, max_depth=5, random_state=1).fit(X, y)
+    bare_rules = RandomForestImporter().import_model(rf, ds)  # no data= -- no stats
+    assert all(r.stats() is None for r in bare_rules)
+    try:
+        bare_rules.predict(rep, combiner=MicroVoteCombiner())
+        assert False, "expected ValueError without measured stats"
+    except ValueError:
+        pass
+
+    rules = RandomForestImporter().import_model(rf, ds, data=rep)  # data= -> real measured stats
+    assert all(r.stats() is not None for r in rules)
+    preds_micro = rules.predict(rep, combiner=MicroVoteCombiner())
+    preds_macro = rules.predict(rep, combiner=MacroVoteCombiner())
+    assert set(preds_micro) <= {"pos", "neg"} and set(preds_macro) <= {"pos", "neg"}
+    print("RandomForestImporter's data= gives every leaf measured stats for DistributionCombiner: OK")
+
+
+def test_tree_learners_on_the_fit_switcher():
+    # DecisionTree / RandomForest route through fit(data, model=...) like
+    # any other learner (the external-wrapper switcher).
+    from pyrulearn.interfaces.sklearn import DecisionTree, RandomForest
+    from pyrulearn.models import ConceptSet, DisjointRuleSet, EnsembleModel, FlatRuleSet
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(200, 5)).astype(bool)
+    y = np.where(X[:, 0] & ~X[:, 1], "a", np.where(X[:, 2], "b", "c"))
+    ds = neg_spec([f"f{i}" for i in range(5)])
+    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+
+    dt = DecisionTree(max_depth=4, random_state=0)
+    assert dt.produces() >= {DisjointRuleSet, ConceptSet}
+    m = dt.fit(rep)
+    assert type(m) is DisjointRuleSet
+    assert type(dt.fit(rep, model=ConceptSet)) is ConceptSet
+    assert set(m.predict(rep)) <= {"a", "b", "c"}
+
+    rf = RandomForest(n_estimators=6, max_depth=3, random_state=0)
+    assert rf.produces() == {EnsembleModel, FlatRuleSet}
+    ens = rf.fit(rep)
+    assert type(ens) is EnsembleModel and len(ens.members) == 6
+    assert all(type(mem) is DisjointRuleSet for mem in ens.members)
+    assert type(rf.fit(rep, model=FlatRuleSet)) is FlatRuleSet
+    assert set(ens.predict(rep)) <= {"a", "b", "c"}
+
+    # each member's rules share one tree_index (via their own .provenance,
+    # not shared meta) and no two members' rules share a tree_index
+    seen_indices = set()
+    for mem in ens.members:
+        indices = {r.provenance.params["tree_index"] for r in mem.rules}
+        assert len(indices) == 1          # one tree per member
+        assert indices.isdisjoint(seen_indices)
+        seen_indices |= indices
+    print("DecisionTree/RandomForest on the fit switcher: OK")
+
+
+def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
+    from sklearn.tree import DecisionTreeClassifier
+    from pyrulearn.evaluation import RuleStats
+    from pyrulearn.interfaces.sklearn import DecisionTree, SklearnTreeImporter
+
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 2, size=(150, 4)).astype(bool)
+    y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
+    ds = neg_spec([f"f{i}" for i in range(4)])
+    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+
+    clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(rep.X, y)
+    bare = SklearnTreeImporter().import_model(clf, ds)  # no data= -- standalone call
+    assert all(r.stats() is None for r in bare.rules)
+
+    fitted = DecisionTree(max_depth=3, random_state=0).fit(rep)  # fit() round trip -> data=rep passed through
+    for r in fitted.rules:
+        expected = RuleStats.from_rule(r.rule, rep, r.target)
+        got = r.stats().confusion.rule_stats(r.target)
+        assert (got.tp, got.fp, got.fn, got.tn) == (expected.tp, expected.fp, expected.fn, expected.tn)
+    print("SklearnTreeImporter stamps rule stats only when the fit() round trip gives it data: OK")
+
+
+if __name__ == "__main__":
+    test_stamp_rule_provenance_gives_each_rule_its_own_instance()
+    test_from_sklearn_tree_returns_disjoint_ruleset()
+    test_sklearn_tree_importer_binds_to_given_dataspec_and_tags_provenance()
+    test_sklearn_tree_importer_raises_on_feature_count_mismatch()
+    test_sklearn_tree_infer_dataspec_matches_tree_exactly_on_raw_data()
+    test_random_forest_infer_dataspec_unions_thresholds_across_trees()
+    test_random_forest_importer_returns_single_ruleset()
+    test_random_forest_import_model_with_data_gives_every_leaf_measured_stats()
+    test_tree_learners_on_the_fit_switcher()
+    test_sklearn_tree_importer_stamps_stats_only_when_data_is_given()
+    print("\nAll tests passed.")
