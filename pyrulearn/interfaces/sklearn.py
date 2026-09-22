@@ -550,10 +550,36 @@ class RandomForest(ExternalRuleLearner):
         return RandomForestClassifier(**self.params).fit(X, y)
 
 
+def _prettify_threshold(t: float, sorted_unique: np.ndarray) -> float:
+    """Replace a computed split point with the coarsest (fewest decimal
+    digits) number that still falls in the same open gap between two
+    *actually observed* values of the column -- so the resulting
+    ``>=``/``<`` test partitions the real data identically, just without
+    ugly floating-point artifacts. sklearn's tree computes each
+    threshold as the exact midpoint of two adjacent values in whatever
+    (possibly already-split) subset reached that node, e.g.
+    ``(15.1458 + 15.2) / 2 == 15.172900199890137`` -- a value nobody
+    would write down by hand, and no more "correct" than ``15.17`` for
+    the same purpose: any number strictly between the two nearest real
+    values on *this* column produces the exact same split of the full
+    dataset, so rounding here changes nothing but the display.
+    """
+    below = sorted_unique[sorted_unique < t]
+    above = sorted_unique[sorted_unique > t]
+    lo = below[-1] if len(below) else -np.inf
+    hi = above[0] if len(above) else np.inf
+    for decimals in range(0, 10):
+        candidate = round(t, decimals)
+        if lo < candidate < hi:
+            return candidate
+    return t  # every rounding collided with a real value -- keep the exact one
+
+
 def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -> List[float]:
     """Supervised numeric discretization: fit a single-feature decision
     tree against `values`/`y` and return its internal split points as
-    ascending thresholds.
+    ascending thresholds, prettified (see `_prettify_threshold`) against
+    the column's own observed values.
 
     The default mirrors `pyrulearn.data.io.DEFAULT_MAX_INTERVALS` (kept
     as a separate literal here rather than imported, so this module
@@ -568,11 +594,13 @@ def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -
     """
     from sklearn.tree import DecisionTreeClassifier
 
-    values = np.asarray(values, dtype=float).reshape(-1, 1)
+    flat_values = np.asarray(values, dtype=float).ravel()
+    sorted_unique = np.unique(flat_values)
     y = np.asarray(y)
     tree = DecisionTreeClassifier(max_leaf_nodes=max(2, max_intervals))
-    tree.fit(values, y)
+    tree.fit(flat_values.reshape(-1, 1), y)
     feature = tree.tree_.feature
     threshold = tree.tree_.threshold
     # feature[i] == -2 (sklearn's TREE_UNDEFINED) marks a leaf, i.e. no split there.
-    return sorted(float(t) for f, t in zip(feature, threshold) if f != -2)
+    raw = sorted(float(t) for f, t in zip(feature, threshold) if f != -2)
+    return [_prettify_threshold(t, sorted_unique) for t in raw]

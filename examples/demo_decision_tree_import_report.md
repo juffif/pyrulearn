@@ -1,6 +1,6 @@
 # Decision-tree -> rule-set import demo
 
-Generated 2026-09-21 13:12:34. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
+Generated 2026-09-22 21:39:28. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
 
 Only fold 1 of each dataset is shown in full detail (tree + every rule in all four `to_string` formats); all folds contribute to the summary statistics.
 
@@ -163,7 +163,7 @@ conditions: adoption-of-the-budget-resolution = ?, physician-fee-freeze ≠ y, e
 | 4 | 0.954 | 0.954 | 1.000 | 20 | 11 |
 | 5 | 0.897 | 0.897 | 1.000 | 18 | 11 |
 
-**Summary** (0.1s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
+**Summary** (0.2s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
 
 ---
 
@@ -236,97 +236,97 @@ Decision tree (19 leaves, depth 5):
 Extracted DisjointRuleSet (19 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 8/9
 
 logic:      menopause ≠ lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
-prolog:     no-recurrence-events(X) :- menopause(X, V), V \= lt40, tumor-size(X, V), V \= 10-14, node-caps(X, V), V \= no, deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
+prolog:     'no-recurrence-events'(X) :- menopause(X, V), V \= lt40, tumor-size(X, V), V \= 10-14, node-caps(X, V), V \= no, deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
 conditions: menopause ≠ lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
 
 logic:      menopause = lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
-prolog:     recurrence-events(X) :- menopause(X, lt40), tumor-size(X, V), V \= 10-14, node-caps(X, V), V \= no, deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
+prolog:     'recurrence-events'(X) :- menopause(X, lt40), tumor-size(X, V), V \= 10-14, node-caps(X, V), V \= no, deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
 conditions: menopause = lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
 
 logic:      tumor-size ≠ 10-14 ∧ tumor-size ≠ 45-49 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
-prolog:     no-recurrence-events(X) :- tumor-size(X, V), V \= 10-14, tumor-size(X, V), V \= 45-49, node-caps(X, no), deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V), V \= 10-14, tumor-size(X, V), V \= 45-49, node-caps(X, no), deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
 conditions: tumor-size ≠ 10-14, tumor-size ≠ 45-49, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
 
 logic:      tumor-size = 45-49 ∧ tumor-size ≠ 10-14 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
-prolog:     recurrence-events(X) :- tumor-size(X, 45-49), tumor-size(X, V), V \= 10-14, node-caps(X, no), deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
+prolog:     'recurrence-events'(X) :- tumor-size(X, 45-49), tumor-size(X, V), V \= 10-14, node-caps(X, no), deg-malig(X, V), V \= 3, breast-quad(X, V), V \= right_low.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
 conditions: tumor-size = 45-49, tumor-size ≠ 10-14, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
 
 logic:      tumor-size ≠ 10-14 ∧ deg-malig ≠ 3 ∧ breast-quad = right_low → no-recurrence-events
-prolog:     no-recurrence-events(X) :- tumor-size(X, V), V \= 10-14, deg-malig(X, V), V \= 3, breast-quad(X, right_low).
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V), V \= 10-14, deg-malig(X, V), V \= 3, breast-quad(X, right_low).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0
 conditions: tumor-size ≠ 10-14, deg-malig ≠ 3, breast-quad = right_low
 
 logic:      tumor-size = 10-14 ∧ deg-malig ≠ 3 → no-recurrence-events
-prolog:     no-recurrence-events(X) :- tumor-size(X, 10-14), deg-malig(X, V), V \= 3.
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, 10-14), deg-malig(X, V), V \= 3.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: tumor-size = 10-14, deg-malig ≠ 3
 
 logic:      inv-nodes ≠ 0-2 ∧ node-caps = ? ∧ deg-malig = 3 → no-recurrence-events
-prolog:     no-recurrence-events(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, ?), deg-malig(X, 3).
+prolog:     'no-recurrence-events'(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, ?), deg-malig(X, 3).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: inv-nodes ≠ 0-2, node-caps = ?, deg-malig = 3
 
 logic:      inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left ∧ breast-quad ≠ central → recurrence-events
-prolog:     recurrence-events(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, V), V \= central.
+prolog:     'recurrence-events'(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, V), V \= central.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0
 conditions: inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left, breast-quad ≠ central
 
 logic:      inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left ∧ breast-quad = central → no-recurrence-events
-prolog:     no-recurrence-events(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, central).
+prolog:     'no-recurrence-events'(X) :- inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, central).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left, breast-quad = central
 
 logic:      tumor-size ≠ 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast ≠ left → no-recurrence-events
-prolog:     no-recurrence-events(X) :- tumor-size(X, V), V \= 30-34, inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, V), V \= left.
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V), V \= 30-34, inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, V), V \= left.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: tumor-size ≠ 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast ≠ left
 
 logic:      tumor-size = 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast ≠ left → recurrence-events
-prolog:     recurrence-events(X) :- tumor-size(X, 30-34), inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, V), V \= left.
+prolog:     'recurrence-events'(X) :- tumor-size(X, 30-34), inv-nodes(X, V), V \= 0-2, node-caps(X, V), V \= ?, deg-malig(X, 3), breast(X, V), V \= left.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: tumor-size = 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast ≠ left
 
 logic:      age ≠ 40-49 ∧ age ≠ 60-69 ∧ menopause = premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 → recurrence-events
-prolog:     recurrence-events(X) :- age(X, V), V \= 40-49, age(X, V), V \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
+prolog:     'recurrence-events'(X) :- age(X, V), V \= 40-49, age(X, V), V \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
 pattern:    0 0 0 0 0 0 1 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age ≠ 40-49, age ≠ 60-69, menopause = premeno, inv-nodes = 0-2, deg-malig = 3
 
 logic:      age = 40-49 ∧ age ≠ 60-69 ∧ menopause = premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 → no-recurrence-events
-prolog:     no-recurrence-events(X) :- age(X, 40-49), age(X, V), V \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
+prolog:     'no-recurrence-events'(X) :- age(X, 40-49), age(X, V), V \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
 pattern:    0 1 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age = 40-49, age ≠ 60-69, menopause = premeno, inv-nodes = 0-2, deg-malig = 3
 
 logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ ? → no-recurrence-events
-prolog:     no-recurrence-events(X) :- age(X, V), V \= 60-69, menopause(X, V), V \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= ?.
+prolog:     'no-recurrence-events'(X) :- age(X, V), V \= 60-69, menopause(X, V), V \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= ?.
 pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0
 conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ ?
 
 logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = ? → recurrence-events
-prolog:     recurrence-events(X) :- age(X, V), V \= 60-69, menopause(X, V), V \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, ?).
+prolog:     'recurrence-events'(X) :- age(X, V), V \= 60-69, menopause(X, V), V \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, ?).
 pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad = ?
 
 logic:      age = 60-69 ∧ tumor-size ≠ 20-24 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → no-recurrence-events
-prolog:     no-recurrence-events(X) :- age(X, 60-69), tumor-size(X, V), V \= 20-24, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
+prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V), V \= 20-24, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
 pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age = 60-69, tumor-size ≠ 20-24, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
 
 logic:      age = 60-69 ∧ tumor-size = 20-24 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → recurrence-events
-prolog:     recurrence-events(X) :- age(X, 60-69), tumor-size(X, 20-24), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
+prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 20-24), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
 pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age = 60-69, tumor-size = 20-24, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
 
 logic:      age = 60-69 ∧ tumor-size ≠ 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → recurrence-events
-prolog:     recurrence-events(X) :- age(X, 60-69), tumor-size(X, V), V \= 25-29, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= left_low.
+prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V), V \= 25-29, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= left_low.
 pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
 conditions: age = 60-69, tumor-size ≠ 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
 
 logic:      age = 60-69 ∧ tumor-size = 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → no-recurrence-events
-prolog:     no-recurrence-events(X) :- age(X, 60-69), tumor-size(X, 25-29), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= left_low.
+prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 25-29), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V), V \= left_low.
 pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
 conditions: age = 60-69, tumor-size = 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
 
@@ -342,7 +342,7 @@ conditions: age = 60-69, tumor-size = 25-29, inv-nodes = 0-2, deg-malig = 3, bre
 | 4 | 0.702 | 0.702 | 1.000 | 19 | 7 |
 | 5 | 0.719 | 0.719 | 1.000 | 19 | 7 |
 
-**Summary** (0.1s): tree accuracy 0.724 +/- 0.014, rule-set accuracy 0.724 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.6 of 9 available.
+**Summary** (0.2s): tree accuracy 0.724 +/- 0.014, rule-set accuracy 0.724 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.6 of 9 available.
 
 ---
 
@@ -457,7 +457,7 @@ conditions: bkxcr ≠ f, r2ar8 ≠ t, rimmx = f, wknck = t
 | 4 | 0.942 | 0.942 | 1.000 | 12 | 9 |
 | 5 | 0.956 | 0.956 | 1.000 | 12 | 10 |
 
-**Summary** (0.4s): tree accuracy 0.941 +/- 0.011, rule-set accuracy 0.941 +/- 0.011, tree/rule-set agreement 1.0000, mean rules/fold 11.4, mean attributes used/fold 9.4 of 36 available.
+**Summary** (0.5s): tree accuracy 0.941 +/- 0.011, rule-set accuracy 0.941 +/- 0.011, tree/rule-set agreement 1.0000, mean rules/fold 11.4, mean attributes used/fold 9.4 of 36 available.
 
 ---
 
@@ -469,7 +469,7 @@ n=3772, attributes=27 (21 categorical, 6 numeric), classes=4
 
 ```text
 Decision tree (13 leaves, depth 5):
-|--- TSH>=6.049999952316284 <= 0.50
+|--- TSH>=6.05 <= 0.50
 |   |--- TT4<51.5 <= 0.50
 |   |   |--- class: negative
 |   |--- TT4<51.5 >  0.50
@@ -480,15 +480,15 @@ Decision tree (13 leaves, depth 5):
 |   |   |   |   |--- class: negative
 |   |   |   |--- sex!=M >  0.50
 |   |   |   |   |--- class: secondary_hypothyroid
-|--- TSH>=6.049999952316284 >  0.50
+|--- TSH>=6.05 >  0.50
 |   |--- FTI>=61.5 <= 0.50
 |   |   |--- thyroid_surgery=t <= 0.50
-|   |   |   |--- T3>=2.549999952316284 <= 0.50
-|   |   |   |   |--- TSH>=8.550000190734863 <= 0.50
+|   |   |   |--- T3>=2.55 <= 0.50
+|   |   |   |   |--- TSH>=8.55 <= 0.50
 |   |   |   |   |   |--- class: primary_hypothyroid
-|   |   |   |   |--- TSH>=8.550000190734863 >  0.50
+|   |   |   |   |--- TSH>=8.55 >  0.50
 |   |   |   |   |   |--- class: primary_hypothyroid
-|   |   |   |--- T3>=2.549999952316284 >  0.50
+|   |   |   |--- T3>=2.55 >  0.50
 |   |   |   |   |--- class: negative
 |   |   |--- thyroid_surgery=t >  0.50
 |   |   |   |--- T3>=1.25 <= 0.50
@@ -509,70 +509,70 @@ Decision tree (13 leaves, depth 5):
 
 Extracted DisjointRuleSet (13 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 8/27
 
-logic:      TSH < 6.049999952316284 ∧ TT4 >= 51.5 → negative
-prolog:     negative(X) :- TSH(X, V), V < 6.049999952316284, TT4(X, V), V >= 51.5.
+logic:      TSH < 6.05 ∧ TT4 >= 51.5 → negative
+prolog:     negative(X) :- TSH(X, V), V < 6.05, TT4(X, V), V >= 51.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: TSH < 6.049999952316284, TT4 >= 51.5
+conditions: TSH < 6.05, TT4 >= 51.5
 
-logic:      TSH < 6.049999952316284 ∧ TT4 < 51.5 ∧ referral_source ≠ other → negative
-prolog:     negative(X) :- TSH(X, V), V < 6.049999952316284, TT4(X, V), V < 51.5, referral_source(X, V), V \= other.
+logic:      TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source ≠ other → negative
+prolog:     negative(X) :- TSH(X, V), V < 6.05, TT4(X, V), V < 51.5, referral_source(X, V), V \= other.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
-conditions: TSH < 6.049999952316284, TT4 < 51.5, referral_source ≠ other
+conditions: TSH < 6.05, TT4 < 51.5, referral_source ≠ other
 
-logic:      sex = M ∧ TSH < 6.049999952316284 ∧ TT4 < 51.5 ∧ referral_source = other → negative
-prolog:     negative(X) :- sex(X, M), TSH(X, V), V < 6.049999952316284, TT4(X, V), V < 51.5, referral_source(X, other).
+logic:      sex = M ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → negative
+prolog:     negative(X) :- sex(X, M), TSH(X, V), V < 6.05, TT4(X, V), V < 51.5, referral_source(X, other).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: sex = M, TSH < 6.049999952316284, TT4 < 51.5, referral_source = other
+conditions: sex = M, TSH < 6.05, TT4 < 51.5, referral_source = other
 
-logic:      sex ≠ M ∧ TSH < 6.049999952316284 ∧ TT4 < 51.5 ∧ referral_source = other → secondary_hypothyroid
-prolog:     secondary_hypothyroid(X) :- sex(X, V), V \= M, TSH(X, V), V < 6.049999952316284, TT4(X, V), V < 51.5, referral_source(X, other).
+logic:      sex ≠ M ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → secondary_hypothyroid
+prolog:     secondary_hypothyroid(X) :- sex(X, V), V \= M, TSH(X, V), V < 6.05, TT4(X, V), V < 51.5, referral_source(X, other).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: sex ≠ M, TSH < 6.049999952316284, TT4 < 51.5, referral_source = other
+conditions: sex ≠ M, TSH < 6.05, TT4 < 51.5, referral_source = other
 
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.049999952316284 ∧ TSH < 8.550000190734863 ∧ T3 < 2.549999952316284 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.049999952316284, TSH(X, V), V < 8.550000190734863, T3(X, V), V < 2.549999952316284, FTI(X, V), V < 61.5.
+logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TSH < 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.05, TSH(X, V), V < 8.55, T3(X, V), V < 2.55, FTI(X, V), V < 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.049999952316284, TSH < 8.550000190734863, T3 < 2.549999952316284, FTI < 61.5
+conditions: thyroid_surgery ≠ t, TSH >= 6.05, TSH < 8.55, T3 < 2.55, FTI < 61.5
 
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.049999952316284 ∧ TSH >= 8.550000190734863 ∧ T3 < 2.549999952316284 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.049999952316284, TSH(X, V), V >= 8.550000190734863, T3(X, V), V < 2.549999952316284, FTI(X, V), V < 61.5.
+logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TSH >= 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.05, TSH(X, V), V >= 8.55, T3(X, V), V < 2.55, FTI(X, V), V < 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.049999952316284, TSH >= 8.550000190734863, T3 < 2.549999952316284, FTI < 61.5
+conditions: thyroid_surgery ≠ t, TSH >= 6.05, TSH >= 8.55, T3 < 2.55, FTI < 61.5
 
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.049999952316284 ∧ T3 >= 2.549999952316284 ∧ FTI < 61.5 → negative
-prolog:     negative(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.049999952316284, T3(X, V), V >= 2.549999952316284, FTI(X, V), V < 61.5.
+logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ T3 >= 2.55 ∧ FTI < 61.5 → negative
+prolog:     negative(X) :- thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.05, T3(X, V), V >= 2.55, FTI(X, V), V < 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.049999952316284, T3 >= 2.549999952316284, FTI < 61.5
+conditions: thyroid_surgery ≠ t, TSH >= 6.05, T3 >= 2.55, FTI < 61.5
 
-logic:      thyroid_surgery = t ∧ TSH >= 6.049999952316284 ∧ T3 < 1.25 ∧ FTI < 61.5 → negative
-prolog:     negative(X) :- thyroid_surgery(X, t), TSH(X, V), V >= 6.049999952316284, T3(X, V), V < 1.25, FTI(X, V), V < 61.5.
+logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ T3 < 1.25 ∧ FTI < 61.5 → negative
+prolog:     negative(X) :- thyroid_surgery(X, t), TSH(X, V), V >= 6.05, T3(X, V), V < 1.25, FTI(X, V), V < 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery = t, TSH >= 6.049999952316284, T3 < 1.25, FTI < 61.5
+conditions: thyroid_surgery = t, TSH >= 6.05, T3 < 1.25, FTI < 61.5
 
-logic:      thyroid_surgery = t ∧ TSH >= 6.049999952316284 ∧ T3 >= 1.25 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, t), TSH(X, V), V >= 6.049999952316284, T3(X, V), V >= 1.25, FTI(X, V), V < 61.5.
+logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ T3 >= 1.25 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, t), TSH(X, V), V >= 6.05, T3(X, V), V >= 1.25, FTI(X, V), V < 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery = t, TSH >= 6.049999952316284, T3 >= 1.25, FTI < 61.5
+conditions: thyroid_surgery = t, TSH >= 6.05, T3 >= 1.25, FTI < 61.5
 
-logic:      on_thyroxine ≠ f ∧ TSH >= 6.049999952316284 ∧ FTI >= 61.5 → negative
-prolog:     negative(X) :- on_thyroxine(X, V), V \= f, TSH(X, V), V >= 6.049999952316284, FTI(X, V), V >= 61.5.
+logic:      on_thyroxine ≠ f ∧ TSH >= 6.05 ∧ FTI >= 61.5 → negative
+prolog:     negative(X) :- on_thyroxine(X, V), V \= f, TSH(X, V), V >= 6.05, FTI(X, V), V >= 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine ≠ f, TSH >= 6.049999952316284, FTI >= 61.5
+conditions: on_thyroxine ≠ f, TSH >= 6.05, FTI >= 61.5
 
-logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.049999952316284 ∧ TT4 < 51.5 ∧ FTI >= 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.049999952316284, TT4(X, V), V < 51.5, FTI(X, V), V >= 61.5.
+logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TT4 < 51.5 ∧ FTI >= 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.05, TT4(X, V), V < 51.5, FTI(X, V), V >= 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.049999952316284, TT4 < 51.5, FTI >= 61.5
+conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.05, TT4 < 51.5, FTI >= 61.5
 
-logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.049999952316284 ∧ TT4 >= 51.5 ∧ FTI >= 61.5 → compensated_hypothyroid
-prolog:     compensated_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.049999952316284, TT4(X, V), V >= 51.5, FTI(X, V), V >= 61.5.
+logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TT4 >= 51.5 ∧ FTI >= 61.5 → compensated_hypothyroid
+prolog:     compensated_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V), V \= t, TSH(X, V), V >= 6.05, TT4(X, V), V >= 51.5, FTI(X, V), V >= 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.049999952316284, TT4 >= 51.5, FTI >= 61.5
+conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.05, TT4 >= 51.5, FTI >= 61.5
 
-logic:      on_thyroxine = f ∧ thyroid_surgery = t ∧ TSH >= 6.049999952316284 ∧ FTI >= 61.5 → negative
-prolog:     negative(X) :- on_thyroxine(X, f), thyroid_surgery(X, t), TSH(X, V), V >= 6.049999952316284, FTI(X, V), V >= 61.5.
+logic:      on_thyroxine = f ∧ thyroid_surgery = t ∧ TSH >= 6.05 ∧ FTI >= 61.5 → negative
+prolog:     negative(X) :- on_thyroxine(X, f), thyroid_surgery(X, t), TSH(X, V), V >= 6.05, FTI(X, V), V >= 61.5.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine = f, thyroid_surgery = t, TSH >= 6.049999952316284, FTI >= 61.5
+conditions: on_thyroxine = f, thyroid_surgery = t, TSH >= 6.05, FTI >= 61.5
 
 ```
 
@@ -647,7 +647,7 @@ pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
 conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots = absent, fruit-spots ≠ brown-w/blk-specks
 
 logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots ≠ absent ∧ fruit-spots ≠ brown-w/blk-specks → phytophthora-rot
-prolog:     phytophthora-rot(X) :- leafspot-size(X, V), V \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, V), V \= absent, fruit-spots(X, V), V \= brown-w/blk-specks.
+prolog:     'phytophthora-rot'(X) :- leafspot-size(X, V), V \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, V), V \= absent, fruit-spots(X, V), V \= brown-w/blk-specks.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots ≠ absent, fruit-spots ≠ brown-w/blk-specks
 
@@ -657,57 +657,57 @@ pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
 conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots = brown-w/blk-specks
 
 logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor = brown → brown-stem-rot
-prolog:     brown-stem-rot(X) :- leafspot-size(X, V), V \= gt-1/8, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, brown).
+prolog:     'brown-stem-rot'(X) :- leafspot-size(X, V), V \= gt-1/8, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, brown).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, canker-lesion ≠ dk-brown-blk, int-discolor = brown
 
 logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers = below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown → rhizoctonia-root-rot
-prolog:     rhizoctonia-root-rot(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, below-soil), canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown.
+prolog:     'rhizoctonia-root-rot'(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, below-soil), canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, stem-cankers = below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown
 
 logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown ∧ sclerotia = present → charcoal-rot
-prolog:     charcoal-rot(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, V), V \= below-soil, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown, sclerotia(X, present).
+prolog:     'charcoal-rot'(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, V), V \= below-soil, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown, sclerotia(X, present).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown, sclerotia = present
 
 logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown ∧ sclerotia ≠ present → bacterial-blight
-prolog:     bacterial-blight(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, V), V \= below-soil, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown, sclerotia(X, V), V \= present.
+prolog:     'bacterial-blight'(X) :- leafspot-size(X, V), V \= gt-1/8, stem-cankers(X, V), V \= below-soil, canker-lesion(X, V), V \= dk-brown-blk, int-discolor(X, V), V \= brown, sclerotia(X, V), V \= present.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown, sclerotia ≠ present
 
 logic:      leafspot-size = gt-1/8 ∧ fruiting-bodies = present ∧ fruit-pods ≠ diseased → brown-spot
-prolog:     brown-spot(X) :- leafspot-size(X, gt-1/8), fruiting-bodies(X, present), fruit-pods(X, V), V \= diseased.
+prolog:     'brown-spot'(X) :- leafspot-size(X, gt-1/8), fruiting-bodies(X, present), fruit-pods(X, V), V \= diseased.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size = gt-1/8, fruiting-bodies = present, fruit-pods ≠ diseased
 
 logic:      leafspot-size = gt-1/8 ∧ leaf-mild = lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → downy-mildew
-prolog:     downy-mildew(X) :- leafspot-size(X, gt-1/8), leaf-mild(X, lower-surf), fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
+prolog:     'downy-mildew'(X) :- leafspot-size(X, gt-1/8), leaf-mild(X, lower-surf), fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size = gt-1/8, leaf-mild = lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
 logic:      date = june ∧ leafspot-size = gt-1/8 ∧ leaf-mild ≠ lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → brown-spot
-prolog:     brown-spot(X) :- date(X, june), leafspot-size(X, gt-1/8), leaf-mild(X, V), V \= lower-surf, fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
+prolog:     'brown-spot'(X) :- date(X, june), leafspot-size(X, gt-1/8), leaf-mild(X, V), V \= lower-surf, fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
 pattern:    0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: date = june, leafspot-size = gt-1/8, leaf-mild ≠ lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
 logic:      date ≠ june ∧ leafspot-size = gt-1/8 ∧ leaf-mild ≠ lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → alternarialeaf-spot
-prolog:     alternarialeaf-spot(X) :- date(X, V), V \= june, leafspot-size(X, gt-1/8), leaf-mild(X, V), V \= lower-surf, fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
+prolog:     'alternarialeaf-spot'(X) :- date(X, V), V \= june, leafspot-size(X, gt-1/8), leaf-mild(X, V), V \= lower-surf, fruiting-bodies(X, V), V \= present, fruit-pods(X, V), V \= diseased.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: date ≠ june, leafspot-size = gt-1/8, leaf-mild ≠ lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
 logic:      germination ≠ 90-100 ∧ leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots ≠ colored → brown-spot
-prolog:     brown-spot(X) :- germination(X, V), V \= 90-100, leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V), V \= colored.
+prolog:     'brown-spot'(X) :- germination(X, V), V \= 90-100, leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V), V \= colored.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: germination ≠ 90-100, leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots ≠ colored
 
 logic:      germination = 90-100 ∧ leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots ≠ colored → frog-eye-leaf-spot
-prolog:     frog-eye-leaf-spot(X) :- germination(X, 90-100), leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V), V \= colored.
+prolog:     'frog-eye-leaf-spot'(X) :- germination(X, 90-100), leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V), V \= colored.
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: germination = 90-100, leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots ≠ colored
 
 logic:      leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots = colored → frog-eye-leaf-spot
-prolog:     frog-eye-leaf-spot(X) :- leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, colored).
+prolog:     'frog-eye-leaf-spot'(X) :- leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, colored).
 pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots = colored
 
@@ -723,7 +723,7 @@ conditions: leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots = colored
 | 4 | 0.676 | 0.676 | 1.000 | 14 | 11 |
 | 5 | 0.684 | 0.684 | 1.000 | 14 | 10 |
 
-**Summary** (0.7s): tree accuracy 0.650 +/- 0.031, rule-set accuracy 0.650 +/- 0.031, tree/rule-set agreement 1.0000, mean rules/fold 14.0, mean attributes used/fold 10.8 of 35 available.
+**Summary** (0.5s): tree accuracy 0.650 +/- 0.031, rule-set accuracy 0.650 +/- 0.031, tree/rule-set agreement 1.0000, mean rules/fold 14.0, mean attributes used/fold 10.8 of 35 available.
 
 ---
 
@@ -844,7 +844,7 @@ conditions: odor ≠ n, stalk-root = c, ring-number = n
 | 4 | 0.999 | 0.999 | 1.000 | 12 | 7 |
 | 5 | 0.999 | 0.999 | 1.000 | 12 | 7 |
 
-**Summary** (1.0s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.0 of 21 available.
+**Summary** (0.9s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.0 of 21 available.
 
 ---
 
@@ -886,18 +886,18 @@ Decision tree (233 leaves, depth 8):
 |   |   |   |   |   |   |   |--- Vertical_Distance_To_Hydrology>=69.5 >  0.50
 |   |   |   |   |   |   |   |   |--- class: 2
 |   |   |   |   |--- Horizontal_Distance_To_Roadways<1534.0 >  0.50
-|   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points<1058.5 <= 0.50
-|   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=63.5 <= 0.50
+|   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points<1058.0 <= 0.50
+|   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=64.0 <= 0.50
 |   |   |   |   |   |   |   |--- Hillshade_9am>=196.5 <= 0.50
 |   |   |   |   |   |   |   |   |--- class: 2
 |   |   |   |   |   |   |   |--- Hillshade_9am>=196.5 >  0.50
 |   |   |   |   |   |   |   |   |--- class: 1
-|   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=63.5 >  0.50
+|   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=64.0 >  0.50
 |   |   |   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points>=1556.5 <= 0.50
 |   |   |   |   |   |   |   |   |--- class: 2
 |   |   |   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points>=1556.5 >  0.50
 |   |   |   |   |   |   |   |   |--- class: 2
-|   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points<1058.5 >  0.50
+|   |   |   |   |   |--- Horizontal_Distance_To_Fire_Points<1058.0 >  0.50
 |   |   |   |   |   |   |--- Aspect<146.5 <= 0.50
 |   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=440.0 <= 0.50
 |   |   |   |   |   |   |   |   |--- class: 3
@@ -925,9 +925,9 @@ Decision tree (233 leaves, depth 8):
 |   |   |   |   |   |   |   |   |--- class: 6
 |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=15.0 >  0.50
 |   |   |   |   |   |   |--- Aspect<69.5 <= 0.50
-|   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=63.5 <= 0.50
+|   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=64.0 <= 0.50
 |   |   |   |   |   |   |   |   |--- class: 3
-|   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=63.5 >  0.50
+|   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology>=64.0 >  0.50
 |   |   |   |   |   |   |   |   |--- class: 3
 |   |   |   |   |   |   |--- Aspect<69.5 >  0.50
 |   |   |   |   |   |   |   |--- Horizontal_Distance_To_Hydrology<166.0 <= 0.50
@@ -983,152 +983,152 @@ Decision tree (233 leaves, depth 8):
 Extracted DisjointRuleSet (233 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 35/54
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Vertical_Distance_To_Hydrology >= 138.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am >= 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V >= 138.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V >= 138.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Vertical_Distance_To_Hydrology >= 138.5, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am >= 196.5, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Vertical_Distance_To_Hydrology < 138.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am >= 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V < 138.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V < 138.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Vertical_Distance_To_Hydrology < 138.5, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am >= 196.5, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology >= 166.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am < 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology >= 166.0, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am < 196.5, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am < 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am < 196.5, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am >= 227.5 ∧ Horizontal_Distance_To_Fire_Points < 617.0 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 227.5, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V >= 227.5, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am >= 227.5, Horizontal_Distance_To_Fire_Points < 617.0, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Hillshade_9am < 227.5 ∧ Horizontal_Distance_To_Fire_Points < 617.0 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 227.5, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Hillshade_9am(X, V), V < 227.5, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Roadways >= 1534.0, Hillshade_9am < 227.5, Horizontal_Distance_To_Fire_Points < 617.0, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Vertical_Distance_To_Hydrology < 69.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 617.0 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V < 69.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V < 69.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Vertical_Distance_To_Hydrology < 69.5, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points >= 617.0, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Vertical_Distance_To_Hydrology >= 69.5 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 617.0 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V >= 69.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Vertical_Distance_To_Hydrology(X, V), V >= 69.5, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Vertical_Distance_To_Hydrology >= 69.5, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points >= 617.0, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 63.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Hillshade_9am < 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1058.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 63.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 64.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Hillshade_9am < 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1058.0 ∧ Soil_Type_3 >= 0.5 → 2
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 64.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Hillshade_9am(X, V), V < 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 63.5, Horizontal_Distance_To_Roadways < 1534.0, Hillshade_9am < 196.5, Horizontal_Distance_To_Fire_Points >= 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 64.0, Horizontal_Distance_To_Roadways < 1534.0, Hillshade_9am < 196.5, Horizontal_Distance_To_Fire_Points >= 1058.0, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 63.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Hillshade_9am >= 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1058.5 ∧ Soil_Type_3 >= 0.5 → 1
-prolog:     1(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 63.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 64.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Hillshade_9am >= 196.5 ∧ Horizontal_Distance_To_Fire_Points >= 1058.0 ∧ Soil_Type_3 >= 0.5 → 1
+prolog:     '1'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 64.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Hillshade_9am(X, V), V >= 196.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 63.5, Horizontal_Distance_To_Roadways < 1534.0, Hillshade_9am >= 196.5, Horizontal_Distance_To_Fire_Points >= 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 64.0, Horizontal_Distance_To_Roadways < 1534.0, Hillshade_9am >= 196.5, Horizontal_Distance_To_Fire_Points >= 1058.0, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology >= 63.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 1058.5 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 63.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.5, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology >= 64.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 1058.0 ∧ Horizontal_Distance_To_Fire_Points < 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 64.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology >= 63.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points >= 1058.5, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology >= 64.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points >= 1058.0, Horizontal_Distance_To_Fire_Points < 1556.5, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology >= 63.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 1058.5 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 63.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.5, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology >= 64.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 1058.0 ∧ Horizontal_Distance_To_Fire_Points >= 1556.5 ∧ Soil_Type_3 >= 0.5 → 2
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V >= 64.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 1058.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 1556.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology >= 63.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points >= 1058.5, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology >= 64.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points >= 1058.0, Horizontal_Distance_To_Fire_Points >= 1556.5, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 146.5 ∧ Horizontal_Distance_To_Hydrology < 440.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 146.5, Horizontal_Distance_To_Hydrology(X, V), V < 440.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 146.5 ∧ Horizontal_Distance_To_Hydrology < 440.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.0 ∧ Soil_Type_3 >= 0.5 → 3
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 146.5, Horizontal_Distance_To_Hydrology(X, V), V < 440.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect >= 146.5, Horizontal_Distance_To_Hydrology < 440.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect >= 146.5, Horizontal_Distance_To_Hydrology < 440.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.0, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 146.5 ∧ Horizontal_Distance_To_Hydrology >= 440.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 146.5, Horizontal_Distance_To_Hydrology(X, V), V >= 440.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 146.5 ∧ Horizontal_Distance_To_Hydrology >= 440.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.0 ∧ Soil_Type_3 >= 0.5 → 3
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 146.5, Horizontal_Distance_To_Hydrology(X, V), V >= 440.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect >= 146.5, Horizontal_Distance_To_Hydrology >= 440.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect >= 146.5, Horizontal_Distance_To_Hydrology >= 440.0, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.0, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 146.5 ∧ Vertical_Distance_To_Hydrology < -26.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.5 ∧ Soil_Type_3 >= 0.5 → 6
-prolog:     6(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 146.5, Vertical_Distance_To_Hydrology(X, V), V < -26.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 146.5 ∧ Vertical_Distance_To_Hydrology < -26.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.0 ∧ Soil_Type_3 >= 0.5 → 6
+prolog:     '6'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 146.5, Vertical_Distance_To_Hydrology(X, V), V < -26.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect < 146.5, Vertical_Distance_To_Hydrology < -26.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect < 146.5, Vertical_Distance_To_Hydrology < -26.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.0, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 146.5 ∧ Vertical_Distance_To_Hydrology >= -26.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 146.5, Vertical_Distance_To_Hydrology(X, V), V >= -26.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation >= 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 146.5 ∧ Vertical_Distance_To_Hydrology >= -26.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 1058.0 ∧ Soil_Type_3 >= 0.5 → 3
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 146.5, Vertical_Distance_To_Hydrology(X, V), V >= -26.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 1058.0, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect < 146.5, Vertical_Distance_To_Hydrology >= -26.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation >= 2654.5, Elevation < 3047.5, Aspect < 146.5, Vertical_Distance_To_Hydrology >= -26.5, Horizontal_Distance_To_Roadways < 1534.0, Horizontal_Distance_To_Fire_Points < 1058.0, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Wilderness_Area_2 < 0.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Wilderness_Area_2(X, V), V < 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Wilderness_Area_2(X, V), V < 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Wilderness_Area_2 < 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 69.5 ∧ Horizontal_Distance_To_Hydrology < 15.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect >= 69.5, Horizontal_Distance_To_Hydrology < 15.0, Horizontal_Distance_To_Roadways < 1534.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 69.5 ∧ Horizontal_Distance_To_Hydrology < 15.0 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect < 69.5, Horizontal_Distance_To_Hydrology < 15.0, Horizontal_Distance_To_Roadways < 1534.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 15.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 617.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 617.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 15.0, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points < 617.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 15.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 617.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 6
-prolog:     6(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '6'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 15.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 617.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 15.0, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points >= 617.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology < 63.5 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V < 63.5, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology < 64.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V < 64.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect >= 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology < 63.5, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect >= 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology < 64.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
-logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology >= 63.5 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V >= 63.5, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect >= 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology >= 64.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V >= 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V >= 64.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect >= 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology >= 63.5, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
+conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect >= 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology >= 64.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology >= 166.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 3
-prolog:     3(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V >= 166.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '3'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V >= 166.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect < 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology >= 166.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation < 2654.5 ∧ Elevation < 3047.5 ∧ Aspect < 69.5 ∧ Horizontal_Distance_To_Hydrology >= 15.0 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Wilderness_Area_2 >= 0.5 ∧ Soil_Type_3 >= 0.5 → 6
-prolog:     6(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
+prolog:     '6'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V < 2654.5, Elevation(X, V), V < 3047.5, Aspect(X, V), V < 69.5, Horizontal_Distance_To_Hydrology(X, V), V >= 15.0, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Wilderness_Area_2(X, V), V >= 0.5, Soil_Type_3(X, V), V >= 0.5.
 pattern:    1 0 0 0 0 0 1 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation < 2654.5, Elevation < 3047.5, Aspect < 69.5, Horizontal_Distance_To_Hydrology >= 15.0, Horizontal_Distance_To_Hydrology < 166.0, Wilderness_Area_2 >= 0.5, Soil_Type_3 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2942.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Horizontal_Distance_To_Roadways >= 570.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Soil_Type_3 < 0.5 ∧ Soil_Type_22 >= 0.5 → 2
-prolog:     2(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 570.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
+prolog:     '2'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 570.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
 pattern:    1 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Horizontal_Distance_To_Roadways >= 570.5, Horizontal_Distance_To_Roadways < 1534.0, Soil_Type_3 < 0.5, Soil_Type_22 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2942.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Horizontal_Distance_To_Roadways < 570.5 ∧ Horizontal_Distance_To_Roadways < 1534.0 ∧ Soil_Type_3 < 0.5 ∧ Soil_Type_22 >= 0.5 → 1
-prolog:     1(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V < 570.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
+prolog:     '1'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V < 570.5, Horizontal_Distance_To_Roadways(X, V), V < 1534.0, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
 pattern:    1 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Horizontal_Distance_To_Roadways < 570.5, Horizontal_Distance_To_Roadways < 1534.0, Soil_Type_3 < 0.5, Soil_Type_22 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2942.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points < 2896.5 ∧ Soil_Type_3 < 0.5 ∧ Soil_Type_22 >= 0.5 → 1
-prolog:     1(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 2896.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
+prolog:     '1'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V < 2896.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
 pattern:    1 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points < 2896.5, Soil_Type_3 < 0.5, Soil_Type_22 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2942.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Horizontal_Distance_To_Roadways >= 1534.0 ∧ Horizontal_Distance_To_Fire_Points >= 2896.5 ∧ Soil_Type_3 < 0.5 ∧ Soil_Type_22 >= 0.5 → 1
-prolog:     1(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 2896.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
+prolog:     '1'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Horizontal_Distance_To_Roadways(X, V), V >= 1534.0, Horizontal_Distance_To_Fire_Points(X, V), V >= 2896.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_22(X, V), V >= 0.5.
 pattern:    1 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Horizontal_Distance_To_Roadways >= 1534.0, Horizontal_Distance_To_Fire_Points >= 2896.5, Soil_Type_3 < 0.5, Soil_Type_22 >= 0.5
 
 logic:      Elevation >= 2510.5 ∧ Elevation >= 2942.5 ∧ Elevation < 3047.5 ∧ Horizontal_Distance_To_Hydrology < 166.0 ∧ Hillshade_Noon < 216.5 ∧ Soil_Type_3 < 0.5 ∧ Soil_Type_21 < 0.5 ∧ Soil_Type_22 < 0.5 → 1
-prolog:     1(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Hillshade_Noon(X, V), V < 216.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_21(X, V), V < 0.5, Soil_Type_22(X, V), V < 0.5.
+prolog:     '1'(X) :- Elevation(X, V), V >= 2510.5, Elevation(X, V), V >= 2942.5, Elevation(X, V), V < 3047.5, Horizontal_Distance_To_Hydrology(X, V), V < 166.0, Hillshade_Noon(X, V), V < 216.5, Soil_Type_3(X, V), V < 0.5, Soil_Type_21(X, V), V < 0.5, Soil_Type_22(X, V), V < 0.5.
 pattern:    1 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizontal_Distance_To_Hydrology < 166.0, Hillshade_Noon < 216.5, Soil_Type_3 < 0.5, Soil_Type_21 < 0.5, Soil_Type_22 < 0.5
 
@@ -1145,7 +1145,7 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 | 4 | 0.736 | 0.736 | 1.000 | 238 | 34 |
 | 5 | 0.738 | 0.738 | 1.000 | 237 | 34 |
 
-**Summary** (349.2s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
+**Summary** (324.1s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
 
 ---
 
@@ -1155,10 +1155,10 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 
 | dataset | n | categ. | numeric | tree acc | rule acc | agree | rules/fold | attrs used/fold | time(s) |
 |---|---|---|---|---|---|---|---|---|---|
-| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.1 |
-| breast-cancer | 286 | 9 | 0 | 0.724±0.014 | 0.724±0.014 | 1.000 | 19.0 | 7.6 | 0.1 |
-| kr-vs-kp | 3196 | 36 | 0 | 0.941±0.011 | 0.941±0.011 | 1.000 | 11.4 | 9.4 | 0.4 |
+| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.2 |
+| breast-cancer | 286 | 9 | 0 | 0.724±0.014 | 0.724±0.014 | 1.000 | 19.0 | 7.6 | 0.2 |
+| kr-vs-kp | 3196 | 36 | 0 | 0.941±0.011 | 0.941±0.011 | 1.000 | 11.4 | 9.4 | 0.5 |
 | hypothyroid | 3772 | 21 | 6 | 0.992±0.003 | 0.992±0.003 | 1.000 | 13.8 | 7.8 | 1.0 |
-| soybean | 683 | 35 | 0 | 0.650±0.031 | 0.650±0.031 | 1.000 | 14.0 | 10.8 | 0.7 |
-| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.0 | 1.0 |
-| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 349.2 |
+| soybean | 683 | 35 | 0 | 0.650±0.031 | 0.650±0.031 | 1.000 | 14.0 | 10.8 | 0.5 |
+| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.0 | 0.9 |
+| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 324.1 |

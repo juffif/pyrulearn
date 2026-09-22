@@ -302,6 +302,42 @@ def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
     print("SklearnTreeImporter stamps rule stats only when the fit() round trip gives it data: OK")
 
 
+def test_prettify_threshold_finds_the_coarsest_value_in_the_real_data_gap():
+    from pyrulearn.interfaces.sklearn import _prettify_threshold
+
+    sorted_unique = np.array([1.0, 4.0, 15.1458, 15.2, 30.0])
+    ugly = (15.1458 + 15.2) / 2  # 15.172899999999998 -- sklearn's own style of split point
+    pretty = _prettify_threshold(ugly, sorted_unique)
+    assert pretty == 15.17                       # coarsely rounded, not sklearn's raw many-digit value
+    assert 15.1458 < pretty < 15.2               # still the same open gap -- identical partition
+
+    # a value sitting in a genuinely tight real gap can't be shortened
+    # below the precision that gap actually needs
+    tight_unique = np.array([15.1458, 15.14581])
+    tight = _prettify_threshold(15.145805, tight_unique)
+    assert 15.1458 < tight < 15.14581
+    print("_prettify_threshold: OK")
+
+
+def test_tree_thresholds_prettifies_without_changing_the_partition():
+    from pyrulearn.interfaces.sklearn import tree_thresholds
+
+    # two distinct values only, so there is exactly one possible split,
+    # at their exact midpoint -- sklearn would return that midpoint
+    # verbatim (an ugly float; see the assertion below), unprettified
+    values = np.array([15.1458] * 5 + [15.2] * 5)
+    y = np.array([0] * 5 + [1] * 5)
+    raw_midpoint = (15.1458 + 15.2) / 2
+    assert repr(raw_midpoint) == "15.172899999999998"  # documents the artifact this fix removes
+
+    thresholds = tree_thresholds(values, y, max_intervals=2)
+    assert thresholds == [15.17]
+    # the prettified threshold partitions this column exactly like the
+    # raw midpoint would -- rounding changed nothing but the display
+    assert np.array_equal(values >= thresholds[0], values >= raw_midpoint)
+    print("tree_thresholds prettification: OK")
+
+
 if __name__ == "__main__":
     test_stamp_rule_provenance_gives_each_rule_its_own_instance()
     test_from_sklearn_tree_returns_disjoint_ruleset()
@@ -313,4 +349,6 @@ if __name__ == "__main__":
     test_random_forest_import_model_with_data_gives_every_leaf_measured_stats()
     test_tree_learners_on_the_fit_switcher()
     test_sklearn_tree_importer_stamps_stats_only_when_data_is_given()
+    test_prettify_threshold_finds_the_coarsest_value_in_the_real_data_gap()
+    test_tree_thresholds_prettifies_without_changing_the_partition()
     print("\nAll tests passed.")
