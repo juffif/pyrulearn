@@ -56,43 +56,41 @@ already-fitted external model (or its text output) into a `RuleModel`.
 
 ### Natively implemented
 
-| Algorithm | Class | Notes | Reference |
+| Algorithm | Class (in `pyrulearn.learners`) | Notes | Reference |
 |---|---|---|---|
-| **SeCo framework** | `pyrulearn.learners.seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
-| **CN2** | `pyrulearn.learners.seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test | Clark & Niblett 1989; Clark & Boswell 1991 |
-| **AQR** | `pyrulearn.learners.seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
-| **PFOIL** | `pyrulearn.learners.seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
-| **FOSSIL** | `pyrulearn.learners.seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
-| **Pypper** | `pyrulearn.learners.seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
-| **LORD** (simplified, `PyLORD`) | `pyrulearn.learners.pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
-| **Class association rule mining** | `pyrulearn.learners.associative.ClassAssociationRuleMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
-| **CBA** | `pyrulearn.learners.associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
-| **CMAR** | `pyrulearn.learners.associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
-| **IDS** | `pyrulearn.learners.ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
-| **Multiclass decomposition** | `pyrulearn.learners.multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
+| **SeCo framework** | `seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
+| **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test | Clark & Niblett 1989; Clark & Boswell 1991 |
+| **AQR** | `seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
+| **PFOIL** | `seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
+| **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
+| **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
+| **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
+| **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
+| **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
+| **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
+| **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
+| **Multiclass decomposition** | `multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
 
 `CBA`, `CMAR` and `IDS` are *rule distillers*: each consumes any pool of
 rules given as a `FlatRuleSet` (`rules=`) — mined by
-`ClassAssociationRuleMiner` by default, but equally one extracted from a
+`CARMiner` by default, but equally one extracted from a
 random forest — and returns its own, much smaller model.
 
 ### Interfaced (external implementations)
 
-| Algorithm | Class(es) | Requires | Reference |
+| Algorithm | Class(es) (in `pyrulearn.interfaces`) | Requires | Reference |
 |---|---|---|---|
-| **Decision tree** (CART) | `pyrulearn.interfaces.sklearn.DecisionTree`, `SklearnTreeImporter` | `scikit-learn` | Breiman et al. 1984 |
-| **Random forest** | `pyrulearn.interfaces.sklearn.RandomForest`, `RandomForestImporter` | `scikit-learn` | Breiman 2001 |
-| **sklearn estimator wrapper** | `pyrulearn.interfaces.sklearn.RuleSetClassifier` (any `RuleModel` as a `BaseEstimator`, for `cross_val_score`, `GridSearchCV`, pipelines) | `scikit-learn` | |
-| **IREP** | `pyrulearn.interfaces.wittgenstein.IREP`, `IREPImporter` | `wittgenstein` | Fürnkranz & Widmer 1994 |
-| **RIPPER** | `pyrulearn.interfaces.wittgenstein.RIPPERk`, `RIPPERImporter` | `wittgenstein` | Cohen 1995 |
-| **Bayesian Rule Lists** | `pyrulearn.interfaces.imodels.BayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
-| **Bayesian Rule Sets** | `pyrulearn.interfaces.imodels.BayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
-| **JRip** (Weka's RIPPER) | `pyrulearn.interfaces.weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
-| **PART** | `pyrulearn.interfaces.weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
-| **J48** (Weka's C4.5) | `pyrulearn.interfaces.weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
-| **LORD** (reference implementation) | `pyrulearn.interfaces.lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
-| **CBA** | `pyrulearn.interfaces.pyarc.PyarcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
-| **Pattern strings** | `pyrulearn.interfaces.PatternStringImporter` (reference `StringRuleImporter`) | | |
+| **Decision tree** (CART) | `sklearn.DecisionTree`, `SklearnTreeImporter` | `scikit-learn` | Breiman et al. 1984 |
+| **Random forest** | `sklearn.RandomForest`, `RandomForestImporter` | `scikit-learn` | Breiman 2001 |
+| **IREP** | `wittgenstein.IREP`, `IREPImporter` | `wittgenstein` | Fürnkranz & Widmer 1994 |
+| **RIPPER** | `wittgenstein.RIPPERk`, `RIPPERImporter` | `wittgenstein` | Cohen 1995 |
+| **Bayesian Rule Lists** | `imodels.BayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
+| **Bayesian Rule Sets** | `imodels.BayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
+| **JRip** (Weka's RIPPER) | `weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
+| **PART** | `weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
+| **J48** (Weka's C4.5) | `weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
+| **LORD** (reference implementation) | `lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
+| **CBA** | `pyarc.PyarcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
 
 Many of the ideas behind this library, such as the separate-and-conquer
 algorithms and rule-evaluation heuristics, are described in Fürnkranz,
@@ -105,18 +103,18 @@ One row per package or top-level module, in alphabetical order; submodules
 are named inline. The module docstrings and the sections below carry the
 details.
 
-| Module | What it's for |
+| Module (in `pyrulearn`) | What it's for |
 |---|---|
-| `pyrulearn.attributes` | Typed attributes (boolean, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
-| `pyrulearn.combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `pyrulearn.data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
-| `pyrulearn.evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
-| `pyrulearn.heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
-| `pyrulearn.interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `pyrulearn.learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`ClassAssociationRuleMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
-| `pyrulearn.models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `ClassAssociationRuleMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
-| `pyrulearn.pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
-| `pyrulearn.rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
+| `attributes` | Typed attributes (boolean, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
+| `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
+| `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
+| `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
+| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
+| `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
+| `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
 
 ## Data representation
 
@@ -1201,6 +1199,8 @@ display/constraints and object identity with the rest of the pipeline
 (no separate object to `remap` later, if you're already using one
 shared `DataSpec`).
 
+### Text formats: `StringRuleImporter`
+
 **`StringRuleImporter`** -- for a string/serialized rule format (RIPPER/JRip,
 CN2, FOIL, CBA/CMAR-style association rules, decision-list text dumps,
 ...); named after the Python-level shape of the input, same as
@@ -1272,6 +1272,14 @@ rules = RandomForestImporter().import_model(fitted_forest, my_dataspec)
 my_rep = BooleanDataRepresentation(my_dataspec, X, y)
 preds = rules.predict(my_rep, combiner=MacroVoteCombiner())  # soft voting, ~matches sklearn
 ```
+
+This module also has the reverse direction: `RuleSetClassifier` wraps any
+`pyrulearn.models` rule model as an `sklearn.base.BaseEstimator`/
+`ClassifierMixin`, so it isn't an importer at all and doesn't fit the table
+above. Two modes -- a fixed `rules=` (annotate given data, e.g. to evaluate
+externally-mined rules via `cross_val_score`), or a `learner=` callback
+mining rules fresh on every `fit` call, which plugs any rule-learning
+algorithm into `cross_val_score`/`GridSearchCV`/sklearn pipelines.
 
 ### wittgenstein: IREP and RIPPER
 
@@ -1686,7 +1694,7 @@ against it).
     hill climbing), predicting via the average Laplace accuracy of the
     top-k (k=5) rules per class -- which needs a new `TopKMeanCombiner`
     in `pyrulearn.combiners`. A `SeCo` family member, not a
-    `RuleDistiller`/`ClassAssociationRuleMiner` variant: it never
+    `RuleDistiller`/`CARMiner` variant: it never
     enumerates itemsets.
   - **Additive boosting of rules**, as in the ENDER family and BOOMER:
     the same example-reweighting machinery, but driven by gradient/
