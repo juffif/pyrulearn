@@ -6,7 +6,9 @@ from pyrulearn.data import DataSpec
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.models import (
     ConceptCascade, ConceptModel, ConceptSet, DisjointRuleSet, FlatRuleSet, PairwiseModel,
+    annotate_rules,
 )
+from pyrulearn.combiners import HeuristicMaxCombiner, MicroVoteCombiner
 from pyrulearn.rule import Rule
 from pyrulearn.heuristics import (
     Accuracy, Correlation, CoveredNegatives, CoveredPositives, DeltaGain, FoilGain,
@@ -1227,6 +1229,58 @@ def test_cn2_explicit_stopping_suppresses_mode_routing():
     assert cn2.single_rule_learner.stopping is custom
     assert cn2.single_rule_learner.filtering is None  # mode= never applied once stopping= is explicit
     print("CN2's explicit stopping= is honored as-is, bypassing mode= entirely: OK")
+
+
+def test_cn2_conceptset_uses_microvotecombiner_not_the_family_max_default():
+    # a 3-class problem so fit(data) with no target_class/model= reaches
+    # _fit_one_vs_rest -> ConceptSet, the one producer CN2 overrides
+    ds = DataSpec(["a", "b", "c"])
+    X = np.array([[1, 0, 0]] * 5 + [[0, 1, 0]] * 5 + [[0, 0, 1]] * 5, dtype=bool)
+    y = np.array(["x"] * 5 + ["y"] * 5 + ["z"] * 5)
+    rep = BooleanDataRepresentation(ds, X, y)
+    model = CN2(random_state=0).fit(rep)
+    assert isinstance(model, ConceptSet)
+    assert isinstance(model.combiner, MicroVoteCombiner)
+    print("CN2's default ConceptSet uses MicroVoteCombiner, not the family's generic 'max': OK")
+
+
+def test_cn2_microvotecombiner_matches_clark_and_boswell_1991s_summed_distribution_vote():
+    # Reproduces the mechanism (not the exact numbers) of the worked example in
+    # Clark & Boswell, 1991 sec. on unordered rule sets (also quoted in Lavrac
+    # et al., "Subgroup Discovery with CN2-SD", JMLR 2004, sec. 2.3): each rule
+    # carries the class distribution of the training rows it covers, and a
+    # clash between firing rules of different classes is resolved by summing
+    # those distributions and predicting the largest total -- not by picking
+    # the single highest-Laplace rule (the family's generic combiner="max").
+    # Here: one pure "elephant" rule (5 covered, higher individual Laplace)
+    # against two pure "bird" rules (4 covered each) that together outvote it.
+    ds = DataSpec(["a", "b", "c"])
+    X = np.array(
+        [[1, 0, 0]] * 5 +  # a=1 -> elephant (rule A's own coverage)
+        [[0, 1, 0]] * 4 +  # b=1 -> bird (rule B's own coverage)
+        [[0, 0, 1]] * 4,   # c=1 -> bird (rule C's own coverage)
+        dtype=bool,
+    )
+    y = np.array(["elephant"] * 5 + ["bird"] * 4 + ["bird"] * 4)
+    rep = BooleanDataRepresentation(ds, X, y)
+
+    rule_a = Rule.from_pos_neg(pos=[0], target="elephant", dataspec=ds)
+    rule_b = Rule.from_pos_neg(pos=[1], target="bird", dataspec=ds)
+    rule_c = Rule.from_pos_neg(pos=[2], target="bird", dataspec=ds)
+    rule_a, rule_b, rule_c = annotate_rules([rule_a, rule_b, rule_c], rep)
+
+    # rule A alone has the higher Laplace accuracy: (5+1)/(5+2) = 6/7 ~ 0.857
+    # vs. rule B/C's (4+1)/(4+2) = 5/6 ~ 0.833 each -- "max" picks A -> elephant
+    assert Laplace().score(rule_a.stats().confusion.rule_stats("elephant")) > \
+           Laplace().score(rule_b.stats().confusion.rule_stats("bird"))
+
+    fired_by_all = BooleanDataRepresentation(ds, np.array([[1, 1, 1]], dtype=bool))
+    rs = FlatRuleSet([rule_a, rule_b, rule_c])
+    assert list(rs.predict(fired_by_all, combiner=HeuristicMaxCombiner(Laplace()))) == ["elephant"]
+    # MicroVoteCombiner sums raw covered counts instead: elephant=5, bird=4+4=8 -> bird wins
+    assert list(rs.predict(fired_by_all, combiner=MicroVoteCombiner())) == ["bird"]
+    print("MicroVoteCombiner sums covered-class distributions and can flip 'max's own answer, "
+          "matching CN2-unordered's actual voting rule: OK")
 
 
 # ---- AQR (Clark & Niblett, 1989) + SeedExample -----------------------------

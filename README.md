@@ -59,7 +59,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | Algorithm | Class (in `pyrulearn.learners`) | Notes | Reference |
 |---|---|---|---|
 | **SeCo framework** | `seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
-| **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test | Clark & Niblett 1989; Clark & Boswell 1991 |
+| **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test; unlike the rest of the family, its default `ConceptSet` resolves a clash between firing rules by summing their covered-class distributions (`MicroVoteCombiner`), not the family's generic `combiner="max"`, matching Clark & Boswell's own unordered-CN2 | Clark & Niblett 1989; Clark & Boswell 1991 |
 | **AQR** | `seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
 | **PFOIL** | `seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |

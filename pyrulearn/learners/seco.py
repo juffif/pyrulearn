@@ -98,6 +98,7 @@ from ..heuristics import (
     Laplace, LEF, LikelihoodRatio, MinimalLength, Precision, RuleHeuristic, RuleStats, Score,
 )
 from .base import DecomposingLearner, NativeRuleLearner, produces
+from ..combiners import MicroVoteCombiner
 from ..pruning import AnyOf, EncodingLengthRestriction, PrePruningCriterion, ThresholdPrePruning
 from ..data import BooleanDataRepresentation
 from ..rule import Rule
@@ -1553,6 +1554,14 @@ class CN2(SeCo):
     result, run the search out). Ignored once `filtering`/`stopping` is
     passed explicitly, or if `significance_threshold=None` disables the
     criterion entirely.
+
+    `fit(data)`'s default `ConceptSet` uses `MicroVoteCombiner`, not the
+    family's generic `combiner="max"` -- see `_fit_one_vs_rest` below for
+    why. Measured empirically to make little difference on real data
+    (rows where covering rules actually disagree in target are rare, and
+    even then the two combiners' accuracy differs by a fraction of a
+    point either way); the point is matching what Clark & Boswell's own
+    algorithm does, not a functional improvement.
     """
 
     def __init__(
@@ -1596,6 +1605,21 @@ class CN2(SeCo):
             max_rules=max_rules,
             random_state=random_state,
         )
+
+    @produces(ConceptSet)
+    def _fit_one_vs_rest(self, data: BooleanDataRepresentation, **kw) -> ConceptSet:
+        """Clark & Boswell (1991)'s own unordered CN2 resolves a clash
+        between rules of different classes covering the same row not by
+        picking the single best-scoring rule (the family's generic
+        `combiner="max"`) but by summing each rule's own covered-training-
+        example class distribution and predicting the largest total --
+        `pyrulearn.combiners.MicroVoteCombiner`. Only this one producer is
+        overridden: `model=ConceptModel` (one concept, nothing to
+        reconcile) and `model=FlatRuleSet` (AQ-style seed covering, not
+        CN2's own induction shape) keep the family's `"max"` default."""
+        model = super()._fit_one_vs_rest(data, **kw)
+        model.combiner = MicroVoteCombiner()
+        return model
 
 
 class AQR(SeCo):
