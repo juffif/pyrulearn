@@ -148,4 +148,4 @@ __all__ = [
     "LinearCost", "LinearCostRates", "LengthPenalized", "MinimalLength", "FoilGain", "DeltaGain", "Correlation", "Entropy", "LikelihoodRatio", "ChiSquare",
     "LEF",
 ]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
