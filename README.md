@@ -462,16 +462,35 @@ A `WeightedRule` prints its weight as part of the rule: in front of it in
 the default Prolog format (`0.8::head :- body`), and appended in the other
 formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). The one optional
 decoration is `data=<a DataRepresentation>`, which suffixes every rule with
-a trailing
-`% (n_covered/n_errors) [n_unique_covered/n_unique_errors]` comment,
-computed *fresh* against it (no separate annotation call needed first).
-This is the classic C4.5/RIPPER "(covered/errors)" rule-quality notation (0
-errors reads as a perfect rule), with a second bracket for this library's
-own unique-coverage extension (rows this rule -- and no other same-target
-rule in an unordered model, or no *earlier* rule in an ordered one --
-covers). Error counts need labels (`data.y`) to compute and a target to
-check correctness against; where either is missing, just the bare counts:
-`% (n_covered) [n_unique_covered]`.
+a trailing coverage comment, computed *fresh* against it (no separate
+annotation call needed first):
+
+- Ordinarily `% (tp/fp)` -- covered rows that are, or aren't, actually this
+  rule's own target (the classic C4.5/RIPPER rule-quality notation; 0 `fp`
+  reads as a perfect rule). Labels (`data.y`) are needed to compute it and a
+  target to check correctness against; where either is missing, just the
+  bare covered count, `% (n_covered)`.
+- For a model whose own `combiner` is genuinely a `DistributionCombiner`
+  (`"micro_vote"`/`"macro_vote"`/`"micro_max"`/`"macro_max"`) *and* has more
+  than two classes, the full per-class breakdown instead -- `% [n0, n1, ...]`
+  -- everything that combiner's own `resolve()` reads, nothing it doesn't.
+  A one-line `% classes: [...]` legend, printed once above the rest of the
+  output (never repeated per rule), gives that vector's order. With exactly
+  two classes this vector would just be `(tp/fp)` reordered, so it's
+  suppressed in favor of the plain form.
+
+Both are choices, not hard rules -- `to_string`'s `show_distribution`/
+`show_classes` (`None` by default) force either one independently, for any
+model, any class count, any combiner: the raw per-class counts are always
+computable from `data.y`, whether or not a given model's own resolution
+actually consults them. `show_distribution=True`/`False` forces the vector
+on or off outright (e.g. showing it for a plain `combiner="max"` model, or
+suppressing it for a genuine `DistributionCombiner`); `show_classes=True`/
+`False` independently forces the legend on or off, regardless of whether any
+rule ends up showing a vector at all -- useful for naming a model's relevant
+classes as a label on its own (a future `PairwiseModel` printer, for
+instance, would want each binary sub-model's own two classes named even
+where its rules only ever explicitly predict one of them).
 
 ### Converting between model types
 

@@ -69,7 +69,7 @@ from typing import (
 
 import numpy as np
 
-from .combiners import RuleCombiner, _resolve_combiner, _rule_stats
+from .combiners import DistributionCombiner, RuleCombiner, _resolve_combiner, _rule_stats
 from .data import DataRepresentation
 from .data import DataSpec
 from .rule import Rule
@@ -758,69 +758,137 @@ class _ConceptIndexed:
 # =============================================================== printing ===
 
 def _rule_coverage_dicts(model: "RuleModel", data: DataRepresentation) -> Dict[int, dict]:
-    """`id(rule) -> {"n_covered", "n_unique_covered", ...}` for every rule
-    in `model` (plus `model.default_rule`, if any), computed fresh against
-    `data` -- the `to_string(data=...)` coverage-decoration input. Deliberately
-    NOT cached onto `rule.meta` (the old `RuleClassifier.annotate_coverage`
-    did that): printing shouldn't have to be preceded by a separate
-    annotation call, and shouldn't mutate a rule's own stats cache either
-    -- this is a pure, throwaway read, recomputed on every call, same
-    spirit as `annotate_rules`'s own on-demand philosophy.
+    """`id(rule) -> {"n_covered", "n_covered_by_class"}` for every rule in
+    `model` (plus `model.default_rule`, if any), computed fresh against
+    `data` -- the `to_string(data=...)` coverage-decoration input.
+    Deliberately NOT cached onto the rule (the old `RuleClassifier.
+    annotate_coverage` did that): printing shouldn't have to be preceded
+    by a separate annotation call, and shouldn't mutate a rule's own
+    stats cache either -- this is a pure, throwaway read, recomputed on
+    every call, same spirit as `annotate_rules`'s own on-demand
+    philosophy.
 
-    `n_covered`/`n_covered_by_class` are each rule's own *raw* coverage
-    (independent of siblings); `n_unique_covered`/`n_unique_covered_by_class`
-    use `model`'s own `_unique_mask` -- exactly `RuleClassifier.
-    annotate_coverage`'s old two-tier definition, just computed inline."""
+    `n_covered`/`n_covered_by_class` are each rule's own *raw* coverage,
+    independent of siblings -- what `_decorate`'s `(tp/fp)` and full-
+    distribution printing both read from."""
     rules = model.rules
     cov = model.coverage_matrix(data)
-    unique = model._unique_mask(cov)
     classes = np.unique(data.y) if data.y is not None else ()
 
-    def _stats(covered_mask: np.ndarray, unique_mask: np.ndarray) -> dict:
+    def _stats(covered_mask: np.ndarray) -> dict:
         stats: dict = {"n_covered": int(covered_mask.sum())}
         if data.y is not None:
             stats["n_covered_by_class"] = {
                 c: int(np.sum(covered_mask & (data.y == c))) for c in classes
             }
-            stats["n_unique_covered_by_class"] = {
-                c: int(np.sum(unique_mask & (data.y == c))) for c in classes
-            }
-        stats["n_unique_covered"] = int(unique_mask.sum())
         return stats
 
-    out = {id(r): _stats(cov[i], unique[i]) for i, r in enumerate(rules)}
+    out = {id(r): _stats(cov[i]) for i, r in enumerate(rules)}
     dr = model.default_rule
     if dr is not None:
-        everything = np.ones(data.n_samples, dtype=bool)
-        reaches_default = ~cov.any(axis=0) if len(rules) else everything
-        out[id(dr)] = _stats(everything, reaches_default)
+        out[id(dr)] = _stats(np.ones(data.n_samples, dtype=bool))
     return out
 
 
-def _decorate(rule: Rule, text: str, coverage: Optional[dict]) -> str:
+def _resolved_class_order(data: Optional[DataRepresentation]) -> Tuple[Any, ...]:
+    """Every class in `data.y`, sorted and numpy-scalar-unwrapped -- the
+    raw material `show_distribution=True`/`show_classes=True` force-print
+    from, regardless of `model`'s own combiner. `()` with no label data
+    to draw it from."""
+    if data is None or data.y is None:
+        return ()
+    return tuple(sorted((c.item() if isinstance(c, np.generic) else c
+                        for c in np.unique(data.y)), key=_sortkey))
+
+
+def _distribution_class_order(
+    model: "RuleModel", data: Optional[DataRepresentation], show_distribution: Optional[bool],
+) -> Tuple[Any, ...]:
+    """The class order `_decorate`'s per-rule `[n0, n1, ...]` vector
+    uses, or `()` for the plain `(tp/fp)` form instead.
+
+    `show_distribution=True`/`False` forces the choice outright, for any
+    class count and any combiner -- the raw per-class counts are always
+    computable from `data.y`, whether or not `model`'s own resolution
+    actually consults them. Left `None` (the default): the vector only
+    if `model`'s own resolution is genuinely score-by-class-distribution
+    (a `DistributionCombiner`) *and* there are more than two classes --
+    with exactly two, `(tp/fp)` already *is* the two-entry distribution
+    (just target-first instead of class-sorted), so the vector would say
+    nothing `(tp/fp)` doesn't."""
+    classes = _resolved_class_order(data)
+    if show_distribution is False or not classes:
+        return ()
+    if show_distribution is True:
+        return classes
+    if len(classes) <= 2:
+        return ()
+    resolution = getattr(model, "resolution", None)
+    if not isinstance(resolution, Combine):
+        return ()
+    return classes if isinstance(_resolve_combiner(resolution.combiner), DistributionCombiner) else ()
+
+
+def _legend_class_order(
+    class_order: Tuple[Any, ...], data: Optional[DataRepresentation], show_classes: Optional[bool],
+) -> Tuple[Any, ...]:
+    """The class order the printed-once ``% classes: [...]`` legend
+    shows, or `()` for no legend at all.
+
+    `show_classes=True` forces it -- whatever classes `data.y` has, even
+    if `class_order` is empty and no rule ends up printing a distribution
+    vector at all (e.g. a future `PairwiseModel` sub-model whose rules
+    only ever explicitly predict one of its two classes still wants its
+    own two classes named). `show_classes=False` suppresses it outright,
+    even if `class_order` is non-empty (a caller who already knows the
+    order and wants less noise). Left `None` (the default): shown iff
+    `class_order` -- the vector `_decorate` is actually using -- is
+    non-empty; today's coupled behavior."""
+    if show_classes is False:
+        return ()
+    if show_classes is True:
+        return _resolved_class_order(data)
+    return class_order
+
+
+def _decorate(
+    rule: Rule, text: str, coverage: Optional[dict], class_order: Tuple[Any, ...] = (),
+) -> str:
     """Wrap one rule's already-rendered `text` with a trailing coverage
     comment from `coverage` (one entry of `_rule_coverage_dicts`'s
-    result, or `None` to decorate nothing): ``% (n_covered/n_errors)
-    [n_uniquely_covered/n_unique_errors]`` -- the classic C4.5/RIPPER
-    "(covered/errors)" rule-quality notation, with a second bracket for
-    this codebase's own unique-coverage extension. Error counts need
-    labels to compute and a target to check correctness against; where
-    either is missing, just the bare counts.
+    result, or `None` to decorate nothing):
+
+    - `class_order` non-empty (see `_distribution_class_order`): the
+      rule's own raw per-class coverage, in that order --
+      ``% [n0, n1, ...]`` -- everything a `DistributionCombiner`'s own
+      `resolve()` reads, nothing it doesn't.
+    - otherwise, with labels and a target: ``% (tp/fp)`` -- covered rows
+      that are, or aren't, actually this rule's own target.
+    - otherwise (no labels, or no target): the bare covered count,
+      ``% (n_covered)``.
 
     No weight decoration here -- `WeightedRule.to_string` already
     renders its own weight natively, in every format."""
     if coverage is None:
         return text
     by_class = coverage.get("n_covered_by_class")
-    unique_by_class = coverage.get("n_unique_covered_by_class")
-    if by_class is not None and rule.target is not None:
-        n_errors = coverage["n_covered"] - by_class.get(rule.target, 0)
-        n_unique_errors = coverage["n_unique_covered"] - unique_by_class.get(rule.target, 0)
-        suffix = (f"  % ({coverage['n_covered']}/{n_errors}) "
-                  f"[{coverage['n_unique_covered']}/{n_unique_errors}]")
+    if class_order and by_class is not None:
+        counts = ", ".join(str(by_class.get(c, 0)) for c in class_order)
+        suffix = f"  % [{counts}]"
+    elif by_class is not None and rule.target is not None:
+        tp = by_class.get(rule.target, 0)
+        fp = coverage["n_covered"] - tp
+        suffix = f"  % ({tp}/{fp})"
     else:
-        suffix = f"  % ({coverage['n_covered']}) [{coverage['n_unique_covered']}]"
+        suffix = f"  % ({coverage['n_covered']})"
     return f"{text}{suffix}"
+
+
+def _class_legend(class_order: Tuple[Any, ...]) -> str:
+    """The one-line, printed-once ``% classes: [...]`` header that gives
+    `_decorate`'s short-form distribution vectors their order -- see
+    `_distribution_class_order`."""
+    return "% classes: [" + ", ".join(str(c) for c in class_order) + "]"
 
 
 def _dnf_lines(rules: Sequence[Rule], ascii: bool, dec: Callable[[Rule, str], str]) -> List[str]:
@@ -870,6 +938,7 @@ class RuleSet(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False,
         data: Optional[DataRepresentation] = None,
+        show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render every rule, grouped by target label -- one section per
         label, headed by ``% class: <target>``. For "logic" format, each
@@ -883,14 +952,25 @@ class RuleSet(RuleModel):
         individual rule's own `default_fmt`. A `WeightedRule` renders its
         own weight natively as part of that.
 
-        `data`, if given, decorates every rule with a trailing
-        ``% (n_covered/n_errors) [n_unique_covered/n_unique_errors]``
-        comment, computed fresh against it (see `_rule_coverage_dicts`)
-        -- no separate annotation call needed first.
+        `data`, if given, decorates every rule with a trailing coverage
+        comment computed fresh against it (see `_rule_coverage_dicts`) --
+        no separate annotation call needed first. Ordinarily ``% (tp/fp)``
+        (covered rows that are, or aren't, actually this rule's own
+        target); for a model actually resolved by a `DistributionCombiner`
+        with more than two classes, the full per-class breakdown instead
+        -- ``% [n0, n1, ...]``, in the order a ``% classes: [...]`` header
+        (printed once, above the rest of the output) gives. `show_distribution`
+        forces that choice outright either way, for any class count and
+        any combiner; `show_classes` independently forces the header on or
+        off, regardless of whether any rule is actually showing a vector
+        (e.g. naming a model's relevant classes as a label on its own) --
+        see `_distribution_class_order`/`_legend_class_order`.
         """
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage = _rule_coverage_dicts(self, data) if data is not None else {}
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)))  # noqa: E731
+        class_order = _distribution_class_order(self, data, show_distribution)
+        legend_classes = _legend_class_order(class_order, data, show_classes)
+        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
         sections = []
         for t in sorted({r.target for r in self.rules}, key=_sortkey):
             group = [r for r in self.rules if r.target == t]
@@ -903,7 +983,8 @@ class RuleSet(RuleModel):
         if self.default_rule is not None:
             default_text = dec(self.default_rule, self.default_rule.to_string(fmt=resolved, ascii=ascii))
             sections.append(f"% default\n{default_text}")
-        return "\n\n".join(sections)
+        rendered = "\n\n".join(sections)
+        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
 
     def to_rulelist(
         self, key: Optional[Callable[[Rule], Any]] = None, reverse: bool = True,
@@ -963,6 +1044,7 @@ class RuleList(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False,
         data: Optional[DataRepresentation] = None,
+        show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render this decision list in order -- no label-grouping, since
         order (not shared target) is what decision-list semantics
@@ -974,11 +1056,21 @@ class RuleList(RuleModel):
         section (an if/elif chain's ``else`` already says "default" for
         "logic", so no extra label is needed there).
 
-        `data`, if given, decorates every rule the same way as
-        `RuleSet.to_string` -- see there."""
+        `data`, `show_distribution` and `show_classes` decorate every
+        rule the same way as `RuleSet.to_string` -- see there. Left at
+        their `None` defaults, this is always the plain `(tp/fp)` form
+        here: `RuleList.resolution` is `FirstMatch`, never a `Combine`,
+        so there's never anything `predict()` needs the distribution for
+        -- order alone already fully explains how a `RuleList` decides.
+        `show_distribution=True`/`show_classes=True` can still force the
+        vector/legend on regardless, since the raw per-class counts are
+        always computable from `data.y` whether or not this model's own
+        resolution happens to consult them."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage = _rule_coverage_dicts(self, data) if data is not None else {}
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)))  # noqa: E731
+        class_order = _distribution_class_order(self, data, show_distribution)
+        legend_classes = _legend_class_order(class_order, data, show_classes)
+        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
         rules = self.rules
         if resolved == "logic":
             arrow_sym = "->" if ascii else "→"
@@ -990,12 +1082,14 @@ class RuleList(RuleModel):
             if self.default_rule is not None:
                 default_text = dec(self.default_rule, f"{arrow_sym} {self.default_rule.target}")
                 lines.append(f"else {default_text}")
-            return "\n".join(lines)
-        lines = [dec(r, r.to_string(fmt=resolved, ascii=ascii)) for r in rules]
-        if self.default_rule is not None:
-            default_text = dec(self.default_rule, self.default_rule.to_string(fmt=resolved, ascii=ascii))
-            lines.append(f"% default\n{default_text}")
-        return "\n".join(lines)
+            rendered = "\n".join(lines)
+        else:
+            lines = [dec(r, r.to_string(fmt=resolved, ascii=ascii)) for r in rules]
+            if self.default_rule is not None:
+                default_text = dec(self.default_rule, self.default_rule.to_string(fmt=resolved, ascii=ascii))
+                lines.append(f"% default\n{default_text}")
+            rendered = "\n".join(lines)
+        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
 
 
 # ================================================================= concrete ===
@@ -1089,19 +1183,29 @@ class SingleRule(RuleSet):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False,
         data: Optional[DataRepresentation] = None,
+        show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Renders the wrapped `Rule` directly -- a lone rule needs no
         per-target grouping or DNF collapsing (see the class docstring
-        for why this can't just inherit `RuleSet.to_string`). `data`, if
-        given, decorates with this rule's own coverage (see
-        `RuleSet.to_string`) -- "unique" trivially equals "raw" here,
-        there being no sibling rule to share coverage with."""
+        for why this can't just inherit `RuleSet.to_string`). `data`,
+        `show_distribution` and `show_classes` decorate with this rule's
+        own coverage the same way as `RuleSet.to_string` -- see there.
+        Left at their `None` defaults, this is always the plain `(tp/fp)`
+        form here: `SingleRule.resolution` is `Exclusive`, never a
+        `Combine`, so there's no distribution-scored disagreement to
+        make visible in the first place (there's only ever one rule);
+        `show_distribution=True`/`show_classes=True` can still force the
+        vector/legend on, since the raw per-class counts are always
+        computable from `data.y` regardless."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         text = self._rule.to_string(fmt=resolved, ascii=ascii)
         if data is None:
             return text
         coverage = _rule_coverage_dicts(self, data)
-        return _decorate(self._rule, text, coverage.get(id(self)))
+        class_order = _distribution_class_order(self, data, show_distribution)
+        legend_classes = _legend_class_order(class_order, data, show_classes)
+        decorated = _decorate(self._rule, text, coverage.get(id(self)), class_order)
+        return f"{_class_legend(legend_classes)}\n\n{decorated}" if legend_classes else decorated
 
 
 class ConceptModel(_FlatRules, RuleSet):

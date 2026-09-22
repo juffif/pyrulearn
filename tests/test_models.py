@@ -818,7 +818,7 @@ def test_to_string_coverage_decoration_needs_no_prior_annotation():
     X = np.array([[1, 1, 0], [0, 0, 1]], dtype=bool)
     data_rep = BooleanDataRepresentation(ds, X)
     prolog = fs.to_string(fmt="prolog", data=data_rep)
-    assert "(1) [1]" in prolog  # no labels -> plain "(n_covered) [n_unique_covered]"
+    assert "  % (1)" in prolog  # no labels -> plain "(n_covered)"
 
 
 def test_to_string_coverage_correctness_counts():
@@ -839,10 +839,116 @@ def test_to_string_coverage_correctness_counts():
     data_rep = BooleanDataRepresentation(ds, X, y)
 
     prolog = fs.to_string(fmt="prolog", data=data_rep)
-    # r1: covers rows 0,2, 0 errors -> (2/0); unique row0 only, 0 errors -> [1/0]
-    assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (2/0) [1/0]" in prolog
-    # r2: covers rows 1,2, 1 error (row1) -> (2/1); unique row1 only, 1 error -> [1/1]
-    assert "high_risk(X) :- high_bp(X).  % (2/1) [1/1]" in prolog
+    # r1: covers rows 0,2, both high_risk (its own target) -> tp=2, fp=0
+    assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (2/0)" in prolog
+    # r2: covers rows 1,2 -- row1 is low_risk (wrong), row2 is high_risk -> tp=1, fp=1
+    assert "high_risk(X) :- high_bp(X).  % (1/1)" in prolog
+
+
+def _three_class_dog_rule():
+    # one rule, covering 16 training rows: 1 bird, 1 cat, 14 dog
+    ds = DataSpec(["barks"])
+    X = np.array([[1]] * 16 + [[0]] * 3, dtype=bool)
+    y = np.array(["bird"] + ["cat"] + ["dog"] * 14 + ["bird", "cat", "dog"])
+    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
+    return FlatRuleSet([rule]), BooleanDataRepresentation(ds, X, y)
+
+
+def test_to_string_prints_the_full_distribution_only_for_a_distributioncombiner():
+    fs, data_rep = _three_class_dog_rule()
+
+    # a DistributionCombiner and >2 classes -> the full per-class breakdown,
+    # with a printed-once legend giving its order (sorted: bird, cat, dog)
+    fs.combiner = "micro_vote"
+    text = fs.to_string(fmt="prolog", data=data_rep)
+    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
+
+    # "max" (the default) -- no distribution, no legend, plain (tp/fp)
+    fs.combiner = "max"
+    text = fs.to_string(fmt="prolog", data=data_rep)
+    assert "% classes:" not in text
+    assert "dog(X) :- barks(X).  % (14/2)" in text
+    print("to_string shows the full class distribution + legend only for a "
+          "DistributionCombiner, plain (tp/fp) otherwise: OK")
+
+
+def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distributioncombiner():
+    # only 2 classes -- the distribution vector would just be (tp/fp) reordered,
+    # so it's redundant and stays suppressed even though the combiner would want it
+    ds = DataSpec(["barks"])
+    X = np.array([[1]] * 5 + [[0]] * 5, dtype=bool)
+    y = np.array(["dog"] * 5 + ["cat"] * 5)
+    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
+    fs = FlatRuleSet([rule], combiner="micro_vote")
+    data_rep = BooleanDataRepresentation(ds, X, y)
+
+    text = fs.to_string(fmt="prolog", data=data_rep)
+    assert "% classes:" not in text
+    assert "dog(X) :- barks(X).  % (5/0)" in text
+    print("Binary problems skip the distribution bracket/legend even under a "
+          "DistributionCombiner -- it would just be (tp/fp) reordered: OK")
+
+
+def test_to_string_singlerule_default_never_prints_the_distribution():
+    # SingleRule.resolution is Exclusive, never a Combine -- by default there's
+    # only one rule, so no distribution-scored disagreement to make visible
+    _, data_rep = _three_class_dog_rule()
+    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
+    sr = SingleRule(rule)
+    text = sr.to_string(fmt="prolog", data=data_rep)
+    assert "% classes:" not in text
+    assert text == "dog(X) :- barks(X).  % (14/2)"
+    print("A standalone SingleRule defaults to plain (tp/fp), never a distribution: OK")
+
+
+def test_to_string_show_distribution_forces_the_choice_either_way():
+    fs, data_rep = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
+
+    # show_distribution=True forces the vector even though "max" never needs it
+    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=True)
+    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
+
+    # show_distribution=False suppresses it even under a genuine DistributionCombiner
+    fs.combiner = "micro_vote"
+    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=False)
+    assert "% classes:" not in text
+    assert "dog(X) :- barks(X).  % (14/2)" in text
+
+    # forcing it on works even where the model structurally never has a
+    # DistributionCombiner at all: a lone SingleRule, and a binary problem
+    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
+    sr_text = SingleRule(rule).to_string(fmt="prolog", data=data_rep, show_distribution=True)
+    assert sr_text == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]"
+
+    ds2 = DataSpec(["barks"])
+    binary_data = BooleanDataRepresentation(
+        ds2, np.array([[1]] * 5 + [[0]] * 5, dtype=bool), np.array(["dog"] * 5 + ["cat"] * 5))
+    binary_rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)
+    binary_fs = FlatRuleSet([binary_rule])  # default "max"
+    text = binary_fs.to_string(fmt="prolog", data=binary_data, show_distribution=True)
+    assert "% classes: [cat, dog]" in text
+    assert "dog(X) :- barks(X).  % [0, 5]" in text  # cat=0, dog=5, class order [cat, dog]
+    print("show_distribution=True/False forces the vector on or off regardless of "
+          "the model's own combiner or class count: OK")
+
+
+def test_to_string_show_classes_is_independent_of_show_distribution():
+    fs, data_rep = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
+
+    # show_classes=True prints the legend even though no rule shows a distribution
+    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=True)
+    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    assert "dog(X) :- barks(X).  % (14/2)" in text  # still plain (tp/fp) -- show_distribution untouched
+
+    # show_classes=False suppresses the legend even while a distribution IS shown
+    fs.combiner = "micro_vote"
+    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=False)
+    assert "% classes:" not in text
+    assert "dog(X) :- barks(X).  % [1, 1, 14]" in text  # the vector itself is untouched
+    print("show_classes independently forces the legend on or off, regardless of "
+          "whether any rule is actually showing a distribution vector: OK")
 
 
 # ------------------------------------------------------------------ covered_by ---
