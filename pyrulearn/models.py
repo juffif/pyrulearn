@@ -851,6 +851,21 @@ def _legend_class_order(
     return class_order
 
 
+def _container_legend(labels: Sequence[Any], show_classes: Optional[bool]) -> Tuple[Any, ...]:
+    """The class order a `CompositeModel`'s own top-level ``% classes:
+    [...]`` header shows, from its *declared* `labels` -- not `data`,
+    since which classes a composite's members are even about is a
+    property of its own structure, not of whatever data happens to be
+    passed to `to_string`. Shown by default (unlike the plain-`RuleSet`
+    case, there's no "does the combiner need it" question here -- naming
+    the classes a composite model spans is just generally informative);
+    `show_classes=False` suppresses it. Degenerate with fewer than two
+    labels -- nothing to distinguish -- is also suppressed."""
+    if show_classes is False or len(labels) < 2:
+        return ()
+    return tuple(labels)
+
+
 def _decorate(
     rule: Rule, text: str, coverage: Optional[dict], class_order: Tuple[Any, ...] = (),
 ) -> str:
@@ -1681,6 +1696,40 @@ class EnsembleModel(CompositeModel):
             out[j] = (max(tally, key=lambda l: (tally[l], -first[l])) if tally else fb(j))
         return out
 
+    def to_string(
+        self, fmt: Optional[str] = None, ascii: bool = False,
+        data: Optional[DataRepresentation] = None,
+        show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+    ) -> str:
+        """Render every member in turn, headed by ``% member <k>``
+        (``(weight: ...)`` appended where `member_weights` is set --
+        exactly the number `predict`'s own plurality vote weighs that
+        member's verdict by, so it's the one piece of information beyond
+        each member's own rules that a reader needs to manually redo the
+        vote), `default_rule` (if set) as a trailing ``% default``
+        section, and a top-level ``% classes: [...]`` header naming this
+        model's own `labels` (see `_container_legend`).
+
+        `data`, `show_distribution` and `show_classes` are passed through
+        unchanged to every member's own `to_string` -- each member covers
+        the same overall multiclass problem (unlike `PairwiseModel`'s
+        pairwise sub-models, which each only ever see two of the
+        classes), so there's no need to force anything member-side; only
+        the top-level legend defaults to shown."""
+        sections = []
+        for k, member in enumerate(self.members):
+            header = f"% member {k}"
+            if self.member_weights is not None:
+                header += f"  (weight: {self.member_weights[k]:g})"
+            body = member.to_string(fmt=fmt, ascii=ascii, data=data,
+                                    show_distribution=show_distribution, show_classes=show_classes)
+            sections.append(f"{header}\n{body}")
+        if self.default_rule is not None:
+            sections.append(f"% default\n{self.default_rule.to_string(fmt=fmt, ascii=ascii)}")
+        legend_classes = _container_legend(self.labels, show_classes)
+        rendered = "\n\n".join(sections)
+        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
+
 
 # -------------------------------------------------- pairwise voting combiners ---
 
@@ -1916,6 +1965,51 @@ class PairwiseModel(CompositeModel):
             decided = self.combiner.decide(votes, classes, self.label_priors)
             out[j] = decided if decided is not None else fb(j)
         return out
+
+    def to_string(
+        self, fmt: Optional[str] = None, ascii: bool = False,
+        data: Optional[DataRepresentation] = None,
+        show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+    ) -> str:
+        """Render every pair's sub-model in turn, headed by ``% pair: a
+        vs b`` (``(member weight: ...)`` appended for `"accuracy_vote"`
+        -- `AccuracyWeightedVote`'s per-pair accuracy, recorded at fit
+        time and read from `member_weights`, is the one number `predict`
+        consults beyond each sub-model's own rules that isn't otherwise
+        derivable from them; `"weighted_vote"`'s own per-row deciding-
+        rule weight, by contrast, is exactly `Laplace` on that rule's own
+        measured stats -- already fully reconstructable from that rule's
+        own printed `(tp/fp)`, so nothing extra is shown for it),
+        `default_rule` (if set) as a trailing ``% default`` section, and
+        a top-level ``% classes: [...]`` header naming this model's own
+        `labels` (see `_container_legend`).
+
+        Unlike `EnsembleModel`, each pair's own `show_classes` is forced
+        to `True` by default (`None` here means "force", not "auto") --
+        a sub-model's rules may only ever explicitly predict *one* of its
+        own two classes (the other only ever surfacing as its
+        `default_prediction`), so without this a reader may have no way
+        to tell which two classes a given pair is even about. Pass
+        `show_classes=False` to suppress this (and the top-level header)
+        if that's not wanted. `data`, if given and labelled, is narrowed
+        to just each pair's own two classes' rows before being handed to
+        that sub-model -- so a forced per-class distribution/legend
+        reflects that pair, not the full label set."""
+        per_pair_show_classes = True if show_classes is None else show_classes
+        sections = []
+        for k, (a, b, sub) in enumerate(self._triples):
+            pair_data = data.select_rows(np.isin(data.y, [a, b])) if data is not None and data.y is not None else data
+            header = f"% pair: {a} vs {b}"
+            if getattr(self.combiner, "weight_source", None) == "member" and self.member_weights is not None:
+                header += f"  (member weight: {self.member_weights[k]:g})"
+            body = sub.to_string(fmt=fmt, ascii=ascii, data=pair_data,
+                                 show_distribution=show_distribution, show_classes=per_pair_show_classes)
+            sections.append(f"{header}\n{body}")
+        if self.default_rule is not None:
+            sections.append(f"% default\n{self.default_rule.to_string(fmt=fmt, ascii=ascii)}")
+        legend_classes = _container_legend(self.labels, show_classes)
+        rendered = "\n\n".join(sections)
+        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
 
 
 class DeepModel(CompositeModel):

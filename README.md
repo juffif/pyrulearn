@@ -488,9 +488,30 @@ on or off outright (e.g. showing it for a plain `combiner="max"` model, or
 suppressing it for a genuine `DistributionCombiner`); `show_classes=True`/
 `False` independently forces the legend on or off, regardless of whether any
 rule ends up showing a vector at all -- useful for naming a model's relevant
-classes as a label on its own (a future `PairwiseModel` printer, for
-instance, would want each binary sub-model's own two classes named even
-where its rules only ever explicitly predict one of them).
+classes as a label on its own.
+
+`EnsembleModel`/`PairwiseModel` also have `to_string` (`CompositeModel`'s
+other concrete subclass, `DeepModel`, doesn't -- it's a structure-only stub
+with no member-wiring semantics yet to print). Both render every member/pair
+in turn plus a top-level `% classes: [...]` naming the model's own `labels`
+(from its own declared structure, not `data` -- see `_container_legend`).
+`EnsembleModel` headers each member `% member <k>`, with `(weight: ...)`
+appended where `member_weights` is set -- exactly the number `predict`'s
+plurality vote weighs that member's verdict by, so the one thing beyond each
+member's own rules a reader needs to redo the vote by hand; `data`/
+`show_distribution`/`show_classes` pass through unchanged to every member,
+since they all cover the same overall multiclass problem. `PairwiseModel`
+headers each pair `% pair: a vs b`, with `(member weight: ...)` appended for
+`"accuracy_vote"` specifically -- `"weighted_vote"`'s own per-row deciding-
+rule weight is exactly `Laplace` on that rule's own measured stats, already
+fully reconstructable from its own printed `(tp/fp)`, so nothing extra is
+needed for that combiner. Unlike `EnsembleModel`, each pair's `data` is
+narrowed to just its own two classes' rows first (via `select_rows`), and
+its own `show_classes` defaults to forced-on (`None` here means "force", not
+"auto") -- a sub-model's rules may only ever explicitly predict *one* of its
+two classes (the other only ever surfacing as its own `default_prediction`),
+so without this a reader may have no way to tell which two classes a given
+pair is even about.
 
 ### Converting between model types
 

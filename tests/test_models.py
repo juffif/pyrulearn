@@ -951,6 +951,78 @@ def test_to_string_show_classes_is_independent_of_show_distribution():
           "whether any rule is actually showing a distribution vector: OK")
 
 
+def _three_class_pairwise_fixture():
+    # cat/dog/bird, 3 pairs, each sub-model's rule only ever explicitly
+    # predicts ONE of its own two classes -- the other only ever surfaces as
+    # that sub-model's own default_prediction
+    ds = DataSpec(["a", "b"])
+    X = np.array([[1, 0], [1, 1], [0, 1], [0, 0], [1, 0], [0, 1]], dtype=bool)
+    y = np.array(["cat", "cat", "dog", "dog", "bird", "bird"])
+    data = BooleanDataRepresentation(ds, X, y)
+    cat_dog = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
+                           label="cat", default_prediction="dog")
+    cat_bird = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
+                            label="cat", default_prediction="bird")
+    dog_bird = ConceptModel([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)],
+                            label="dog", default_prediction="bird")
+    return cat_dog, cat_bird, dog_bird, data
+
+
+def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
+    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    pw = PairwiseModel(
+        [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)],
+        combiner="accuracy_vote", member_weights=[0.9, 0.75, 0.6], default_prediction="cat",
+    )
+    text = pw.to_string(fmt="prolog", data=data)
+
+    # top-level legend: every class this model spans
+    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    # each pair's own header names it and, for accuracy_vote, its member weight
+    assert "% pair: cat vs dog  (member weight: 0.9)" in text
+    assert "% pair: cat vs bird  (member weight: 0.75)" in text
+    assert "% pair: dog vs bird  (member weight: 0.6)" in text
+    # each pair's own sub-model is forced to show its own two-class legend,
+    # even though its one rule only ever explicitly predicts one of them
+    assert "% classes: [cat, dog]" in text
+    assert "% classes: [bird, cat]" in text
+    assert "% classes: [bird, dog]" in text
+    # data handed to each sub-model is narrowed to that pair's own rows:
+    # cat_dog's rule (a=1 -> cat) sees only the 2 cat + 2 dog rows -> tp=2, fp=0
+    assert "cat(X) :- a(X).  % (2/0)" in text
+    # cat_bird's *same* rule, but narrowed to cat+bird rows instead -- the
+    # one bird row with a=1 is now a false positive -- tp=2, fp=1
+    assert "cat(X) :- a(X).  % (2/1)" in text
+    print("PairwiseModel.to_string forces each pair's own two-class legend and "
+          "shows accuracy_vote's per-pair member weight: OK")
+
+
+def test_pairwisemodel_to_string_show_classes_false_suppresses_everything():
+    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    pw = PairwiseModel([("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)])
+    text = pw.to_string(fmt="prolog", data=data, show_classes=False)
+    assert "% classes:" not in text
+    print("PairwiseModel.to_string's show_classes=False suppresses the top-level "
+          "and every per-pair legend: OK")
+
+
+def test_ensemblemodel_to_string_shows_member_weights_and_top_level_legend():
+    cat_dog, _, dog_bird, data = _three_class_pairwise_fixture()
+    ens = EnsembleModel([cat_dog, dog_bird], member_weights=[0.7, 0.3])
+    text = ens.to_string(fmt="prolog", data=data)
+    # .labels is rule heads + the ensemble's OWN default (unset here) --
+    # "bird" never appears as either, only as a *sub-model's own* default,
+    # so it's genuinely outside this model's declared label set
+    assert "% classes: [cat, dog]" in text
+    assert "% member 0  (weight: 0.7)" in text
+    assert "% member 1  (weight: 0.3)" in text
+    # members see the *full*, unfiltered data -- cat_dog's rule (a=1 -> cat)
+    # over all 6 rows also covers the a=1 bird row as a false positive
+    assert "cat(X) :- a(X).  % (2/1)" in text
+    print("EnsembleModel.to_string shows each member's own weight, unfiltered "
+          "data, and a top-level classes legend: OK")
+
+
 # ------------------------------------------------------------------ covered_by ---
 
 def _covered_by_fixture():
