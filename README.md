@@ -1637,71 +1637,75 @@ against it).
 
 ## Not yet implemented (left as clear extension points)
 
-- Concrete importers for more rule-learner text formats (e.g. FOIL output)
-  beyond the reference `PatternStringImporter`, `pyrulearn.interfaces.weka`'s
-  `JRipImporter`/`PARTImporter`/`J48Importer`, and
-  `pyrulearn.interfaces.lord.LORDImporter` — subclass
-  `pyrulearn.interfaces.StringRuleImporter`.
-- Concrete `ObjectRuleImporter`s beyond decision trees, random forests,
-  `wittgenstein`'s IREP/RIPPER, `imodels`' Bayesian Rule Lists/Rule
-  Sets, and `pyarc`'s CBA (other sklearn tree ensembles -- gradient boosting, AdaBoost --
-  lower priority; `imodels`' `BoostedRulesClassifier`, also lower
-  priority, would belong in `pyrulearn.interfaces.imodels`
-  alongside the existing two). Deliberately *not* planned:
-  `imodels.RuleFitClassifier` -- even for classification it generates
-  candidate rules via a `GradientBoostingRegressor` detour rather than
-  anything the two Bayesian models share, and its per-rule weights can
-  be negative, which doesn't fit `WeightedRule.weight`'s convention
-  cleanly.
-- `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
-  (both currently approximated by a seed-restricted `BeamSearch` -- see
-  `pyrulearn.learners.seco`/`pyrulearn.learners.pylord` in the module map), and
-  `Pypper`'s residual IREP\* re-growth pass (its whole-ruleset optimization phase, `ReplaceReviseOptimization`,
-  is already implemented -- this is the one piece still missing from it).
-- Rule bodies beyond pure conjunctions (e.g. general CNF/DNF rules).
-- A logic/SAT interface (export to `sympy`/DIMACS, SAT-based analysis): an
-  earlier version was removed from this release and will return in a
-  reworked form.
-- Native sparse-data readers. `SparseDataRepresentation` exists and
-  `from_scipy` wraps an existing `scipy.sparse` matrix, but there's no
-  reader for sparse ARFF (`{index value, ...}`) or libsvm files yet, and
-  `pyrulearn.data.io` / the demos' OpenML loader still go through a
-  dense DataFrame — so a genuinely sparse dataset (e.g. OpenML's
-  `connect-4`) currently densifies on the way in.
-- Publishing to PyPI (installation is currently from GitHub).
-- Revised demos: the scripts in `examples/` were written against earlier
-  versions of the API and are due for an overhaul.
-- **Weighted covering as a reusable building block.** `SeCo`'s covering
-  step is currently hard-coded inline in `SeCo._covering_loop`
-  (`remaining = remaining & ~rule.covers_data_packed(data)`), and a
-  boolean `example_mask` is the only notion of "scope" threaded through
-  `learn_one_rule`, `RuleStats.from_rule`, the pruning/filtering/stopping
-  `accept(...)` calls, and the incremental cover handles
-  (`initial_cover`/`cover_counts`). Plan: a `CoveringStrategy` alongside
-  `SeCo`'s other pluggable strategies (`preparation`, `filtering`,
-  `stopping`, `optimization`, `stop_covering`), with `RemovalCovering`
-  (today's behavior, the default, unchanged) and `WeightedCovering`
-  (covered examples are down-weighted, e.g. by a decay factor, instead of
-  dropped). The real cost is downstream: `RuleStats` would need weighted
-  `tp`/`fp`/`fn`/`tn` (heuristics only read those fields, so they'd work
-  unchanged), and the `NListRepresentation` popcount fast path doesn't
-  extend to weights for free. Preferred starting point: weighted
-  `RuleStats`, doing the `CoveringStrategy` refactor of the loop in the
-  same pass. Two consumers motivate it:
-  - **CPAR** (Yin & Han, 2003) -- weighted covering (covered examples
-    decay by about 2/3 instead of being removed), keeping every literal within ~1% of
-    the best gain (several rules per seed, closer to a small beam than to
-    hill climbing), predicting via the average Laplace accuracy of the
-    top-k (k=5) rules per class -- which needs a new `TopKMeanCombiner`
-    in `pyrulearn.combiners`. A `SeCo` family member, not a
-    `RuleDistiller`/`CARMiner` variant: it never
-    enumerates itemsets.
-  - **Additive boosting of rules**, as in the ENDER family and BOOMER:
-    the same example-reweighting machinery, but driven by gradient/
-    residual-style updates after each added rule (and additive rather
-    than list/set prediction) instead of a fixed decay -- the weights
-    (and any per-example gradients/hessians) belong to a covering/
-    boosting state object, not to the rules.
+- **More rule learners and importers.** Beyond what's already interfaced
+  (decision trees, random forests, wittgenstein's IREP/RIPPER, imodels'
+  Bayesian Rule Lists/Rule Sets, Weka's JRip/PART/J48, LORD, and pyarc's
+  CBA): more `StringRuleImporter` text formats (e.g. FOIL output); more
+  `ObjectRuleImporter`s for other sklearn tree ensembles (gradient
+  boosting, AdaBoost -- lower priority) and `imodels`'
+  `BoostedRulesClassifier`; and `pyIDS` (github.com/jirifilip/pyIDS) as an
+  external cross-check for the native `IDS` -- its selected rules read back through
+  the same `pyarc` CAR shape `PyarcCBAImporter` already parses, but the
+  package is unmaintained since 2021 and its declared `sklearn` dependency
+  is a now-broken PyPI package name (installs with `--no-deps`; a full
+  compatibility check on a modern Python is still open).
+  `imodels.RuleFitClassifier` and `SlipperClassifier` are addressed below
+  instead, not here -- both are better served by native machinery than by
+  a direct import.
+
+- **Closing gaps between native algorithms and their reference papers.**
+  `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
+  are both currently approximated by a seed-restricted `BeamSearch` (see
+  `pyrulearn.learners.seco`/`pyrulearn.learners.pylord`); `Pypper`'s
+  residual IREP\* re-growth pass is the one piece still missing from its
+  optimization phase (`ReplaceReviseOptimization` itself is already done).
+
+- **Weighted and additive rule models**, at two different points in the
+  pipeline. `SeCo`'s covering step is currently hard-coded inline
+  (`SeCo._covering_loop`), with a boolean `example_mask` as the only
+  notion of "scope" threaded through `learn_one_rule`, `RuleStats.from_rule`,
+  pruning/filtering/stopping, and the incremental cover handles. Plan: a
+  `CoveringStrategy` alongside `SeCo`'s other pluggable strategies, with
+  `RemovalCovering` (today's behavior) and `WeightedCovering` (covered
+  examples down-weighted instead of dropped) -- the real cost is
+  downstream, since `RuleStats` would need weighted `tp`/`fp`/`fn`/`tn`
+  (heuristics work unchanged) and the `NListRepresentation` popcount fast
+  path doesn't extend to weights for free. Three things motivate it:
+  - **CPAR** (Yin & Han, 2003) and `imodels`' **`SlipperClassifier`**
+    (Cohen & Singer, 1999) both need it *during induction* -- CPAR via a
+    fixed per-round decay, Slipper via boosting-style reweighting -- and
+    CPAR additionally needs a new `TopKMeanCombiner` (average Laplace
+    accuracy of the top-k rules per class) for prediction.
+  - **Additive boosting of rules** (the ENDER family, BOOMER) needs the
+    same example-reweighting machinery, but driven by gradient/residual
+    updates after each added rule, with additive rather than list/set
+    prediction.
+  - A planned **RuleFit-style distiller** needs weights at the *opposite*
+    end instead: given any rule pool (mined or externally supplied, the
+    same `RuleDistiller` pattern as `CBA`/`CMAR`/`IDS`), fit a LASSO over
+    the rules' coverage-indicator features (`RuleModel.coverage_matrix`
+    already gives that matrix) and keep the rules with a nonzero weight.
+    Preferred over importing `imodels.RuleFitClassifier` directly, since
+    its own rule-generation step is an unrelated `GradientBoostingRegressor`
+    detour, not the LASSO fit that's actually its contribution. Needs a
+    new `RuleModel` type (`intercept + sum(weight * indicator)`
+    prediction, not covering-rule combination) and `WeightedRule.weight`'s
+    docstring loosened to admit signed coefficients -- no code change
+    there, since nothing reads `.weight` at prediction time yet.
+
+- **Representation and analysis extensions.** Rule bodies beyond pure
+  conjunctions (e.g. general CNF/DNF rules); native readers for sparse
+  ARFF (`{index value, ...}`) and libsvm files (`SparseDataRepresentation`
+  and `from_scipy` exist, but `pyrulearn.data.io` and the demos' OpenML
+  loader still go through a dense DataFrame, so a genuinely sparse dataset
+  like OpenML's `connect-4` densifies on the way in); and a logic/SAT
+  interface (export to `sympy`/DIMACS, SAT-based analysis) -- an earlier
+  version was removed from this release and will return in a reworked
+  form.
+
+- **Project housekeeping.** Publishing to PyPI (installation is currently
+  from GitHub); revising the demos in `examples/`, some of which were
+  written against earlier versions of the API.
 
 ## Authors and contributions
 
