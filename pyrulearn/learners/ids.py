@@ -5,7 +5,7 @@ pyrulearn.learners.ids
 `IDS` -- Interpretable Decision Sets (Lakkaraju, Bach & Leskovec, KDD
 2016): consume a pool of class association rules (a `FlatRuleSet`, via
 `pyrulearn.learners.associative.RuleDistiller` -- either given directly or
-mined by default via `ClassAssociationRuleMiner`, the same shared miner
+mined by default via `CARMiner`, the same shared miner
 `pyrulearn.learners.associative.CBA` and `CMAR` also
 consume from), then select an *unordered* subset of them by approximately
 maximizing IDS's own 7-term

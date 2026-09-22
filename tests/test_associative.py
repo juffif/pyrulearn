@@ -8,7 +8,7 @@ from pyrulearn.data import (
     SparseDataRepresentation,
 )
 from pyrulearn.learners.associative import (
-    ClassAssociationRuleMiner,
+    CARMiner,
     coverage_select,
     ensure_nlist,
     generate_cars,
@@ -206,7 +206,7 @@ def test_the_miners_count_based_stats_equal_a_fresh_annotate_for_every_rule():
     from _negation_helpers import neg_spec, neg_X
     _rep0, raw, y = _separable_multiclass()
     nl = NListRepresentation.from_boolean(BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y))
-    model = ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(nl)
+    model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(nl)
     assert len(model.rules) > 50
     for r in model.rules:
         fresh = annotate_rules([Rule(r.conditions, target=r.target, dataspec=nl.spec)], nl)[0]
@@ -214,7 +214,7 @@ def test_the_miners_count_based_stats_equal_a_fresh_annotate_for_every_rule():
     print(f"the miner's stats-from-counts match annotate for all {len(model.rules)} mined rules: OK")
 
 
-# -- ClassAssociationRuleMiner: the raw, unpruned CAR pool -------------------
+# -- CARMiner: the raw, unpruned CAR pool -------------------
 
 def _separable_multiclass(n=180, seed=0):
     rng = np.random.default_rng(seed)
@@ -226,14 +226,14 @@ def _separable_multiclass(n=180, seed=0):
 
 def test_class_association_rule_miner_returns_the_raw_car_pool_as_a_flat_rule_set():
     rep, raw, y = _separable_multiclass()
-    miner = ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, max_len=3)
+    miner = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3)
     model = miner.fit(rep)
     assert isinstance(model, FlatRuleSet)
 
     nlist = ensure_nlist(rep, miner.max_auto_convert_cells)
     cars = generate_cars(nlist, miner.min_support, miner.min_confidence, miner.max_len)
     assert len(model.rules) == len(cars)  # every mined CAR survives, unpruned
-    print(f"ClassAssociationRuleMiner returns the full unpruned CAR pool ({len(cars)} rules): OK")
+    print(f"CARMiner returns the full unpruned CAR pool ({len(cars)} rules): OK")
 
 
 def test_class_association_rule_miner_defaults_to_the_same_combiner_as_a_random_forest_import():
@@ -242,9 +242,9 @@ def test_class_association_rule_miner_defaults_to_the_same_combiner_as_a_random_
     # one convention for "a raw pool of many small rules", regardless of
     # whether it came from mining or from_random_forest.
     rep, raw, y = _separable_multiclass()
-    model = ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(rep)
+    model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(rep)
     assert model.combiner == "max"
-    print("ClassAssociationRuleMiner's raw FlatRuleSet uses the plain 'max' default combiner: OK")
+    print("CARMiner's raw FlatRuleSet uses the plain 'max' default combiner: OK")
 
 
 def test_class_association_rule_miner_runs_end_to_end_on_a_sparse_representation():
@@ -252,19 +252,19 @@ def test_class_association_rule_miner_runs_end_to_end_on_a_sparse_representation
     # fit() pipeline, not just generate_cars in isolation.
     rep, raw, y = _separable_multiclass()
     sparse = SparseDataRepresentation.from_boolean(rep)
-    model = ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(sparse)
+    model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(sparse)
     assert isinstance(model, FlatRuleSet)
     assert len(model.rules) > 0
-    print(f"ClassAssociationRuleMiner.fit runs end to end on a SparseDataRepresentation "
+    print(f"CARMiner.fit runs end to end on a SparseDataRepresentation "
           f"({len(model.rules)} rules): OK")
 
 
 def test_class_association_rule_miner_target_class_returns_a_concept_model():
     rep, raw, y = _separable_multiclass()
-    model = ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, target_class="x").fit(rep)
+    model = CARMiner(min_support=0.02, min_confidence=0.5, target_class="x").fit(rep)
     assert isinstance(model, ConceptModel)
     assert all(r.target == "x" for r in model.rules)
-    print("ClassAssociationRuleMiner(target_class=...) returns a single-class ConceptModel: OK")
+    print("CARMiner(target_class=...) returns a single-class ConceptModel: OK")
 
 
 # -- sort_by_measured_precedence: the generalized (non-CAR) precedence sort --

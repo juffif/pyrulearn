@@ -2,17 +2,17 @@
 pyrulearn.learners.associative
 ==================================
 
-`ClassAssociationRuleMiner` mines class association rules (CARs); `CBA`
+`CARMiner` mines class association rules (CARs); `CBA`
 and `CMAR` (both defined at the bottom of this module) and `IDS`
 (`pyrulearn.learners.ids`) each *consume* an already-annotated pool of
 rules -- via the `RuleDistiller` mixin defined here -- to build their own,
 smaller model. Mining and consuming are deliberately separate: none of
 CBA/CMAR/IDS mine anything themselves. Pass `rules=` (a `FlatRuleSet` of
-already-annotated `SingleRule`s -- from `ClassAssociationRuleMiner`
+already-annotated `SingleRule`s -- from `CARMiner`
 itself, from `pyrulearn.interfaces.sklearn.from_random_forest`, or from
 anywhere else that produces one) to skip mining entirely; leave it
 `None` and `RuleDistiller._resolve_rules` mines a default pool via
-`ClassAssociationRuleMiner` at fit time, using the same
+`CARMiner` at fit time, using the same
 `min_support`/`min_confidence`/`max_len` hyperparameters CBA/CMAR/IDS
 have always taken.
 
@@ -26,7 +26,7 @@ work, both of which work identically for a `SingleRule` pulled from
 drop-in for a bare `Rule` wherever coverage/combining code reads one --
 see `pyrulearn.models.SingleRule`'s docstring). The `CAR` dataclass and
 its own mining-time `confidence`/`support` bookkeeping stay entirely
-internal to `generate_cars`/`ClassAssociationRuleMiner` -- nothing
+internal to `generate_cars`/`CARMiner` -- nothing
 downstream ever sees a raw `CAR` again once it's wrapped into a `Rule`.
 
 **Mining** (`generate_cars`) is Apriori-style level-wise frequent-itemset
@@ -62,7 +62,7 @@ returned error trace to truncate to a single minimum-error prefix (a
 voting (a `FlatRuleSet`), so the "which prefix length is best" question
 doesn't apply to it -- see each class's own docstring.
 
-`ClassAssociationRuleMiner` itself is a full, directly-usable
+`CARMiner` itself is a full, directly-usable
 `pyrulearn.learners.NativeRuleLearner`: `fit(data)` with no further
 pruning returns the **raw, unpruned CAR pool** as a plain `FlatRuleSet`
 -- the default combiner (`"max"`, i.e. `HeuristicMaxCombiner(Laplace())`
@@ -72,7 +72,7 @@ gets: one convention for "a raw pool of many small rules", regardless
 of source.
 
 **`RuleDistiller`** is the shared base `CBA`/`CMAR`/`IDS` mix in instead
-of inheriting `ClassAssociationRuleMiner`: it owns `rules=`/
+of inheriting `CARMiner`: it owns `rules=`/
 `min_support`/`min_confidence`/`max_len`/`max_auto_convert_cells`/
 `target_class`, and `_resolve_rules(data, only_class=None)` -- the one
 place "use the given pool, or mine a default one" is decided. See its
@@ -181,7 +181,7 @@ class CAR:
     itemset_support: int
     confidence: float
     #: `{class: rows matching `items` with that label}` for *every* class
-    #: (shared by all CARs of one itemset) -- what `ClassAssociationRuleMiner`
+    #: (shared by all CARs of one itemset) -- what `CARMiner`
     #: stamps a rule's measured stats from, without a coverage pass.
     class_counts: Optional[Dict[Any, int]] = field(default=None, compare=False, repr=False)
 
@@ -385,7 +385,7 @@ def coverage_select(
     return kept, trace
 
 
-class ClassAssociationRuleMiner(DecomposingLearner, NativeRuleLearner):
+class CARMiner(DecomposingLearner, NativeRuleLearner):
     """Mines class association rules (CARs) via `generate_cars` and
     returns them as-is -- a large, unpruned, likely-redundant `RuleSet`,
     the raw material `CBA`/`CMAR`/`IDS` each consume (via `RuleDistiller`)
@@ -456,14 +456,14 @@ class ClassAssociationRuleMiner(DecomposingLearner, NativeRuleLearner):
     @produces(FlatRuleSet)
     def _fit_native(self, data: Any, **kw) -> FlatRuleSet:
         if data.y is None:
-            raise ValueError("ClassAssociationRuleMiner.fit needs data.y")
+            raise ValueError("CARMiner.fit needs data.y")
         model, _resolved = self._mine_pool(data, default_prediction=MajorityClass(data))
         return annotate_default_rule(model, data)
 
     @produces(ConceptModel)
     def _fit_concept(self, data: Any, *, label: Any = None, fallback: Any = None) -> ConceptModel:
         if data.y is None:
-            raise ValueError("ClassAssociationRuleMiner needs data.y")
+            raise ValueError("CARMiner needs data.y")
         target = label if label is not None else self.target_class
         if target is None:
             raise ValueError("model=ConceptModel needs label= (or target_class set)")
@@ -525,7 +525,7 @@ class RuleDistiller:
       considerably cheaper than CAR mining, is a good first thing to
       try instead of the default below.
     - If `rules` is `None`, `_resolve_rules` mines a default pool via
-      `ClassAssociationRuleMiner` at fit time, using `min_support`/
+      `CARMiner` at fit time, using `min_support`/
       `min_confidence`/`max_len`/`max_auto_convert_cells` -- these four
       are silently unused if `rules` is given directly; they exist only
       for this fallback.
@@ -533,7 +533,7 @@ class RuleDistiller:
       one class's rules (`fit(data)` then returns a `ConceptModel`). If
       `rules` was given directly, this filters the given pool after the
       fact (it already exists); if mining a default pool, it restricts
-      *what gets mined* via `ClassAssociationRuleMiner`'s own
+      *what gets mined* via `CARMiner`'s own
       `target_class=` instead (cheaper: nothing is mined for other
       classes at all).
     """
@@ -571,7 +571,7 @@ class RuleDistiller:
                 return pool.for_target(only_class) if only_class is not None else pool
             pool = list(pool)
             return [r for r in pool if r.target == only_class] if only_class is not None else pool
-        miner = ClassAssociationRuleMiner(
+        miner = CARMiner(
             min_support=self.min_support, min_confidence=self.min_confidence, max_len=self.max_len,
             target_class=only_class, max_auto_convert_cells=self.max_auto_convert_cells,
         )
@@ -586,7 +586,7 @@ class CBA(RuleDistiller, DecomposingLearner, NativeRuleLearner):
     """Classification Based on Associations (Liu, Hsu & Ma, KDD 1998):
     consume a pool of class association rules (a `FlatRuleSet`, via
     `RuleDistiller` -- either given directly or mined by default via
-    `ClassAssociationRuleMiner`, the same shared miner `CMAR` and
+    `CARMiner`, the same shared miner `CMAR` and
     `pyrulearn.learners.ids.IDS` also consume from), sort them by
     precedence, then build a `pyrulearn.models.DecisionList` via CBA-CB's
     "M1" database-coverage selection -- a genuinely different
@@ -662,7 +662,7 @@ class CMAR(RuleDistiller, DecomposingLearner, NativeRuleLearner):
     """Classification based on Multiple Association Rules (Li, Han & Pei,
     2001): consume a pool of class association rules (a `FlatRuleSet`, via
     `RuleDistiller` -- either given directly or mined by default via
-    `ClassAssociationRuleMiner`, the same shared miner `CBA` and
+    `CARMiner`, the same shared miner `CBA` and
     `pyrulearn.learners.ids.IDS` also consume from), keep only the ones
     whose antecedent is *significantly* correlated with the class (a
     chi-square test, not merely confident), then predict by pooling every

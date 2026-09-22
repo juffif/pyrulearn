@@ -16,7 +16,7 @@ Concrete learners live in their own submodules, same
 group-by-shared-implementation convention as `pyrulearn.interfaces`:
 `pyrulearn.learners.seco` (`SeCo` framework -- `CN2`, `AQR`, `PFoil`,
 `PFossil`, `Pypper`), `pyrulearn.learners.pylord` (`PyLORD`),
-`pyrulearn.learners.associative` (`ClassAssociationRuleMiner`, the
+`pyrulearn.learners.associative` (`CARMiner`, the
 `RuleDistiller` mixin shared by the classifiers that consume a rule
 pool, and the `CBA` and `CMAR` classifiers built on it),
 `pyrulearn.learners.ids` (`IDS`), and

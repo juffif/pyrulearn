@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
-from pyrulearn.learners.associative import ClassAssociationRuleMiner, sort_by_measured_precedence
+from pyrulearn.learners.associative import CARMiner, sort_by_measured_precedence
 from pyrulearn.learners.associative import CBA, CMAR
 from pyrulearn.learners.ids import IDS
 from pyrulearn.models import DecisionList, FlatRuleSet, PooledRuleSet, RuleView, convert
@@ -18,7 +18,7 @@ def _data(n=220, seed=0):
 
 
 def _pool(data):
-    return ClassAssociationRuleMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(data)
+    return CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(data)
 
 
 def _sig(rules):
