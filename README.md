@@ -7,12 +7,12 @@ A Python library for **representing, learning, combining and analyzing
 propositional rule models** over Boolean data. It provides a common model
 hierarchy (rule sets, decision lists, concept sets, ensembles), a shared
 data representation, pluggable rule-evaluation heuristics and combiners,
-[native implementations of a range of rule learners](#algorithms) (a
+[native implementations of a range of rule learners](#natively-implemented) (a
 configurable separate-and-conquer (SeCo) framework and the algorithms that
 are instantiations of it, such as CN2, AQR, PFOIL, FOSSIL and Pypper, a
 RIPPER re-implementation; plus locally optimal rules and the associative
 classifiers CBA, CMAR and IDS), and
-[interfaces to external learners](#algorithms) (scikit-learn, wittgenstein,
+[interfaces to external learners](#interfaced-external-implementations) (scikit-learn, wittgenstein,
 imodels, Weka, LORD, pyarc), so that native and external algorithms can be
 run and compared through one API.
 
