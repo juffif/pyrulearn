@@ -69,6 +69,21 @@ def test_output_formats():
     print("output formats: OK")
 
 
+def test_prolog_format_quotes_non_atom_targets():
+    # a target that isn't a valid bare Prolog atom (must start lowercase --
+    # a leading digit or uppercase letter is a variable, not a predicate
+    # name) gets single-quoted in the head; "rule" (no target) is untouched
+    r_digit = Rule([0], target="1", n_features=1)
+    assert r_digit.to_string("prolog") == "'1'(X) :- f0(X)."
+    r_upper = Rule([0], target="Yes", n_features=1)
+    assert r_upper.to_string("prolog") == "'Yes'(X) :- f0(X)."
+    r_lower = Rule([0], target="survived", n_features=1)
+    assert r_lower.to_string("prolog") == "survived(X) :- f0(X)."
+    r_none = Rule([0], n_features=1)
+    assert r_none.to_string("prolog") == "rule(X) :- f0(X)."
+    print("prolog format atom quoting: OK")
+
+
 def test_default_fmt_configuration():
     r = Rule([0, 1], target="pos", n_features=3)
     assert Rule.DEFAULT_FORMAT == "prolog"

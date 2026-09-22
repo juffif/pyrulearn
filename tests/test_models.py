@@ -793,10 +793,12 @@ def test_decision_list_to_string_sequential_and_if_elif_else():
 
     prolog = dl.to_string(fmt="prolog")
     plines = prolog.splitlines()
-    assert plines[0] == "A(X) :- a(X)."
-    assert plines[1] == "B(X) :- b(X)."
+    # uppercase-leading targets aren't valid bare Prolog atoms (that's a
+    # variable, not a predicate name) -- quoted, same as a Rule printed alone
+    assert plines[0] == "'A'(X) :- a(X)."
+    assert plines[1] == "'B'(X) :- b(X)."
     assert plines[2] == "% default"
-    assert plines[3] == "C(X) :- true."
+    assert plines[3] == "'C'(X) :- true."
 
 
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():

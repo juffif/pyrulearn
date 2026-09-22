@@ -60,6 +60,7 @@ dependencies beyond numpy.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, FrozenSet, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -563,6 +564,17 @@ class Rule:
                 return spec.expression or spec.name
         return self._feature_name(lit.feature)
 
+    _PROLOG_BARE_ATOM = re.compile(r"^[a-z][a-zA-Z0-9_]*$")
+
+    def _prolog_atom(self, s: str) -> str:
+        """Quote `s` as a Prolog atom if it isn't already a valid bare
+        one (must start with a lowercase letter) -- e.g. a target class
+        that's literally the string ``"1"`` would otherwise render as
+        the syntactically invalid ``1(X) :- ...`` head; this renders
+        ``'1'(X) :- ...`` instead. A class/feature name that's already a
+        meaningful lowercase word (the usual case) is left untouched."""
+        return s if self._PROLOG_BARE_ATOM.match(s) else f"'{s}'"
+
     def _prolog_literal(self, lit: Literal) -> str:
         """Render one (positive) literal in Prolog style: functional
         attribute/value form for nominal/set features (``color(X,
@@ -633,7 +645,7 @@ class Rule:
             return ", ".join(self._literal_str(l, ascii=ascii) for l in conds)
 
         if fmt == "prolog":
-            head_pred = str(self.target) if self.target is not None else "rule"
+            head_pred = self._prolog_atom(str(self.target)) if self.target is not None else "rule"
             body_lits = [self._prolog_literal(l) for l in conds]
             body = ", ".join(body_lits) if body_lits else "true"
             return f"{head_pred}(X) :- {body}."
