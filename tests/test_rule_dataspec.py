@@ -84,6 +84,29 @@ def test_prolog_format_quotes_non_atom_targets():
     print("prolog format atom quoting: OK")
 
 
+def test_prolog_format_gives_each_condition_its_own_variable():
+    # two conditions that each introduce a fresh Prolog variable (>=/</
+    # !=) must NOT reuse the same variable name -- "age(X, V), V < 30,
+    # income(X, V), V >= 50000" would force age's and income's values to
+    # unify, which is wrong: they're unrelated quantities
+    b = DataSpecBuilder(negation=True)
+    age_idx = b.add_numeric("age", [30])
+    income_idx = b.add_numeric("income", [50000])
+    color_idx = b.add_nominal("color", ["red", "blue"])
+    ds = b.build()
+
+    r = Rule([age_idx.negative[30], income_idx[50000], color_idx.negative["red"]],
+            target="pos", dataspec=ds, ordered=True)
+    assert r.to_string("prolog") == (
+        "pos(X) :- age(X, V1), V1 < 30, income(X, V2), V2 >= 50000, "
+        "color(X, V3), V3 \\= red."
+    )
+    # a single such condition still gets numbered, for consistency
+    r_one = Rule([age_idx.negative[30]], target="pos", dataspec=ds)
+    assert r_one.to_string("prolog") == "pos(X) :- age(X, V1), V1 < 30."
+    print("prolog format per-condition variables: OK")
+
+
 def test_default_fmt_configuration():
     r = Rule([0, 1], target="pos", n_features=3)
     assert Rule.DEFAULT_FORMAT == "prolog"

@@ -275,8 +275,8 @@ def test_le_literal_rendering():
     r_neg = Rule([ds.negation_of(le_idx[19992])], target="neg", dataspec=ds)
     assert r_pos.to_string("logic") == "income <= 19992 → pos"
     assert r_neg.to_string("logic") == "income > 19992 → neg"
-    assert r_pos.to_string("prolog") == "pos(X) :- income(X, V), V <= 19992."
-    assert r_neg.to_string("prolog") == "neg(X) :- income(X, V), V > 19992."
+    assert r_pos.to_string("prolog") == "pos(X) :- income(X, V1), V1 <= 19992."
+    assert r_neg.to_string("prolog") == "neg(X) :- income(X, V1), V1 > 19992."
     print("<= / > literal rendering (logic/prolog): OK")
 
 
@@ -309,7 +309,7 @@ def test_display_formats_with_typed_attributes():
     r = Rule([color_idx["red"], age_idx.negative[30]], target="risk", dataspec=ds)
     assert r.to_string("logic") == "color = red ∧ age < 30 → risk"
     assert r.to_string("conditions") == "color = red, age < 30"
-    assert r.to_string("prolog") == "risk(X) :- color(X, red), age(X, V), V < 30."
+    assert r.to_string("prolog") == "risk(X) :- color(X, red), age(X, V1), V1 < 30."
 
     # a negated nominal condition is a positive literal on the != feature
     r2 = Rule([color_idx.negative["red"]], dataspec=ds)

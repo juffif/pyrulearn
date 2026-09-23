@@ -575,21 +575,38 @@ class Rule:
         meaningful lowercase word (the usual case) is left untouched."""
         return s if self._PROLOG_BARE_ATOM.match(s) else f"'{s}'"
 
-    def _prolog_literal(self, lit: Literal) -> str:
+    #: `spec.op` values whose Prolog rendering introduces a fresh logic
+    #: variable (``V``) rather than testing an inline constant -- used by
+    #: both `_prolog_literal` (to know whether the `var` it's given
+    #: actually gets used) and `to_string` (to know which literals need
+    #: their own distinct variable name at all).
+    _PROLOG_VAR_OPS = ("!=", ">=", ">", "<", "<=")
+
+    def _prolog_needs_var(self, lit: Literal) -> bool:
+        spec = self._feature_spec(lit.feature)
+        return spec is not None and spec.op in self._PROLOG_VAR_OPS
+
+    def _prolog_literal(self, lit: Literal, var: str = "V") -> str:
         """Render one (positive) literal in Prolog style: functional
         attribute/value form for nominal/set features (``color(X,
         red)``), an explicit inequality for ``!=`` (``color(X, V), V \\=
         red``), threshold form for numeric (``age(X, V), V >= 30``),
         ``\\+smoker(X)`` for a negated Boolean, a named predicate for
-        relational features, a plain 0-ary atom otherwise."""
+        relational features, a plain 0-ary atom otherwise. `var` names
+        the fresh variable for the ``!=``/``>=``/``>``/``<``/``<=``
+        cases -- the caller must give each such literal *in the same
+        rule* its own distinct `var` (see `to_string`'s "prolog" case):
+        reusing ``V`` across two different attributes would force their
+        values to unify, which is wrong -- they're unrelated quantities,
+        each only ever compared to its own literal constant."""
         spec = self._feature_spec(lit.feature)
         if spec is not None:
             if spec.op in ("==", "has"):
                 return f"{spec.attribute}(X, {spec.value})"
             if spec.op == "!=":
-                return f"{spec.attribute}(X, V), V \\= {spec.value}"
+                return f"{spec.attribute}(X, {var}), {var} \\= {spec.value}"
             if spec.op in (">=", ">", "<", "<="):
-                return f"{spec.attribute}(X, V), V {spec.op} {spec.value}"
+                return f"{spec.attribute}(X, {var}), {var} {spec.op} {spec.value}"
             if spec.op == "not":
                 return f"\\+{spec.attribute}(X)"
             if spec.op == "expr":
@@ -646,7 +663,14 @@ class Rule:
 
         if fmt == "prolog":
             head_pred = self._prolog_atom(str(self.target)) if self.target is not None else "rule"
-            body_lits = [self._prolog_literal(l) for l in conds]
+            var_count = 0
+            body_lits = []
+            for l in conds:
+                if self._prolog_needs_var(l):
+                    var_count += 1
+                    body_lits.append(self._prolog_literal(l, f"V{var_count}"))
+                else:
+                    body_lits.append(self._prolog_literal(l))
             body = ", ".join(body_lits) if body_lits else "true"
             return f"{head_pred}(X) :- {body}."
 
