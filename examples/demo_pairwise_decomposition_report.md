@@ -1,8 +1,14 @@
 # Pairwise vs. one-vs-rest decomposition for Pypper
 
-One inner learner (`RIPPER._stage_learner()`), shared binarized features, 70/30 stratified split, seed 0. 5 fitted models; the 3 pairwise ones are each scored under `MajorityVote` (`:vote`), `WeightedVote` (`:wv`), `AccuracyWeightedVote` (`:awv`) on the *same fit* -- their `train s` is 0 (shared). `pw_min`/`pw_maj`/`pw_both` = `Pairwise(positive=)` `smaller`/`larger`/`both`.
+One inner learner (`Pypper._stage_learner()`), shared binarized features, 70/30 stratified split, seed 0. 5 fitted models; the 3 pairwise ones are each scored under `MajorityVote` (`:vote`), `WeightedVote` (`:wv`), `AccuracyWeightedVote` (`:awv`) on the *same fit* -- their `train s` is 0 (shared). `pw_min`/`pw_maj`/`pw_both` = `Pairwise(positive=)` `smaller`/`larger`/`both`.
+
+## Excluded datasets
+
+- **letter**: 26 classes -> hundreds of pairwise Pypper fits; pw_both alone measured ~1050s train time. Re-run with --include-large to include it.
 
 ## Accuracy -- all 11 results
+
+![accuracy, all 11 results](demo_pairwise_decomposition_accuracy.png)
 
 | dataset | n | classes | ovr | ovr_ord | pw_min:vote | pw_min:wv | pw_min:awv | pw_maj:vote | pw_maj:wv | pw_maj:awv | pw_both:vote | pw_both:wv | pw_both:awv |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -17,21 +23,20 @@ One inner learner (`RIPPER._stage_learner()`), shared binarized features, 70/30 
 | ecoli | 336 | 8 | 0.842 | 0.842 | 0.851 | 0.822 | 0.851 | 0.406 | 0.436 | 0.861 | 0.851 | 0.634 | 0.851 |
 | lymph | 148 | 4 | 0.867 | 0.822 | 0.822 | 0.800 | 0.822 | 0.844 | 0.556 | 0.844 | 0.822 | 0.800 | 0.822 |
 | yeast | 1484 | 10 | 0.570 | 0.570 | 0.556 | 0.567 | 0.558 | 0.561 | 0.383 | 0.563 | 0.574 | 0.496 | 0.576 |
-| letter | 20000 | 26 | 0.755 | 0.786 | 0.849 | 0.215 | 0.853 | 0.852 | 0.284 | 0.853 | 0.869 | 0.867 | 0.870 |
 
 | result | datasets | mean acc | mean predict s |
 |---|--:|--:|--:|
-| ovr | 12 | 0.816 | 0.02 |
-| ovr_ord | 12 | 0.815 | 0.00 |
-| pw_min:vote | 12 | 0.825 | 0.37 |
-| pw_min:wv | 12 | 0.729 | 3.35 |
-| pw_min:awv | 12 | 0.826 | 0.48 |
-| pw_maj:vote | 12 | 0.746 | 0.37 |
-| pw_maj:wv | 12 | 0.541 | 3.28 |
-| pw_maj:awv | 12 | 0.836 | 0.50 |
-| pw_both:vote | 12 | 0.832 | 0.92 |
-| pw_both:wv | 12 | 0.795 | 8.35 |
-| pw_both:awv | 12 | 0.836 | 1.17 |
+| ovr | 11 | 0.821 | 0.00 |
+| ovr_ord | 11 | 0.818 | 0.00 |
+| pw_min:vote | 11 | 0.823 | 0.01 |
+| pw_min:wv | 11 | 0.775 | 0.07 |
+| pw_min:awv | 11 | 0.824 | 0.01 |
+| pw_maj:vote | 11 | 0.736 | 0.01 |
+| pw_maj:wv | 11 | 0.564 | 0.08 |
+| pw_maj:awv | 11 | 0.834 | 0.01 |
+| pw_both:vote | 11 | 0.828 | 0.02 |
+| pw_both:wv | 11 | 0.789 | 0.14 |
+| pw_both:awv | 11 | 0.833 | 0.02 |
 
 ### predict time (s) -- all 11 results
 
@@ -39,45 +44,47 @@ One inner learner (`RIPPER._stage_learner()`), shared binarized features, 70/30 
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | iris | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
 | wine | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 |
-| glass | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.03 | 0.01 |
-| vehicle | 0.00 | 0.00 | 0.00 | 0.03 | 0.01 | 0.00 | 0.02 | 0.01 | 0.01 | 0.05 | 0.01 |
-| segment | 0.00 | 0.00 | 0.03 | 0.21 | 0.04 | 0.03 | 0.24 | 0.06 | 0.05 | 0.49 | 0.07 |
-| car | 0.00 | 0.00 | 0.01 | 0.04 | 0.01 | 0.01 | 0.08 | 0.01 | 0.02 | 0.12 | 0.02 |
-| balance-scale | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.02 | 0.00 |
-| zoo | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.02 | 0.01 |
-| ecoli | 0.00 | 0.00 | 0.00 | 0.03 | 0.01 | 0.01 | 0.04 | 0.01 | 0.01 | 0.07 | 0.02 |
-| lymph | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 |
-| yeast | 0.00 | 0.00 | 0.03 | 0.26 | 0.05 | 0.04 | 0.34 | 0.05 | 0.07 | 0.64 | 0.11 |
-| letter | 0.22 | 0.05 | 4.37 | 39.58 | 5.65 | 4.31 | 38.64 | 5.81 | 10.85 | 98.72 | 13.81 |
+| glass | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.01 | 0.04 | 0.01 |
+| vehicle | 0.00 | 0.00 | 0.01 | 0.03 | 0.01 | 0.01 | 0.03 | 0.01 | 0.01 | 0.06 | 0.01 |
+| segment | 0.00 | 0.00 | 0.05 | 0.31 | 0.04 | 0.03 | 0.23 | 0.04 | 0.08 | 0.50 | 0.08 |
+| car | 0.00 | 0.00 | 0.01 | 0.05 | 0.01 | 0.01 | 0.09 | 0.01 | 0.03 | 0.14 | 0.03 |
+| balance-scale | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.02 | 0.01 |
+| zoo | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.01 | 0.00 | 0.01 | 0.03 | 0.00 |
+| ecoli | 0.00 | 0.00 | 0.01 | 0.03 | 0.01 | 0.01 | 0.05 | 0.01 | 0.02 | 0.07 | 0.02 |
+| lymph | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 |
+| yeast | 0.00 | 0.00 | 0.04 | 0.26 | 0.07 | 0.06 | 0.41 | 0.05 | 0.08 | 0.65 | 0.10 |
 
 ## Train vs. predict time (s) -- the 5 fitted models
 
+![train and predict time, log scale](demo_pairwise_decomposition_runtime.png)
+
 | dataset | ovr train / pred | ovr_ord train / pred | pw_min train / pred | pw_maj train / pred | pw_both train / pred |
 |---|--:|--:|--:|--:|--:|
-| iris | 0.2 / 0.00 | 0.0 / 0.00 | 0.0 / 0.00 | 0.0 / 0.00 | 0.1 / 0.00 |
-| wine | 0.5 / 0.00 | 0.3 / 0.00 | 0.4 / 0.00 | 0.3 / 0.00 | 0.6 / 0.00 |
-| glass | 1.2 / 0.00 | 0.7 / 0.00 | 1.2 / 0.00 | 1.1 / 0.00 | 2.4 / 0.00 |
-| vehicle | 5.6 / 0.00 | 4.3 / 0.00 | 4.9 / 0.00 | 5.1 / 0.00 | 9.8 / 0.01 |
-| segment | 9.1 / 0.00 | 5.8 / 0.00 | 7.9 / 0.03 | 8.5 / 0.03 | 15.7 / 0.05 |
-| car | 0.9 / 0.00 | 0.7 / 0.00 | 1.0 / 0.01 | 0.8 / 0.01 | 1.9 / 0.02 |
-| balance-scale | 0.5 / 0.00 | 0.2 / 0.00 | 0.3 / 0.00 | 0.5 / 0.00 | 0.8 / 0.00 |
-| zoo | 0.4 / 0.00 | 0.3 / 0.00 | 0.5 / 0.00 | 0.5 / 0.00 | 1.0 / 0.00 |
-| ecoli | 0.6 / 0.00 | 0.3 / 0.00 | 0.5 / 0.00 | 0.6 / 0.01 | 1.2 / 0.01 |
-| lymph | 0.9 / 0.00 | 0.4 / 0.00 | 0.5 / 0.00 | 0.7 / 0.00 | 1.2 / 0.00 |
-| yeast | 3.2 / 0.00 | 1.7 / 0.00 | 4.1 / 0.03 | 6.7 / 0.04 | 10.9 / 0.07 |
-| letter | 414.0 / 0.22 | 215.2 / 0.05 | 453.3 / 4.37 | 453.2 / 4.31 | 950.4 / 10.85 |
+| iris | 0.1 / 0.00 | 0.0 / 0.00 | 0.0 / 0.00 | 0.0 / 0.00 | 0.1 / 0.00 |
+| wine | 0.5 / 0.00 | 0.2 / 0.00 | 0.3 / 0.00 | 0.3 / 0.00 | 0.7 / 0.00 |
+| glass | 1.3 / 0.00 | 0.7 / 0.00 | 1.2 / 0.00 | 1.0 / 0.00 | 2.5 / 0.01 |
+| vehicle | 6.0 / 0.00 | 4.6 / 0.00 | 5.1 / 0.01 | 5.3 / 0.01 | 10.7 / 0.01 |
+| segment | 10.4 / 0.00 | 5.8 / 0.00 | 8.5 / 0.05 | 8.8 / 0.03 | 17.2 / 0.08 |
+| car | 1.2 / 0.00 | 0.9 / 0.00 | 1.2 / 0.01 | 0.8 / 0.01 | 2.1 / 0.03 |
+| balance-scale | 0.5 / 0.00 | 0.2 / 0.00 | 0.3 / 0.00 | 0.6 / 0.00 | 0.8 / 0.00 |
+| zoo | 0.4 / 0.00 | 0.3 / 0.00 | 0.6 / 0.00 | 0.6 / 0.00 | 1.1 / 0.01 |
+| ecoli | 0.7 / 0.00 | 0.3 / 0.00 | 0.6 / 0.01 | 0.7 / 0.01 | 1.2 / 0.02 |
+| lymph | 1.0 / 0.00 | 0.4 / 0.00 | 0.6 / 0.00 | 0.8 / 0.00 | 1.3 / 0.00 |
+| yeast | 3.5 / 0.00 | 1.8 / 0.00 | 4.3 / 0.04 | 7.2 / 0.06 | 11.9 / 0.08 |
 
 | model | mean train s | mean predict s (vote) |
 |---|--:|--:|
-| ovr | 36.42 | 0.02 |
-| ovr_ord | 19.16 | 0.00 |
-| pw_min | 39.55 | 0.37 |
-| pw_maj | 39.83 | 0.37 |
-| pw_both | 82.99 | 0.92 |
+| ovr | 2.32 | 0.00 |
+| ovr_ord | 1.38 | 0.00 |
+| pw_min | 2.06 | 0.01 |
+| pw_maj | 2.37 | 0.01 |
+| pw_both | 4.50 | 0.02 |
 
 *(train time for `:wv` / `:awv` is 0 -- same fit as `:vote`. `:wv` roughly doubles predict time -- it re-resolves every member's covering rules; `:awv` is as cheap as `:vote`. Per-result predict times are in the section above.)*
 
 ## Rule complexity -- the 5 fitted models
+
+![rule count and total conditions, log scale](demo_pairwise_decomposition_complexity.png)
 
 | dataset | ovr models/rules/conds | ovr_ord models/rules/conds | pw_min models/rules/conds | pw_maj models/rules/conds | pw_both models/rules/conds |
 |---|--:|--:|--:|--:|--:|
@@ -92,12 +99,11 @@ One inner learner (`RIPPER._stage_learner()`), shared binarized features, 70/30 
 | ecoli | 8/8/21 | 7/7/13 | 28/16/17 | 28/17/19 | 56/33/36 |
 | lymph | 4/7/15 | 3/3/5 | 6/4/6 | 6/6/8 | 12/10/14 |
 | yeast | 10/19/72 | 9/12/28 | 45/57/95 | 45/72/112 | 90/129/207 |
-| letter | 26/255/1697 | 25/202/1194 | 325/1608/4429 | 325/1638/4608 | 650/3246/9037 |
 
 | model | mean models | mean rules | mean conds |
 |---|--:|--:|--:|
-| ovr | 7.1 | 31.2 | 172.1 |
-| ovr_ord | 6.1 | 22.9 | 115.4 |
-| pw_min | 40.2 | 150.1 | 398.3 |
-| pw_maj | 40.2 | 156.2 | 416.4 |
-| pw_both | 80.3 | 306.7 | 813.8 |
+| ovr | 5.4 | 10.8 | 33.5 |
+| ovr_ord | 4.4 | 6.6 | 17.4 |
+| pw_min | 14.3 | 17.5 | 31.9 |
+| pw_maj | 14.3 | 21.5 | 35.4 |
+| pw_both | 28.5 | 39.5 | 66.2 |

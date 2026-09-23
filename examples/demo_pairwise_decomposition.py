@@ -42,6 +42,11 @@ separately** -- predict dominates for pairwise (many sub-models), and
 Shared binarized feature set (`build_dataspec` + `binarize` once per
 dataset), 70/30 stratified split, seed 0. Uncapped by default; `--cap N`
 subsamples larger sets. Reuses `demo_ripper_comparison`'s OpenML loader.
+
+`letter` (26 classes) is excluded by default -- `C(26,2)=325` pairwise
+Pypper fits per variant makes it by far the slowest dataset here (`pw_both`
+alone measured ~1050s train time); `--include-large` adds it back. See
+`LARGE_DATASETS`/`DISABLED_REASON`.
 """
 
 from __future__ import annotations
@@ -64,10 +69,21 @@ HERE = os.path.dirname(__file__)
 REPORT_PATH = os.path.join(HERE, "demo_pairwise_decomposition_report.md")
 PLOT_PREFIX = os.path.join(HERE, "demo_pairwise_decomposition")
 
-DATASETS = [
+STANDARD_DATASETS = [
     "iris", "wine", "glass", "vehicle", "segment", "car",
     "balance-scale", "zoo", "ecoli", "lymph", "yeast", "letter",
 ]
+# letter: 26 classes -> C(26,2)=325 pairwise models, x3 for pw_min/pw_maj/vote
+# variants (pw_both doubles that again) -- pw_both alone measured ~1050s
+# *train* time here (no per-fit timeout in this demo, unlike
+# demo_workflow_comparison's TimeoutRunner), on top of ovr/ovr_ord and the
+# other 11 datasets. Excluded by default; pass --include-large to add it back.
+LARGE_DATASETS = ["letter"]
+DISABLED_REASON = {
+    "letter": "26 classes -> hundreds of pairwise Pypper fits; pw_both alone "
+              "measured ~1050s train time. Re-run with --include-large to include it.",
+}
+SMALL_DATASETS = [d for d in STANDARD_DATASETS if d not in LARGE_DATASETS]
 
 
 def pypper():
@@ -167,7 +183,7 @@ def _mean(rows, key, field):
     return np.mean(vals) if vals else float("nan")
 
 
-def write_report(results):
+def write_report(results, excluded=()):
     L = ["# Pairwise vs. one-vs-rest decomposition for Pypper", "",
          "One inner learner (`Pypper._stage_learner()`), shared binarized features, 70/30 "
          "stratified split, seed 0. 5 fitted models; the 3 pairwise ones are each scored under "
@@ -175,7 +191,14 @@ def write_report(results):
          "the *same fit* -- their `train s` is 0 (shared). `pw_min`/`pw_maj`/`pw_both` = "
          "`Pairwise(positive=)` `smaller`/`larger`/`both`.", ""]
 
+    if excluded:
+        L += ["## Excluded datasets", ""]
+        for name in excluded:
+            L.append(f"- **{name}**: {DISABLED_REASON.get(name, 'excluded for runtime.')}")
+        L.append("")
+
     L += ["## Accuracy -- all 11 results", "",
+          f"![accuracy, all 11 results]({os.path.basename(PLOT_PREFIX)}_accuracy.png)", "",
           "| dataset | n | classes | " + " | ".join(RESULT_KEYS) + " |",
           "|---|--:|--:|" + "--:|" * len(RESULT_KEYS)]
     for r in results:
@@ -201,6 +224,7 @@ def write_report(results):
         L.append(f"| {r['name']} | " + " | ".join(cells) + " |")
 
     L += ["", "## Train vs. predict time (s) -- the 5 fitted models", "",
+          f"![train and predict time, log scale]({os.path.basename(PLOT_PREFIX)}_runtime.png)", "",
           "| dataset | " + " | ".join(f"{k} train / pred" for k in FIT_KEYS) + " |",
           "|---|" + "--:|" * len(FIT_KEYS)]
     for r in results:
@@ -219,6 +243,7 @@ def write_report(results):
           "cheap as `:vote`. Per-result predict times are in the section above.)*"]
 
     L += ["", "## Rule complexity -- the 5 fitted models", "",
+          f"![rule count and total conditions, log scale]({os.path.basename(PLOT_PREFIX)}_complexity.png)", "",
           "| dataset | " + " | ".join(f"{k} models/rules/conds" for k in FIT_KEYS) + " |",
           "|---|" + "--:|" * len(FIT_KEYS)]
     for r in results:
@@ -308,16 +333,20 @@ def write_plots(results):
     print(f"Plot   -> {PLOT_PREFIX}_complexity.png")
 
 
-def main():
+def main(include_large=False):
     warnings.simplefilter("ignore")
     print(f"row cap: {MAX_ROWS if MAX_ROWS is not None else 'none (uncapped)'}")
+    datasets = STANDARD_DATASETS if include_large else SMALL_DATASETS
+    excluded = [] if include_large else LARGE_DATASETS
+    if excluded:
+        print(f"excluded (pass --include-large to add back): {', '.join(excluded)}")
     results = []
-    for name in DATASETS:
+    for name in datasets:
         try:
             results.append(run_dataset(name))
         except Exception as e:  # noqa: BLE001
             print(f"\n{name}  SKIPPED ({type(e).__name__}: {str(e)[:100]})")
-    write_report(results)
+    write_report(results, excluded=excluded)
     write_plots(results)
 
 
@@ -325,6 +354,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cap", type=int, default=None, metavar="N",
                     help="subsample datasets larger than N rows (default: no cap)")
+    ap.add_argument("--include-large", action="store_true",
+                    help=f"also run the large datasets ({', '.join(LARGE_DATASETS)}), "
+                         "excluded by default for runtime")
     args = ap.parse_args()
     MAX_ROWS = args.cap
-    main()
+    main(include_large=args.include_large)
