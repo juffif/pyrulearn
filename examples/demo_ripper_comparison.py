@@ -265,6 +265,8 @@ def write_report(results):
         "`bin.feat` is the shared binary feature count -- not what `jrip_native` used."
     )
     lines.append("")
+    lines.append(f"![accuracy and fit time per dataset]({os.path.basename(PLOT_PATH)})")
+    lines.append("")
     lines.append("| dataset | n | bin.feat | classes | algo | acc | rules | conds | conds/rule | fit s |")
     lines.append("|---|--:|--:|--:|---|--:|--:|--:|--:|--:|")
     for r in results:

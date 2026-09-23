@@ -2,6 +2,8 @@
 
 `jrip`, `wittgenstein` and `pypper` share one binarized feature set (`build_dataspec` + `binarize`, one DataSpec per dataset); `jrip_native` is the same Weka JRip run on the raw columns instead (its own discretization). 70/30 stratified split, seed 0, datasets capped at 1600 rows. wittgenstein on multi-class = manual one-vs-rest (one fit per class, rules pooled). `bin.feat` is the shared binary feature count -- not what `jrip_native` used.
 
+![accuracy and fit time per dataset](demo_ripper_comparison.png)
+
 | dataset | n | bin.feat | classes | algo | acc | rules | conds | conds/rule | fit s |
 |---|--:|--:|--:|---|--:|--:|--:|--:|--:|
 | vote | 435 | 96 | 2 | jrip | 0.931 | 2 | 4 | 2.0 | 1.1 |
