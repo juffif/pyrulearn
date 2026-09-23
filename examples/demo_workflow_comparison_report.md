@@ -1,6 +1,6 @@
 # Binarized vs. Original data preparation -- comparison across binary datasets
 
-Generated 2026-09-21 15:27:35. N_FOLDS=5, MAX_INTERVALS=8 ('Binarized' mode only), MAX_DEPTH=4, RIPPER_K=2, N_ESTIMATORS=10 (forest), FIT_TIMEOUT_SECONDS=60. `ripper_A`/`irep_A` treat each dataset's (alphabetically) first class as positive, `ripper_B`/`irep_B` the second. `brl`/`brs` fit the same already-Boolean matrix under both workflows as two independent calls (see the module docstring). Weka's `jrip`/`part`/`j48` fit-time includes JVM subprocess startup overhead, not just the algorithm itself -- see the module docstring.
+Generated 2026-09-23 17:50:00. N_FOLDS=5, MAX_INTERVALS=8 ('Binarized' mode only), MAX_DEPTH=4, RIPPER_K=2, N_ESTIMATORS=10 (forest), FIT_TIMEOUT_SECONDS=60. `ripper_A`/`irep_A` treat each dataset's (alphabetically) first class as positive, `ripper_B`/`irep_B` the second. `brl`/`brs` fit the same already-Boolean matrix under both workflows as two independent calls (see the module docstring). Weka's `jrip`/`part`/`j48` fit-time includes JVM subprocess startup overhead, not just the algorithm itself -- see the module docstring.
 
 ---
 
@@ -12,21 +12,25 @@ n=435, attributes=16, A='democrat', B='republican'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 95.17 +/- 0.86 | 0/5 |
-| Binarized | forest | 96.09 +/- 1.56 | 0/5 |
-| Binarized | ripper_A | 94.02 +/- 1.84 | 0/5 |
-| Binarized | ripper_B | 96.09 +/- 1.17 | 0/5 |
-| Binarized | irep_A | 94.94 +/- 2.37 | 0/5 |
-| Binarized | irep_B | 94.71 +/- 2.68 | 0/5 |
-| Binarized | jrip | 94.94 +/- 1.72 | 0/5 |
-| Binarized | part | 95.40 +/- 1.26 | 0/5 |
+| Binarized | tree | 89.43 +/- 2.85 | 0/5 |
+| Binarized | forest | 95.63 +/- 1.98 | 0/5 |
+| Binarized | ripper_A | 93.56 +/- 1.38 | 0/5 |
+| Binarized | ripper_B | 95.63 +/- 1.52 | 0/5 |
+| Binarized | irep_A | 94.25 +/- 1.63 | 0/5 |
+| Binarized | irep_B | 94.94 +/- 2.48 | 0/5 |
+| Binarized | brl | 94.48 +/- 1.84 | 0/5 |
+| Binarized | brs | 87.13 +/- 5.21 | 0/5 |
+| Binarized | jrip | 95.40 +/- 1.03 | 0/5 |
+| Binarized | part | 95.17 +/- 1.13 | 0/5 |
 | Binarized | j48 | 96.09 +/- 1.17 | 0/5 |
 | Original | tree | 94.94 +/- 1.17 | 0/5 |
 | Original | forest | 94.71 +/- 2.13 | 0/5 |
 | Original | ripper_A | 95.17 +/- 1.13 | 0/5 |
 | Original | ripper_B | 95.17 +/- 1.52 | 0/5 |
 | Original | irep_A | 94.02 +/- 1.52 | 0/5 |
-| Original | irep_B | 95.17 +/- 2.76 | 0/5 |
+| Original | irep_B | 95.63 +/- 2.34 | 0/5 |
+| Original | brl | 94.48 +/- 1.84 | 0/5 |
+| Original | brs | 87.13 +/- 5.21 | 0/5 |
 | Original | jrip | 95.63 +/- 2.34 | 0/5 |
 | Original | part | 95.63 +/- 1.34 | 0/5 |
 | Original | j48 | 96.32 +/- 1.34 | 0/5 |
@@ -35,49 +39,57 @@ n=435, attributes=16, A='democrat', B='republican'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.252 |
-| Binarized | forest | 0.078 |
-| Binarized | ripper_A | 0.124 |
-| Binarized | ripper_B | 0.125 |
-| Binarized | irep_A | 0.091 |
-| Binarized | irep_B | 0.086 |
-| Binarized | jrip | 0.307 |
-| Binarized | part | 0.302 |
-| Binarized | j48 | 0.298 |
-| Original | tree | 0.004 |
-| Original | forest | 0.069 |
-| Original | ripper_A | 0.072 |
-| Original | ripper_B | 0.070 |
-| Original | irep_A | 0.049 |
-| Original | irep_B | 0.045 |
-| Original | jrip | 0.236 |
-| Original | part | 0.246 |
-| Original | j48 | 0.240 |
+| Binarized | tree | 0.233 |
+| Binarized | forest | 0.108 |
+| Binarized | ripper_A | 0.087 |
+| Binarized | ripper_B | 0.073 |
+| Binarized | irep_A | 0.042 |
+| Binarized | irep_B | 0.042 |
+| Binarized | brl | 0.833 |
+| Binarized | brs | 12.441 |
+| Binarized | jrip | 0.557 |
+| Binarized | part | 1.330 |
+| Binarized | j48 | 0.422 |
+| Original | tree | 0.005 |
+| Original | forest | 0.099 |
+| Original | ripper_A | 0.102 |
+| Original | ripper_B | 0.094 |
+| Original | irep_A | 0.060 |
+| Original | irep_B | 0.057 |
+| Original | brl | 0.796 |
+| Original | brs | 13.071 |
+| Original | jrip | 0.414 |
+| Original | part | 1.288 |
+| Original | j48 | 0.569 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 13.4 | 3.80 |
-| Binarized | forest | 111.8 | 3.67 |
-| Binarized | ripper_A | 2.0 | 1.53 |
-| Binarized | ripper_B | 3.0 | 2.25 |
-| Binarized | irep_A | 2.0 | 1.50 |
-| Binarized | irep_B | 1.0 | 1.00 |
-| Binarized | jrip | 2.2 | 1.60 |
-| Binarized | part | 5.2 | 2.23 |
-| Binarized | j48 | 6.8 | 3.32 |
+| Binarized | tree | 12.8 | 3.59 |
+| Binarized | forest | 126.4 | 3.73 |
+| Binarized | ripper_A | 2.4 | 1.73 |
+| Binarized | ripper_B | 3.0 | 2.33 |
+| Binarized | irep_A | 1.6 | 1.40 |
+| Binarized | irep_B | 1.6 | 1.30 |
+| Binarized | brl | 3.2 | 1.25 |
+| Binarized | brs | 7.4 | 2.94 |
+| Binarized | jrip | 2.2 | 1.87 |
+| Binarized | part | 6.4 | 2.09 |
+| Binarized | j48 | 6.6 | 3.34 |
 | Original | tree | 13.4 | 3.80 |
 | Original | forest | 121.0 | 3.73 |
 | Original | ripper_A | 3.4 | 1.88 |
 | Original | ripper_B | 3.8 | 1.95 |
-| Original | irep_A | 2.2 | 1.37 |
-| Original | irep_B | 1.4 | 1.10 |
+| Original | irep_A | 2.0 | 1.43 |
+| Original | irep_B | 1.0 | 1.00 |
+| Original | brl | 3.2 | 1.25 |
+| Original | brs | 7.4 | 2.94 |
 | Original | jrip | 1.2 | 1.20 |
 | Original | part | 5.2 | 1.42 |
 | Original | j48 | 9.0 | 2.61 |
 
-(15.1s total)
+(165.4s total)
 
 ---
 
@@ -89,21 +101,25 @@ n=286, attributes=9, A='no-recurrence-events', B='recurrence-events'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 72.01 +/- 2.36 | 0/5 |
-| Binarized | forest | 74.48 +/- 1.37 | 0/5 |
-| Binarized | ripper_A | 61.63 +/- 13.98 | 0/5 |
-| Binarized | ripper_B | 75.52 +/- 2.49 | 0/5 |
-| Binarized | irep_A | 75.17 +/- 1.44 | 0/5 |
-| Binarized | irep_B | 71.65 +/- 6.12 | 0/5 |
+| Binarized | tree | 71.31 +/- 2.98 | 0/5 |
+| Binarized | forest | 76.21 +/- 2.92 | 0/5 |
+| Binarized | ripper_A | 61.98 +/- 14.29 | 0/5 |
+| Binarized | ripper_B | 76.21 +/- 2.92 | 0/5 |
+| Binarized | irep_A | 75.16 +/- 3.11 | 0/5 |
+| Binarized | irep_B | 71.65 +/- 6.21 | 0/5 |
+| Binarized | brl | 73.09 +/- 2.26 | 0/5 |
+| Binarized | brs | 69.93 +/- 2.53 | 0/5 |
 | Binarized | jrip | 73.06 +/- 5.36 | 0/5 |
-| Binarized | part | 67.14 +/- 4.10 | 0/5 |
-| Binarized | j48 | 69.93 +/- 2.76 | 0/5 |
+| Binarized | part | 66.44 +/- 4.94 | 0/5 |
+| Binarized | j48 | 70.64 +/- 3.34 | 0/5 |
 | Original | tree | 72.72 +/- 1.92 | 0/5 |
 | Original | forest | 75.51 +/- 3.43 | 0/5 |
 | Original | ripper_A | 66.79 +/- 2.79 | 0/5 |
 | Original | ripper_B | 73.07 +/- 2.21 | 0/5 |
-| Original | irep_A | 75.87 +/- 2.63 | 0/5 |
-| Original | irep_B | 73.75 +/- 4.68 | 0/5 |
+| Original | irep_A | 74.83 +/- 1.74 | 0/5 |
+| Original | irep_B | 71.67 +/- 2.66 | 0/5 |
+| Original | brl | 73.09 +/- 2.26 | 0/5 |
+| Original | brs | 69.93 +/- 2.53 | 0/5 |
 | Original | jrip | 72.02 +/- 3.56 | 0/5 |
 | Original | part | 69.96 +/- 5.62 | 0/5 |
 | Original | j48 | 73.42 +/- 1.45 | 0/5 |
@@ -112,49 +128,57 @@ n=286, attributes=9, A='no-recurrence-events', B='recurrence-events'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.008 |
-| Binarized | forest | 0.050 |
-| Binarized | ripper_A | 0.129 |
-| Binarized | ripper_B | 0.149 |
-| Binarized | irep_A | 0.077 |
-| Binarized | irep_B | 0.072 |
-| Binarized | jrip | 0.304 |
-| Binarized | part | 0.337 |
-| Binarized | j48 | 0.295 |
+| Binarized | tree | 0.009 |
+| Binarized | forest | 0.069 |
+| Binarized | ripper_A | 0.170 |
+| Binarized | ripper_B | 0.205 |
+| Binarized | irep_A | 0.098 |
+| Binarized | irep_B | 0.097 |
+| Binarized | brl | 0.417 |
+| Binarized | brs | 12.816 |
+| Binarized | jrip | 0.467 |
+| Binarized | part | 1.363 |
+| Binarized | j48 | 0.436 |
 | Original | tree | 0.004 |
-| Original | forest | 0.056 |
-| Original | ripper_A | 0.060 |
-| Original | ripper_B | 0.092 |
-| Original | irep_A | 0.031 |
-| Original | irep_B | 0.036 |
-| Original | jrip | 0.227 |
-| Original | part | 0.234 |
-| Original | j48 | 0.231 |
+| Original | forest | 0.074 |
+| Original | ripper_A | 0.082 |
+| Original | ripper_B | 0.130 |
+| Original | irep_A | 0.042 |
+| Original | irep_B | 0.044 |
+| Original | brl | 0.429 |
+| Original | brs | 12.559 |
+| Original | jrip | 0.578 |
+| Original | part | 1.097 |
+| Original | j48 | 0.560 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 12.4 | 3.75 |
-| Binarized | forest | 126.0 | 3.78 |
-| Binarized | ripper_A | 1.2 | 1.50 |
-| Binarized | ripper_B | 1.4 | 2.70 |
-| Binarized | irep_A | 2.4 | 1.27 |
-| Binarized | irep_B | 1.4 | 2.07 |
+| Binarized | tree | 12.4 | 3.77 |
+| Binarized | forest | 128.0 | 3.79 |
+| Binarized | ripper_A | 1.4 | 1.70 |
+| Binarized | ripper_B | 1.4 | 2.50 |
+| Binarized | irep_A | 2.2 | 1.37 |
+| Binarized | irep_B | 1.6 | 2.10 |
+| Binarized | brl | 3.2 | 1.42 |
+| Binarized | brs | 7.0 | 2.83 |
 | Binarized | jrip | 1.0 | 1.80 |
-| Binarized | part | 22.0 | 4.54 |
-| Binarized | j48 | 15.0 | 5.37 |
+| Binarized | part | 21.6 | 4.48 |
+| Binarized | j48 | 13.8 | 5.22 |
 | Original | tree | 12.4 | 3.75 |
 | Original | forest | 124.8 | 3.78 |
 | Original | ripper_A | 3.0 | 1.55 |
 | Original | ripper_B | 1.6 | 2.70 |
-| Original | irep_A | 2.2 | 1.07 |
-| Original | irep_B | 2.8 | 2.25 |
+| Original | irep_A | 3.0 | 1.12 |
+| Original | irep_B | 2.2 | 2.00 |
+| Original | brl | 3.2 | 1.42 |
+| Original | brs | 7.0 | 2.83 |
 | Original | jrip | 2.8 | 2.22 |
 | Original | part | 15.4 | 1.92 |
 | Original | j48 | 8.4 | 1.77 |
 
-(13.3s total)
+(160.5s total)
 
 ---
 
@@ -166,21 +190,25 @@ n=368, attributes=26, A='1', B='2'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 85.06 +/- 2.66 | 0/5 |
-| Binarized | forest | 85.34 +/- 2.28 | 0/5 |
-| Binarized | ripper_A | 85.60 +/- 3.04 | 0/5 |
-| Binarized | ripper_B | 85.07 +/- 2.79 | 0/5 |
-| Binarized | irep_A | 83.71 +/- 2.78 | 0/5 |
-| Binarized | irep_B | 82.08 +/- 3.17 | 0/5 |
-| Binarized | jrip | 88.04 +/- 3.26 | 0/5 |
-| Binarized | part | 80.70 +/- 4.83 | 0/5 |
-| Binarized | j48 | 85.61 +/- 2.63 | 0/5 |
+| Binarized | tree | 73.11 +/- 8.00 | 0/5 |
+| Binarized | forest | 80.15 +/- 4.07 | 0/5 |
+| Binarized | ripper_A | 81.24 +/- 2.83 | 0/5 |
+| Binarized | ripper_B | 85.35 +/- 3.72 | 0/5 |
+| Binarized | irep_A | 83.98 +/- 3.09 | 0/5 |
+| Binarized | irep_B | 84.52 +/- 3.11 | 0/5 |
+| Binarized | brl | 84.79 +/- 1.53 | 0/5 |
+| Binarized | brs | 82.08 +/- 2.53 | 0/5 |
+| Binarized | jrip | 86.42 +/- 2.97 | 0/5 |
+| Binarized | part | 81.81 +/- 4.54 | 0/5 |
+| Binarized | j48 | 83.43 +/- 2.59 | 0/5 |
 | Original | tree | 84.25 +/- 3.11 | 0/5 |
 | Original | forest | 84.26 +/- 3.31 | 0/5 |
 | Original | ripper_A | 81.27 +/- 3.39 | 0/5 |
 | Original | ripper_B | 86.96 +/- 2.91 | 0/5 |
-| Original | irep_A | 84.53 +/- 2.57 | 0/5 |
-| Original | irep_B | 82.90 +/- 4.01 | 0/5 |
+| Original | irep_A | 82.61 +/- 1.52 | 0/5 |
+| Original | irep_B | 85.87 +/- 1.35 | 0/5 |
+| Original | brl | 84.79 +/- 1.53 | 0/5 |
+| Original | brs | 82.08 +/- 2.53 | 0/5 |
 | Original | jrip | 87.51 +/- 3.34 | 0/5 |
 | Original | part | 85.88 +/- 2.47 | 0/5 |
 | Original | j48 | 82.63 +/- 5.17 | 0/5 |
@@ -190,48 +218,56 @@ n=368, attributes=26, A='1', B='2'
 | workflow | model | time |
 |---|---|---|
 | Binarized | tree | 0.013 |
-| Binarized | forest | 0.063 |
-| Binarized | ripper_A | 0.667 |
-| Binarized | ripper_B | 0.685 |
-| Binarized | irep_A | 0.458 |
-| Binarized | irep_B | 0.446 |
-| Binarized | jrip | 0.526 |
-| Binarized | part | 0.487 |
-| Binarized | j48 | 0.390 |
-| Original | tree | 0.004 |
-| Original | forest | 0.089 |
-| Original | ripper_A | 0.343 |
+| Binarized | forest | 0.066 |
+| Binarized | ripper_A | 0.614 |
+| Binarized | ripper_B | 0.679 |
+| Binarized | irep_A | 0.452 |
+| Binarized | irep_B | 0.416 |
+| Binarized | brl | 3.763 |
+| Binarized | brs | 48.736 |
+| Binarized | jrip | 0.649 |
+| Binarized | part | 1.470 |
+| Binarized | j48 | 0.505 |
+| Original | tree | 0.005 |
+| Original | forest | 0.096 |
+| Original | ripper_A | 0.341 |
 | Original | ripper_B | 0.366 |
-| Original | irep_A | 0.247 |
-| Original | irep_B | 0.249 |
-| Original | jrip | 0.280 |
-| Original | part | 0.278 |
-| Original | j48 | 0.277 |
+| Original | irep_A | 0.251 |
+| Original | irep_B | 0.235 |
+| Original | brl | 3.717 |
+| Original | brs | 50.187 |
+| Original | jrip | 0.422 |
+| Original | part | 1.295 |
+| Original | j48 | 0.385 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 11.4 | 3.68 |
-| Binarized | forest | 121.2 | 3.74 |
-| Binarized | ripper_A | 4.4 | 2.15 |
-| Binarized | ripper_B | 5.2 | 1.90 |
+| Binarized | tree | 11.8 | 3.72 |
+| Binarized | forest | 122.0 | 3.74 |
+| Binarized | ripper_A | 3.6 | 2.25 |
+| Binarized | ripper_B | 3.8 | 1.83 |
 | Binarized | irep_A | 1.8 | 1.20 |
-| Binarized | irep_B | 1.6 | 1.20 |
-| Binarized | jrip | 3.0 | 1.40 |
-| Binarized | part | 13.6 | 4.53 |
-| Binarized | j48 | 15.6 | 5.97 |
+| Binarized | irep_B | 1.4 | 1.60 |
+| Binarized | brl | 4.8 | 1.55 |
+| Binarized | brs | 8.0 | 2.82 |
+| Binarized | jrip | 3.2 | 1.97 |
+| Binarized | part | 11.6 | 5.10 |
+| Binarized | j48 | 17.0 | 6.19 |
 | Original | tree | 11.6 | 3.72 |
 | Original | forest | 118.6 | 3.73 |
 | Original | ripper_A | 6.0 | 1.61 |
 | Original | ripper_B | 6.2 | 2.13 |
-| Original | irep_A | 3.0 | 1.42 |
-| Original | irep_B | 2.2 | 1.37 |
+| Original | irep_A | 2.8 | 1.22 |
+| Original | irep_B | 1.6 | 1.60 |
+| Original | brl | 4.8 | 1.55 |
+| Original | brs | 8.0 | 2.82 |
 | Original | jrip | 3.4 | 1.83 |
 | Original | part | 12.8 | 1.81 |
 | Original | j48 | 8.6 | 2.17 |
 
-(34.3s total)
+(579.0s total)
 
 ---
 
@@ -243,21 +279,25 @@ n=690, attributes=15, A='+', B='-'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 85.07 +/- 3.39 | 0/5 |
-| Binarized | forest | 85.65 +/- 2.80 | 0/5 |
-| Binarized | ripper_A | 85.36 +/- 2.69 | 0/5 |
-| Binarized | ripper_B | 85.80 +/- 2.73 | 0/5 |
-| Binarized | irep_A | 85.22 +/- 2.88 | 0/5 |
-| Binarized | irep_B | 85.65 +/- 2.48 | 0/5 |
-| Binarized | jrip | 85.22 +/- 2.58 | 0/5 |
-| Binarized | part | 83.91 +/- 3.29 | 0/5 |
-| Binarized | j48 | 85.22 +/- 3.32 | 0/5 |
+| Binarized | tree | 84.35 +/- 2.85 | 0/5 |
+| Binarized | forest | 84.06 +/- 3.83 | 0/5 |
+| Binarized | ripper_A | 86.09 +/- 3.82 | 0/5 |
+| Binarized | ripper_B | 85.94 +/- 2.85 | 0/5 |
+| Binarized | irep_A | 85.22 +/- 3.54 | 0/5 |
+| Binarized | irep_B | 84.93 +/- 2.53 | 0/5 |
+| Binarized | brl | 84.20 +/- 2.65 | 0/5 |
+| Binarized | brs | 63.48 +/- 5.01 | 0/5 |
+| Binarized | jrip | 85.65 +/- 2.48 | 0/5 |
+| Binarized | part | 83.04 +/- 3.60 | 0/5 |
+| Binarized | j48 | 84.64 +/- 3.41 | 0/5 |
 | Original | tree | 84.78 +/- 3.89 | 0/5 |
 | Original | forest | 85.51 +/- 3.37 | 0/5 |
 | Original | ripper_A | 83.62 +/- 3.57 | 0/5 |
 | Original | ripper_B | 83.04 +/- 3.63 | 0/5 |
-| Original | irep_A | 85.51 +/- 3.30 | 0/5 |
-| Original | irep_B | 85.80 +/- 3.39 | 0/5 |
+| Original | irep_A | 84.06 +/- 2.15 | 0/5 |
+| Original | irep_B | 85.80 +/- 3.51 | 0/5 |
+| Original | brl | 84.20 +/- 2.65 | 0/5 |
+| Original | brs | 63.48 +/- 5.01 | 0/5 |
 | Original | jrip | 85.94 +/- 2.58 | 0/5 |
 | Original | part | 84.35 +/- 3.51 | 0/5 |
 | Original | j48 | 85.94 +/- 4.09 | 0/5 |
@@ -266,49 +306,57 @@ n=690, attributes=15, A='+', B='-'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.015 |
-| Binarized | forest | 0.104 |
-| Binarized | ripper_A | 0.509 |
-| Binarized | ripper_B | 0.471 |
-| Binarized | irep_A | 0.223 |
-| Binarized | irep_B | 0.238 |
-| Binarized | jrip | 0.447 |
-| Binarized | part | 0.440 |
-| Binarized | j48 | 0.378 |
+| Binarized | tree | 0.014 |
+| Binarized | forest | 0.097 |
+| Binarized | ripper_A | 0.450 |
+| Binarized | ripper_B | 0.430 |
+| Binarized | irep_A | 0.200 |
+| Binarized | irep_B | 0.190 |
+| Binarized | brl | 2.364 |
+| Binarized | brs | 15.821 |
+| Binarized | jrip | 0.593 |
+| Binarized | part | 1.430 |
+| Binarized | j48 | 0.475 |
 | Original | tree | 0.005 |
-| Original | forest | 0.138 |
-| Original | ripper_A | 0.316 |
-| Original | ripper_B | 0.366 |
-| Original | irep_A | 0.116 |
-| Original | irep_B | 0.131 |
-| Original | jrip | 0.314 |
-| Original | part | 0.295 |
-| Original | j48 | 0.265 |
+| Original | forest | 0.153 |
+| Original | ripper_A | 0.350 |
+| Original | ripper_B | 0.352 |
+| Original | irep_A | 0.113 |
+| Original | irep_B | 0.128 |
+| Original | brl | 2.176 |
+| Original | brs | 15.935 |
+| Original | jrip | 0.422 |
+| Original | part | 1.297 |
+| Original | j48 | 0.366 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 13.8 | 3.85 |
-| Binarized | forest | 142.4 | 3.89 |
-| Binarized | ripper_A | 5.0 | 2.78 |
-| Binarized | ripper_B | 3.8 | 2.40 |
-| Binarized | irep_A | 1.2 | 1.10 |
-| Binarized | irep_B | 2.4 | 2.17 |
-| Binarized | jrip | 3.0 | 1.67 |
-| Binarized | part | 26.8 | 3.49 |
-| Binarized | j48 | 17.0 | 6.31 |
+| Binarized | tree | 14.4 | 3.87 |
+| Binarized | forest | 138.8 | 3.87 |
+| Binarized | ripper_A | 5.0 | 2.53 |
+| Binarized | ripper_B | 3.6 | 2.52 |
+| Binarized | irep_A | 1.6 | 1.60 |
+| Binarized | irep_B | 1.6 | 1.50 |
+| Binarized | brl | 4.8 | 1.58 |
+| Binarized | brs | 8.8 | 2.92 |
+| Binarized | jrip | 3.2 | 2.05 |
+| Binarized | part | 23.6 | 4.06 |
+| Binarized | j48 | 23.0 | 7.23 |
 | Original | tree | 14.2 | 3.87 |
 | Original | forest | 134.0 | 3.84 |
 | Original | ripper_A | 7.6 | 2.86 |
 | Original | ripper_B | 8.8 | 3.22 |
-| Original | irep_A | 1.0 | 1.00 |
-| Original | irep_B | 1.8 | 1.87 |
+| Original | irep_A | 1.4 | 1.10 |
+| Original | irep_B | 2.4 | 2.05 |
+| Original | brl | 4.8 | 1.58 |
+| Original | brs | 8.8 | 2.92 |
 | Original | jrip | 3.8 | 2.18 |
 | Original | part | 29.6 | 2.37 |
 | Original | j48 | 19.4 | 4.02 |
 
-(28.3s total)
+(221.4s total)
 
 ---
 
@@ -323,20 +371,24 @@ n=1000, attributes=20, A='bad', B='good'
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
 | Binarized | tree | 70.70 +/- 0.98 | 0/5 |
-| Binarized | forest | 73.00 +/- 0.84 | 0/5 |
+| Binarized | forest | 73.20 +/- 1.08 | 0/5 |
 | Binarized | ripper_A | 70.80 +/- 3.50 | 0/5 |
 | Binarized | ripper_B | 58.50 +/- 6.73 | 0/5 |
-| Binarized | irep_A | 71.40 +/- 1.46 | 0/5 |
-| Binarized | irep_B | 71.30 +/- 0.51 | 0/5 |
-| Binarized | jrip | 71.60 +/- 1.07 | 0/5 |
+| Binarized | irep_A | 71.40 +/- 1.24 | 0/5 |
+| Binarized | irep_B | 70.80 +/- 2.54 | 0/5 |
+| Binarized | brl | 69.80 +/- 2.23 | 0/5 |
+| Binarized | brs | 44.20 +/- 1.44 | 0/5 |
+| Binarized | jrip | 72.70 +/- 1.94 | 0/5 |
 | Binarized | part | 72.30 +/- 3.23 | 0/5 |
 | Binarized | j48 | 71.90 +/- 1.24 | 0/5 |
 | Original | tree | 70.60 +/- 2.60 | 0/5 |
 | Original | forest | 70.10 +/- 1.16 | 0/5 |
 | Original | ripper_A | 70.20 +/- 1.03 | 0/5 |
 | Original | ripper_B | 58.60 +/- 5.07 | 0/5 |
-| Original | irep_A | 69.50 +/- 1.00 | 0/5 |
-| Original | irep_B | 68.00 +/- 4.93 | 0/5 |
+| Original | irep_A | 70.60 +/- 1.46 | 0/5 |
+| Original | irep_B | 70.70 +/- 1.33 | 0/5 |
+| Original | brl | 69.80 +/- 2.23 | 0/5 |
+| Original | brs | 44.20 +/- 1.44 | 0/5 |
 | Original | jrip | 72.40 +/- 2.40 | 0/5 |
 | Original | part | 70.00 +/- 3.36 | 0/5 |
 | Original | j48 | 70.80 +/- 1.91 | 0/5 |
@@ -345,49 +397,57 @@ n=1000, attributes=20, A='bad', B='good'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.021 |
-| Binarized | forest | 0.134 |
-| Binarized | ripper_A | 0.834 |
-| Binarized | ripper_B | 0.679 |
-| Binarized | irep_A | 0.261 |
-| Binarized | irep_B | 0.294 |
-| Binarized | jrip | 0.587 |
-| Binarized | part | 0.604 |
-| Binarized | j48 | 0.449 |
+| Binarized | tree | 0.022 |
+| Binarized | forest | 0.137 |
+| Binarized | ripper_A | 0.794 |
+| Binarized | ripper_B | 0.644 |
+| Binarized | irep_A | 0.269 |
+| Binarized | irep_B | 0.265 |
+| Binarized | brl | 4.237 |
+| Binarized | brs | 17.417 |
+| Binarized | jrip | 0.696 |
+| Binarized | part | 1.601 |
+| Binarized | j48 | 0.569 |
 | Original | tree | 0.006 |
-| Original | forest | 0.199 |
-| Original | ripper_A | 0.390 |
-| Original | ripper_B | 0.348 |
-| Original | irep_A | 0.124 |
-| Original | irep_B | 0.145 |
-| Original | jrip | 0.312 |
-| Original | part | 0.335 |
-| Original | j48 | 0.285 |
+| Original | forest | 0.213 |
+| Original | ripper_A | 0.408 |
+| Original | ripper_B | 0.374 |
+| Original | irep_A | 0.132 |
+| Original | irep_B | 0.142 |
+| Original | brl | 4.158 |
+| Original | brs | 17.806 |
+| Original | jrip | 0.463 |
+| Original | part | 1.325 |
+| Original | j48 | 0.403 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
 | Binarized | tree | 15.0 | 3.93 |
-| Binarized | forest | 146.0 | 3.91 |
+| Binarized | forest | 145.0 | 3.90 |
 | Binarized | ripper_A | 3.2 | 4.83 |
 | Binarized | ripper_B | 3.8 | 2.95 |
-| Binarized | irep_A | 1.4 | 2.50 |
-| Binarized | irep_B | 5.8 | 1.55 |
-| Binarized | jrip | 2.2 | 3.40 |
+| Binarized | irep_A | 1.4 | 2.83 |
+| Binarized | irep_B | 3.8 | 1.16 |
+| Binarized | brl | 4.8 | 1.67 |
+| Binarized | brs | 8.2 | 2.86 |
+| Binarized | jrip | 3.0 | 3.77 |
 | Binarized | part | 56.8 | 4.09 |
 | Binarized | j48 | 78.8 | 11.42 |
 | Original | tree | 15.2 | 3.95 |
 | Original | forest | 141.8 | 3.89 |
 | Original | ripper_A | 5.4 | 3.64 |
 | Original | ripper_B | 5.2 | 2.68 |
-| Original | irep_A | 1.4 | 1.87 |
-| Original | irep_B | 3.2 | 1.16 |
+| Original | irep_A | 2.2 | 2.85 |
+| Original | irep_B | 4.8 | 1.22 |
+| Original | brl | 4.8 | 1.67 |
+| Original | brs | 8.2 | 2.86 |
 | Original | jrip | 3.4 | 2.69 |
 | Original | part | 60.4 | 3.02 |
 | Original | j48 | 77.8 | 5.57 |
 
-(35.2s total)
+(265.6s total)
 
 ---
 
@@ -399,78 +459,92 @@ n=768, attributes=8, A='tested_negative', B='tested_positive'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 73.83 +/- 2.78 | 0/5 |
-| Binarized | forest | 76.30 +/- 1.01 | 0/5 |
-| Binarized | ripper_A | 65.37 +/- 2.70 | 0/5 |
-| Binarized | ripper_B | 74.35 +/- 2.04 | 0/5 |
-| Binarized | irep_A | 75.52 +/- 1.52 | 0/5 |
-| Binarized | irep_B | 73.05 +/- 3.14 | 0/5 |
-| Binarized | jrip | 75.00 +/- 3.53 | 0/5 |
-| Binarized | part | 71.88 +/- 2.23 | 0/5 |
-| Binarized | j48 | 72.78 +/- 2.34 | 0/5 |
-| Original | tree | 73.45 +/- 3.14 | 0/5 |
-| Original | forest | 74.49 +/- 3.36 | 0/5 |
-| Original | ripper_A | 63.40 +/- 4.26 | 0/5 |
-| Original | ripper_B | 72.79 +/- 3.11 | 0/5 |
-| Original | irep_A | 69.92 +/- 3.99 | 0/5 |
-| Original | irep_B | 73.31 +/- 2.93 | 0/5 |
-| Original | jrip | 76.05 +/- 3.07 | 0/5 |
-| Original | part | 75.00 +/- 2.66 | 0/5 |
-| Original | j48 | 74.08 +/- 2.42 | 0/5 |
+| Binarized | tree | 61.60 +/- 8.55 | 0/5 |
+| Binarized | forest | 74.48 +/- 2.17 | 0/5 |
+| Binarized | ripper_A | 66.53 +/- 2.41 | 0/5 |
+| Binarized | ripper_B | 73.96 +/- 1.87 | 0/5 |
+| Binarized | irep_A | 76.31 +/- 3.12 | 0/5 |
+| Binarized | irep_B | 74.62 +/- 2.10 | 0/5 |
+| Binarized | brl | 73.70 +/- 1.26 | 0/5 |
+| Binarized | brs | 69.79 +/- 1.38 | 0/5 |
+| Binarized | jrip | 74.61 +/- 2.13 | 0/5 |
+| Binarized | part | 74.22 +/- 1.56 | 0/5 |
+| Binarized | j48 | 74.99 +/- 2.62 | 0/5 |
+| Original | tree | 73.83 +/- 3.41 | 0/5 |
+| Original | forest | 74.09 +/- 2.92 | 0/5 |
+| Original | ripper_A | 59.62 +/- 4.74 | 0/5 |
+| Original | ripper_B | 70.98 +/- 4.92 | 0/5 |
+| Original | irep_A | 69.39 +/- 3.87 | 0/5 |
+| Original | irep_B | 74.10 +/- 2.71 | 0/5 |
+| Original | brl | 73.70 +/- 1.26 | 0/5 |
+| Original | brs | 69.79 +/- 1.38 | 0/5 |
+| Original | jrip | 75.14 +/- 5.03 | 0/5 |
+| Original | part | 71.75 +/- 2.68 | 0/5 |
+| Original | j48 | 71.74 +/- 3.49 | 0/5 |
 
 **Fit time (seconds/fold)**
 
 | workflow | model | time |
 |---|---|---|
 | Binarized | tree | 0.015 |
-| Binarized | forest | 0.112 |
-| Binarized | ripper_A | 0.444 |
-| Binarized | ripper_B | 0.441 |
-| Binarized | irep_A | 0.152 |
-| Binarized | irep_B | 0.161 |
-| Binarized | jrip | 0.482 |
-| Binarized | part | 0.436 |
-| Binarized | j48 | 0.361 |
+| Binarized | forest | 0.108 |
+| Binarized | ripper_A | 0.401 |
+| Binarized | ripper_B | 0.480 |
+| Binarized | irep_A | 0.143 |
+| Binarized | irep_B | 0.168 |
+| Binarized | brl | 1.544 |
+| Binarized | brs | 13.086 |
+| Binarized | jrip | 0.652 |
+| Binarized | part | 1.459 |
+| Binarized | j48 | 0.506 |
 | Original | tree | 0.005 |
-| Original | forest | 0.183 |
-| Original | ripper_A | 0.280 |
-| Original | ripper_B | 0.288 |
+| Original | forest | 0.203 |
+| Original | ripper_A | 0.283 |
+| Original | ripper_B | 0.296 |
 | Original | irep_A | 0.100 |
 | Original | irep_B | 0.091 |
-| Original | jrip | 0.279 |
-| Original | part | 0.256 |
-| Original | j48 | 0.257 |
+| Original | brl | 1.493 |
+| Original | brs | 13.127 |
+| Original | jrip | 0.407 |
+| Original | part | 1.287 |
+| Original | j48 | 0.410 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 15.2 | 3.94 |
-| Binarized | forest | 147.2 | 3.92 |
-| Binarized | ripper_A | 3.6 | 2.69 |
+| Binarized | tree | 14.6 | 3.90 |
+| Binarized | forest | 145.4 | 3.91 |
+| Binarized | ripper_A | 4.4 | 2.71 |
 | Binarized | ripper_B | 3.8 | 3.74 |
-| Binarized | irep_A | 3.0 | 1.77 |
-| Binarized | irep_B | 2.4 | 2.43 |
-| Binarized | jrip | 2.0 | 2.80 |
-| Binarized | part | 45.2 | 3.99 |
-| Binarized | j48 | 37.6 | 8.62 |
-| Original | tree | 15.4 | 3.96 |
-| Original | forest | 143.4 | 3.89 |
-| Original | ripper_A | 8.4 | 2.26 |
-| Original | ripper_B | 8.6 | 2.94 |
-| Original | irep_A | 7.4 | 1.82 |
-| Original | irep_B | 4.0 | 2.32 |
-| Original | jrip | 3.0 | 2.22 |
-| Original | part | 8.0 | 2.30 |
-| Original | j48 | 22.0 | 6.09 |
+| Binarized | irep_A | 3.0 | 1.67 |
+| Binarized | irep_B | 4.0 | 3.31 |
+| Binarized | brl | 4.6 | 1.79 |
+| Binarized | brs | 7.2 | 2.98 |
+| Binarized | jrip | 3.0 | 2.68 |
+| Binarized | part | 46.2 | 4.08 |
+| Binarized | j48 | 42.2 | 8.96 |
+| Original | tree | 14.6 | 3.90 |
+| Original | forest | 140.4 | 3.88 |
+| Original | ripper_A | 8.2 | 2.46 |
+| Original | ripper_B | 8.2 | 2.93 |
+| Original | irep_A | 8.2 | 1.92 |
+| Original | irep_B | 2.6 | 1.90 |
+| Original | brl | 4.6 | 1.79 |
+| Original | brs | 7.2 | 2.98 |
+| Original | jrip | 2.4 | 2.40 |
+| Original | part | 6.8 | 2.51 |
+| Original | j48 | 22.0 | 6.13 |
 
-(25.5s total)
+(185.4s total)
 
 ---
 
 ## sonar
 
 n=208, attributes=60, A='Mine', B='Rock'
+
+*20 model-fold combination(s) timed out (> 60s) or raised and were skipped for that fold (n/a in the tables below). `brl`/`brs` are expected to hit this on datasets with many discretized features -- see `FIT_TIMEOUT_SECONDS`'s comment; it is a scaling limit of those algorithms, not a bug.*
 
 **Accuracy**
 
@@ -480,8 +554,10 @@ n=208, attributes=60, A='Mine', B='Rock'
 | Binarized | forest | 77.90 +/- 6.61 | 0/5 |
 | Binarized | ripper_A | 70.24 +/- 4.63 | 0/5 |
 | Binarized | ripper_B | 75.52 +/- 7.20 | 0/5 |
-| Binarized | irep_A | 75.01 +/- 2.81 | 0/5 |
-| Binarized | irep_B | 72.61 +/- 4.83 | 0/5 |
+| Binarized | irep_A | 72.66 +/- 6.66 | 0/5 |
+| Binarized | irep_B | 69.28 +/- 5.28 | 0/5 |
+| Binarized | brl | n/a | 5/5 |
+| Binarized | brs | n/a | 5/5 |
 | Binarized | jrip | 70.19 +/- 6.53 | 0/5 |
 | Binarized | part | 74.53 +/- 5.71 | 0/5 |
 | Binarized | j48 | 74.47 +/- 5.62 | 0/5 |
@@ -489,8 +565,10 @@ n=208, attributes=60, A='Mine', B='Rock'
 | Original | forest | 78.37 +/- 4.50 | 0/5 |
 | Original | ripper_A | 62.11 +/- 11.07 | 0/5 |
 | Original | ripper_B | 64.44 +/- 6.02 | 0/5 |
-| Original | irep_A | 49.98 +/- 3.13 | 0/5 |
-| Original | irep_B | 61.09 +/- 8.82 | 0/5 |
+| Original | irep_A | 56.23 +/- 3.47 | 0/5 |
+| Original | irep_B | 64.92 +/- 5.62 | 0/5 |
+| Original | brl | n/a | 5/5 |
+| Original | brs | n/a | 5/5 |
 | Original | jrip | 72.10 +/- 3.95 | 0/5 |
 | Original | part | 75.96 +/- 5.32 | 0/5 |
 | Original | j48 | 71.56 +/- 7.81 | 0/5 |
@@ -499,24 +577,28 @@ n=208, attributes=60, A='Mine', B='Rock'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.022 |
-| Binarized | forest | 0.068 |
-| Binarized | ripper_A | 1.450 |
-| Binarized | ripper_B | 1.409 |
-| Binarized | irep_A | 1.154 |
-| Binarized | irep_B | 1.124 |
-| Binarized | jrip | 0.500 |
-| Binarized | part | 0.438 |
-| Binarized | j48 | 0.384 |
-| Original | tree | 0.007 |
-| Original | forest | 0.076 |
-| Original | ripper_A | 1.352 |
-| Original | ripper_B | 1.275 |
-| Original | irep_A | 1.130 |
-| Original | irep_B | 1.124 |
-| Original | jrip | 0.283 |
-| Original | part | 0.275 |
-| Original | j48 | 0.277 |
+| Binarized | tree | 0.020 |
+| Binarized | forest | 0.059 |
+| Binarized | ripper_A | 1.332 |
+| Binarized | ripper_B | 1.379 |
+| Binarized | irep_A | 1.078 |
+| Binarized | irep_B | 1.070 |
+| Binarized | brl | nan |
+| Binarized | brs | nan |
+| Binarized | jrip | 0.697 |
+| Binarized | part | 1.394 |
+| Binarized | j48 | 0.856 |
+| Original | tree | 0.015 |
+| Original | forest | 0.171 |
+| Original | ripper_A | 1.267 |
+| Original | ripper_B | 1.293 |
+| Original | irep_A | 1.103 |
+| Original | irep_B | 1.139 |
+| Original | brl | nan |
+| Original | brs | nan |
+| Original | jrip | 0.488 |
+| Original | part | 1.383 |
+| Original | j48 | 0.532 |
 
 **Rule complexity**
 
@@ -526,8 +608,10 @@ n=208, attributes=60, A='Mine', B='Rock'
 | Binarized | forest | 121.4 | 3.73 |
 | Binarized | ripper_A | 3.0 | 2.25 |
 | Binarized | ripper_B | 3.2 | 2.12 |
-| Binarized | irep_A | 2.0 | 1.43 |
-| Binarized | irep_B | 1.2 | 1.30 |
+| Binarized | irep_A | 2.6 | 1.55 |
+| Binarized | irep_B | 1.8 | 1.90 |
+| Binarized | brl | nan | nan |
+| Binarized | brs | nan | nan |
 | Binarized | jrip | 3.4 | 1.74 |
 | Binarized | part | 6.2 | 3.59 |
 | Binarized | j48 | 16.0 | 5.73 |
@@ -535,13 +619,15 @@ n=208, attributes=60, A='Mine', B='Rock'
 | Original | forest | 114.8 | 3.67 |
 | Original | ripper_A | 4.4 | 1.66 |
 | Original | ripper_B | 3.4 | 2.59 |
-| Original | irep_A | 2.4 | 1.55 |
-| Original | irep_B | 2.6 | 1.27 |
+| Original | irep_A | 2.4 | 1.35 |
+| Original | irep_B | 2.4 | 1.67 |
+| Original | brl | nan | nan |
+| Original | brs | nan | nan |
 | Original | jrip | 3.6 | 1.73 |
 | Original | part | 6.4 | 2.41 |
 | Original | j48 | 14.0 | 4.51 |
 
-(68.8s total)
+(1292.1s total)
 
 ---
 
@@ -551,6 +637,8 @@ n=351, attributes=33, A='b', B='g'
 
 *4/5 fold(s) used 'Original's per-model fallback (DataSpecs didn't merge -- see the module docstring).*
 
+*20 model-fold combination(s) timed out (> 60s) or raised and were skipped for that fold (n/a in the tables below). `brl`/`brs` are expected to hit this on datasets with many discretized features -- see `FIT_TIMEOUT_SECONDS`'s comment; it is a scaling limit of those algorithms, not a bug.*
+
 **Accuracy**
 
 | workflow | model | accuracy | failed folds |
@@ -558,18 +646,22 @@ n=351, attributes=33, A='b', B='g'
 | Binarized | tree | 90.03 +/- 2.71 | 0/5 |
 | Binarized | forest | 91.74 +/- 2.75 | 0/5 |
 | Binarized | ripper_A | 89.75 +/- 2.44 | 0/5 |
-| Binarized | ripper_B | 87.76 +/- 3.73 | 0/5 |
+| Binarized | ripper_B | 87.48 +/- 4.11 | 0/5 |
 | Binarized | irep_A | 90.03 +/- 4.52 | 0/5 |
-| Binarized | irep_B | 88.89 +/- 2.75 | 0/5 |
-| Binarized | jrip | 88.89 +/- 4.17 | 0/5 |
-| Binarized | part | 91.46 +/- 2.97 | 0/5 |
+| Binarized | irep_B | 88.89 +/- 3.18 | 0/5 |
+| Binarized | brl | n/a | 5/5 |
+| Binarized | brs | n/a | 5/5 |
+| Binarized | jrip | 89.18 +/- 4.10 | 0/5 |
+| Binarized | part | 91.74 +/- 2.75 | 0/5 |
 | Binarized | j48 | 90.31 +/- 3.05 | 0/5 |
 | Original | tree | 88.61 +/- 3.24 | 0/5 |
 | Original | forest | 91.45 +/- 3.61 | 0/5 |
 | Original | ripper_A | 88.04 +/- 4.18 | 0/5 |
 | Original | ripper_B | 75.51 +/- 2.66 | 0/5 |
-| Original | irep_A | 87.46 +/- 4.09 | 0/5 |
+| Original | irep_A | 88.62 +/- 2.90 | 0/5 |
 | Original | irep_B | 74.93 +/- 2.64 | 0/5 |
+| Original | brl | n/a | 5/5 |
+| Original | brs | n/a | 5/5 |
 | Original | jrip | 90.89 +/- 2.31 | 0/5 |
 | Original | part | 90.62 +/- 4.60 | 0/5 |
 | Original | j48 | 88.33 +/- 1.33 | 0/5 |
@@ -578,24 +670,28 @@ n=351, attributes=33, A='b', B='g'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.015 |
-| Binarized | forest | 0.060 |
-| Binarized | ripper_A | 0.788 |
-| Binarized | ripper_B | 0.801 |
-| Binarized | irep_A | 0.589 |
-| Binarized | irep_B | 0.562 |
-| Binarized | jrip | 0.483 |
-| Binarized | part | 0.429 |
-| Binarized | j48 | 0.388 |
-| Original | tree | 0.006 |
-| Original | forest | 0.079 |
-| Original | ripper_A | 0.540 |
-| Original | ripper_B | 0.588 |
-| Original | irep_A | 0.468 |
-| Original | irep_B | 0.428 |
-| Original | jrip | 0.293 |
-| Original | part | 0.276 |
-| Original | j48 | 0.279 |
+| Binarized | tree | 0.013 |
+| Binarized | forest | 0.064 |
+| Binarized | ripper_A | 0.737 |
+| Binarized | ripper_B | 0.753 |
+| Binarized | irep_A | 0.545 |
+| Binarized | irep_B | 0.581 |
+| Binarized | brl | nan |
+| Binarized | brs | nan |
+| Binarized | jrip | 0.835 |
+| Binarized | part | 1.393 |
+| Binarized | j48 | 0.972 |
+| Original | tree | 0.014 |
+| Original | forest | 0.166 |
+| Original | ripper_A | 0.576 |
+| Original | ripper_B | 0.614 |
+| Original | irep_A | 0.477 |
+| Original | irep_B | 0.472 |
+| Original | brl | nan |
+| Original | brs | nan |
+| Original | jrip | 0.603 |
+| Original | part | 1.495 |
+| Original | j48 | 0.718 |
 
 **Rule complexity**
 
@@ -605,8 +701,10 @@ n=351, attributes=33, A='b', B='g'
 | Binarized | forest | 98.6 | 3.57 |
 | Binarized | ripper_A | 5.6 | 1.55 |
 | Binarized | ripper_B | 3.0 | 3.20 |
-| Binarized | irep_A | 2.0 | 1.20 |
-| Binarized | irep_B | 1.8 | 2.43 |
+| Binarized | irep_A | 2.0 | 1.00 |
+| Binarized | irep_B | 1.8 | 2.27 |
+| Binarized | brl | nan | nan |
+| Binarized | brs | nan | nan |
 | Binarized | jrip | 4.2 | 1.47 |
 | Binarized | part | 6.0 | 3.09 |
 | Binarized | j48 | 10.8 | 4.64 |
@@ -614,13 +712,15 @@ n=351, attributes=33, A='b', B='g'
 | Original | forest | 95.4 | 3.51 |
 | Original | ripper_A | 8.0 | 2.07 |
 | Original | ripper_B | 9.0 | 2.47 |
-| Original | irep_A | 3.8 | 1.49 |
-| Original | irep_B | 1.0 | 1.00 |
+| Original | irep_A | 3.6 | 1.35 |
+| Original | irep_B | 1.2 | 1.10 |
+| Original | brl | nan | nan |
+| Original | brs | nan | nan |
 | Original | jrip | 4.2 | 1.31 |
 | Original | part | 5.6 | 2.83 |
 | Original | j48 | 11.4 | 5.04 |
 
-(40.4s total)
+(1268.6s total)
 
 ---
 
@@ -636,8 +736,10 @@ n=958, attributes=9, A='negative', B='positive'
 | Binarized | forest | 77.04 +/- 1.35 | 0/5 |
 | Binarized | ripper_A | 98.02 +/- 1.16 | 0/5 |
 | Binarized | ripper_B | 99.48 +/- 0.33 | 0/5 |
-| Binarized | irep_A | 92.59 +/- 7.17 | 0/5 |
-| Binarized | irep_B | 79.12 +/- 7.44 | 0/5 |
+| Binarized | irep_A | 98.33 +/- 1.01 | 0/5 |
+| Binarized | irep_B | 83.09 +/- 2.73 | 0/5 |
+| Binarized | brl | 80.58 +/- 3.08 | 0/5 |
+| Binarized | brs | 87.57 +/- 4.01 | 0/5 |
 | Binarized | jrip | 98.33 +/- 1.01 | 0/5 |
 | Binarized | part | 93.84 +/- 1.85 | 0/5 |
 | Binarized | j48 | 94.88 +/- 0.77 | 0/5 |
@@ -645,8 +747,10 @@ n=958, attributes=9, A='negative', B='positive'
 | Original | forest | 76.83 +/- 2.17 | 0/5 |
 | Original | ripper_A | 97.91 +/- 0.93 | 0/5 |
 | Original | ripper_B | 97.39 +/- 2.26 | 0/5 |
-| Original | irep_A | 85.80 +/- 5.60 | 0/5 |
-| Original | irep_B | 80.26 +/- 5.55 | 0/5 |
+| Original | irep_A | 91.52 +/- 7.96 | 0/5 |
+| Original | irep_B | 83.50 +/- 5.47 | 0/5 |
+| Original | brl | 80.58 +/- 3.08 | 0/5 |
+| Original | brs | 87.57 +/- 4.01 | 0/5 |
 | Original | jrip | 97.91 +/- 0.87 | 0/5 |
 | Original | part | 94.15 +/- 2.35 | 0/5 |
 | Original | j48 | 87.27 +/- 2.85 | 0/5 |
@@ -655,24 +759,28 @@ n=958, attributes=9, A='negative', B='positive'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.015 |
-| Binarized | forest | 0.132 |
-| Binarized | ripper_A | 0.256 |
-| Binarized | ripper_B | 0.273 |
-| Binarized | irep_A | 0.103 |
+| Binarized | tree | 0.016 |
+| Binarized | forest | 0.144 |
+| Binarized | ripper_A | 0.269 |
+| Binarized | ripper_B | 0.258 |
+| Binarized | irep_A | 0.123 |
 | Binarized | irep_B | 0.094 |
-| Binarized | jrip | 0.459 |
-| Binarized | part | 0.359 |
-| Binarized | j48 | 0.307 |
-| Original | tree | 0.005 |
-| Original | forest | 0.166 |
-| Original | ripper_A | 0.155 |
-| Original | ripper_B | 0.191 |
-| Original | irep_A | 0.052 |
-| Original | irep_B | 0.048 |
-| Original | jrip | 0.294 |
-| Original | part | 0.265 |
-| Original | j48 | 0.265 |
+| Binarized | brl | 1.231 |
+| Binarized | brs | 10.794 |
+| Binarized | jrip | 0.846 |
+| Binarized | part | 1.400 |
+| Binarized | j48 | 0.869 |
+| Original | tree | 0.004 |
+| Original | forest | 0.158 |
+| Original | ripper_A | 0.156 |
+| Original | ripper_B | 0.207 |
+| Original | irep_A | 0.056 |
+| Original | irep_B | 0.049 |
+| Original | brl | 1.137 |
+| Original | brs | 10.766 |
+| Original | jrip | 1.042 |
+| Original | part | 1.555 |
+| Original | j48 | 0.711 |
 
 **Rule complexity**
 
@@ -682,8 +790,10 @@ n=958, attributes=9, A='negative', B='positive'
 | Binarized | forest | 153.4 | 3.96 |
 | Binarized | ripper_A | 8.6 | 3.07 |
 | Binarized | ripper_B | 9.8 | 3.22 |
-| Binarized | irep_A | 7.4 | 2.95 |
-| Binarized | irep_B | 6.0 | 2.68 |
+| Binarized | irep_A | 8.4 | 3.06 |
+| Binarized | irep_B | 5.6 | 2.87 |
+| Binarized | brl | 11.8 | 1.81 |
+| Binarized | brs | 7.8 | 3.00 |
 | Binarized | jrip | 8.0 | 3.08 |
 | Binarized | part | 29.2 | 3.23 |
 | Binarized | j48 | 37.8 | 5.88 |
@@ -691,13 +801,15 @@ n=958, attributes=9, A='negative', B='positive'
 | Original | forest | 157.4 | 3.98 |
 | Original | ripper_A | 9.4 | 3.28 |
 | Original | ripper_B | 14.0 | 3.13 |
-| Original | irep_A | 5.4 | 2.76 |
-| Original | irep_B | 6.4 | 2.14 |
+| Original | irep_A | 7.0 | 2.88 |
+| Original | irep_B | 6.2 | 2.20 |
+| Original | brl | 11.8 | 1.81 |
+| Original | brs | 7.8 | 3.00 |
 | Original | jrip | 9.6 | 3.28 |
 | Original | part | 36.4 | 2.69 |
 | Original | j48 | 80.6 | 4.53 |
 
-(19.8s total)
+(162.3s total)
 
 ---
 
@@ -710,11 +822,13 @@ n=1372, attributes=4, A='1', B='2'
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
 | Binarized | tree | 95.77 +/- 0.85 | 0/5 |
-| Binarized | forest | 96.28 +/- 0.85 | 0/5 |
+| Binarized | forest | 96.35 +/- 0.84 | 0/5 |
 | Binarized | ripper_A | 98.54 +/- 0.61 | 0/5 |
 | Binarized | ripper_B | 98.18 +/- 0.65 | 0/5 |
-| Binarized | irep_A | 93.73 +/- 0.90 | 0/5 |
-| Binarized | irep_B | 96.94 +/- 1.36 | 0/5 |
+| Binarized | irep_A | 95.05 +/- 1.46 | 0/5 |
+| Binarized | irep_B | 97.08 +/- 1.24 | 0/5 |
+| Binarized | brl | 97.16 +/- 1.34 | 0/5 |
+| Binarized | brs | 94.39 +/- 2.51 | 0/5 |
 | Binarized | jrip | 98.61 +/- 0.54 | 0/5 |
 | Binarized | part | 98.32 +/- 0.68 | 0/5 |
 | Binarized | j48 | 98.54 +/- 0.65 | 0/5 |
@@ -722,8 +836,10 @@ n=1372, attributes=4, A='1', B='2'
 | Original | forest | 97.01 +/- 1.27 | 0/5 |
 | Original | ripper_A | 97.09 +/- 0.86 | 0/5 |
 | Original | ripper_B | 95.63 +/- 2.12 | 0/5 |
-| Original | irep_A | 89.94 +/- 3.13 | 0/5 |
-| Original | irep_B | 88.19 +/- 1.64 | 0/5 |
+| Original | irep_A | 91.47 +/- 0.86 | 0/5 |
+| Original | irep_B | 88.77 +/- 2.42 | 0/5 |
+| Original | brl | 97.16 +/- 1.34 | 0/5 |
+| Original | brs | 94.39 +/- 2.51 | 0/5 |
 | Original | jrip | 97.89 +/- 0.63 | 0/5 |
 | Original | part | 98.76 +/- 0.75 | 0/5 |
 | Original | j48 | 98.61 +/- 1.25 | 0/5 |
@@ -732,24 +848,28 @@ n=1372, attributes=4, A='1', B='2'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.018 |
-| Binarized | forest | 0.163 |
-| Binarized | ripper_A | 0.213 |
-| Binarized | ripper_B | 0.215 |
-| Binarized | irep_A | 0.094 |
-| Binarized | irep_B | 0.100 |
-| Binarized | jrip | 0.446 |
-| Binarized | part | 0.341 |
-| Binarized | j48 | 0.336 |
-| Original | tree | 0.006 |
-| Original | forest | 0.264 |
-| Original | ripper_A | 0.514 |
-| Original | ripper_B | 0.563 |
-| Original | irep_A | 0.072 |
-| Original | irep_B | 0.078 |
-| Original | jrip | 0.303 |
-| Original | part | 0.274 |
-| Original | j48 | 0.272 |
+| Binarized | tree | 0.016 |
+| Binarized | forest | 0.174 |
+| Binarized | ripper_A | 0.197 |
+| Binarized | ripper_B | 0.203 |
+| Binarized | irep_A | 0.092 |
+| Binarized | irep_B | 0.094 |
+| Binarized | brl | 1.234 |
+| Binarized | brs | 11.077 |
+| Binarized | jrip | 0.696 |
+| Binarized | part | 1.428 |
+| Binarized | j48 | 0.703 |
+| Original | tree | 0.005 |
+| Original | forest | 0.291 |
+| Original | ripper_A | 0.548 |
+| Original | ripper_B | 0.613 |
+| Original | irep_A | 0.077 |
+| Original | irep_B | 0.075 |
+| Original | brl | 1.225 |
+| Original | brs | 11.121 |
+| Original | jrip | 0.427 |
+| Original | part | 1.534 |
+| Original | j48 | 0.657 |
 
 **Rule complexity**
 
@@ -759,8 +879,10 @@ n=1372, attributes=4, A='1', B='2'
 | Binarized | forest | 131.4 | 3.81 |
 | Binarized | ripper_A | 6.6 | 2.33 |
 | Binarized | ripper_B | 6.2 | 2.49 |
-| Binarized | irep_A | 3.2 | 1.68 |
-| Binarized | irep_B | 4.2 | 2.08 |
+| Binarized | irep_A | 3.6 | 1.77 |
+| Binarized | irep_B | 4.2 | 2.09 |
+| Binarized | brl | 5.0 | 1.89 |
+| Binarized | brs | 9.6 | 2.96 |
 | Binarized | jrip | 5.2 | 2.30 |
 | Binarized | part | 9.4 | 2.10 |
 | Binarized | j48 | 11.4 | 3.88 |
@@ -768,13 +890,15 @@ n=1372, attributes=4, A='1', B='2'
 | Original | forest | 123.4 | 3.74 |
 | Original | ripper_A | 33.6 | 3.65 |
 | Original | ripper_B | 31.2 | 3.85 |
-| Original | irep_A | 9.6 | 2.53 |
-| Original | irep_B | 10.2 | 2.81 |
+| Original | irep_A | 10.4 | 2.57 |
+| Original | irep_B | 7.8 | 2.73 |
+| Original | brl | 5.0 | 1.89 |
+| Original | brs | 9.6 | 2.96 |
 | Original | jrip | 6.0 | 2.24 |
 | Original | part | 7.4 | 2.11 |
 | Original | j48 | 15.2 | 4.51 |
 
-(25.4s total)
+(167.1s total)
 
 ---
 
@@ -787,20 +911,24 @@ n=3196, attributes=36, A='nowin', B='won'
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
 | Binarized | tree | 94.09 +/- 1.11 | 0/5 |
-| Binarized | forest | 93.74 +/- 1.31 | 0/5 |
-| Binarized | ripper_A | 98.97 +/- 0.57 | 0/5 |
-| Binarized | ripper_B | 98.69 +/- 0.35 | 0/5 |
-| Binarized | irep_A | 98.03 +/- 0.89 | 0/5 |
-| Binarized | irep_B | 93.49 +/- 3.01 | 0/5 |
-| Binarized | jrip | 99.12 +/- 0.38 | 0/5 |
+| Binarized | forest | 94.99 +/- 0.90 | 0/5 |
+| Binarized | ripper_A | 98.94 +/- 0.53 | 0/5 |
+| Binarized | ripper_B | 98.75 +/- 0.41 | 0/5 |
+| Binarized | irep_A | 98.06 +/- 0.84 | 0/5 |
+| Binarized | irep_B | 96.18 +/- 2.83 | 0/5 |
+| Binarized | brl | 94.09 +/- 2.48 | 0/5 |
+| Binarized | brs | 77.66 +/- 8.32 | 0/5 |
+| Binarized | jrip | 99.22 +/- 0.33 | 0/5 |
 | Binarized | part | 98.94 +/- 0.30 | 0/5 |
 | Binarized | j48 | 99.28 +/- 0.38 | 0/5 |
 | Original | tree | 94.09 +/- 1.11 | 0/5 |
 | Original | forest | 94.12 +/- 1.11 | 0/5 |
 | Original | ripper_A | 98.65 +/- 0.65 | 0/5 |
 | Original | ripper_B | 98.84 +/- 0.34 | 0/5 |
-| Original | irep_A | 97.75 +/- 1.23 | 0/5 |
-| Original | irep_B | 93.81 +/- 3.36 | 0/5 |
+| Original | irep_A | 98.12 +/- 0.80 | 0/5 |
+| Original | irep_B | 93.58 +/- 3.45 | 0/5 |
+| Original | brl | 94.09 +/- 2.48 | 0/5 |
+| Original | brs | 77.66 +/- 8.32 | 0/5 |
 | Original | jrip | 98.81 +/- 0.70 | 0/5 |
 | Original | part | 98.97 +/- 0.47 | 0/5 |
 | Original | j48 | 99.34 +/- 0.38 | 0/5 |
@@ -809,49 +937,57 @@ n=3196, attributes=36, A='nowin', B='won'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.043 |
-| Binarized | forest | 0.270 |
-| Binarized | ripper_A | 1.398 |
-| Binarized | ripper_B | 1.204 |
-| Binarized | irep_A | 0.418 |
-| Binarized | irep_B | 0.420 |
-| Binarized | jrip | 1.013 |
-| Binarized | part | 0.748 |
-| Binarized | j48 | 0.518 |
-| Original | tree | 0.011 |
-| Original | forest | 0.353 |
-| Original | ripper_A | 0.806 |
-| Original | ripper_B | 0.705 |
-| Original | irep_A | 0.245 |
-| Original | irep_B | 0.236 |
-| Original | jrip | 0.435 |
-| Original | part | 0.321 |
-| Original | j48 | 0.317 |
+| Binarized | tree | 0.024 |
+| Binarized | forest | 0.288 |
+| Binarized | ripper_A | 0.918 |
+| Binarized | ripper_B | 0.808 |
+| Binarized | irep_A | 0.211 |
+| Binarized | irep_B | 0.213 |
+| Binarized | brl | 15.490 |
+| Binarized | brs | 19.312 |
+| Binarized | jrip | 1.247 |
+| Binarized | part | 1.466 |
+| Binarized | j48 | 0.965 |
+| Original | tree | 0.010 |
+| Original | forest | 0.413 |
+| Original | ripper_A | 0.828 |
+| Original | ripper_B | 0.716 |
+| Original | irep_A | 0.233 |
+| Original | irep_B | 0.245 |
+| Original | brl | 15.450 |
+| Original | brs | 19.512 |
+| Original | jrip | 0.713 |
+| Original | part | 1.418 |
+| Original | j48 | 0.708 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
 | Binarized | tree | 7.6 | 3.43 |
-| Binarized | forest | 112.4 | 3.72 |
-| Binarized | ripper_A | 16.6 | 3.17 |
-| Binarized | ripper_B | 9.2 | 4.48 |
-| Binarized | irep_A | 7.4 | 2.78 |
-| Binarized | irep_B | 5.2 | 4.04 |
-| Binarized | jrip | 14.0 | 3.00 |
+| Binarized | forest | 112.6 | 3.73 |
+| Binarized | ripper_A | 17.4 | 3.23 |
+| Binarized | ripper_B | 9.6 | 4.54 |
+| Binarized | irep_A | 7.2 | 2.77 |
+| Binarized | irep_B | 5.4 | 3.96 |
+| Binarized | brl | 8.4 | 1.87 |
+| Binarized | brs | 7.0 | 2.83 |
+| Binarized | jrip | 13.6 | 3.00 |
 | Binarized | part | 20.8 | 2.93 |
 | Binarized | j48 | 25.8 | 7.37 |
 | Original | tree | 7.6 | 3.43 |
 | Original | forest | 118.6 | 3.75 |
 | Original | ripper_A | 18.4 | 3.33 |
 | Original | ripper_B | 10.8 | 4.80 |
-| Original | irep_A | 7.2 | 2.80 |
-| Original | irep_B | 5.4 | 4.24 |
+| Original | irep_A | 7.4 | 2.88 |
+| Original | irep_B | 5.0 | 3.91 |
+| Original | brl | 8.4 | 1.87 |
+| Original | brs | 7.0 | 2.83 |
 | Original | jrip | 14.6 | 3.16 |
 | Original | part | 20.4 | 3.21 |
 | Original | j48 | 29.0 | 7.71 |
 
-(59.0s total)
+(415.4s total)
 
 ---
 
@@ -863,12 +999,14 @@ n=8124, attributes=21, A='e', B='p'
 
 | workflow | model | accuracy | failed folds |
 |---|---|---|---|
-| Binarized | tree | 99.22 +/- 0.14 | 0/5 |
-| Binarized | forest | 99.14 +/- 0.13 | 0/5 |
-| Binarized | ripper_A | 100.00 +/- 0.00 | 0/5 |
-| Binarized | ripper_B | 99.98 +/- 0.05 | 0/5 |
+| Binarized | tree | 78.08 +/- 0.73 | 0/5 |
+| Binarized | forest | 98.98 +/- 0.19 | 0/5 |
+| Binarized | ripper_A | 98.18 +/- 0.55 | 0/5 |
+| Binarized | ripper_B | 99.95 +/- 0.10 | 0/5 |
 | Binarized | irep_A | 98.52 +/- 0.24 | 0/5 |
-| Binarized | irep_B | 99.95 +/- 0.06 | 0/5 |
+| Binarized | irep_B | 99.96 +/- 0.05 | 0/5 |
+| Binarized | brl | 99.47 +/- 0.49 | 0/5 |
+| Binarized | brs | 99.58 +/- 0.44 | 0/5 |
 | Binarized | jrip | 99.98 +/- 0.05 | 0/5 |
 | Binarized | part | 100.00 +/- 0.00 | 0/5 |
 | Binarized | j48 | 100.00 +/- 0.00 | 0/5 |
@@ -878,6 +1016,8 @@ n=8124, attributes=21, A='e', B='p'
 | Original | ripper_B | 99.98 +/- 0.05 | 0/5 |
 | Original | irep_A | 98.52 +/- 0.24 | 0/5 |
 | Original | irep_B | 96.45 +/- 0.32 | 0/5 |
+| Original | brl | 99.47 +/- 0.49 | 0/5 |
+| Original | brs | 99.58 +/- 0.44 | 0/5 |
 | Original | jrip | 100.00 +/- 0.00 | 0/5 |
 | Original | part | 100.00 +/- 0.00 | 0/5 |
 | Original | j48 | 100.00 +/- 0.00 | 0/5 |
@@ -886,36 +1026,42 @@ n=8124, attributes=21, A='e', B='p'
 
 | workflow | model | time |
 |---|---|---|
-| Binarized | tree | 0.087 |
-| Binarized | forest | 0.542 |
-| Binarized | ripper_A | 2.327 |
-| Binarized | ripper_B | 2.400 |
-| Binarized | irep_A | 1.315 |
-| Binarized | irep_B | 1.402 |
-| Binarized | jrip | 1.602 |
-| Binarized | part | 0.982 |
-| Binarized | j48 | 0.848 |
-| Original | tree | 0.027 |
-| Original | forest | 0.879 |
-| Original | ripper_A | 0.636 |
-| Original | ripper_B | 0.519 |
-| Original | irep_A | 0.300 |
-| Original | irep_B | 0.249 |
-| Original | jrip | 0.459 |
-| Original | part | 0.366 |
-| Original | j48 | 0.333 |
+| Binarized | tree | 0.086 |
+| Binarized | forest | 0.523 |
+| Binarized | ripper_A | 2.247 |
+| Binarized | ripper_B | 2.167 |
+| Binarized | irep_A | 1.099 |
+| Binarized | irep_B | 1.351 |
+| Binarized | brl | 21.902 |
+| Binarized | brs | 36.805 |
+| Binarized | jrip | 1.479 |
+| Binarized | part | 1.483 |
+| Binarized | j48 | 1.454 |
+| Original | tree | 0.026 |
+| Original | forest | 0.976 |
+| Original | ripper_A | 0.641 |
+| Original | ripper_B | 0.505 |
+| Original | irep_A | 0.257 |
+| Original | irep_B | 0.257 |
+| Original | brl | 22.082 |
+| Original | brs | 36.873 |
+| Original | jrip | 0.626 |
+| Original | part | 1.399 |
+| Original | j48 | 0.723 |
 
 **Rule complexity**
 
 | workflow | model | n_rules | avg_conditions |
 |---|---|---|---|
-| Binarized | tree | 10.0 | 3.50 |
-| Binarized | forest | 101.0 | 3.59 |
-| Binarized | ripper_A | 5.8 | 2.45 |
+| Binarized | tree | 10.4 | 3.55 |
+| Binarized | forest | 86.8 | 3.39 |
+| Binarized | ripper_A | 7.0 | 2.02 |
 | Binarized | ripper_B | 7.0 | 1.56 |
-| Binarized | irep_A | 4.0 | 1.50 |
-| Binarized | irep_B | 5.0 | 1.84 |
-| Binarized | jrip | 6.0 | 1.70 |
+| Binarized | irep_A | 3.4 | 1.80 |
+| Binarized | irep_B | 6.0 | 1.71 |
+| Binarized | brl | 10.2 | 1.74 |
+| Binarized | brs | 7.8 | 2.92 |
+| Binarized | jrip | 5.8 | 1.64 |
 | Binarized | part | 5.0 | 2.76 |
 | Binarized | j48 | 9.8 | 3.83 |
 | Original | tree | 10.0 | 3.50 |
@@ -924,11 +1070,13 @@ n=8124, attributes=21, A='e', B='p'
 | Original | ripper_B | 8.2 | 1.50 |
 | Original | irep_A | 4.0 | 1.50 |
 | Original | irep_B | 4.0 | 1.00 |
+| Original | brl | 10.2 | 1.74 |
+| Original | brs | 7.8 | 2.92 |
 | Original | jrip | 8.0 | 1.56 |
 | Original | part | 10.0 | 1.85 |
 | Original | j48 | 24.0 | 2.54 |
 
-(111.2s total)
+(710.9s total)
 
 ---
 
@@ -936,129 +1084,139 @@ n=8124, attributes=21, A='e', B='p'
 
 ### Accuracy
 
-| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_jrip | Original_part | Original_j48 | fallback folds |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| vote | 95.17 | 96.09 | 94.02 | 96.09 | 94.94 | 94.71 | 94.94 | 95.40 | 96.09 | 94.94 | 94.71 | 95.17 | 95.17 | 94.02 | 95.17 | 95.63 | 95.63 | 96.32 | 0/5 |
-| breast-cancer | 72.01 | 74.48 | 61.63 | 75.52 | 75.17 | 71.65 | 73.06 | 67.14 | 69.93 | 72.72 | 75.51 | 66.79 | 73.07 | 75.87 | 73.75 | 72.02 | 69.96 | 73.42 | 0/5 |
-| colic | 85.06 | 85.34 | 85.60 | 85.07 | 83.71 | 82.08 | 88.04 | 80.70 | 85.61 | 84.25 | 84.26 | 81.27 | 86.96 | 84.53 | 82.90 | 87.51 | 85.88 | 82.63 | 0/5 |
-| credit-approval | 85.07 | 85.65 | 85.36 | 85.80 | 85.22 | 85.65 | 85.22 | 83.91 | 85.22 | 84.78 | 85.51 | 83.62 | 83.04 | 85.51 | 85.80 | 85.94 | 84.35 | 85.94 | 0/5 |
-| credit-g | 70.70 | 73.00 | 70.80 | 58.50 | 71.40 | 71.30 | 71.60 | 72.30 | 71.90 | 70.60 | 70.10 | 70.20 | 58.60 | 69.50 | 68.00 | 72.40 | 70.00 | 70.80 | 5/5 |
-| diabetes | 73.83 | 76.30 | 65.37 | 74.35 | 75.52 | 73.05 | 75.00 | 71.88 | 72.78 | 73.45 | 74.49 | 63.40 | 72.79 | 69.92 | 73.31 | 76.05 | 75.00 | 74.08 | 0/5 |
-| sonar | 70.64 | 77.90 | 70.24 | 75.52 | 75.01 | 72.61 | 70.19 | 74.53 | 74.47 | 75.48 | 78.37 | 62.11 | 64.44 | 49.98 | 61.09 | 72.10 | 75.96 | 71.56 | 0/5 |
-| ionosphere | 90.03 | 91.74 | 89.75 | 87.76 | 90.03 | 88.89 | 88.89 | 91.46 | 90.31 | 88.61 | 91.45 | 88.04 | 75.51 | 87.46 | 74.93 | 90.89 | 90.62 | 88.33 | 4/5 |
-| tic-tac-toe | 82.36 | 77.04 | 98.02 | 99.48 | 92.59 | 79.12 | 98.33 | 93.84 | 94.88 | 82.36 | 76.83 | 97.91 | 97.39 | 85.80 | 80.26 | 97.91 | 94.15 | 87.27 | 0/5 |
-| banknote-authentication | 95.77 | 96.28 | 98.54 | 98.18 | 93.73 | 96.94 | 98.61 | 98.32 | 98.54 | 95.70 | 97.01 | 97.09 | 95.63 | 89.94 | 88.19 | 97.89 | 98.76 | 98.61 | 0/5 |
-| kr-vs-kp | 94.09 | 93.74 | 98.97 | 98.69 | 98.03 | 93.49 | 99.12 | 98.94 | 99.28 | 94.09 | 94.12 | 98.65 | 98.84 | 97.75 | 93.81 | 98.81 | 98.97 | 99.34 | 0/5 |
-| mushroom | 99.22 | 99.14 | 100.00 | 99.98 | 98.52 | 99.95 | 99.98 | 100.00 | 100.00 | 99.22 | 98.66 | 100.00 | 99.98 | 98.52 | 96.45 | 100.00 | 100.00 | 100.00 | 0/5 |
+| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_brl | Binarized_brs | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_brl | Original_brs | Original_jrip | Original_part | Original_j48 | fallback folds |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| vote | 89.43 | 95.63 | 93.56 | 95.63 | 94.25 | 94.94 | 94.48 | 87.13 | 95.40 | 95.17 | 96.09 | 94.94 | 94.71 | 95.17 | 95.17 | 94.02 | 95.63 | 94.48 | 87.13 | 95.63 | 95.63 | 96.32 | 0/5 |
+| breast-cancer | 71.31 | 76.21 | 61.98 | 76.21 | 75.16 | 71.65 | 73.09 | 69.93 | 73.06 | 66.44 | 70.64 | 72.72 | 75.51 | 66.79 | 73.07 | 74.83 | 71.67 | 73.09 | 69.93 | 72.02 | 69.96 | 73.42 | 0/5 |
+| colic | 73.11 | 80.15 | 81.24 | 85.35 | 83.98 | 84.52 | 84.79 | 82.08 | 86.42 | 81.81 | 83.43 | 84.25 | 84.26 | 81.27 | 86.96 | 82.61 | 85.87 | 84.79 | 82.08 | 87.51 | 85.88 | 82.63 | 0/5 |
+| credit-approval | 84.35 | 84.06 | 86.09 | 85.94 | 85.22 | 84.93 | 84.20 | 63.48 | 85.65 | 83.04 | 84.64 | 84.78 | 85.51 | 83.62 | 83.04 | 84.06 | 85.80 | 84.20 | 63.48 | 85.94 | 84.35 | 85.94 | 0/5 |
+| credit-g | 70.70 | 73.20 | 70.80 | 58.50 | 71.40 | 70.80 | 69.80 | 44.20 | 72.70 | 72.30 | 71.90 | 70.60 | 70.10 | 70.20 | 58.60 | 70.60 | 70.70 | 69.80 | 44.20 | 72.40 | 70.00 | 70.80 | 5/5 |
+| diabetes | 61.60 | 74.48 | 66.53 | 73.96 | 76.31 | 74.62 | 73.70 | 69.79 | 74.61 | 74.22 | 74.99 | 73.83 | 74.09 | 59.62 | 70.98 | 69.39 | 74.10 | 73.70 | 69.79 | 75.14 | 71.75 | 71.74 | 0/5 |
+| sonar | 70.64 | 77.90 | 70.24 | 75.52 | 72.66 | 69.28 | nan | nan | 70.19 | 74.53 | 74.47 | 75.48 | 78.37 | 62.11 | 64.44 | 56.23 | 64.92 | nan | nan | 72.10 | 75.96 | 71.56 | 0/5 |
+| ionosphere | 90.03 | 91.74 | 89.75 | 87.48 | 90.03 | 88.89 | nan | nan | 89.18 | 91.74 | 90.31 | 88.61 | 91.45 | 88.04 | 75.51 | 88.62 | 74.93 | nan | nan | 90.89 | 90.62 | 88.33 | 4/5 |
+| tic-tac-toe | 82.36 | 77.04 | 98.02 | 99.48 | 98.33 | 83.09 | 80.58 | 87.57 | 98.33 | 93.84 | 94.88 | 82.36 | 76.83 | 97.91 | 97.39 | 91.52 | 83.50 | 80.58 | 87.57 | 97.91 | 94.15 | 87.27 | 0/5 |
+| banknote-authentication | 95.77 | 96.35 | 98.54 | 98.18 | 95.05 | 97.08 | 97.16 | 94.39 | 98.61 | 98.32 | 98.54 | 95.70 | 97.01 | 97.09 | 95.63 | 91.47 | 88.77 | 97.16 | 94.39 | 97.89 | 98.76 | 98.61 | 0/5 |
+| kr-vs-kp | 94.09 | 94.99 | 98.94 | 98.75 | 98.06 | 96.18 | 94.09 | 77.66 | 99.22 | 98.94 | 99.28 | 94.09 | 94.12 | 98.65 | 98.84 | 98.12 | 93.58 | 94.09 | 77.66 | 98.81 | 98.97 | 99.34 | 0/5 |
+| mushroom | 78.08 | 98.98 | 98.18 | 99.95 | 98.52 | 99.96 | 99.47 | 99.58 | 99.98 | 100.00 | 100.00 | 99.22 | 98.66 | 100.00 | 99.98 | 98.52 | 96.45 | 99.47 | 99.58 | 100.00 | 100.00 | 100.00 | 0/5 |
 
 ### Fit time (seconds/fold)
 
-| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_jrip | Original_part | Original_j48 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| vote | 0.252 | 0.078 | 0.124 | 0.125 | 0.091 | 0.086 | 0.307 | 0.302 | 0.298 | 0.004 | 0.069 | 0.072 | 0.070 | 0.049 | 0.045 | 0.236 | 0.246 | 0.240 |
-| breast-cancer | 0.008 | 0.050 | 0.129 | 0.149 | 0.077 | 0.072 | 0.304 | 0.337 | 0.295 | 0.004 | 0.056 | 0.060 | 0.092 | 0.031 | 0.036 | 0.227 | 0.234 | 0.231 |
-| colic | 0.013 | 0.063 | 0.667 | 0.685 | 0.458 | 0.446 | 0.526 | 0.487 | 0.390 | 0.004 | 0.089 | 0.343 | 0.366 | 0.247 | 0.249 | 0.280 | 0.278 | 0.277 |
-| credit-approval | 0.015 | 0.104 | 0.509 | 0.471 | 0.223 | 0.238 | 0.447 | 0.440 | 0.378 | 0.005 | 0.138 | 0.316 | 0.366 | 0.116 | 0.131 | 0.314 | 0.295 | 0.265 |
-| credit-g | 0.021 | 0.134 | 0.834 | 0.679 | 0.261 | 0.294 | 0.587 | 0.604 | 0.449 | 0.006 | 0.199 | 0.390 | 0.348 | 0.124 | 0.145 | 0.312 | 0.335 | 0.285 |
-| diabetes | 0.015 | 0.112 | 0.444 | 0.441 | 0.152 | 0.161 | 0.482 | 0.436 | 0.361 | 0.005 | 0.183 | 0.280 | 0.288 | 0.100 | 0.091 | 0.279 | 0.256 | 0.257 |
-| sonar | 0.022 | 0.068 | 1.450 | 1.409 | 1.154 | 1.124 | 0.500 | 0.438 | 0.384 | 0.007 | 0.076 | 1.352 | 1.275 | 1.130 | 1.124 | 0.283 | 0.275 | 0.277 |
-| ionosphere | 0.015 | 0.060 | 0.788 | 0.801 | 0.589 | 0.562 | 0.483 | 0.429 | 0.388 | 0.006 | 0.079 | 0.540 | 0.588 | 0.468 | 0.428 | 0.293 | 0.276 | 0.279 |
-| tic-tac-toe | 0.015 | 0.132 | 0.256 | 0.273 | 0.103 | 0.094 | 0.459 | 0.359 | 0.307 | 0.005 | 0.166 | 0.155 | 0.191 | 0.052 | 0.048 | 0.294 | 0.265 | 0.265 |
-| banknote-authentication | 0.018 | 0.163 | 0.213 | 0.215 | 0.094 | 0.100 | 0.446 | 0.341 | 0.336 | 0.006 | 0.264 | 0.514 | 0.563 | 0.072 | 0.078 | 0.303 | 0.274 | 0.272 |
-| kr-vs-kp | 0.043 | 0.270 | 1.398 | 1.204 | 0.418 | 0.420 | 1.013 | 0.748 | 0.518 | 0.011 | 0.353 | 0.806 | 0.705 | 0.245 | 0.236 | 0.435 | 0.321 | 0.317 |
-| mushroom | 0.087 | 0.542 | 2.327 | 2.400 | 1.315 | 1.402 | 1.602 | 0.982 | 0.848 | 0.027 | 0.879 | 0.636 | 0.519 | 0.300 | 0.249 | 0.459 | 0.366 | 0.333 |
+| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_brl | Binarized_brs | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_brl | Original_brs | Original_jrip | Original_part | Original_j48 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| vote | 0.233 | 0.108 | 0.087 | 0.073 | 0.042 | 0.042 | 0.833 | 12.441 | 0.557 | 1.330 | 0.422 | 0.005 | 0.099 | 0.102 | 0.094 | 0.060 | 0.057 | 0.796 | 13.071 | 0.414 | 1.288 | 0.569 |
+| breast-cancer | 0.009 | 0.069 | 0.170 | 0.205 | 0.098 | 0.097 | 0.417 | 12.816 | 0.467 | 1.363 | 0.436 | 0.004 | 0.074 | 0.082 | 0.130 | 0.042 | 0.044 | 0.429 | 12.559 | 0.578 | 1.097 | 0.560 |
+| colic | 0.013 | 0.066 | 0.614 | 0.679 | 0.452 | 0.416 | 3.763 | 48.736 | 0.649 | 1.470 | 0.505 | 0.005 | 0.096 | 0.341 | 0.366 | 0.251 | 0.235 | 3.717 | 50.187 | 0.422 | 1.295 | 0.385 |
+| credit-approval | 0.014 | 0.097 | 0.450 | 0.430 | 0.200 | 0.190 | 2.364 | 15.821 | 0.593 | 1.430 | 0.475 | 0.005 | 0.153 | 0.350 | 0.352 | 0.113 | 0.128 | 2.176 | 15.935 | 0.422 | 1.297 | 0.366 |
+| credit-g | 0.022 | 0.137 | 0.794 | 0.644 | 0.269 | 0.265 | 4.237 | 17.417 | 0.696 | 1.601 | 0.569 | 0.006 | 0.213 | 0.408 | 0.374 | 0.132 | 0.142 | 4.158 | 17.806 | 0.463 | 1.325 | 0.403 |
+| diabetes | 0.015 | 0.108 | 0.401 | 0.480 | 0.143 | 0.168 | 1.544 | 13.086 | 0.652 | 1.459 | 0.506 | 0.005 | 0.203 | 0.283 | 0.296 | 0.100 | 0.091 | 1.493 | 13.127 | 0.407 | 1.287 | 0.410 |
+| sonar | 0.020 | 0.059 | 1.332 | 1.379 | 1.078 | 1.070 | nan | nan | 0.697 | 1.394 | 0.856 | 0.015 | 0.171 | 1.267 | 1.293 | 1.103 | 1.139 | nan | nan | 0.488 | 1.383 | 0.532 |
+| ionosphere | 0.013 | 0.064 | 0.737 | 0.753 | 0.545 | 0.581 | nan | nan | 0.835 | 1.393 | 0.972 | 0.014 | 0.166 | 0.576 | 0.614 | 0.477 | 0.472 | nan | nan | 0.603 | 1.495 | 0.718 |
+| tic-tac-toe | 0.016 | 0.144 | 0.269 | 0.258 | 0.123 | 0.094 | 1.231 | 10.794 | 0.846 | 1.400 | 0.869 | 0.004 | 0.158 | 0.156 | 0.207 | 0.056 | 0.049 | 1.137 | 10.766 | 1.042 | 1.555 | 0.711 |
+| banknote-authentication | 0.016 | 0.174 | 0.197 | 0.203 | 0.092 | 0.094 | 1.234 | 11.077 | 0.696 | 1.428 | 0.703 | 0.005 | 0.291 | 0.548 | 0.613 | 0.077 | 0.075 | 1.225 | 11.121 | 0.427 | 1.534 | 0.657 |
+| kr-vs-kp | 0.024 | 0.288 | 0.918 | 0.808 | 0.211 | 0.213 | 15.490 | 19.312 | 1.247 | 1.466 | 0.965 | 0.010 | 0.413 | 0.828 | 0.716 | 0.233 | 0.245 | 15.450 | 19.512 | 0.713 | 1.418 | 0.708 |
+| mushroom | 0.086 | 0.523 | 2.247 | 2.167 | 1.099 | 1.351 | 21.902 | 36.805 | 1.479 | 1.483 | 1.454 | 0.026 | 0.976 | 0.641 | 0.505 | 0.257 | 0.257 | 22.082 | 36.873 | 0.626 | 1.399 | 0.723 |
 
 ### Rule count
 
-| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_jrip | Original_part | Original_j48 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| vote | 13.4 | 111.8 | 2.0 | 3.0 | 2.0 | 1.0 | 2.2 | 5.2 | 6.8 | 13.4 | 121.0 | 3.4 | 3.8 | 2.2 | 1.4 | 1.2 | 5.2 | 9.0 |
-| breast-cancer | 12.4 | 126.0 | 1.2 | 1.4 | 2.4 | 1.4 | 1.0 | 22.0 | 15.0 | 12.4 | 124.8 | 3.0 | 1.6 | 2.2 | 2.8 | 2.8 | 15.4 | 8.4 |
-| colic | 11.4 | 121.2 | 4.4 | 5.2 | 1.8 | 1.6 | 3.0 | 13.6 | 15.6 | 11.6 | 118.6 | 6.0 | 6.2 | 3.0 | 2.2 | 3.4 | 12.8 | 8.6 |
-| credit-approval | 13.8 | 142.4 | 5.0 | 3.8 | 1.2 | 2.4 | 3.0 | 26.8 | 17.0 | 14.2 | 134.0 | 7.6 | 8.8 | 1.0 | 1.8 | 3.8 | 29.6 | 19.4 |
-| credit-g | 15.0 | 146.0 | 3.2 | 3.8 | 1.4 | 5.8 | 2.2 | 56.8 | 78.8 | 15.2 | 141.8 | 5.4 | 5.2 | 1.4 | 3.2 | 3.4 | 60.4 | 77.8 |
-| diabetes | 15.2 | 147.2 | 3.6 | 3.8 | 3.0 | 2.4 | 2.0 | 45.2 | 37.6 | 15.4 | 143.4 | 8.4 | 8.6 | 7.4 | 4.0 | 3.0 | 8.0 | 22.0 |
-| sonar | 13.6 | 121.4 | 3.0 | 3.2 | 2.0 | 1.2 | 3.4 | 6.2 | 16.0 | 13.0 | 114.8 | 4.4 | 3.4 | 2.4 | 2.6 | 3.6 | 6.4 | 14.0 |
-| ionosphere | 8.6 | 98.6 | 5.6 | 3.0 | 2.0 | 1.8 | 4.2 | 6.0 | 10.8 | 8.8 | 95.4 | 8.0 | 9.0 | 3.8 | 1.0 | 4.2 | 5.6 | 11.4 |
-| tic-tac-toe | 14.0 | 153.4 | 8.6 | 9.8 | 7.4 | 6.0 | 8.0 | 29.2 | 37.8 | 14.0 | 157.4 | 9.4 | 14.0 | 5.4 | 6.4 | 9.6 | 36.4 | 80.6 |
-| banknote-authentication | 13.0 | 131.4 | 6.6 | 6.2 | 3.2 | 4.2 | 5.2 | 9.4 | 11.4 | 12.2 | 123.4 | 33.6 | 31.2 | 9.6 | 10.2 | 6.0 | 7.4 | 15.2 |
-| kr-vs-kp | 7.6 | 112.4 | 16.6 | 9.2 | 7.4 | 5.2 | 14.0 | 20.8 | 25.8 | 7.6 | 118.6 | 18.4 | 10.8 | 7.2 | 5.4 | 14.6 | 20.4 | 29.0 |
-| mushroom | 10.0 | 101.0 | 5.8 | 7.0 | 4.0 | 5.0 | 6.0 | 5.0 | 9.8 | 10.0 | 101.8 | 7.6 | 8.2 | 4.0 | 4.0 | 8.0 | 10.0 | 24.0 |
+| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_brl | Binarized_brs | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_brl | Original_brs | Original_jrip | Original_part | Original_j48 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| vote | 12.8 | 126.4 | 2.4 | 3.0 | 1.6 | 1.6 | 3.2 | 7.4 | 2.2 | 6.4 | 6.6 | 13.4 | 121.0 | 3.4 | 3.8 | 2.0 | 1.0 | 3.2 | 7.4 | 1.2 | 5.2 | 9.0 |
+| breast-cancer | 12.4 | 128.0 | 1.4 | 1.4 | 2.2 | 1.6 | 3.2 | 7.0 | 1.0 | 21.6 | 13.8 | 12.4 | 124.8 | 3.0 | 1.6 | 3.0 | 2.2 | 3.2 | 7.0 | 2.8 | 15.4 | 8.4 |
+| colic | 11.8 | 122.0 | 3.6 | 3.8 | 1.8 | 1.4 | 4.8 | 8.0 | 3.2 | 11.6 | 17.0 | 11.6 | 118.6 | 6.0 | 6.2 | 2.8 | 1.6 | 4.8 | 8.0 | 3.4 | 12.8 | 8.6 |
+| credit-approval | 14.4 | 138.8 | 5.0 | 3.6 | 1.6 | 1.6 | 4.8 | 8.8 | 3.2 | 23.6 | 23.0 | 14.2 | 134.0 | 7.6 | 8.8 | 1.4 | 2.4 | 4.8 | 8.8 | 3.8 | 29.6 | 19.4 |
+| credit-g | 15.0 | 145.0 | 3.2 | 3.8 | 1.4 | 3.8 | 4.8 | 8.2 | 3.0 | 56.8 | 78.8 | 15.2 | 141.8 | 5.4 | 5.2 | 2.2 | 4.8 | 4.8 | 8.2 | 3.4 | 60.4 | 77.8 |
+| diabetes | 14.6 | 145.4 | 4.4 | 3.8 | 3.0 | 4.0 | 4.6 | 7.2 | 3.0 | 46.2 | 42.2 | 14.6 | 140.4 | 8.2 | 8.2 | 8.2 | 2.6 | 4.6 | 7.2 | 2.4 | 6.8 | 22.0 |
+| sonar | 13.6 | 121.4 | 3.0 | 3.2 | 2.6 | 1.8 | nan | nan | 3.4 | 6.2 | 16.0 | 13.0 | 114.8 | 4.4 | 3.4 | 2.4 | 2.4 | nan | nan | 3.6 | 6.4 | 14.0 |
+| ionosphere | 8.6 | 98.6 | 5.6 | 3.0 | 2.0 | 1.8 | nan | nan | 4.2 | 6.0 | 10.8 | 8.8 | 95.4 | 8.0 | 9.0 | 3.6 | 1.2 | nan | nan | 4.2 | 5.6 | 11.4 |
+| tic-tac-toe | 14.0 | 153.4 | 8.6 | 9.8 | 8.4 | 5.6 | 11.8 | 7.8 | 8.0 | 29.2 | 37.8 | 14.0 | 157.4 | 9.4 | 14.0 | 7.0 | 6.2 | 11.8 | 7.8 | 9.6 | 36.4 | 80.6 |
+| banknote-authentication | 13.0 | 131.4 | 6.6 | 6.2 | 3.6 | 4.2 | 5.0 | 9.6 | 5.2 | 9.4 | 11.4 | 12.2 | 123.4 | 33.6 | 31.2 | 10.4 | 7.8 | 5.0 | 9.6 | 6.0 | 7.4 | 15.2 |
+| kr-vs-kp | 7.6 | 112.6 | 17.4 | 9.6 | 7.2 | 5.4 | 8.4 | 7.0 | 13.6 | 20.8 | 25.8 | 7.6 | 118.6 | 18.4 | 10.8 | 7.4 | 5.0 | 8.4 | 7.0 | 14.6 | 20.4 | 29.0 |
+| mushroom | 10.4 | 86.8 | 7.0 | 7.0 | 3.4 | 6.0 | 10.2 | 7.8 | 5.8 | 5.0 | 9.8 | 10.0 | 101.8 | 7.6 | 8.2 | 4.0 | 4.0 | 10.2 | 7.8 | 8.0 | 10.0 | 24.0 |
 
 ### Average conditions per rule
 
-| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_jrip | Original_part | Original_j48 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| vote | 3.80 | 3.67 | 1.53 | 2.25 | 1.50 | 1.00 | 1.60 | 2.23 | 3.32 | 3.80 | 3.73 | 1.88 | 1.95 | 1.37 | 1.10 | 1.20 | 1.42 | 2.61 |
-| breast-cancer | 3.75 | 3.78 | 1.50 | 2.70 | 1.27 | 2.07 | 1.80 | 4.54 | 5.37 | 3.75 | 3.78 | 1.55 | 2.70 | 1.07 | 2.25 | 2.22 | 1.92 | 1.77 |
-| colic | 3.68 | 3.74 | 2.15 | 1.90 | 1.20 | 1.20 | 1.40 | 4.53 | 5.97 | 3.72 | 3.73 | 1.61 | 2.13 | 1.42 | 1.37 | 1.83 | 1.81 | 2.17 |
-| credit-approval | 3.85 | 3.89 | 2.78 | 2.40 | 1.10 | 2.17 | 1.67 | 3.49 | 6.31 | 3.87 | 3.84 | 2.86 | 3.22 | 1.00 | 1.87 | 2.18 | 2.37 | 4.02 |
-| credit-g | 3.93 | 3.91 | 4.83 | 2.95 | 2.50 | 1.55 | 3.40 | 4.09 | 11.42 | 3.95 | 3.89 | 3.64 | 2.68 | 1.87 | 1.16 | 2.69 | 3.02 | 5.57 |
-| diabetes | 3.94 | 3.92 | 2.69 | 3.74 | 1.77 | 2.43 | 2.80 | 3.99 | 8.62 | 3.96 | 3.89 | 2.26 | 2.94 | 1.82 | 2.32 | 2.22 | 2.30 | 6.09 |
-| sonar | 3.82 | 3.73 | 2.25 | 2.12 | 1.43 | 1.30 | 1.74 | 3.59 | 5.73 | 3.76 | 3.67 | 1.66 | 2.59 | 1.55 | 1.27 | 1.73 | 2.41 | 4.51 |
-| ionosphere | 3.46 | 3.57 | 1.55 | 3.20 | 1.20 | 2.43 | 1.47 | 3.09 | 4.64 | 3.49 | 3.51 | 2.07 | 2.47 | 1.49 | 1.00 | 1.31 | 2.83 | 5.04 |
-| tic-tac-toe | 3.86 | 3.96 | 3.07 | 3.22 | 2.95 | 2.68 | 3.08 | 3.23 | 5.88 | 3.86 | 3.98 | 3.28 | 3.13 | 2.76 | 2.14 | 3.28 | 2.69 | 4.53 |
-| banknote-authentication | 3.77 | 3.81 | 2.33 | 2.49 | 1.68 | 2.08 | 2.30 | 2.10 | 3.88 | 3.69 | 3.74 | 3.65 | 3.85 | 2.53 | 2.81 | 2.24 | 2.11 | 4.51 |
-| kr-vs-kp | 3.43 | 3.72 | 3.17 | 4.48 | 2.78 | 4.04 | 3.00 | 2.93 | 7.37 | 3.43 | 3.75 | 3.33 | 4.80 | 2.80 | 4.24 | 3.16 | 3.21 | 7.71 |
-| mushroom | 3.50 | 3.59 | 2.45 | 1.56 | 1.50 | 1.84 | 1.70 | 2.76 | 3.83 | 3.50 | 3.58 | 2.54 | 1.50 | 1.50 | 1.00 | 1.56 | 1.85 | 2.54 |
+| dataset | Binarized_tree | Binarized_forest | Binarized_ripper_A | Binarized_ripper_B | Binarized_irep_A | Binarized_irep_B | Binarized_brl | Binarized_brs | Binarized_jrip | Binarized_part | Binarized_j48 | Original_tree | Original_forest | Original_ripper_A | Original_ripper_B | Original_irep_A | Original_irep_B | Original_brl | Original_brs | Original_jrip | Original_part | Original_j48 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| vote | 3.59 | 3.73 | 1.73 | 2.33 | 1.40 | 1.30 | 1.25 | 2.94 | 1.87 | 2.09 | 3.34 | 3.80 | 3.73 | 1.88 | 1.95 | 1.43 | 1.00 | 1.25 | 2.94 | 1.20 | 1.42 | 2.61 |
+| breast-cancer | 3.77 | 3.79 | 1.70 | 2.50 | 1.37 | 2.10 | 1.42 | 2.83 | 1.80 | 4.48 | 5.22 | 3.75 | 3.78 | 1.55 | 2.70 | 1.12 | 2.00 | 1.42 | 2.83 | 2.22 | 1.92 | 1.77 |
+| colic | 3.72 | 3.74 | 2.25 | 1.83 | 1.20 | 1.60 | 1.55 | 2.82 | 1.97 | 5.10 | 6.19 | 3.72 | 3.73 | 1.61 | 2.13 | 1.22 | 1.60 | 1.55 | 2.82 | 1.83 | 1.81 | 2.17 |
+| credit-approval | 3.87 | 3.87 | 2.53 | 2.52 | 1.60 | 1.50 | 1.58 | 2.92 | 2.05 | 4.06 | 7.23 | 3.87 | 3.84 | 2.86 | 3.22 | 1.10 | 2.05 | 1.58 | 2.92 | 2.18 | 2.37 | 4.02 |
+| credit-g | 3.93 | 3.90 | 4.83 | 2.95 | 2.83 | 1.16 | 1.67 | 2.86 | 3.77 | 4.09 | 11.42 | 3.95 | 3.89 | 3.64 | 2.68 | 2.85 | 1.22 | 1.67 | 2.86 | 2.69 | 3.02 | 5.57 |
+| diabetes | 3.90 | 3.91 | 2.71 | 3.74 | 1.67 | 3.31 | 1.79 | 2.98 | 2.68 | 4.08 | 8.96 | 3.90 | 3.88 | 2.46 | 2.93 | 1.92 | 1.90 | 1.79 | 2.98 | 2.40 | 2.51 | 6.13 |
+| sonar | 3.82 | 3.73 | 2.25 | 2.12 | 1.55 | 1.90 | nan | nan | 1.74 | 3.59 | 5.73 | 3.76 | 3.67 | 1.66 | 2.59 | 1.35 | 1.67 | nan | nan | 1.73 | 2.41 | 4.51 |
+| ionosphere | 3.46 | 3.57 | 1.55 | 3.20 | 1.00 | 2.27 | nan | nan | 1.47 | 3.09 | 4.64 | 3.49 | 3.51 | 2.07 | 2.47 | 1.35 | 1.10 | nan | nan | 1.31 | 2.83 | 5.04 |
+| tic-tac-toe | 3.86 | 3.96 | 3.07 | 3.22 | 3.06 | 2.87 | 1.81 | 3.00 | 3.08 | 3.23 | 5.88 | 3.86 | 3.98 | 3.28 | 3.13 | 2.88 | 2.20 | 1.81 | 3.00 | 3.28 | 2.69 | 4.53 |
+| banknote-authentication | 3.77 | 3.81 | 2.33 | 2.49 | 1.77 | 2.09 | 1.89 | 2.96 | 2.30 | 2.10 | 3.88 | 3.69 | 3.74 | 3.65 | 3.85 | 2.57 | 2.73 | 1.89 | 2.96 | 2.24 | 2.11 | 4.51 |
+| kr-vs-kp | 3.43 | 3.73 | 3.23 | 4.54 | 2.77 | 3.96 | 1.87 | 2.83 | 3.00 | 2.93 | 7.37 | 3.43 | 3.75 | 3.33 | 4.80 | 2.88 | 3.91 | 1.87 | 2.83 | 3.16 | 3.21 | 7.71 |
+| mushroom | 3.55 | 3.39 | 2.02 | 1.56 | 1.80 | 1.71 | 1.74 | 2.92 | 1.64 | 2.76 | 3.83 | 3.50 | 3.58 | 2.54 | 1.50 | 1.50 | 1.00 | 1.74 | 2.92 | 1.56 | 1.85 | 2.54 |
 ## Overview evaluation (across all datasets)
 
 **Average performance across datasets**
 
 | algorithm | accuracy (%) | fit time (s) | n_rules | avg_conditions | datasets fully failed |
 |---|---|---|---|---|---|
-| Binarized/forest | 85.56 | 0.148 | 126.1 | 3.77 | 0 |
-| Original/forest | 85.08 | 0.213 | 124.6 | 3.76 | 0 |
-| Binarized/irep_A | 86.16 | 0.411 | 3.2 | 1.74 | 0 |
-| Original/irep_A | 82.40 | 0.244 | 4.1 | 1.76 | 0 |
-| Binarized/irep_B | 84.12 | 0.417 | 3.2 | 2.07 | 0 |
-| Original/irep_B | 81.14 | 0.238 | 3.7 | 1.88 | 0 |
-| Binarized/j48 | 86.59 | 0.413 | 23.5 | 6.03 | 0 |
-| Original/j48 | 85.69 | 0.275 | 26.6 | 4.25 | 0 |
-| Binarized/jrip | 86.92 | 0.596 | 4.5 | 2.16 | 0 |
-| Original/jrip | 87.26 | 0.310 | 5.3 | 2.14 | 0 |
-| Binarized/part | 85.70 | 0.492 | 20.5 | 3.38 | 0 |
-| Original/part | 86.61 | 0.285 | 18.1 | 2.33 | 0 |
-| Binarized/ripper_A | 84.86 | 0.762 | 5.5 | 2.52 | 0 |
-| Original/ripper_A | 83.69 | 0.456 | 9.6 | 2.53 | 0 |
-| Binarized/ripper_B | 86.24 | 0.738 | 5.0 | 2.75 | 0 |
-| Original/ripper_B | 83.45 | 0.448 | 9.2 | 2.83 | 0 |
-| Binarized/tree | 84.50 | 0.044 | 12.3 | 3.73 | 0 |
-| Original/tree | 84.68 | 0.007 | 12.3 | 3.73 | 0 |
+| Binarized/brl | 85.14 | 5.302 | 6.1 | 1.66 | 2 |
+| Original/brl | 85.14 | 5.266 | 6.1 | 1.66 | 2 |
+| Binarized/brs | 77.58 | 19.830 | 7.9 | 2.91 | 2 |
+| Original/brs | 77.58 | 20.096 | 7.9 | 2.91 | 2 |
+| Binarized/forest | 85.06 | 0.153 | 125.8 | 3.76 | 0 |
+| Original/forest | 85.05 | 0.251 | 124.3 | 3.76 | 0 |
+| Binarized/irep_A | 86.58 | 0.363 | 3.2 | 1.84 | 0 |
+| Original/irep_A | 83.33 | 0.242 | 4.5 | 1.85 | 0 |
+| Binarized/irep_B | 84.66 | 0.382 | 3.2 | 2.15 | 0 |
+| Original/irep_B | 82.16 | 0.244 | 3.4 | 1.87 | 0 |
+| Binarized/j48 | 86.60 | 0.728 | 24.4 | 6.14 | 0 |
+| Original/j48 | 85.50 | 0.562 | 26.6 | 4.26 | 0 |
+| Binarized/jrip | 86.94 | 0.785 | 4.7 | 2.28 | 0 |
+| Original/jrip | 87.19 | 0.550 | 5.2 | 2.15 | 0 |
+| Binarized/part | 85.86 | 1.435 | 20.2 | 3.47 | 0 |
+| Original/part | 86.33 | 1.364 | 18.0 | 2.35 | 0 |
+| Binarized/ripper_A | 84.49 | 0.685 | 5.7 | 2.52 | 0 |
+| Original/ripper_A | 83.37 | 0.465 | 9.6 | 2.54 | 0 |
+| Binarized/ripper_B | 86.25 | 0.673 | 4.9 | 2.75 | 0 |
+| Original/ripper_B | 83.30 | 0.463 | 9.2 | 2.83 | 0 |
+| Binarized/tree | 80.12 | 0.040 | 12.3 | 3.72 | 0 |
+| Original/tree | 84.72 | 0.009 | 12.2 | 3.73 | 0 |
 
-**Average rank per criterion** (1 = best of 18; failed entries tie for last)
+**Average rank per criterion** (1 = best of 22; failed entries tie for last)
 
 | algorithm | rank (accuracy) | rank (fit time) | rank (n_rules) | rank (avg_conditions) |
 |---|---|---|---|---|
-| Binarized/forest | 7.04 | 5.08 | 17.67 | 14.58 |
-| Original/forest | 9.67 | 6.75 | 17.33 | 14.00 |
-| Binarized/irep_A | 9.71 | 9.67 | 3.04 | 2.67 |
-| Original/irep_A | 13.21 | 5.08 | 4.21 | 3.62 |
-| Binarized/irep_B | 12.04 | 9.58 | 2.83 | 4.96 |
-| Original/irep_B | 13.46 | 4.83 | 4.25 | 4.50 |
-| Binarized/j48 | 7.04 | 12.92 | 14.25 | 17.42 |
-| Original/j48 | 7.00 | 8.92 | 14.33 | 15.08 |
-| Binarized/jrip | 7.00 | 15.67 | 4.92 | 6.17 |
-| Original/jrip | 5.25 | 10.50 | 6.67 | 5.92 |
-| Binarized/part | 9.08 | 14.50 | 12.25 | 11.67 |
-| Original/part | 6.79 | 9.58 | 12.33 | 6.83 |
-| Binarized/ripper_A | 9.58 | 15.00 | 6.12 | 8.17 |
-| Original/ripper_A | 12.29 | 11.58 | 10.08 | 8.00 |
-| Binarized/ripper_B | 7.29 | 15.33 | 6.50 | 9.71 |
-| Original/ripper_B | 11.46 | 11.92 | 10.04 | 9.96 |
-| Binarized/tree | 11.29 | 3.08 | 11.96 | 13.79 |
-| Original/tree | 11.79 | 1.00 | 12.21 | 13.96 |
+| Binarized/brl | 14.58 | 18.92 | 11.71 | 6.25 |
+| Original/brl | 14.58 | 18.42 | 11.71 | 6.25 |
+| Binarized/brs | 18.58 | 21.08 | 12.79 | 13.83 |
+| Original/brs | 18.58 | 21.58 | 12.79 | 13.83 |
+| Binarized/forest | 10.04 | 5.33 | 21.08 | 17.75 |
+| Original/forest | 10.75 | 7.00 | 20.58 | 17.33 |
+| Binarized/irep_A | 9.54 | 7.33 | 3.42 | 4.00 |
+| Original/irep_A | 14.79 | 4.83 | 5.71 | 4.67 |
+| Binarized/irep_B | 10.88 | 7.17 | 3.17 | 7.29 |
+| Original/irep_B | 13.08 | 4.92 | 3.62 | 5.67 |
+| Binarized/j48 | 6.71 | 14.08 | 17.33 | 20.75 |
+| Original/j48 | 7.75 | 11.58 | 17.58 | 17.58 |
+| Binarized/jrip | 6.00 | 14.58 | 5.54 | 8.54 |
+| Original/jrip | 5.38 | 11.42 | 7.21 | 7.25 |
+| Binarized/part | 9.33 | 18.25 | 14.79 | 14.92 |
+| Original/part | 7.83 | 17.58 | 14.92 | 8.67 |
+| Binarized/ripper_A | 12.21 | 12.75 | 7.46 | 10.58 |
+| Original/ripper_A | 13.71 | 9.58 | 11.96 | 10.00 |
+| Binarized/ripper_B | 7.67 | 12.83 | 6.88 | 11.67 |
+| Original/ripper_B | 12.21 | 9.92 | 12.25 | 11.92 |
+| Binarized/tree | 16.08 | 2.75 | 15.46 | 17.12 |
+| Original/tree | 12.71 | 1.08 | 15.04 | 17.12 |
 
 **Binarized vs. Original: how often each was better, per model** (ties count 0.5 each per side; a dataset where both failed isn't counted for either side)
 
 | model | accuracy (Bin / Orig) | fit time (Bin / Orig) | n_rules (Bin / Orig) | avg_conditions (Bin / Orig) |
 |---|---|---|---|---|
-| forest | 8.0 / 4.0 | 11.0 / 1.0 | 4.0 / 8.0 | 4.0 / 8.0 |
-| irep_A | 8.5 / 3.5 | 0.0 / 12.0 | 7.0 / 5.0 | 6.5 / 5.5 |
-| irep_B | 5.0 / 7.0 | 0.0 / 12.0 | 8.0 / 4.0 | 5.0 / 7.0 |
-| j48 | 5.5 / 6.5 | 0.0 / 12.0 | 7.0 / 5.0 | 3.0 / 9.0 |
-| jrip | 5.0 / 7.0 | 0.0 / 12.0 | 10.5 / 1.5 | 5.0 / 7.0 |
-| part | 2.5 / 9.5 | 0.0 / 12.0 | 5.5 / 6.5 | 2.0 / 10.0 |
-| ripper_A | 9.5 / 2.5 | 1.0 / 11.0 | 12.0 / 0.0 | 8.0 / 4.0 |
-| ripper_B | 8.5 / 3.5 | 1.0 / 11.0 | 12.0 / 0.0 | 5.5 / 6.5 |
-| tree | 8.5 / 3.5 | 0.0 / 12.0 | 7.5 / 4.5 | 7.5 / 4.5 |
+| brl | 5.0 / 5.0 | 2.0 / 8.0 | 5.0 / 5.0 | 5.0 / 5.0 |
+| brs | 5.0 / 5.0 | 8.0 / 2.0 | 5.0 / 5.0 | 5.0 / 5.0 |
+| forest | 8.0 / 4.0 | 11.0 / 1.0 | 3.0 / 9.0 | 4.0 / 8.0 |
+| irep_A | 10.5 / 1.5 | 3.0 / 9.0 | 9.0 / 3.0 | 7.0 / 5.0 |
+| irep_B | 7.0 / 5.0 | 3.0 / 9.0 | 7.0 / 5.0 | 3.5 / 8.5 |
+| j48 | 6.5 / 5.5 | 2.0 / 10.0 | 6.0 / 6.0 | 3.0 / 9.0 |
+| jrip | 5.0 / 7.0 | 2.0 / 10.0 | 9.5 / 2.5 | 4.0 / 8.0 |
+| part | 3.5 / 8.5 | 3.0 / 9.0 | 6.0 / 6.0 | 2.0 / 10.0 |
+| ripper_A | 8.0 / 4.0 | 2.0 / 10.0 | 12.0 / 0.0 | 7.0 / 5.0 |
+| ripper_B | 8.0 / 4.0 | 2.0 / 10.0 | 12.0 / 0.0 | 6.0 / 6.0 |
+| tree | 4.0 / 8.0 | 1.0 / 11.0 | 5.0 / 7.0 | 5.5 / 6.5 |

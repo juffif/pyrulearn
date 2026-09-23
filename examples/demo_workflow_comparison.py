@@ -360,16 +360,43 @@ class TimeoutRunner:
         self._kill_worker()
 
 
-def _fill_missing(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
-    """Same deliberately-simple demo-only approach as
-    demo_decision_tree_import.py -- see its module docstring."""
-    df = df.copy()
+def _drop_degenerate(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
+    """Columns that are useless regardless of missing-value strategy:
+    entirely missing, or constant on their known (non-missing) values."""
     degenerate = [
         col for col in df.columns
         if col != target_col and (df[col].isna().all() or df[col].nunique(dropna=True) <= 1)
     ]
-    if degenerate:
-        df = df.drop(columns=degenerate)
+    return df.drop(columns=degenerate) if degenerate else df
+
+
+# Pima diabetes records unmeasured glucose/blood pressure/skin thickness/
+# insulin/BMI as a literal 0, not NaN -- a real reading of 0 is physiologically
+# impossible for these (unlike `preg`, where 0 pregnancies is a real value),
+# so treat it as missing before anything downstream (imputation or
+# discretization) ever sees it as if it were a real measurement. See
+# JF_DATA_GENERATION_ISSUES.md point 4: the discretizer was putting a cut
+# right above the zeros, turning the lowest bin into a silent missing-value
+# flag (`insu<14.5` held 48.2% of fold 0's training rows, matching the
+# source's 374 zeros out of 768).
+DIABETES_ZERO_AS_MISSING = ("plas", "pres", "skin", "insu", "mass")
+
+
+def _mark_dataset_specific_missing(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    if name == "diabetes":
+        df = df.copy()
+        for col in DIABETES_ZERO_AS_MISSING:
+            if col in df.columns:
+                df[col] = df[col].replace(0, np.nan)
+    return df
+
+
+def _fill_missing(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
+    """Impute missing values -- for learners that need a fully non-missing
+    matrix (the "Original"/external-learner workflow: sklearn, wittgenstein,
+    imodels). pyrulearn's own build_dataspec/binarize don't need this at
+    all -- see `load_openml_raw`."""
+    df = _drop_degenerate(df, target_col).copy()
 
     for col in df.columns:
         if col == target_col or not df[col].isna().any():
@@ -386,11 +413,44 @@ def _fill_missing(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
     return df
 
 
-def load_openml(name: str, version=1):
+def _load_and_clean(name: str, version=1):
+    """One `fetch_openml` call, dataset-specific missing-value markup
+    applied once, then both downstream views built from that *same* frame
+    (so they stay row-aligned): `imputed_df` (`_fill_missing`, for external
+    learners) and `raw_df` (only degenerate columns dropped, real NaN kept,
+    for pyrulearn's own build_dataspec/binarize -- see `load_openml_raw`'s
+    docstring for why that's correct rather than a gap to fill)."""
     d = fetch_openml(name=name, version=version, as_frame=True, parser="auto")
     target_col = d.target.name
-    df = _fill_missing(d.frame, target_col)
+    marked = _mark_dataset_specific_missing(d.frame, name)
+    imputed_df = _fill_missing(marked, target_col)
+    raw_df = _drop_degenerate(marked, target_col)
+    return imputed_df, raw_df, target_col
+
+
+def load_openml(name: str, version=1):
+    """Missing values imputed (`_fill_missing`) -- for the "Original"
+    workflow's external learners (sklearn, wittgenstein, imodels), not all
+    of which are known to tolerate raw NaN input. pyrulearn's own
+    build_dataspec/binarize should use `load_openml_raw` instead."""
+    df, _raw_df, target_col = _load_and_clean(name, version)
     return df, target_col
+
+
+def load_openml_raw(name: str, version=1):
+    """Real missing values preserved (only degenerate columns dropped, and
+    `name`'s own known missing-as-a-different-value quirks fixed -- see
+    `DIABETES_ZERO_AS_MISSING`) -- for pyrulearn's own build_dataspec/
+    binarize, whose default `MissingStrategy.NEVER_COVERS` already makes
+    every feature derived from a missing value False, for numeric and
+    nominal attributes alike. `load_openml`'s imputation (silently filling
+    a numeric NaN with the column median, or folding a nominal NaN into an
+    ordinary-looking "?" category) exists only for external learners that
+    need a fully non-missing matrix -- it was never the right input for
+    pyrulearn's own binarization, which already has a correct answer for
+    this and doesn't need one imposed on it upstream."""
+    _df, raw_df, target_col = _load_and_clean(name, version)
+    return raw_df, target_col
 
 
 def _one_hot_expand(df: pd.DataFrame, nominal_cols, categories) -> pd.DataFrame:
@@ -572,8 +632,8 @@ def _eval(rules, rep, y, combiner=None) -> tuple:
     return acc, n_rules, avg_cond
 
 
-def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arff_prefix: str,
-             runner: TimeoutRunner):
+def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, raw_train_df: pd.DataFrame,
+             raw_test_df: pd.DataFrame, target_col: str, arff_prefix: str, runner: TimeoutRunner):
     """Returns `(metrics, merged_ok, failures)`. `metrics` maps `(workflow,
     model)` to a dict with `acc`/`n_rules`/`avg_cond`/`fit_time`, for every
     model that fit within `FIT_TIMEOUT_SECONDS` this fold. `failures` maps
@@ -582,11 +642,21 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
     pathological fit can't take down the fold or the run; see
     `TimeoutRunner`/`_run_weka_safe`. `merged_ok` is False for the rare fold
     where group 1's "Original" DataSpecs couldn't be merged (see the module
-    docstring's wrinkle 2)."""
+    docstring's wrinkle 2).
+
+    `train_df`/`test_df` (missing values imputed) feed the "Original"
+    workflow's external learners; `raw_train_df`/`raw_test_df` (same rows,
+    real missing values kept) feed "Binarized"'s own `build_dataspec`/
+    `binarize` -- see `load_openml_raw`'s docstring for why that's the
+    correct input for those, not `load_openml`'s imputed one."""
     os.makedirs(ARFF_DIR, exist_ok=True)  # gitignored scratch dir, absent in a fresh checkout
     feature_cols = [c for c in train_df.columns if c != target_col]
     nominal_cols = [c for c in feature_cols if not pd.api.types.is_numeric_dtype(train_df[c])]
     categories = {c: sorted(train_df[c].dropna().unique().tolist()) for c in nominal_cols}
+
+    raw_feature_cols = [c for c in raw_train_df.columns if c != target_col]
+    raw_nominal_cols = [c for c in raw_feature_cols if not pd.api.types.is_numeric_dtype(raw_train_df[c])]
+    raw_arff_types = {c: ("nominal" if c in raw_nominal_cols else "numeric") for c in raw_feature_cols}
 
     classes = sorted(pd.unique(train_df[target_col]).tolist())
     if len(classes) != 2:
@@ -607,10 +677,15 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
         failures[(workflow, model)] = error
 
     # ---------------- "Binarized": binarize first, one DataSpec throughout ----
+    # built from raw_train_df (real missing values kept, not train_df's
+    # imputed one) so NEVER_COVERS -- the correct default -- actually gets
+    # to do its job; arff_types stays imputed-df-derived, still needed below
+    # for the "Original" Weka path's write_arff call.
     arff_types = {c: ("nominal" if c in nominal_cols else "numeric") for c in feature_cols}
-    ds1 = build_dataspec(train_df, target=target_col, arff_types=arff_types, max_intervals=MAX_INTERVALS).build()
-    train_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, train_df), train_y)
-    test_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, test_df), test_y)
+    ds1 = build_dataspec(raw_train_df, target=target_col, arff_types=raw_arff_types,
+                         max_intervals=MAX_INTERVALS).build()
+    train_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, raw_train_df), train_y)
+    test_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, raw_test_df), test_y)
 
     # imodels' BRL/BRS scale badly in feature count (BRL's FP-growth candidate
     # generation; BRS's discretization fits one RandomForest per rule length
@@ -620,10 +695,14 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
     # Since build_dataspec now adds negation features by default (~2x the
     # columns), give these two a negation-free DataSpec so they stay within
     # FIT_TIMEOUT_SECONDS on the larger datasets, same as before the redesign.
-    ds1_bool = build_dataspec(train_df, target=target_col, arff_types=arff_types,
+    # raw_train_df here too: brl/brs's "Original" label below still reuses
+    # this same already-Boolean matrix (see the comment there) -- there's no
+    # actual raw/external fit for these two either way, so both labels
+    # benefit from the correct missing-value encoding equally.
+    ds1_bool = build_dataspec(raw_train_df, target=target_col, arff_types=raw_arff_types,
                               max_intervals=MAX_INTERVALS, include_negations=False).build()
-    train_rep1_bool = BooleanDataRepresentation(ds1_bool, binarize(ds1_bool, train_df), train_y)
-    test_rep1_bool = BooleanDataRepresentation(ds1_bool, binarize(ds1_bool, test_df), test_y)
+    train_rep1_bool = BooleanDataRepresentation(ds1_bool, binarize(ds1_bool, raw_train_df), train_y)
+    test_rep1_bool = BooleanDataRepresentation(ds1_bool, binarize(ds1_bool, raw_test_df), test_y)
 
     # brl/brs's "Original" call fits on a fresh BooleanDataRepresentation built
     # from the already-Boolean matrix via a plain DataFrame, instead of reusing
@@ -728,7 +807,7 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
             importer = WEKA_IMPORTERS[key]()
             rules = importer.parse(stdout)
             ds = importer.dataspec
-            test_bool_df = pd.DataFrame(binarize(ds1, test_df).astype(int), columns=plain_names)
+            test_bool_df = pd.DataFrame(binarize(ds1, raw_test_df).astype(int), columns=plain_names)
             rep = BooleanDataRepresentation(ds, binarize(ds, test_bool_df), test_y)
             record("Binarized", key, *_eval(rules, rep, test_y), fit_time)
 
@@ -956,12 +1035,17 @@ def _build_overview_tables(results: list, cols: list) -> list:
     return lines
 
 
-def run_dataset(name: str, df: pd.DataFrame, target_col: str, runner: TimeoutRunner, max_folds=None):
+def run_dataset(name: str, df: pd.DataFrame, raw_df: pd.DataFrame, target_col: str,
+                runner: TimeoutRunner, max_folds=None):
     """`max_folds`, if given, runs only the first `max_folds` of the
     dataset's `N_FOLDS` splits -- fold *sizes* stay exactly as they'd be in
     a full run (the same `N_FOLDS`-way split is always computed; only the
     loop over it is truncated), so `max_folds=1` gives a quick per-dataset
-    timing/sanity preview without changing what each fold looks like."""
+    timing/sanity preview without changing what each fold looks like.
+
+    `df` and `raw_df` are the same rows (same fold split applies to both --
+    see `_load_and_clean`), just missing values imputed vs. kept as real
+    NaN; see `run_fold`."""
     y = df[target_col].to_numpy()
     classes = sorted(pd.unique(y).tolist())
     print(f"\n{'=' * 78}\n{name}  (n={len(df)}, attributes={df.shape[1] - 1}, "
@@ -988,8 +1072,11 @@ def run_dataset(name: str, df: pd.DataFrame, target_col: str, runner: TimeoutRun
     for i, (train_idx, test_idx) in enumerate(folds):
         train_df = df.iloc[train_idx].reset_index(drop=True)
         test_df = df.iloc[test_idx].reset_index(drop=True)
+        raw_train_df = raw_df.iloc[train_idx].reset_index(drop=True)
+        raw_test_df = raw_df.iloc[test_idx].reset_index(drop=True)
         fold_metrics, merged_ok, failures = run_fold(
-            train_df, test_df, target_col, arff_prefix=f"{name}_{i}", runner=runner
+            train_df, test_df, raw_train_df, raw_test_df, target_col,
+            arff_prefix=f"{name}_{i}", runner=runner
         )
         if not merged_ok:
             n_fallback += 1
@@ -1083,8 +1170,8 @@ def main(datasets=STANDARD_DATASETS, max_folds=None):
     runner = TimeoutRunner()
     try:
         for name in datasets:
-            df, target_col = load_openml(name)
-            summary, md = run_dataset(name, df, target_col, runner=runner, max_folds=max_folds)
+            df, raw_df, target_col = _load_and_clean(name)
+            summary, md = run_dataset(name, df, raw_df, target_col, runner=runner, max_folds=max_folds)
             results.append(summary)
             report.extend(md)
     finally:
