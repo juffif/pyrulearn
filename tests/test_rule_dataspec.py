@@ -92,7 +92,11 @@ def test_prolog_format_gives_each_condition_its_own_variable():
     b = DataSpecBuilder(negation=True)
     age_idx = b.add_numeric("age", [30])
     income_idx = b.add_numeric("income", [50000])
-    color_idx = b.add_nominal("color", ["red", "blue"])
+    # 3-valued: color != red stays a genuine, distinct !=-op feature (a
+    # 2-valued nominal's negation would alias the other value's == feature
+    # instead -- no variable needed there, which isn't what this test's
+    # exercising)
+    color_idx = b.add_nominal("color", ["red", "blue", "green"])
     ds = b.build()
 
     r = Rule([age_idx.negative[30], income_idx[50000], color_idx.negative["red"]],

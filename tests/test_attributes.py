@@ -77,13 +77,26 @@ def test_builder_negation_generates_paired_features_and_group_constraints():
 
 def test_builder_negation_per_attribute_override():
     b = DataSpecBuilder(negation=True)
-    b.add_nominal("keep", ["a", "b"])
+    b.add_nominal("keep", ["a", "b", "c"])
     b.add_nominal("drop", ["x", "y"], negation=False)
     ds = b.build()
     assert "keep!=a" in ds.feature_names and "drop!=x" not in ds.feature_names
     assert ds.negation_of("keep=a") is not None
     assert ds.negation_of("drop=x") is None
     print("per-attribute negation= override: OK")
+
+
+def test_builder_negation_two_valued_nominal_aliases_instead_of_duplicating():
+    # a!=v1 would be an exact duplicate of a=v2 for a 2-valued attribute --
+    # negation_of still resolves it (aliased to the sibling == feature), but
+    # no physical "!=" column is allocated for it
+    b = DataSpecBuilder(negation=True)
+    b.add_nominal("keep", ["a", "b"])
+    ds = b.build()
+    assert ds.feature_names == ["keep=a", "keep=b"]
+    assert ds.negation_of("keep=a") == ds.feature_index("keep=b")
+    assert ds.negation_of("keep=b") == ds.feature_index("keep=a")
+    print("2-valued nominal negation aliasing: OK")
 
 
 def test_builder_generates_features_and_constraints():
@@ -302,7 +315,10 @@ def test_rule_consistency_and_implied_conditions():
 
 def test_display_formats_with_typed_attributes():
     b = DataSpecBuilder(negation=True)
-    color_idx = b.add_nominal("color", ["red", "green"])
+    # 3-valued: "color != red" is a genuine, physically-distinct feature here
+    # (unlike a 2-valued nominal, where it would alias the other value's own
+    # == feature -- see test_builder_negation_two_valued_nominal_aliases...)
+    color_idx = b.add_nominal("color", ["red", "green", "blue"])
     age_idx = b.add_numeric("age", [30])
     ds = b.build()
 
@@ -420,4 +436,6 @@ if __name__ == "__main__":
     test_set_valued_features_are_independent()
     test_hierarchical_features_propagation_and_display()
     test_relational_feature_provenance_and_display()
+    test_builder_negation_per_attribute_override()
+    test_builder_negation_two_valued_nominal_aliases_instead_of_duplicating()
     print("\nAll tests passed.")

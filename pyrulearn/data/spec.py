@@ -142,7 +142,14 @@ class DataSpec:
     def _build_negation_map(self) -> Dict[int, int]:
         """Pair each feature with its exact-negation feature, if one
         exists (``color=red`` <-> ``color!=red``, ``age>=30`` <->
-        ``age<30``, ``smoker`` <-> ``not smoker``). Both directions."""
+        ``age<30``, ``smoker`` <-> ``not smoker``). Both directions.
+
+        A 2-valued nominal attribute with negation "on" is a special
+        case: `DataSpecBuilder.add_nominal` doesn't allocate physical
+        ``!=`` columns for it at all (``attribute!=v1`` would be an exact
+        duplicate of ``attribute=v2``), so there's no ``!=``-op spec to
+        pair via `key` below -- its two ``==`` features are paired with
+        *each other* directly instead."""
         def key(spec: FeatureSpec):
             if spec.op in ("==", "!="):
                 return (spec.attribute, spec.value, "eq")
@@ -167,6 +174,16 @@ class DataSpec:
             if ni is not None:
                 out[pi] = ni
                 out[ni] = pi
+
+        for attr_name, attr in self.attributes.items():
+            if attr.type != AttributeType.NOMINAL or not attr.negation:
+                continue
+            eq_idxs = [s.index for s in self.feature_specs if s.attribute == attr_name and s.op == "=="]
+            has_ne_columns = any(s.attribute == attr_name and s.op == "!=" for s in self.feature_specs)
+            if len(eq_idxs) == 2 and not has_ne_columns:
+                i, j = eq_idxs
+                out[i] = j
+                out[j] = i
         return out
 
     def negation_of(self, name_or_idx: Union[str, int]) -> Optional[int]:
@@ -417,12 +434,19 @@ class DataSpecBuilder:
     ) -> NominalFeatureIndices:
         """Add a nominal attribute. Generates one equality feature per
         value (``"{attribute}={value}"``) and, with negation on, one
-        inequality feature per value (``"{attribute}!={value}"``). The
-        constraint is `ExactlyOne` over the equality features without
-        negation, `NominalGroup` (which subsumes it, plus the ``!=``
-        logic) with. Returns a `NominalFeatureIndices` -- a
-        ``{value: '=' index}`` dict, with `.negative` (the ``!=`` dict or
-        `None`) and `.all`.
+        inequality feature per value (``"{attribute}!={value}"``) --
+        *except* when there are exactly two values (and no separate
+        `missing_name`): there, ``attribute!=v1`` would be an exact,
+        always-identical duplicate of ``attribute=v2`` (true/false/missing
+        on precisely the same rows), so no second column is allocated --
+        `.negative` transparently aliases the sibling `==` index instead,
+        and `dataspec.negation_of` resolves the same way (see
+        `DataSpec._build_negation_map`). The constraint is `ExactlyOne`
+        over the equality features without negation, `NominalGroup`
+        (which subsumes it, plus the ``!=`` logic where physical ``!=``
+        columns actually exist) with. Returns a `NominalFeatureIndices` --
+        a ``{value: '=' index}`` dict, with `.negative` (the ``!=``-or-
+        aliased dict, or `None` if negation is off) and `.all`.
 
         `missing_name`, if given, adds one more value *in the same
         group* -- what lets `MissingStrategy.SEPARATE` route a missing
@@ -442,7 +466,12 @@ class DataSpecBuilder:
             eq_idxs.append(idx)
         ne: Optional[Dict[Any, int]] = None
         ne_idxs: List[int] = []
-        if neg_on:
+        if neg_on and len(all_values) == 2:
+            # a!=v1 would be a byte-for-byte duplicate of a=v2 (and vice
+            # versa) -- alias instead of allocating a second column
+            v1, v2 = all_values
+            ne = {v1: eq[v2], v2: eq[v1]}
+        elif neg_on:
             ne = {}
             for value in all_values:
                 idx = len(self._names)
