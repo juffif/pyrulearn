@@ -230,13 +230,26 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
         text = run_lord(train_rows, header, metric="mestimate", metric_arg=0.1,
                         timeout=FIT_TIMEOUT_SECONDS)
         fit_time = time.time() - t0
-        importer = LORDImporter()
-        rules = importer.parse(text)
-        ds = importer.dataspec
+        # dataspec=ds1, placeholder_features=True -- bind each f{i} condition
+        # to ds1's own feature i *by position* (same trick LordJar._import
+        # uses), instead of letting parse() infer its own throwaway dataspec
+        # from the rule text. An inferred dataspec numbers features in
+        # first-seen-in-text order, which doesn't line up with ds1's/
+        # train_rep1's real column layout -- that mismatch is what caused
+        # rules to get measured-stats/evaluated against the wrong columns
+        # (IndexError, or silently wrong stats before that).
+        importer = LORDImporter(dataspec=ds1, placeholder_features=True)
+        # data=train_rep1 -- the exact representation LORD's own train_rows
+        # came from -- so each rule gets real measured stats: LORD's
+        # FlatRuleSet is unordered (unlike jrip's DecisionList) and needs
+        # them to resolve a genuine covering conflict via its default "max"
+        # combiner, which a bare parse() leaves un-annotated for.
+        rules = importer.parse(text, data=train_rep1)
         rules.default_prediction = _majority_default_target(train_y)
-        test_bool_df = pd.DataFrame(binarize(ds1, test_df).astype(int), columns=plain_names)
-        rep = BooleanDataRepresentation(ds, binarize(ds, test_bool_df), test_y)
-        record("lord", *base._eval(rules, rep, test_y), fit_time)
+        # ds == ds1 now, so test_rep1 (already binarized against ds1) is
+        # exactly the representation these rules need -- no more round-trip
+        # through placeholder-named columns.
+        record("lord", *base._eval(rules, test_rep1, test_y), fit_time)
     except Exception as e:  # noqa: BLE001 -- report any failure back, don't crash the fold
         fail("lord", f"{type(e).__name__}: {e}")
 
@@ -407,7 +420,7 @@ def main(datasets=None, max_folds=None, include_large=False):
     runner = base.TimeoutRunner()
     try:
         for name in datasets:
-            df, target_col = base.load_openml(name)
+            df, target_col = base.load_openml_raw(name)
             summary, md = run_dataset(name, df, target_col, runner=runner, max_folds=max_folds)
             results.append(summary)
             report.extend(md)
