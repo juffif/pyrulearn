@@ -68,7 +68,7 @@ for them:
    via a plain DataFrame (`train_rep1_copy`) rather than reusing
    "Binarized"'s in-memory object, so the two calls are independent (CSV
    export/import round-trip fidelity is a separate concern, already
-   covered by `tests/test_datasets.py`, not re-exercised here). Both get
+   covered by `tests/test_data_io.py`, not re-exercised here). Both get
    a *negation-free* DataSpec (`build_dataspec(..., include_negations=
    False)`): neither model benefits from explicit negation features (BRL
    searches only "present item" sets; BRS builds its own
@@ -708,7 +708,7 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, raw_train_df: pd.Dat
     # from the already-Boolean matrix via a plain DataFrame, instead of reusing
     # "Binarized"'s in-memory fit under both labels -- a genuinely separate call,
     # not a file round-trip (write_csv/read_csv fidelity is already covered by
-    # tests/test_datasets.py; no need to re-exercise it here).
+    # tests/test_data_io.py; no need to re-exercise it here).
     bool_train_df = pd.DataFrame(train_rep1_bool.X.astype(int), columns=ds1_bool.feature_names)
     bool_train_df[target_col] = train_y
     train_rep1_copy = BooleanDataRepresentation.from_dataframe(bool_train_df, label_col=target_col, spec=ds1_bool)

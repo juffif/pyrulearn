@@ -224,7 +224,7 @@ def _separable_multiclass(n=180, seed=0):
     return _rep(raw, y, names=list("abcde")), raw, y
 
 
-def test_class_association_rule_miner_returns_the_raw_car_pool_as_a_flat_rule_set():
+def test_carminer_returns_the_raw_car_pool_as_a_flat_rule_set():
     rep, raw, y = _separable_multiclass()
     miner = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3)
     model = miner.fit(rep)
@@ -236,7 +236,7 @@ def test_class_association_rule_miner_returns_the_raw_car_pool_as_a_flat_rule_se
     print(f"CARMiner returns the full unpruned CAR pool ({len(cars)} rules): OK")
 
 
-def test_class_association_rule_miner_defaults_to_the_same_combiner_as_a_random_forest_import():
+def test_carminer_defaults_to_the_same_combiner_as_a_random_forest_import():
     # No explicit combiner= on either side -- both fall back to
     # FlatRuleSet's own plain default ("max", HeuristicMaxCombiner) --
     # one convention for "a raw pool of many small rules", regardless of
@@ -247,7 +247,7 @@ def test_class_association_rule_miner_defaults_to_the_same_combiner_as_a_random_
     print("CARMiner's raw FlatRuleSet uses the plain 'max' default combiner: OK")
 
 
-def test_class_association_rule_miner_runs_end_to_end_on_a_sparse_representation():
+def test_carminer_runs_end_to_end_on_a_sparse_representation():
     # Confirms the *relaxed* ensure_nlist gate works through the whole
     # fit() pipeline, not just generate_cars in isolation.
     rep, raw, y = _separable_multiclass()
@@ -259,7 +259,7 @@ def test_class_association_rule_miner_runs_end_to_end_on_a_sparse_representation
           f"({len(model.rules)} rules): OK")
 
 
-def test_class_association_rule_miner_target_class_returns_a_concept_model():
+def test_carminer_target_class_returns_a_concept_model():
     rep, raw, y = _separable_multiclass()
     model = CARMiner(min_support=0.02, min_confidence=0.5, target_class="x").fit(rep)
     assert isinstance(model, ConceptModel)
