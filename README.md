@@ -1681,8 +1681,9 @@ once you're comparing many imported models from many sources at once.
 
 ## Benchmark datasets
 
-`pyrulearn.data.catalog` is a catalog of about 100 classification datasets:
-metadata and download pointers only, no data is bundled. Each entry names
+`pyrulearn.data.catalog` is a catalog of 100 classification datasets on
+OpenML (plus a few pointer-only entries): metadata and download pointers
+only, no data is bundled. Each entry names
 its OpenML id (plus UCI, Kaggle or original-source links where known), and
 `entry.load()` downloads it once through scikit-learn's OpenML cache
 (`~/scikit_learn_data`, or `$PYRULEARN_DATA_HOME`) and returns the raw data
@@ -1711,7 +1712,7 @@ suite, minus its 13 image/signal/text datasets with more than 200
 attributes), `lord` (the datasets of the LORD evaluation), `xai` (classic
 explainable-AI datasets: adult, COMPAS, German credit, HELOC, ...) and
 `classic` (traditional rule-learning benchmarks: vote, mushroom, soybean,
-the MONK's problems, ...). A few entries (e.g. SUSY, PAMAP2) are not on
+the MONK's problems, promoters, kropt, ...). A few entries (e.g. SUSY, PAMAP2) are not on
 OpenML and are pointers only (`entry.loadable` is False).
 
 Entries also carry curated loading fixes: attribute names restored where

@@ -26,9 +26,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
-- `pyrulearn.data.catalog`: a catalog of about 100 benchmark datasets
+- `pyrulearn.data.catalog`: a catalog of 100 benchmark datasets on OpenML
   (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
-  rule-learning datasets), metadata and download pointers only. Select by
+  rule-learning datasets) plus a few pointer-only entries, metadata and
+  download pointers only. Select by
   task (binary/multiclass), size (small/medium/large), attribute types
   (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
   or `.parse("binary,small,medium")` -- and `entry.load()` downloads and

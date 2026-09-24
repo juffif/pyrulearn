@@ -736,6 +736,31 @@
    "missing_rate": 0.0
   },
   {
+   "name": "hayes-roth",
+   "openml_id": 329,
+   "tags": [
+    "classic"
+   ],
+   "nominal": [
+    "hobby",
+    "age",
+    "educational_level",
+    "marital_status"
+   ],
+   "notes": "All attributes are category codes (nominal in the UCI description).",
+   "openml_name": "hayes-roth",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Hayes-Roth",
+   "license": "Public",
+   "n_instances": 160,
+   "n_features": 4,
+   "n_numeric": 0,
+   "n_nominal": 4,
+   "n_classes": 3,
+   "majority_rate": 0.4062,
+   "missing_rate": 0.0
+  },
+  {
    "name": "heart-c",
    "openml_id": 49,
    "tags": [
@@ -1001,6 +1026,42 @@
    "missing_rate": 0.0
   },
   {
+   "name": "kropt",
+   "openml_id": 184,
+   "tags": [
+    "classic"
+   ],
+   "notes": "Chess endgame king+rook vs. king: depth-of-win from the piece positions.",
+   "openml_name": "kropt",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 28056,
+   "n_features": 6,
+   "n_numeric": 0,
+   "n_nominal": 6,
+   "n_classes": 18,
+   "majority_rate": 0.1623,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "led24",
+   "openml_id": 40677,
+   "tags": [
+    "classic"
+   ],
+   "notes": "LED display digits with 10% attribute noise and 17 irrelevant attributes.",
+   "openml_name": "led24",
+   "openml_version": 1,
+   "license": "public",
+   "n_instances": 3200,
+   "n_features": 24,
+   "n_numeric": 0,
+   "n_nominal": 24,
+   "n_classes": 10,
+   "majority_rate": 0.1053,
+   "missing_rate": 0.0
+  },
+  {
    "name": "letter",
    "openml_id": 6,
    "tags": [
@@ -1127,6 +1188,42 @@
    "n_classes": 8,
    "majority_rate": 0.1389,
    "missing_rate": 0.4889
+  },
+  {
+   "name": "mofn-3-7-10",
+   "openml_id": 40680,
+   "tags": [
+    "classic"
+   ],
+   "notes": "Synthetic m-of-n concept (3 of 7 relevant bits, 10 bits in total).",
+   "openml_name": "mofn-3-7-10",
+   "openml_version": 1,
+   "license": "public",
+   "n_instances": 1324,
+   "n_features": 10,
+   "n_numeric": 0,
+   "n_nominal": 10,
+   "n_classes": 2,
+   "majority_rate": 0.7795,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "molecular-biology_promoters",
+   "openml_id": 164,
+   "tags": [
+    "classic"
+   ],
+   "notes": "E. coli promoter gene sequences (57 nucleotide positions).",
+   "openml_name": "molecular-biology_promoters",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 106,
+   "n_features": 57,
+   "n_numeric": 0,
+   "n_nominal": 57,
+   "n_classes": 2,
+   "majority_rate": 0.5,
+   "missing_rate": 0.0
   },
   {
    "name": "monks-problems-1",
@@ -1526,6 +1623,24 @@
    "missing_rate": 0.0
   },
   {
+   "name": "solar-flare",
+   "openml_id": 40687,
+   "tags": [
+    "classic"
+   ],
+   "notes": "OpenML's version predicts the coded 'class' attribute; UCI's usual targets, the C/M/X-class flare counts, are attributes here.",
+   "openml_name": "solar-flare",
+   "openml_version": 4,
+   "license": "public",
+   "n_instances": 1066,
+   "n_features": 12,
+   "n_numeric": 0,
+   "n_nominal": 12,
+   "n_classes": 6,
+   "majority_rate": 0.3105,
+   "missing_rate": 0.0
+  },
+  {
    "name": "sonar",
    "openml_id": 40,
    "tags": [
@@ -1577,6 +1692,25 @@
    "n_nominal": 0,
    "n_classes": 2,
    "majority_rate": 0.606,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "SPECT",
+   "openml_id": 336,
+   "tags": [
+    "classic"
+   ],
+   "notes": "SPECT heart images, 22 binary features.",
+   "openml_name": "SPECT",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/SPECT+Heart",
+   "license": "Public",
+   "n_instances": 267,
+   "n_features": 22,
+   "n_numeric": 0,
+   "n_nominal": 22,
+   "n_classes": 2,
+   "majority_rate": 0.794,
    "missing_rate": 0.0
   },
   {
