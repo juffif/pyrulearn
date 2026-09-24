@@ -1697,7 +1697,8 @@ for entry in cat.select(task="binary", size=["small", "medium"], attributes="cat
     df, target = entry.load()
 cat.select(task="binary", size="medium", n=3, random_state=0)   # three of them, at random
 cat.parse("binary,medium,3")         # the same, from a compact string (e.g. a CLI option)
-print(cat.summary())
+print(cat.summary(task="binary"))    # browse: a table of all binary datasets
+cat.select(names=["vote", "mushroom", "adult"])   # then pick some by name (kept in this order)
 ```
 
 Three categories are computed from each entry's statistics:

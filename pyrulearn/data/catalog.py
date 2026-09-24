@@ -304,24 +304,25 @@ class Catalog:
         n: Optional[int] = None,
         random_state: Optional[int] = None,
     ) -> List[CatalogEntry]:
-        """The entries matching every given criterion, in catalog order.
-        Each criterion takes one value or a list of alternatives (a list
+        """The entries matching every given criterion -- in the order
+        `names` lists them if given, else in catalog order. Each
+        criterion takes one value or a list of alternatives (a list
         means *any of*): `task` from `TASKS`, `size` from `SIZES`,
         `attributes` from `ATTRIBUTE_KINDS`, `tags` (an entry matches if
         it has any of them), `names`. `missing` True/False keeps entries
         with/without missing values. `loadable` (default True) skips
         pointer-only entries; `None` keeps both.
 
-        `n` picks that many of the matching entries at random (still
-        returned in catalog order) -- e.g. ``select(task="binary",
-        size="medium", n=3)``; `random_state` seeds the pick for a
-        reproducible choice. Raises `ValueError` if fewer than `n`
-        entries match."""
+        `n` picks that many of the matching entries at random (keeping
+        the order above) -- e.g. ``select(task="binary", size="medium",
+        n=3)``; `random_state` seeds the pick for a reproducible choice.
+        Raises `ValueError` if fewer than `n` entries match."""
         for value, allowed, axis in ((task, TASKS, "task"), (size, SIZES, "size"),
                                      (attributes, ATTRIBUTE_KINDS, "attributes")):
             bad = (_as_set(value) or set()) - set(allowed)
             if bad:
                 raise ValueError(f"unknown {axis} value(s) {sorted(bad)}; expected one of {allowed}")
+        name_order = [names] if isinstance(names, str) else list(names or ())
         task, size, attributes = _as_set(task), _as_set(size), _as_set(attributes)
         tags, names = _as_set(tags), _as_set(names)
         if names:
@@ -339,6 +340,9 @@ class Catalog:
                     and (loadable is None or e.loadable is loadable))
 
         chosen = [e for e in self.entries if keep(e)]
+        if name_order:
+            rank = {name: i for i, name in enumerate(dict.fromkeys(name_order))}
+            chosen.sort(key=lambda e: rank[e.name])
         if n is None:
             return chosen
         if n < 0 or n > len(chosen):
@@ -387,11 +391,17 @@ class Catalog:
         seen = {e.name for e in chosen}
         return chosen + [e for e in extra if e.name not in seen]
 
-    def summary(self) -> str:
-        """A one-line-per-dataset text table."""
+    def summary(self, **criteria) -> str:
+        """A one-line-per-dataset text table: the whole catalog, or the
+        entries `select(**criteria)` picks -- e.g.
+        ``summary(task="binary", size="small")``. Unlike `select`,
+        pointer-only entries are included unless ``loadable=True`` is
+        passed."""
+        criteria.setdefault("loadable", None)
+        entries = self.select(**criteria)
         lines = [f"{'name':40s} {'task':10s} {'size':6s} {'attrs':11s} {'rows':>9s} "
                  f"{'feats':>5s} {'cls':>3s}  tags"]
-        for e in self.entries:
+        for e in entries:
             lines.append(f"{e.name:40s} {e.task or '-':10s} {e.size or '-':6s} {e.attributes or '-':11s} "
                          f"{e.n_instances if e.n_instances is not None else '-':>9} "
                          f"{e.n_features if e.n_features is not None else '-':>5} "

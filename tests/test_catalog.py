@@ -123,6 +123,23 @@ def test_parse_takes_a_number_for_a_random_pick():
         cat.parse("binary,1,2")
 
 
+def test_select_by_names_keeps_the_given_order():
+    cat = _toy()
+    assert [e.name for e in cat.select(names=["c", "a", "b"])] == ["c", "a", "b"]
+    assert [e.name for e in cat.select(names=["c", "a"], task="binary")] == ["a"]  # other criteria still apply
+    assert [e.name for e in cat.parse("c,a")] == ["c", "a"]
+
+
+def test_summary_takes_the_same_criteria_as_select():
+    cat = _toy()
+    lines = cat.summary().splitlines()
+    assert len(lines) == 1 + len(cat)                          # header + every entry, pointers included
+    lines = cat.summary(task="binary").splitlines()
+    assert [ln.split()[0] for ln in lines[1:]] == ["a", "b"]
+    assert "d" in [ln.split()[0] for ln in cat.summary(tags="lord").splitlines()[1:]]
+    assert "d" not in [ln.split()[0] for ln in cat.summary(tags="lord", loadable=True).splitlines()[1:]]
+
+
 def test_prepare_applies_the_curated_fixes():
     e = CatalogEntry("x", rename={"V1": "age", "V2": "sex", "V3": "leak", "V4": "code"},
                      drop=["leak"], nominal=["code"], missing_markers={"age": [0]})
@@ -152,6 +169,8 @@ if __name__ == "__main__":
     test_parse_sorts_words_onto_their_axis()
     test_select_n_picks_a_reproducible_random_subset(c)
     test_parse_takes_a_number_for_a_random_pick()
+    test_select_by_names_keeps_the_given_order()
+    test_summary_takes_the_same_criteria_as_select()
     test_prepare_applies_the_curated_fixes()
     test_prepare_frame_keeps_degenerate_columns_when_asked()
     print("All tests passed.")
