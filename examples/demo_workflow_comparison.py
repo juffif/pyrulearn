@@ -769,6 +769,11 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, raw_train_df: pd.Dat
         # negation-free ds1_bool. Predict against a matching test rep.
         def _brs_test_rep(rules):
             spec = rules.rules[0].dataspec if rules.rules else ds1_bool
+            if spec.feature_names == ds1_bool.feature_names:
+                # every column already has a negation partner (e.g. all
+                # attributes binary), so the importer kept ds1_bool's own
+                # feature space (a copy -- the fit ran in a worker process)
+                return BooleanDataRepresentation(spec, test_rep1_bool.X, test_y)
             bool_df = pd.DataFrame(test_rep1_bool.X.astype(int), columns=list(ds1_bool.feature_names))
             return BooleanDataRepresentation(spec, binarize(spec, bool_df), test_y)
 
