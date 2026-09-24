@@ -320,6 +320,7 @@
    "n_numeric": 7,
    "n_nominal": 33,
    "n_classes": 2,
+   "majority_rate": 0.938,
    "missing_rate": 0.0
   },
   {
