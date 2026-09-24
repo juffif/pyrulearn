@@ -1695,7 +1695,8 @@ from pyrulearn.data.catalog import Catalog
 cat = Catalog.default()
 for entry in cat.select(task="binary", size=["small", "medium"], attributes="categorical"):
     df, target = entry.load()
-cat.parse("lord")                    # the same, from a compact string (e.g. a CLI option)
+cat.select(task="binary", size="medium", n=3, random_state=0)   # three of them, at random
+cat.parse("binary,medium,3")         # the same, from a compact string (e.g. a CLI option)
 print(cat.summary())
 ```
 

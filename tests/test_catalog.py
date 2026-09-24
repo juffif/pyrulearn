@@ -99,6 +99,30 @@ def test_parse_sorts_words_onto_their_axis():
         cat.parse("binary,nonsense")
 
 
+def test_select_n_picks_a_reproducible_random_subset(cat):
+    pool = cat.select(task="binary", size="medium")
+    three = cat.select(task="binary", size="medium", n=3, random_state=1)
+    assert len(three) == 3 and all(e in pool for e in three)
+    assert [e.name for e in three] == [e.name for e in pool if e in three]  # catalog order kept
+    assert three == cat.select(task="binary", size="medium", n=3, random_state=1)
+    # different seeds eventually give different picks
+    assert len({tuple(e.name for e in cat.select(task="binary", size="medium", n=3, random_state=s))
+                for s in range(10)}) > 1
+    assert cat.select(task="binary", size="medium", n=0) == []
+    with pytest.raises(ValueError):
+        cat.select(task="binary", size="medium", n=len(pool) + 1)
+
+
+def test_parse_takes_a_number_for_a_random_pick():
+    cat = _toy()
+    assert len(cat.parse("binary,1", random_state=0)) == 1
+    assert len(cat.parse("2", random_state=0)) == 2           # from every loadable entry
+    picked = cat.parse("binary,1,c", random_state=0)          # names still added on top
+    assert len(picked) == 2 and picked[-1].name == "c"
+    with pytest.raises(ValueError):
+        cat.parse("binary,1,2")
+
+
 def test_prepare_applies_the_curated_fixes():
     e = CatalogEntry("x", rename={"V1": "age", "V2": "sex", "V3": "leak", "V4": "code"},
                      drop=["leak"], nominal=["code"], missing_markers={"age": [0]})
@@ -126,6 +150,8 @@ if __name__ == "__main__":
     test_categories_follow_the_counts()
     test_select_combines_axes_with_and_and_values_with_or()
     test_parse_sorts_words_onto_their_axis()
+    test_select_n_picks_a_reproducible_random_subset(c)
+    test_parse_takes_a_number_for_a_random_pick()
     test_prepare_applies_the_curated_fixes()
     test_prepare_frame_keeps_degenerate_columns_when_asked()
     print("All tests passed.")

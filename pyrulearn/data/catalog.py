@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
@@ -300,6 +301,8 @@ class Catalog:
         names: Selector = None,
         missing: Optional[bool] = None,
         loadable: Optional[bool] = True,
+        n: Optional[int] = None,
+        random_state: Optional[int] = None,
     ) -> List[CatalogEntry]:
         """The entries matching every given criterion, in catalog order.
         Each criterion takes one value or a list of alternatives (a list
@@ -307,7 +310,13 @@ class Catalog:
         `attributes` from `ATTRIBUTE_KINDS`, `tags` (an entry matches if
         it has any of them), `names`. `missing` True/False keeps entries
         with/without missing values. `loadable` (default True) skips
-        pointer-only entries; `None` keeps both."""
+        pointer-only entries; `None` keeps both.
+
+        `n` picks that many of the matching entries at random (still
+        returned in catalog order) -- e.g. ``select(task="binary",
+        size="medium", n=3)``; `random_state` seeds the pick for a
+        reproducible choice. Raises `ValueError` if fewer than `n`
+        entries match."""
         for value, allowed, axis in ((task, TASKS, "task"), (size, SIZES, "size"),
                                      (attributes, ATTRIBUTE_KINDS, "attributes")):
             bad = (_as_set(value) or set()) - set(allowed)
@@ -329,24 +338,37 @@ class Catalog:
                     and (missing is None or e.has_missing is missing)
                     and (loadable is None or e.loadable is loadable))
 
-        return [e for e in self.entries if keep(e)]
+        chosen = [e for e in self.entries if keep(e)]
+        if n is None:
+            return chosen
+        if n < 0 or n > len(chosen):
+            raise ValueError(f"asked for {n} datasets, but {len(chosen)} match")
+        picked = set(random.Random(random_state).sample(range(len(chosen)), n))
+        return [e for i, e in enumerate(chosen) if i in picked]
 
-    def parse(self, spec: str) -> List[CatalogEntry]:
+    def parse(self, spec: str, random_state: Optional[int] = None) -> List[CatalogEntry]:
         """Select from a compact comma-separated string, e.g. for a
         demo's ``--datasets`` option: ``"binary,small,medium"``,
         ``"lord"``, ``"categorical,multiclass"``, ``"vote,mushroom"``,
-        ``"all"``. Words are sorted onto their axis (task, size,
-        attributes, tag); several words on one axis mean *any of*,
-        different axes must all hold. Dataset names are added to
-        whatever the other words select (or form the whole selection if
-        there are no other words)."""
+        ``"binary,medium,3"``, ``"all"``. Words are sorted onto their
+        axis (task, size, attributes, tag); several words on one axis
+        mean *any of*, different axes must all hold. A number picks that
+        many of the matches at random (`select`'s `n`, seeded by
+        `random_state`). Dataset names are added to whatever the other
+        words select (or form the whole selection if there are no other
+        words)."""
         words = [w.strip() for w in spec.split(",") if w.strip()]
         if words == ["all"]:
             return self.select()
         axes: Dict[str, List[str]] = {"task": [], "size": [], "attributes": [], "tags": [], "names": []}
         all_tags = {t for e in self.entries for t in e.tags}
+        n: Optional[int] = None
         for w in words:
-            if w in TASKS:
+            if w.isdigit():
+                if n is not None:
+                    raise ValueError(f"more than one number in {spec!r}")
+                n = int(w)
+            elif w in TASKS:
                 axes["task"].append(w)
             elif w in SIZES:
                 axes["size"].append(w)
@@ -359,7 +381,8 @@ class Catalog:
             else:
                 raise ValueError(f"{w!r} is neither a category, a tag nor a dataset name in the catalog")
         filters = {k: v for k, v in axes.items() if v and k != "names"}
-        chosen = self.select(**filters) if filters else []
+        chosen = (self.select(**filters, n=n, random_state=random_state)
+                  if filters or n is not None else [])
         extra = self.select(names=axes["names"], loadable=None) if axes["names"] else []
         seen = {e.name for e in chosen}
         return chosen + [e for e in extra if e.name not in seen]

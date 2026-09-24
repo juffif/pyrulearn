@@ -32,7 +32,8 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   download pointers only. Select by
   task (binary/multiclass), size (small/medium/large), attribute types
   (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
-  or `.parse("binary,small,medium")` -- and `entry.load()` downloads and
+  or `.parse("binary,small,medium")`, optionally picking `n` of the matches
+  at random -- and `entry.load()` downloads and
   caches the raw data with curated fixes applied (restored attribute
   names, dropped leakage columns, category codes, missing-value markers).
   `tools/build_catalog.py` maintains the catalog file.
