@@ -63,7 +63,26 @@ FeatureValues = Dict[int, bool]
 
 
 class AttributeType(Enum):
+    """How an attribute's raw values turn into Boolean features.
+
+    BOOLEAN, BINARY and NOMINAL differ in how many values they test and
+    whether their value list is known to be complete:
+
+    - BOOLEAN -- a single tested value, a presence flag (``smoker``);
+      its complement ``not smoker`` is a negation feature, generated only
+      with negation on. The data-mining literature's *asymmetric binary*
+      attribute, e.g. an item in a market basket.
+    - BINARY -- a closed set of exactly two values (``sex=male`` /
+      ``sex=female``), both always generated and each the other's
+      negation, so no ``!=`` columns are ever needed. A value outside the
+      two is treated like a missing one. The literature's *symmetric
+      binary* attribute.
+    - NOMINAL -- a possibly open list of values: ``x!=v`` columns (with
+      negation on) are kept even for two values, since an unknown value
+      must satisfy every ``x!=v``.
+    """
     BOOLEAN = "boolean"
+    BINARY = "binary"
     NOMINAL = "nominal"
     NUMERIC = "numeric"
     SET = "set"
@@ -157,7 +176,7 @@ class Attribute:
     """A source attribute a rule's conditions may ultimately be about.
 
     `domain` is the set of nominal category values for NOMINAL
-    attributes, the ascending tuple of ``>=`` threshold cut points
+    attributes, the two values of a BINARY attribute, the ascending tuple of ``>=`` threshold cut points
     actually used to binarize a NUMERIC attribute (not the attribute's
     full continuous range -- just the cuts you chose to test against),
     or the set of possible values for a SET attribute. `le_domain` is a
@@ -191,7 +210,8 @@ class Attribute:
     missing_name: Optional[Any] = None
     missing_values: Tuple[Any, ...] = ()
     #: whether negation features (``not name`` / ``name!=v`` / ``name<t``)
-    #: were generated for this attribute -- BOOLEAN/NOMINAL/NUMERIC only.
+    #: were generated for this attribute -- BOOLEAN/NOMINAL/NUMERIC only
+    #: (a BINARY attribute's two values are each other's negation either way).
     negation: bool = False
 
 

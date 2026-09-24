@@ -144,12 +144,9 @@ class DataSpec:
         exists (``color=red`` <-> ``color!=red``, ``age>=30`` <->
         ``age<30``, ``smoker`` <-> ``not smoker``). Both directions.
 
-        A 2-valued nominal attribute with negation "on" is a special
-        case: `DataSpecBuilder.add_nominal` doesn't allocate physical
-        ``!=`` columns for it at all (``attribute!=v1`` would be an exact
-        duplicate of ``attribute=v2``), so there's no ``!=``-op spec to
-        pair via `key` below -- its two ``==`` features are paired with
-        *each other* directly instead."""
+        A BINARY attribute's two ``==`` features are paired with each
+        other (``sex=male`` <-> ``sex=female``): its value list is
+        declared complete, so each is the other's exact negation."""
         def key(spec: FeatureSpec):
             if spec.op in ("==", "!="):
                 return (spec.attribute, spec.value, "eq")
@@ -175,13 +172,13 @@ class DataSpec:
                 out[pi] = ni
                 out[ni] = pi
 
-        for attr_name, attr in self.attributes.items():
-            if attr.type != AttributeType.NOMINAL or not attr.negation:
-                continue
-            eq_idxs = [s.index for s in self.feature_specs if s.attribute == attr_name and s.op == "=="]
-            has_ne_columns = any(s.attribute == attr_name and s.op == "!=" for s in self.feature_specs)
-            if len(eq_idxs) == 2 and not has_ne_columns:
-                i, j = eq_idxs
+        binary = {n for n, a in self.attributes.items() if a.type == AttributeType.BINARY}
+        if binary:
+            eq_by_attr: Dict[str, List[int]] = {}
+            for spec in self.feature_specs:
+                if spec.op == "==" and spec.attribute in binary:
+                    eq_by_attr.setdefault(spec.attribute, []).append(spec.index)
+            for i, j in (idxs for idxs in eq_by_attr.values() if len(idxs) == 2):
                 out[i] = j
                 out[j] = i
         return out
@@ -434,19 +431,15 @@ class DataSpecBuilder:
     ) -> NominalFeatureIndices:
         """Add a nominal attribute. Generates one equality feature per
         value (``"{attribute}={value}"``) and, with negation on, one
-        inequality feature per value (``"{attribute}!={value}"``) --
-        *except* when there are exactly two values (and no separate
-        `missing_name`): there, ``attribute!=v1`` would be an exact,
-        always-identical duplicate of ``attribute=v2`` (true/false/missing
-        on precisely the same rows), so no second column is allocated --
-        `.negative` transparently aliases the sibling `==` index instead,
-        and `dataspec.negation_of` resolves the same way (see
-        `DataSpec._build_negation_map`). The constraint is `ExactlyOne`
-        over the equality features without negation, `NominalGroup`
-        (which subsumes it, plus the ``!=`` logic where physical ``!=``
-        columns actually exist) with. Returns a `NominalFeatureIndices` --
-        a ``{value: '=' index}`` dict, with `.negative` (the ``!=``-or-
-        aliased dict, or `None` if negation is off) and `.all`.
+        inequality feature per value (``"{attribute}!={value}"``) -- also
+        for exactly two values: the domain may be incomplete (an unseen
+        value must satisfy every ``!=``), so ``x!=a`` is not ``x=b``. For
+        a closed two-value attribute use `add_binary`. The constraint is
+        `ExactlyOne` over the equality features without negation,
+        `NominalGroup` (which subsumes it, plus the ``!=`` logic) with.
+        Returns a `NominalFeatureIndices` -- a ``{value: '=' index}``
+        dict, with `.negative` (the ``!=`` dict, or `None` if negation is
+        off) and `.all`.
 
         `missing_name`, if given, adds one more value *in the same
         group* -- what lets `MissingStrategy.SEPARATE` route a missing
@@ -466,12 +459,7 @@ class DataSpecBuilder:
             eq_idxs.append(idx)
         ne: Optional[Dict[Any, int]] = None
         ne_idxs: List[int] = []
-        if neg_on and len(all_values) == 2:
-            # a!=v1 would be a byte-for-byte duplicate of a=v2 (and vice
-            # versa) -- alias instead of allocating a second column
-            v1, v2 = all_values
-            ne = {v1: eq[v2], v2: eq[v1]}
-        elif neg_on:
+        if neg_on:
             ne = {}
             for value in all_values:
                 idx = len(self._names)
@@ -489,6 +477,44 @@ class DataSpecBuilder:
                 NominalGroup(eq_idxs, ne_idxs) if neg_on else ExactlyOne(eq_idxs)
             )
         return NominalFeatureIndices(eq, ne)
+
+    def add_binary(
+        self,
+        attribute: str,
+        values: Sequence[Any],
+        *,
+        missing_values: Sequence[Any] = (),
+    ) -> NominalFeatureIndices:
+        """Add a binary attribute: a *closed* set of exactly two values
+        (``sex`` in ``("male", "female")``). Generates the two equality
+        features ``"{attribute}={v}"``, each the other's negation -- no
+        ``!=`` columns, whatever the builder's negation setting, since
+        with the value list known to be complete ``x!=v1`` is ``x=v2``.
+        Both are False for a missing value and for any value outside the
+        two (treated as missing); they're linked by `MutuallyExclusive`,
+        not `ExactlyOne`, since "neither" is a valid state.
+
+        Returns a `NominalFeatureIndices`: ``{value: index}``, with
+        `.negative` mapping each value to the *other* value's index.
+        `missing_values` are raw values (besides `None`/NaN) to also
+        treat as missing when reading data.
+        """
+        values = list(values)
+        if len(values) != 2 or values[0] == values[1]:
+            raise ValueError(f"add_binary({attribute!r}) needs exactly two distinct values, got {values!r}")
+        eq: Dict[Any, int] = {}
+        for value in values:
+            idx = len(self._names)
+            name = f"{attribute}={value}"
+            self._names.append(name)
+            self._specs.append(FeatureSpec(idx, name, attribute=attribute, op="==", value=value))
+            eq[value] = idx
+        v1, v2 = values
+        self._attributes[attribute] = Attribute(
+            attribute, AttributeType.BINARY, tuple(values), missing_values=tuple(missing_values),
+        )
+        self._constraints.append(MutuallyExclusive([eq[v1], eq[v2]]))
+        return NominalFeatureIndices(eq, {v1: eq[v2], v2: eq[v1]})
 
     def add_numeric(
         self,
@@ -769,6 +795,9 @@ def merge_dataspecs(a: DataSpec, b: DataSpec) -> DataSpecBuilder:
         attr_a = a.attributes.get(name)
         attr_b = b.attributes.get(name)
         if attr_a is not None and attr_b is not None:
+            if _widens_to_nominal(attr_a, attr_b):
+                _merge_as_nominal(builder, name, attr_a, attr_b)
+                continue
             if attr_a.type != attr_b.type:
                 raise ValueError(
                     f"Cannot merge attribute {name!r}: type mismatch "
@@ -793,6 +822,8 @@ def _rebuilt_with_negation(spec: DataSpec, negation: bool) -> DataSpec:
         t = attr.type
         if t == AttributeType.BOOLEAN:
             builder.add_boolean(name, missing_values=attr.missing_values)
+        elif t == AttributeType.BINARY:
+            builder.add_binary(name, list(attr.domain), missing_values=attr.missing_values)
         elif t == AttributeType.NOMINAL:
             builder.add_nominal(name, list(attr.domain), missing_name=attr.missing_name,
                                 missing_values=attr.missing_values)
@@ -829,6 +860,8 @@ def _copy_attribute(builder: DataSpecBuilder, name: str, attr: Attribute, src: D
     including its `missing_name`/`missing_values` if any."""
     if attr.type == AttributeType.BOOLEAN:
         builder.add_boolean(name, missing_values=attr.missing_values, negation=attr.negation)
+    elif attr.type == AttributeType.BINARY:
+        builder.add_binary(name, list(attr.domain), missing_values=attr.missing_values)
     elif attr.type == AttributeType.NOMINAL:
         builder.add_nominal(name, list(attr.domain), negation=attr.negation,
                              missing_name=attr.missing_name, missing_values=attr.missing_values)
@@ -860,6 +893,29 @@ def _merged_missing_name(name: str, attr_a: Attribute, attr_b: Attribute) -> Opt
     return attr_a.missing_name if attr_a.missing_name is not None else attr_b.missing_name
 
 
+def _widens_to_nominal(attr_a: Attribute, attr_b: Attribute) -> bool:
+    """A BINARY attribute merged with a NOMINAL one, or with a BINARY one
+    over different values: the union no longer is a closed two-value
+    set, so the result is NOMINAL (see `_merge_as_nominal`)."""
+    kinds = {attr_a.type, attr_b.type}
+    if AttributeType.BINARY not in kinds or not kinds <= {AttributeType.BINARY, AttributeType.NOMINAL}:
+        return False
+    return kinds != {AttributeType.BINARY} or set(attr_a.domain) != set(attr_b.domain)
+
+
+def _merge_as_nominal(builder: DataSpecBuilder, name: str, attr_a: Attribute, attr_b: Attribute) -> None:
+    """The NOMINAL union of a BINARY attribute with a NOMINAL one (or
+    with a BINARY one over different values). Negation follows the
+    NOMINAL side(s), else the builder's default."""
+    nominal = [a for a in (attr_a, attr_b) if a.type == AttributeType.NOMINAL]
+    builder.add_nominal(
+        name, sorted(set(attr_a.domain) | set(attr_b.domain), key=str),
+        negation=any(a.negation for a in nominal) if nominal else None,
+        missing_name=_merged_missing_name(name, attr_a, attr_b),
+        missing_values=tuple(sorted(set(attr_a.missing_values) | set(attr_b.missing_values), key=str)),
+    )
+
+
 def _merge_attribute(
     builder: DataSpecBuilder, name: str, attr_a: Attribute, attr_b: Attribute, a: DataSpec, b: DataSpec
 ) -> None:
@@ -873,6 +929,8 @@ def _merge_attribute(
     negation = attr_a.negation or attr_b.negation
     if t == AttributeType.BOOLEAN:
         builder.add_boolean(name, missing_values=missing_values, negation=negation)
+    elif t == AttributeType.BINARY:  # same two values -- see _widens_to_nominal
+        builder.add_binary(name, list(attr_a.domain), missing_values=missing_values)
     elif t == AttributeType.NOMINAL:
         builder.add_nominal(name, sorted(set(attr_a.domain) | set(attr_b.domain)), negation=negation,
                              missing_name=_merged_missing_name(name, attr_a, attr_b),

@@ -105,7 +105,7 @@ details.
 
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
-| `attributes` | Typed attributes (boolean, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
+| `attributes` | Typed attributes (boolean, binary, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
 | `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
@@ -177,6 +177,7 @@ from pyrulearn import DataSpecBuilder
 
 b = DataSpecBuilder()
 b.add_boolean("smoker")
+b.add_binary("sex", ["male", "female"])
 b.add_nominal("color", ["red", "green", "blue"])
 b.add_numeric("age", [20, 30, 40])
 b.add_set("tags", ["urgent", "billing", "bug"])
@@ -195,6 +196,29 @@ chains, hierarchy sibling-exclusion + upward implication) are tracked
 automatically, which is what lets a `Rule` ask whether it's internally
 consistent (`Rule.is_consistent`) or what it implies beyond its explicit
 conditions (`Rule.implied_conditions`).
+
+Three of these types differ in how many values they test and whether
+the list of values is complete, which decides what negation features
+they need:
+
+- **Boolean** (`add_boolean("smoker")`) -- one tested value, a presence
+  flag: the feature `smoker`, plus `not smoker` when negation is on. In
+  data-mining terms an *asymmetric* binary attribute (an item in a
+  basket), which is why it stays a single feature by default.
+- **Binary** (`add_binary("sex", ["male", "female"])`) -- a *closed* set
+  of exactly two values: always both features `sex=male` and
+  `sex=female`, each the other's negation, and never `!=` columns. A
+  value outside the two counts as missing (both features False). A
+  *symmetric* binary attribute.
+- **Nominal** (`add_nominal`) -- a value list that may be incomplete: with
+  negation on it gets `color!=v` columns even for two values, since an
+  unknown value has to satisfy every `color!=v` (`x!=a` is not `x=b`
+  there).
+
+`build_dataspec`/`read_csv`/`read_arff` infer an attribute with exactly
+two values (declared in an ARFF header, else observed in the data) as
+binary. Importers that infer a `DataSpec` from a rule set (Weka, LORD,
+wittgenstein) always use nominal: rules need not mention every value.
 
 `add_numeric`'s `ge_thresholds=` generates ``>=`` features, as above; a
 separate `le_thresholds=` argument (default: none, a complete no-op)
@@ -296,6 +320,10 @@ against a file's header without reading data (missing attributes, type
 mismatches, unknown nominal categories); `strict=True` (the default on
 `read_arff`/`read_csv`) raises on anything `validate_dataspec` reports
 rather than binarizing against a `DataSpec` that doesn't actually match.
+`read_arff` reads ARFF's missing marker `?` as a missing value (not as a
+category) and takes each nominal attribute's values from the header's
+declared list, so an attribute declared with two values is binary even
+if only one of them occurs.
 
 Not yet handled: set-valued/hierarchical/relational attributes (ARFF/CSV
 headers can't declare them, so they're never inferred, and relational
@@ -341,7 +369,7 @@ b.add_numeric("age", [20, 30, 40], missing_name="<missing>")
 ds = b.build(missing_strategy=MissingStrategy.SEPARATE)
 ```
 
-`add_boolean`/`add_set`/`add_hierarchical` accept `missing_values=` too
+`add_boolean`/`add_binary`/`add_set`/`add_hierarchical` accept `missing_values=` too
 (for sentinel recognition) but not `missing_name=` -- `SEPARATE` isn't
 supported for those attribute types.
 
@@ -353,7 +381,9 @@ negative literals). "Feature absent" is expressed by conditioning on a
 separate *negation feature* (`not f`, `age<30`, `color!=red`), paired
 with its positive counterpart by a `MutuallyExclusive` / `NominalGroup`
 / `NumericGroup` constraint -- `DataSpecBuilder` generates these by
-default (`negation=False` opts out). A rule reads back out as one tuple
+default (`negation=False` opts out). A binary attribute (`sex=male` /
+`sex=female`, see *Typed attributes*) needs no extra columns: its two
+value features are each other's negation. A rule reads back out as one tuple
 of feature indices (`pos`, the features that must be True) plus a single
 integer bitmask, so coverage of one example is a genuine O(1)-ish subset
 check:

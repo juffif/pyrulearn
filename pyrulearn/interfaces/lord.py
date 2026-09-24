@@ -163,7 +163,7 @@ def _rule_from_conditions(conditions: Sequence[Tuple[str, str]], target: str, da
     pos: List[int] = []
     neg: List[int] = []
     for attr, value in conditions:
-        if attr in dataspec.attributes and dataspec.attributes[attr].type == AttributeType.NOMINAL:
+        if attr in dataspec.attributes and dataspec.attributes[attr].type in (AttributeType.NOMINAL, AttributeType.BINARY):
             pos.append(dataspec.feature_index(f"{attr}={value}"))
         elif value == "1":
             pos.append(dataspec.feature_index(attr))

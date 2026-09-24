@@ -77,26 +77,13 @@ def test_builder_negation_generates_paired_features_and_group_constraints():
 
 def test_builder_negation_per_attribute_override():
     b = DataSpecBuilder(negation=True)
-    b.add_nominal("keep", ["a", "b", "c"])
+    b.add_nominal("keep", ["a", "b"])
     b.add_nominal("drop", ["x", "y"], negation=False)
     ds = b.build()
     assert "keep!=a" in ds.feature_names and "drop!=x" not in ds.feature_names
     assert ds.negation_of("keep=a") is not None
     assert ds.negation_of("drop=x") is None
     print("per-attribute negation= override: OK")
-
-
-def test_builder_negation_two_valued_nominal_aliases_instead_of_duplicating():
-    # a!=v1 would be an exact duplicate of a=v2 for a 2-valued attribute --
-    # negation_of still resolves it (aliased to the sibling == feature), but
-    # no physical "!=" column is allocated for it
-    b = DataSpecBuilder(negation=True)
-    b.add_nominal("keep", ["a", "b"])
-    ds = b.build()
-    assert ds.feature_names == ["keep=a", "keep=b"]
-    assert ds.negation_of("keep=a") == ds.feature_index("keep=b")
-    assert ds.negation_of("keep=b") == ds.feature_index("keep=a")
-    print("2-valued nominal negation aliasing: OK")
 
 
 def test_builder_generates_features_and_constraints():
@@ -315,10 +302,7 @@ def test_rule_consistency_and_implied_conditions():
 
 def test_display_formats_with_typed_attributes():
     b = DataSpecBuilder(negation=True)
-    # 3-valued: "color != red" is a genuine, physically-distinct feature here
-    # (unlike a 2-valued nominal, where it would alias the other value's own
-    # == feature -- see test_builder_negation_two_valued_nominal_aliases...)
-    color_idx = b.add_nominal("color", ["red", "green", "blue"])
+    color_idx = b.add_nominal("color", ["red", "green"])
     age_idx = b.add_numeric("age", [30])
     ds = b.build()
 
@@ -420,6 +404,59 @@ def test_relational_feature_provenance_and_display():
     print("relational features: OK")
 
 
+def test_binary_attribute_has_two_value_features_paired_as_negations():
+    for negation in (True, False):
+        b = DataSpecBuilder(negation=negation)
+        idx = b.add_binary("sex", ["male", "female"])
+        ds = b.build()
+        # never any != columns, whatever the negation setting
+        assert ds.feature_names == ["sex=male", "sex=female"]
+        assert ds.negation_of("sex=male") == ds.feature_index("sex=female")
+        assert ds.negation_of("sex=female") == ds.feature_index("sex=male")
+        assert idx.negative == {"male": idx["female"], "female": idx["male"]}
+        assert ds.attributes["sex"].type == AttributeType.BINARY
+
+
+def test_binary_unknown_and_missing_values_cover_neither_value():
+    import pandas as pd
+    from pyrulearn.data.io import binarize
+    b = DataSpecBuilder()
+    b.add_binary("sex", ["male", "female"])
+    X = binarize(b.build(), pd.DataFrame({"sex": ["male", "female", "other", None]}))
+    assert X.astype(int).tolist() == [[1, 0], [0, 1], [0, 0], [0, 0]]
+
+
+def test_binary_needs_two_distinct_values():
+    for values in (["a"], ["a", "b", "c"], ["a", "a"]):
+        with pytest.raises(ValueError):
+            DataSpecBuilder().add_binary("x", values)
+
+
+def test_two_valued_nominal_keeps_its_inequality_columns():
+    # a nominal's value list may be incomplete: an unknown value must
+    # satisfy every x!=v, so x!=a is not x=b
+    import pandas as pd
+    from pyrulearn.data.io import binarize
+    b = DataSpecBuilder(negation=True)
+    b.add_nominal("x", ["a", "b"])
+    ds = b.build()
+    assert ds.feature_names == ["x=a", "x=b", "x!=a", "x!=b"]
+    assert ds.negation_of("x=a") == ds.feature_index("x!=a")
+    X = binarize(ds, pd.DataFrame({"x": ["c", None]}))
+    assert X.astype(int).tolist() == [[0, 0, 1, 1], [0, 0, 0, 0]]
+
+
+def test_negation_toggles_keep_a_binary_attributes_pairing():
+    for negation in (True, False):
+        b = DataSpecBuilder(negation=negation)
+        b.add_binary("sex", ["male", "female"])
+        b.add_nominal("c", ["a", "b", "c"])
+        ds = b.build()
+        for toggled in (ds.with_negations()[0], ds.without_negations()[0]):
+            assert toggled.feature_names[:2] == ["sex=male", "sex=female"]
+            assert toggled.negation_of("sex=male") == toggled.feature_index("sex=female")
+
+
 if __name__ == "__main__":
     test_builder_generates_features_and_constraints()
     test_nominal_mutual_exclusion_propagation()
@@ -436,6 +473,9 @@ if __name__ == "__main__":
     test_set_valued_features_are_independent()
     test_hierarchical_features_propagation_and_display()
     test_relational_feature_provenance_and_display()
-    test_builder_negation_per_attribute_override()
-    test_builder_negation_two_valued_nominal_aliases_instead_of_duplicating()
+    test_binary_attribute_has_two_value_features_paired_as_negations()
+    test_binary_unknown_and_missing_values_cover_neither_value()
+    test_binary_needs_two_distinct_values()
+    test_two_valued_nominal_keeps_its_inequality_columns()
+    test_negation_toggles_keep_a_binary_attributes_pairing()
     print("\nAll tests passed.")

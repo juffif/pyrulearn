@@ -233,6 +233,22 @@ def test_raises_on_unparseable_condition():
     print("JRipImporter raises a clear error on an unrecognized condition operator: OK")
 
 
+JRIP_INEQUALITY_RULES = """(color = blue) => label=neg (10.0/0.0)
+(color != green) => label=pos (5.0/0.0)
+ => label=neg (3.0/0.0)"""
+
+
+def test_inequality_on_a_value_list_seen_only_in_the_rules_still_covers_unseen_values():
+    # the rules mention only blue/green, but the data also has red: the
+    # inferred attribute must stay NOMINAL, so `color != green` covers red
+    importer = JRipImporter()
+    model = importer.parse(JRIP_INEQUALITY_RULES)
+    ds = importer.dataspec
+    rep = BooleanDataRepresentation(ds, binarize(ds, pd.DataFrame({"color": ["red", "green"]})),
+                                    np.array(["pos", "neg"]))
+    assert list(model.predict(rep)) == ["pos", "neg"]
+
+
 if __name__ == "__main__":
     test_parses_real_jrip_output_as_rulelist()
     test_parsing_ignores_everything_but_rule_lines()
@@ -244,4 +260,5 @@ if __name__ == "__main__":
     test_reuses_dataspec_across_multiple_parse_calls()
     test_raises_on_multiple_default_rules()
     test_raises_on_unparseable_condition()
+    test_inequality_on_a_value_list_seen_only_in_the_rules_still_covers_unseen_values()
     print("\nAll tests passed.")

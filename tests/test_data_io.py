@@ -433,6 +433,47 @@ def test_write_csv_wrong_feature_names_length_raises():
     print("write_csv raises on mismatched feature_names length: OK")
 
 
+def test_build_dataspec_makes_two_valued_columns_binary():
+    from pyrulearn.attributes import AttributeType
+    df = pd.DataFrame({
+        "sex": ["m", "f", "m", "f"],
+        "c": ["a", "b", "c", "a"],
+        "y": ["p", "n", "p", "n"],
+    })
+    ds = build_dataspec(df, target="y").build()
+    assert ds.attributes["sex"].type == AttributeType.BINARY
+    assert ds.attributes["c"].type == AttributeType.NOMINAL
+    assert "sex!=f" not in ds.feature_names and "c!=a" in ds.feature_names
+    # a declared domain wins over the observed values
+    ds = build_dataspec(df, target="y", domains={"sex": ["f", "m", "x"]}).build()
+    assert ds.attributes["sex"].type == AttributeType.NOMINAL
+
+
+ARFF_WITH_MISSING = """@relation t
+@attribute sex {male,female}
+@attribute c {a,b,c}
+@attribute y {p,n}
+@data
+male,a,p
+?,b,n
+female,?,p
+"""
+
+
+def test_read_arff_treats_question_mark_as_missing_and_uses_the_header_domain():
+    from pyrulearn.attributes import AttributeType
+    rep = read_arff(io.StringIO(ARFF_WITH_MISSING), target="y")
+    ds = rep.spec
+    assert ds.attributes["sex"].type == AttributeType.BINARY
+    assert ds.attributes["c"].type == AttributeType.NOMINAL
+    assert list(ds.attributes["c"].domain) == ["a", "b", "c"]  # 'c' never occurs, still declared
+    assert not any("?" in n for n in ds.feature_names)
+    row = dict(zip(ds.feature_names, rep.X[1].astype(int)))  # sex missing
+    assert row["sex=male"] == 0 and row["sex=female"] == 0
+    row = dict(zip(ds.feature_names, rep.X[2].astype(int)))  # c missing: no c feature holds
+    assert all(v == 0 for n, v in row.items() if n.startswith("c"))
+
+
 if __name__ == "__main__":
     test_evaluate_feature()
     test_read_csv_infer()
@@ -457,4 +498,6 @@ if __name__ == "__main__":
     test_write_csv_round_trips_through_read_csv(Path(tempfile.mkdtemp()))
     test_write_csv_feature_names_override()
     test_write_csv_wrong_feature_names_length_raises()
+    test_build_dataspec_makes_two_valued_columns_binary()
+    test_read_arff_treats_question_mark_as_missing_and_uses_the_header_domain()
     print("\nAll tests passed.")

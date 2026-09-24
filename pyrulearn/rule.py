@@ -65,9 +65,21 @@ from typing import Any, FrozenSet, List, NamedTuple, Optional, Sequence, Tuple, 
 
 import numpy as np
 
-from .attributes import FeatureValues
+from .attributes import AttributeType, FeatureSpec, FeatureValues
 from .data import DataSpec
 from .data import BooleanDataRepresentation, DataRepresentation
+
+
+def _binary_inequality_target(spec: FeatureSpec, target: DataSpec) -> Optional[int]:
+    """For `Rule.remap`: a ``x!=v`` feature has no ``!=`` counterpart in a
+    `target` where ``x`` is BINARY -- but there, with the value list
+    declared complete, ``x!=v`` *is* ``x=<the other value>``. That
+    feature's index, or `None` if this translation doesn't apply."""
+    attr = target.attributes.get(spec.attribute) if spec.attribute is not None else None
+    if spec.op != "!=" or attr is None or attr.type != AttributeType.BINARY or spec.value not in attr.domain:
+        return None
+    other = attr.domain[1] if attr.domain[0] == spec.value else attr.domain[0]
+    return target.feature_index(f"{spec.attribute}={other}")
 
 
 class Literal(NamedTuple):
@@ -307,7 +319,10 @@ class Rule:
         `DataSpec`, translating each condition's feature index **by
         name**: for every `Literal(old_idx)`,
         `self.dataspec.feature_name(old_idx)` must exist as a feature
-        name in `new_dataspec` (via `new_dataspec.feature_index`).
+        name in `new_dataspec` (via `new_dataspec.feature_index`). One
+        exception: ``x!=a`` onto a `new_dataspec` where ``x`` is BINARY
+        over ``{a, b}`` becomes ``x=b`` -- exact there, since a binary
+        attribute's value list is declared complete.
 
         A pure structural translation -- no data is touched, nothing is
         recomputed -- what lets several independently-imported models
@@ -333,10 +348,12 @@ class Rule:
             try:
                 new_idx = new_dataspec.feature_index(name)
             except KeyError:
-                raise ValueError(
-                    f"Cannot remap rule: feature {name!r} (index {lit.feature} in the source "
-                    "DataSpec) has no matching feature in the target DataSpec"
-                ) from None
+                new_idx = _binary_inequality_target(self.dataspec.feature_spec(lit.feature), new_dataspec)
+                if new_idx is None:
+                    raise ValueError(
+                        f"Cannot remap rule: feature {name!r} (index {lit.feature} in the source "
+                        "DataSpec) has no matching feature in the target DataSpec"
+                    ) from None
             new_conditions.append(Literal(new_idx))
         return self._rebuilt(new_conditions, dataspec=new_dataspec, ordered=self.ordered)
 

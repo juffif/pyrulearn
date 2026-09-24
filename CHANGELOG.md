@@ -3,6 +3,50 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- Binary attributes: `AttributeType.BINARY` and
+  `DataSpecBuilder.add_binary("sex", ["male", "female"])`, a closed set of
+  exactly two values. They always get both features (`sex=male`,
+  `sex=female`), each the other's negation, and never `!=` columns; a
+  value outside the two counts as missing. This sits between `BOOLEAN`
+  (one tested value, `smoker` / `not smoker`, unchanged) and `NOMINAL`
+  (a possibly incomplete value list, which keeps its `!=` columns even
+  for two values, since an unknown value must satisfy every `x!=v`).
+- `build_dataspec(domains=...)`: declared value lists per column.
+- `merge_dataspecs` merges two binary attributes over the same values as
+  binary, and a binary one with a nominal one (or with a binary one over
+  different values) as the nominal union. `Rule.remap` turns `x!=a` into
+  `x=b` when the target attribute is binary over `{a, b}`.
+
+### Changed (may change feature counts)
+
+- `build_dataspec`, `read_csv` and `read_arff` infer a column with
+  exactly two values -- declared in an ARFF header, else observed in the
+  data -- as binary instead of nominal: with negation on, it gets 2
+  columns instead of 4 (e.g. kr-vs-kp's 144 columns become 76). Importers
+  that infer a `DataSpec` from a rule set (Weka, LORD, wittgenstein) keep
+  nominal attributes, since a rule set need not mention every value.
+
+### Fixed
+
+- `read_arff` turned ARFF's missing marker `?` into an ordinary category
+  (`sex=?`); it is now a missing value. Nominal attributes also take their
+  values from the header's declared list rather than only the values
+  that occur in the data.
+- `examples/demo_seco_learners_comparison.py`: `lord` failed on every fold.
+  Its rules were parsed against a dataspec inferred from LORD's own output,
+  whose feature numbering didn't match the training data; they now bind to
+  the real dataspec by column position, as `LordJar` already did.
+- `examples/demo_workflow_comparison.py` and
+  `demo_seco_learners_comparison.py`: pyrulearn's own binarization now gets
+  the raw data with real missing values (handled by
+  `MissingStrategy.NEVER_COVERS`) instead of median/"?"-imputed data, and
+  Pima diabetes's zero-encoded measurements are treated as missing. Only
+  the external learners still get imputed data.
+
 ## 0.1.2 (2026-09-22)
 
 First step toward the weight-transparency framework: none of this touches

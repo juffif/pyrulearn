@@ -95,12 +95,8 @@ def test_parses_real_part_output_as_rulelist():
         "age<=39.0", "income<=20373.0", "income<=20292.0", "income<=19992.0",
         "color=blue", "color=green",
         "age>39.0", "income>20373.0", "income>20292.0", "income>19992.0",
-        # color is only 2-valued -- "color!=blue"/"color!=green" would be
-        # exact duplicates of "color=green"/"color=blue", so no physical
-        # columns for them; negation_of still resolves the alias
+        "color!=blue", "color!=green",
     }
-    assert importer.dataspec.negation_of("color=blue") == importer.dataspec.feature_index("color=green")
-    assert importer.dataspec.negation_of("color=green") == importer.dataspec.feature_index("color=blue")
     print("Real PART output parses as a RuleList with the right structure: OK")
 
 

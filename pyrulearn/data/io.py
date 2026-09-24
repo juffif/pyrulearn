@@ -49,7 +49,7 @@ nominal/numeric/boolean attributes is supported end to end for those.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -100,6 +100,7 @@ def build_dataspec(
     max_intervals: int = DEFAULT_MAX_INTERVALS,
     include_negations: bool = True,
     negation_overrides: Optional[Dict[str, bool]] = None,
+    domains: Optional[Dict[str, Sequence[Any]]] = None,
 ) -> DataSpecBuilder:
     """Infer one attribute per (non-target) column of `df` and return the
     `DataSpecBuilder` that generated them -- the shared core of "read and
@@ -112,9 +113,16 @@ def build_dataspec(
     `pyrulearn.interfaces.sklearn.tree_thresholds` against
     `df[target]`, capped at `max_intervals` buckets -- requires `target`.
 
+    A nominal column's values are its declared ones in `domains` (e.g.
+    an ARFF header's value list), else the non-missing values observed
+    in `df`. Exactly two values make it a BINARY attribute
+    (`DataSpecBuilder.add_binary`: ``x=a``/``x=b``, each the other's
+    negation, no ``!=`` columns); otherwise it's NOMINAL.
+
     `include_negations` (default True) is the builder-wide default for
     whether each attribute also gets explicit negation features;
     `negation_overrides` (``{column: bool}``) overrides it per column.
+    Neither affects a BINARY attribute.
     """
     overrides = negation_overrides or {}
     builder = DataSpecBuilder(negation=include_negations)
@@ -128,8 +136,13 @@ def build_dataspec(
         negation = overrides.get(col)
 
         if kind in ("nominal", "string"):
-            domain = sorted(df[col].dropna().unique().tolist())
-            builder.add_nominal(col, domain, negation=negation)
+            declared_domain = (domains or {}).get(col)
+            domain = (list(declared_domain) if declared_domain is not None
+                      else sorted(df[col].dropna().unique().tolist()))
+            if len(domain) == 2:
+                builder.add_binary(col, domain)
+            else:
+                builder.add_nominal(col, domain, negation=negation)
         elif kind == "numeric":
             if y is None:
                 raise ValueError(
@@ -172,11 +185,12 @@ def validate_dataspec(
             continue
         declared = (arff_types or {}).get(name)
         kind = declared if declared is not None else _infer_csv_column_type(df[name])
-        if attr.type == AttributeType.NOMINAL and kind not in ("nominal", "string"):
-            problems.append(f"attribute {name!r} is NOMINAL but column {name!r} looks {kind!r}")
+        value_typed = attr.type in (AttributeType.NOMINAL, AttributeType.BINARY)
+        if value_typed and kind not in ("nominal", "string"):
+            problems.append(f"attribute {name!r} is {attr.type.name} but column {name!r} looks {kind!r}")
         elif attr.type == AttributeType.NUMERIC and kind != "numeric":
             problems.append(f"attribute {name!r} is NUMERIC but column {name!r} looks {kind!r}")
-        if attr.type == AttributeType.NOMINAL and attr.domain is not None:
+        if value_typed and attr.domain is not None:
             unknown = sorted(set(df[name].dropna().unique().tolist()) - set(attr.domain))
             if unknown:
                 problems.append(
@@ -315,10 +329,16 @@ def read_arff(
     data, meta = arff.loadarff(source)
     df = pd.DataFrame(data)
     arff_types = {name: meta[name][0] for name in meta.names()}
+    # the header's declared value lists: complete by ARFF's own rules, so
+    # an attribute declared with two values is BINARY (see build_dataspec)
+    domains = {name: list(meta[name][1]) for name in meta.names() if meta[name][0] == "nominal"}
     for col in df.columns:
         if arff_types.get(col) == "nominal" and df[col].dtype == object:
+            # scipy returns ARFF's missing marker, an unquoted ?, verbatim --
+            # map it to None so it's handled as missing, not as a category
             df[col] = df[col].apply(
-                lambda v: _arff_unquote(v.decode("utf-8")) if isinstance(v, bytes) else v
+                lambda v: (None if v == b"?" else _arff_unquote(v.decode("utf-8")))
+                if isinstance(v, bytes) else v
             )
 
     if dataspec is not None:
@@ -328,7 +348,7 @@ def read_arff(
     else:
         dataspec = build_dataspec(
             df, target=target, arff_types=arff_types, max_intervals=max_intervals,
-            include_negations=include_negations,
+            include_negations=include_negations, domains=domains,
         ).build()
 
     y = df[target].to_numpy() if target is not None else None

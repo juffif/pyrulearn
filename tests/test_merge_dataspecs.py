@@ -182,6 +182,44 @@ def test_merge_relational_identical_ok_and_mismatch_raises():
     print("merge relational identical/mismatch: OK")
 
 
+def test_merge_binary_attributes():
+    from pyrulearn.attributes import AttributeType
+
+    def spec(kind, values):
+        b = DataSpecBuilder()
+        (b.add_binary if kind == "binary" else b.add_nominal)("x", values)
+        return b.build()
+
+    same = merge_dataspecs(spec("binary", ["a", "b"]), spec("binary", ["b", "a"])).build()
+    assert same.attributes["x"].type == AttributeType.BINARY
+    assert same.feature_names == ["x=a", "x=b"]
+    # a wider union is no longer a closed two-value set
+    for other in (spec("nominal", ["a", "b", "c"]), spec("binary", ["a", "c"])):
+        merged = merge_dataspecs(spec("binary", ["a", "b"]), other).build()
+        assert merged.attributes["x"].type == AttributeType.NOMINAL
+        assert set(merged.attributes["x"].domain) == {"a", "b", "c"}
+        assert "x!=a" in merged.feature_names
+
+
+def test_remap_inequality_onto_binary_becomes_the_other_value():
+    from pyrulearn.rule import Rule
+    b = DataSpecBuilder()
+    b.add_nominal("x", ["a", "b"])
+    nominal = b.build()
+    rule = Rule.from_pos_neg(pos=[], neg=[nominal.feature_index("x=a")], target="t", dataspec=nominal)
+    assert [nominal.feature_name(l.feature) for l in rule.conditions] == ["x!=a"]
+    b = DataSpecBuilder()
+    b.add_binary("x", ["a", "b"])
+    binary = b.build()
+    remapped = rule.remap(binary)
+    assert [binary.feature_name(l.feature) for l in remapped.conditions] == ["x=b"]
+    # onto a wider nominal, x!=a stays x!=a
+    b = DataSpecBuilder()
+    b.add_nominal("x", ["a", "b", "c"])
+    wide = b.build()
+    assert [wide.feature_name(l.feature) for l in rule.remap(wide).conditions] == ["x!=a"]
+
+
 if __name__ == "__main__":
     test_merge_numeric_union()
     test_merge_nominal_union()
@@ -193,4 +231,6 @@ if __name__ == "__main__":
     test_merge_carries_over_missing_name_and_values()
     test_merge_conflicting_missing_name_raises()
     test_merge_relational_identical_ok_and_mismatch_raises()
+    test_merge_binary_attributes()
+    test_remap_inequality_onto_binary_becomes_the_other_value()
     print("\nAll tests passed.")
