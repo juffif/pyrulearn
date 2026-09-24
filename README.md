@@ -106,7 +106,7 @@ details.
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`) and `data.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
@@ -1678,6 +1678,49 @@ Either shape's `import_model`/`parse` should end by calling
 rule (and the model itself) their own `Provenance(source=..., learner=...,
 params={...})` -- how you tell which base learner produced which rule
 once you're comparing many imported models from many sources at once.
+
+## Benchmark datasets
+
+`pyrulearn.data.catalog` is a catalog of about 100 classification datasets:
+metadata and download pointers only, no data is bundled. Each entry names
+its OpenML id (plus UCI, Kaggle or original-source links where known), and
+`entry.load()` downloads it once through scikit-learn's OpenML cache
+(`~/scikit_learn_data`, or `$PYRULEARN_DATA_HOME`) and returns the raw data
+as a pandas DataFrame, with real missing values and no imputation:
+
+```python
+from pyrulearn.data.catalog import Catalog
+
+cat = Catalog.default()
+for entry in cat.select(task="binary", size=["small", "medium"], attributes="categorical"):
+    df, target = entry.load()
+cat.parse("lord")                    # the same, from a compact string (e.g. a CLI option)
+print(cat.summary())
+```
+
+Three categories are computed from each entry's statistics:
+
+| category | values |
+|---|---|
+| `task` | `binary` (2 classes), `multiclass` (3 or more) |
+| `size` | `small` (< 1,000 rows), `medium` (1,000-10,000), `large` (> 10,000) |
+| `attributes` | `categorical` (all attributes nominal), `numeric` (all numeric), `mixed` |
+
+`tags` record where an entry comes from: `cc18` (the OpenML-CC18 benchmark
+suite, minus its 13 image/signal/text datasets with more than 200
+attributes), `lord` (the datasets of the LORD evaluation), `xai` (classic
+explainable-AI datasets: adult, COMPAS, German credit, HELOC, ...) and
+`classic` (traditional rule-learning benchmarks: vote, mushroom, soybean,
+the MONK's problems, ...). A few entries (e.g. SUSY, PAMAP2) are not on
+OpenML and are pointers only (`entry.loadable` is False).
+
+Entries also carry curated loading fixes: attribute names restored where
+the OpenML upload anonymized them (`V1`, `x1`, ...), identifier and
+leakage columns dropped (e.g. Titanic's `boat`), category codes stored as
+numbers declared nominal, and values that encode "not measured" (Pima
+diabetes's zeros) turned into missing values. `tools/build_catalog.py`
+maintains the file: it fills in every statistic from OpenML and the data
+itself, and reports columns that look like unrecognized category codes.
 
 ## Try it
 

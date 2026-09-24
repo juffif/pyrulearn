@@ -1,0 +1,1883 @@
+{
+ "datasets": [
+  {
+   "name": "adult",
+   "openml_id": 1590,
+   "tags": [
+    "lord",
+    "xai",
+    "cc18"
+   ],
+   "notes": "Version 2: numeric attributes kept numeric (version 1, id 179, pre-discretizes them).",
+   "openml_name": "adult",
+   "openml_version": 2,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/adult",
+   "license": "Public",
+   "n_instances": 48842,
+   "n_features": 14,
+   "n_numeric": 6,
+   "n_nominal": 8,
+   "n_classes": 2,
+   "majority_rate": 0.7607,
+   "missing_rate": 0.0741
+  },
+  {
+   "name": "analcatdata_authorship",
+   "openml_id": 458,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "analcatdata_authorship",
+   "openml_version": 1,
+   "original_url": "http://www.stern.nyu.edu/~jsimonof/AnalCatData",
+   "license": "Public",
+   "n_instances": 841,
+   "n_features": 70,
+   "n_numeric": 70,
+   "n_nominal": 0,
+   "n_classes": 4,
+   "majority_rate": 0.3769,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "analcatdata_dmft",
+   "openml_id": 469,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "analcatdata_dmft",
+   "openml_version": 1,
+   "original_url": "http://www.stern.nyu.edu/~jsimonof/AnalCatData",
+   "license": "Public",
+   "n_instances": 797,
+   "n_features": 4,
+   "n_numeric": 0,
+   "n_nominal": 4,
+   "n_classes": 6,
+   "majority_rate": 0.1945,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "anneal",
+   "openml_id": 2,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "anneal",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Annealing",
+   "license": "Public",
+   "n_instances": 898,
+   "n_features": 38,
+   "n_numeric": 6,
+   "n_nominal": 32,
+   "n_classes": 5,
+   "majority_rate": 0.7617,
+   "missing_rate": 1.0
+  },
+  {
+   "name": "audiology",
+   "openml_id": 7,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "audiology",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Audiology+(Standardized)",
+   "license": "Public",
+   "n_instances": 226,
+   "n_features": 69,
+   "n_numeric": 0,
+   "n_nominal": 69,
+   "n_classes": 24,
+   "majority_rate": 0.2522,
+   "missing_rate": 0.9823
+  },
+  {
+   "name": "balance-scale",
+   "openml_id": 11,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "balance-scale",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/balance+scale",
+   "license": "Public",
+   "n_instances": 625,
+   "n_features": 4,
+   "n_numeric": 4,
+   "n_nominal": 0,
+   "n_classes": 3,
+   "majority_rate": 0.4608,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "bank-marketing",
+   "openml_id": 1461,
+   "tags": [
+    "lord",
+    "xai",
+    "cc18"
+   ],
+   "rename": {
+    "V1": "age",
+    "V2": "job",
+    "V3": "marital",
+    "V4": "education",
+    "V5": "default",
+    "V6": "balance",
+    "V7": "housing",
+    "V8": "loan",
+    "V9": "contact",
+    "V10": "day",
+    "V11": "month",
+    "V12": "duration",
+    "V13": "campaign",
+    "V14": "pdays",
+    "V15": "previous",
+    "V16": "poutcome",
+    "Class": "y"
+   },
+   "notes": "LORD's 'bank'. Column names restored from the UCI documentation (the OpenML upload uses V1..V16). 'duration' is only known after the call and so leaks the outcome for predictive use.",
+   "openml_name": "bank-marketing",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/bank+marketing",
+   "license": "Public",
+   "n_instances": 45211,
+   "n_features": 16,
+   "n_numeric": 7,
+   "n_nominal": 9,
+   "n_classes": 2,
+   "majority_rate": 0.883,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "banknote-authentication",
+   "openml_id": 1462,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "banknote-authentication",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 1372,
+   "n_features": 4,
+   "n_numeric": 4,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.5554,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "blood-transfusion-service-center",
+   "openml_id": 1464,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "blood-transfusion-service-center",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Blood+Transfusion+Service+Center",
+   "license": "Public",
+   "n_instances": 748,
+   "n_features": 4,
+   "n_numeric": 4,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.762,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "breast-cancer",
+   "openml_id": 13,
+   "tags": [
+    "classic",
+    "lord",
+    "xai"
+   ],
+   "notes": "Ljubljana breast cancer data; LORD's 'breast'.",
+   "openml_name": "breast-cancer",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Breast+Cancer",
+   "license": "Public",
+   "n_instances": 286,
+   "n_features": 9,
+   "n_numeric": 0,
+   "n_nominal": 9,
+   "n_classes": 2,
+   "majority_rate": 0.7028,
+   "missing_rate": 0.0315
+  },
+  {
+   "name": "breast-w",
+   "openml_id": 15,
+   "tags": [
+    "classic",
+    "xai",
+    "cc18"
+   ],
+   "openml_name": "breast-w",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+(original)",
+   "license": "Public",
+   "n_instances": 699,
+   "n_features": 9,
+   "n_numeric": 9,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.6552,
+   "missing_rate": 0.0229
+  },
+  {
+   "name": "car",
+   "openml_id": 40975,
+   "tags": [
+    "classic",
+    "lord",
+    "cc18"
+   ],
+   "openml_name": "car",
+   "openml_version": 3,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/car+evaluation",
+   "license": "Public",
+   "n_instances": 1728,
+   "n_features": 6,
+   "n_numeric": 0,
+   "n_nominal": 6,
+   "n_classes": 4,
+   "majority_rate": 0.7002,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "census-income",
+   "openml_id": 4535,
+   "target": "income",
+   "tags": [
+    "lord",
+    "xai"
+   ],
+   "uci": "https://archive.ics.uci.edu/dataset/117/census+income+kdd",
+   "rename": {
+    "V1": "age",
+    "V2": "class of worker",
+    "V3": "detailed industry recode",
+    "V4": "detailed occupation recode",
+    "V5": "education",
+    "V6": "wage per hour",
+    "V7": "enroll in edu inst last wk",
+    "V8": "marital stat",
+    "V9": "major industry code",
+    "V10": "major occupation code",
+    "V11": "race",
+    "V12": "hispanic origin",
+    "V13": "sex",
+    "V14": "member of a labor union",
+    "V15": "reason for unemployment",
+    "V16": "full or part time employment stat",
+    "V17": "capital gains",
+    "V18": "capital losses",
+    "V19": "dividends from stocks",
+    "V20": "tax filer stat",
+    "V21": "region of previous residence",
+    "V22": "state of previous residence",
+    "V23": "detailed household and family stat",
+    "V24": "detailed household summary in household",
+    "V25": "instance weight",
+    "V26": "migration code-change in msa",
+    "V27": "migration code-change in reg",
+    "V28": "migration code-move within reg",
+    "V29": "live in this house 1 year ago",
+    "V30": "migration prev res in sunbelt",
+    "V31": "num persons worked for employer",
+    "V32": "family members under 18",
+    "V33": "country of birth father",
+    "V34": "country of birth mother",
+    "V35": "country of birth self",
+    "V36": "citizenship",
+    "V37": "own business or self employed",
+    "V38": "fill inc questionnaire for veteran's admin",
+    "V39": "veterans benefits",
+    "V40": "weeks worked in year",
+    "V41": "year",
+    "V42": "income"
+   },
+   "drop": [
+    "instance weight"
+   ],
+   "nominal": [
+    "detailed industry recode",
+    "detailed occupation recode",
+    "own business or self employed",
+    "veterans benefits",
+    "year"
+   ],
+   "notes": "Census-Income (KDD). Column names restored from the UCI documentation (the OpenML upload uses V1..V42); 'instance weight' is a sampling weight, not an attribute, and is dropped.",
+   "openml_name": "Census-Income",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 299285,
+   "n_features": 40,
+   "n_numeric": 7,
+   "n_nominal": 33,
+   "n_classes": 2,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "churn",
+   "openml_id": 40701,
+   "tags": [
+    "xai",
+    "cc18"
+   ],
+   "openml_name": "churn",
+   "openml_version": 1,
+   "license": "public",
+   "n_instances": 5000,
+   "n_features": 20,
+   "n_numeric": 16,
+   "n_nominal": 4,
+   "n_classes": 2,
+   "majority_rate": 0.8586,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "climate-model-simulation-crashes",
+   "openml_id": 40994,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "climate-model-simulation-crashes",
+   "openml_version": 4,
+   "license": "Public",
+   "n_instances": 540,
+   "n_features": 18,
+   "n_numeric": 18,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.9148,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "cmc",
+   "openml_id": 23,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "cmc",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Contraceptive+Method+Choice",
+   "license": "Public",
+   "n_instances": 1473,
+   "n_features": 9,
+   "n_numeric": 2,
+   "n_nominal": 7,
+   "n_classes": 3,
+   "majority_rate": 0.427,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "colic",
+   "openml_id": 27,
+   "tags": [
+    "classic"
+   ],
+   "notes": "Weka's standard 23-attribute version (id 25 is the raw 28-column original).",
+   "openml_name": "colic",
+   "openml_version": 2,
+   "license": "Public",
+   "n_instances": 368,
+   "n_features": 22,
+   "n_numeric": 7,
+   "n_nominal": 15,
+   "n_classes": 2,
+   "majority_rate": 0.6304,
+   "missing_rate": 0.981
+  },
+  {
+   "name": "compas-two-years",
+   "openml_id": 42192,
+   "tags": [
+    "xai"
+   ],
+   "notes": "ProPublica COMPAS recidivism data, as preprocessed on OpenML: age category and charge degree one-hot encoded, race reduced to African-American/Caucasian indicators. The original data: https://github.com/propublica/compas-analysis (compas-scores-two-years.csv).",
+   "openml_name": "compas-two-years",
+   "openml_version": 3,
+   "license": "Public",
+   "n_instances": 5278,
+   "n_features": 13,
+   "n_numeric": 7,
+   "n_nominal": 6,
+   "n_classes": 2,
+   "majority_rate": 0.5296,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "connect-4",
+   "openml_id": 40668,
+   "tags": [
+    "lord",
+    "cc18"
+   ],
+   "openml_name": "connect-4",
+   "openml_version": 2,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Connect-4",
+   "license": "public",
+   "n_instances": 67557,
+   "n_features": 42,
+   "n_numeric": 0,
+   "n_nominal": 42,
+   "n_classes": 3,
+   "majority_rate": 0.6583,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "covertype",
+   "openml_id": 1596,
+   "tags": [
+    "lord"
+   ],
+   "notes": "The 44 soil-type/wilderness-area columns are one-hot encodings of two categorical attributes.",
+   "openml_name": "covertype",
+   "openml_version": 4,
+   "license": "Public",
+   "n_instances": 581012,
+   "n_features": 54,
+   "n_numeric": 10,
+   "n_nominal": 44,
+   "n_classes": 7,
+   "majority_rate": 0.4876,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "credit-approval",
+   "openml_id": 29,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "credit-approval",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/credit+approval",
+   "license": "Public",
+   "n_instances": 690,
+   "n_features": 15,
+   "n_numeric": 6,
+   "n_nominal": 9,
+   "n_classes": 2,
+   "majority_rate": 0.5551,
+   "missing_rate": 0.0536
+  },
+  {
+   "name": "credit-g",
+   "openml_id": 31,
+   "tags": [
+    "classic",
+    "lord",
+    "xai",
+    "cc18"
+   ],
+   "notes": "German credit; LORD's 'german'.",
+   "openml_name": "credit-g",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)",
+   "license": "Public",
+   "n_instances": 1000,
+   "n_features": 20,
+   "n_numeric": 7,
+   "n_nominal": 13,
+   "n_classes": 2,
+   "majority_rate": 0.7,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "cylinder-bands",
+   "openml_id": 6332,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "cylinder-bands",
+   "openml_version": 2,
+   "license": "Public",
+   "n_instances": 540,
+   "n_features": 37,
+   "n_numeric": 18,
+   "n_nominal": 19,
+   "n_classes": 2,
+   "majority_rate": 0.5778,
+   "missing_rate": 0.487
+  },
+  {
+   "name": "default-of-credit-card-clients",
+   "openml_id": 42477,
+   "tags": [
+    "xai"
+   ],
+   "rename": {
+    "x1": "LIMIT_BAL",
+    "x2": "SEX",
+    "x3": "EDUCATION",
+    "x4": "MARRIAGE",
+    "x5": "AGE",
+    "x6": "PAY_0",
+    "x7": "PAY_2",
+    "x8": "PAY_3",
+    "x9": "PAY_4",
+    "x10": "PAY_5",
+    "x11": "PAY_6",
+    "x12": "BILL_AMT1",
+    "x13": "BILL_AMT2",
+    "x14": "BILL_AMT3",
+    "x15": "BILL_AMT4",
+    "x16": "BILL_AMT5",
+    "x17": "BILL_AMT6",
+    "x18": "PAY_AMT1",
+    "x19": "PAY_AMT2",
+    "x20": "PAY_AMT3",
+    "x21": "PAY_AMT4",
+    "x22": "PAY_AMT5",
+    "x23": "PAY_AMT6",
+    "y": "default payment next month"
+   },
+   "nominal": [
+    "SEX",
+    "EDUCATION",
+    "MARRIAGE"
+   ],
+   "notes": "Taiwan credit-card default data. Column names restored from the UCI documentation (the OpenML upload uses x1..x23); SEX/EDUCATION/MARRIAGE are category codes, PAY_0..PAY_6 ordinal repayment status (-2..8).",
+   "openml_name": "default-of-credit-card-clients",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients#",
+   "license": "CC0",
+   "n_instances": 30000,
+   "n_features": 23,
+   "n_numeric": 20,
+   "n_nominal": 3,
+   "n_classes": 2,
+   "majority_rate": 0.7788,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "diabetes",
+   "openml_id": 37,
+   "tags": [
+    "classic",
+    "xai",
+    "cc18"
+   ],
+   "missing_markers": {
+    "plas": [
+     0
+    ],
+    "pres": [
+     0
+    ],
+    "skin": [
+     0
+    ],
+    "insu": [
+     0
+    ],
+    "mass": [
+     0
+    ]
+   },
+   "notes": "Pima Indians diabetes. A zero in plas/pres/skin/insu/mass means 'not measured' (a zero in preg is a real value).",
+   "openml_name": "diabetes",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/pima+indians+diabetes",
+   "license": "Public",
+   "n_instances": 768,
+   "n_features": 8,
+   "n_numeric": 8,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.651,
+   "missing_rate": 0.4896
+  },
+  {
+   "name": "dna",
+   "openml_id": 40670,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "dna",
+   "openml_version": 1,
+   "license": "public",
+   "n_instances": 3186,
+   "n_features": 180,
+   "n_numeric": 0,
+   "n_nominal": 180,
+   "n_classes": 3,
+   "majority_rate": 0.5191,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "dresses-sales",
+   "openml_id": 23381,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "dresses-sales",
+   "openml_version": 2,
+   "license": "Public",
+   "n_instances": 500,
+   "n_features": 12,
+   "n_numeric": 1,
+   "n_nominal": 11,
+   "n_classes": 2,
+   "majority_rate": 0.58,
+   "missing_rate": 0.802
+  },
+  {
+   "name": "ecoli",
+   "openml_id": 39,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "ecoli",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/ecoli",
+   "license": "Public",
+   "n_instances": 336,
+   "n_features": 7,
+   "n_numeric": 7,
+   "n_nominal": 0,
+   "n_classes": 8,
+   "majority_rate": 0.4256,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "electricity",
+   "openml_id": 151,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "electricity",
+   "openml_version": 1,
+   "original_url": "http://www.inescporto.pt/~jgama/ales/ales_5.html",
+   "license": "Public",
+   "n_instances": 45312,
+   "n_features": 8,
+   "n_numeric": 7,
+   "n_nominal": 1,
+   "n_classes": 2,
+   "majority_rate": 0.5755,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "eucalyptus",
+   "openml_id": 188,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "eucalyptus",
+   "openml_version": 1,
+   "original_url": "http://www.cs.waikato.ac.nz/ml/weka/datasets.html",
+   "license": "Public",
+   "n_instances": 736,
+   "n_features": 19,
+   "n_numeric": 14,
+   "n_nominal": 5,
+   "n_classes": 5,
+   "majority_rate": 0.2908,
+   "missing_rate": 0.1291
+  },
+  {
+   "name": "first-order-theorem-proving",
+   "openml_id": 1475,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "first-order-theorem-proving",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 6118,
+   "n_features": 51,
+   "n_numeric": 51,
+   "n_nominal": 0,
+   "n_classes": 6,
+   "majority_rate": 0.4175,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "GesturePhaseSegmentationProcessed",
+   "openml_id": 4538,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "GesturePhaseSegmentationProcessed",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 9873,
+   "n_features": 32,
+   "n_numeric": 32,
+   "n_nominal": 0,
+   "n_classes": 5,
+   "majority_rate": 0.2988,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "glass",
+   "openml_id": 41,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "glass",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/glass+identification",
+   "license": "Public",
+   "n_instances": 214,
+   "n_features": 9,
+   "n_numeric": 9,
+   "n_nominal": 0,
+   "n_classes": 6,
+   "majority_rate": 0.3551,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "heart-c",
+   "openml_id": 49,
+   "tags": [
+    "xai"
+   ],
+   "notes": "Cleveland heart disease.",
+   "openml_name": "heart-c",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/heart+disease",
+   "license": "Public",
+   "n_instances": 303,
+   "n_features": 13,
+   "n_numeric": 6,
+   "n_nominal": 7,
+   "n_classes": 2,
+   "majority_rate": 0.5446,
+   "missing_rate": 0.0231
+  },
+  {
+   "name": "heart-h",
+   "openml_id": 51,
+   "tags": [
+    "xai"
+   ],
+   "notes": "Hungarian heart disease.",
+   "openml_name": "heart-h",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 294,
+   "n_features": 13,
+   "n_numeric": 6,
+   "n_nominal": 7,
+   "n_classes": 2,
+   "majority_rate": 0.6395,
+   "missing_rate": 0.9966
+  },
+  {
+   "name": "heart-statlog",
+   "openml_id": 53,
+   "tags": [
+    "classic",
+    "xai"
+   ],
+   "nominal": [
+    "sex",
+    "chest",
+    "fasting_blood_sugar",
+    "resting_electrocardiographic_results",
+    "exercise_induced_angina",
+    "slope",
+    "thal"
+   ],
+   "notes": "Categorical attributes are stored as numeric codes on OpenML; declared nominal here.",
+   "openml_name": "heart-statlog",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/statlog+(heart)",
+   "license": "Public",
+   "n_instances": 270,
+   "n_features": 13,
+   "n_numeric": 6,
+   "n_nominal": 7,
+   "n_classes": 2,
+   "majority_rate": 0.5556,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "heloc",
+   "openml_id": 45023,
+   "tags": [
+    "xai"
+   ],
+   "notes": "FICO HELOC (Explainable Machine Learning Challenge); FICO's own terms of use apply. Negative values are special codes, not magnitudes: -7 'condition not met' (e.g. no delinquency), -8 'no usable/valid trades', -9 'no bureau record'. They are kept as values here; declaring them missing_markers is a modelling choice.",
+   "openml_name": "heloc",
+   "openml_version": 1,
+   "license": "See source",
+   "n_instances": 10000,
+   "n_features": 22,
+   "n_numeric": 22,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.5,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "hepatitis",
+   "openml_id": 55,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "hepatitis",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/hepatitis",
+   "license": "Public",
+   "n_instances": 155,
+   "n_features": 19,
+   "n_numeric": 6,
+   "n_nominal": 13,
+   "n_classes": 2,
+   "majority_rate": 0.7935,
+   "missing_rate": 0.4839
+  },
+  {
+   "name": "hypothyroid",
+   "openml_id": 57,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "openml_name": "hypothyroid",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/thyroid+disease",
+   "license": "Public",
+   "n_instances": 3772,
+   "n_features": 29,
+   "n_numeric": 7,
+   "n_nominal": 22,
+   "n_classes": 4,
+   "majority_rate": 0.9229,
+   "missing_rate": 1.0
+  },
+  {
+   "name": "ilpd",
+   "openml_id": 1480,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "ilpd",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 583,
+   "n_features": 10,
+   "n_numeric": 9,
+   "n_nominal": 1,
+   "n_classes": 2,
+   "majority_rate": 0.7136,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "ionosphere",
+   "openml_id": 59,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "ionosphere",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Ionosphere",
+   "license": "Public",
+   "n_instances": 351,
+   "n_features": 34,
+   "n_numeric": 34,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.641,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "iris",
+   "openml_id": 61,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "iris",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Iris",
+   "license": "Public",
+   "n_instances": 150,
+   "n_features": 4,
+   "n_numeric": 4,
+   "n_nominal": 0,
+   "n_classes": 3,
+   "majority_rate": 0.3333,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "jm1",
+   "openml_id": 1053,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "jm1",
+   "openml_version": 1,
+   "original_url": "http://promise.site.uottawa.ca/SERepository/",
+   "license": "Public",
+   "n_instances": 10885,
+   "n_features": 21,
+   "n_numeric": 21,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.8065,
+   "missing_rate": 0.0005
+  },
+  {
+   "name": "jungle_chess_2pcs_raw_endgame_complete",
+   "openml_id": 41027,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "jungle_chess_2pcs_raw_endgame_complete",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 44819,
+   "n_features": 6,
+   "n_numeric": 6,
+   "n_nominal": 0,
+   "n_classes": 3,
+   "majority_rate": 0.5146,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "kc1",
+   "openml_id": 1067,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "kc1",
+   "openml_version": 1,
+   "original_url": "http://openscience.us/repo/defect/mccabehalsted/kc2.html",
+   "license": "Public",
+   "n_instances": 2109,
+   "n_features": 21,
+   "n_numeric": 21,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.8454,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "kc2",
+   "openml_id": 1063,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "kc2",
+   "openml_version": 1,
+   "original_url": "http://openscience.us/repo/defect/mccabehalsted/kc2.html",
+   "license": "Public",
+   "n_instances": 522,
+   "n_features": 21,
+   "n_numeric": 21,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.795,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "kr-vs-kp",
+   "openml_id": 3,
+   "tags": [
+    "classic",
+    "lord",
+    "cc18"
+   ],
+   "openml_name": "kr-vs-kp",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Chess+(King-Rook+vs.+King-Pawn)",
+   "license": "Public",
+   "n_instances": 3196,
+   "n_features": 36,
+   "n_numeric": 0,
+   "n_nominal": 36,
+   "n_classes": 2,
+   "majority_rate": 0.5222,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "letter",
+   "openml_id": 6,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "letter",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Letter+Recognition",
+   "license": "Public",
+   "n_instances": 20000,
+   "n_features": 16,
+   "n_numeric": 16,
+   "n_nominal": 0,
+   "n_classes": 26,
+   "majority_rate": 0.0406,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "lymph",
+   "openml_id": 10,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "notes": "LORD's 'lymphography'.",
+   "openml_name": "lymph",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Lymphography",
+   "license": "Public",
+   "n_instances": 148,
+   "n_features": 18,
+   "n_numeric": 3,
+   "n_nominal": 15,
+   "n_classes": 4,
+   "majority_rate": 0.5473,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "mfeat-fourier",
+   "openml_id": 14,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "mfeat-fourier",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Multiple+Features",
+   "license": "Public",
+   "n_instances": 2000,
+   "n_features": 76,
+   "n_numeric": 76,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "mfeat-karhunen",
+   "openml_id": 16,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "mfeat-karhunen",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Multiple+Features",
+   "license": "Public",
+   "n_instances": 2000,
+   "n_features": 64,
+   "n_numeric": 64,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "mfeat-morphological",
+   "openml_id": 18,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "mfeat-morphological",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Multiple+Features",
+   "license": "Public",
+   "n_instances": 2000,
+   "n_features": 6,
+   "n_numeric": 6,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "mfeat-zernike",
+   "openml_id": 22,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "mfeat-zernike",
+   "openml_version": 1,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/Multiple+Features",
+   "license": "Public",
+   "n_instances": 2000,
+   "n_features": 47,
+   "n_numeric": 47,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "MiceProtein",
+   "openml_id": 40966,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "MiceProtein",
+   "openml_version": 4,
+   "license": "Public",
+   "n_instances": 1080,
+   "n_features": 77,
+   "n_numeric": 77,
+   "n_nominal": 0,
+   "n_classes": 8,
+   "majority_rate": 0.1389,
+   "missing_rate": 0.4889
+  },
+  {
+   "name": "monks-problems-1",
+   "openml_id": 333,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "monks-problems-1",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/MONK's+Problems",
+   "license": "Public",
+   "n_instances": 556,
+   "n_features": 6,
+   "n_numeric": 0,
+   "n_nominal": 6,
+   "n_classes": 2,
+   "majority_rate": 0.5,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "monks-problems-2",
+   "openml_id": 334,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "monks-problems-2",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/MONK's+Problems",
+   "license": "Public",
+   "n_instances": 601,
+   "n_features": 6,
+   "n_numeric": 0,
+   "n_nominal": 6,
+   "n_classes": 2,
+   "majority_rate": 0.6572,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "monks-problems-3",
+   "openml_id": 335,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "monks-problems-3",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/MONK's+Problems",
+   "license": "Public",
+   "n_instances": 554,
+   "n_features": 6,
+   "n_numeric": 0,
+   "n_nominal": 6,
+   "n_classes": 2,
+   "majority_rate": 0.5199,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "mushroom",
+   "openml_id": 24,
+   "tags": [
+    "classic",
+    "lord",
+    "xai"
+   ],
+   "openml_name": "mushroom",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/mushroom",
+   "license": "Public",
+   "n_instances": 8124,
+   "n_features": 22,
+   "n_numeric": 0,
+   "n_nominal": 22,
+   "n_classes": 2,
+   "majority_rate": 0.518,
+   "missing_rate": 0.3053
+  },
+  {
+   "name": "nomao",
+   "openml_id": 1486,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "nomao",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Nomao",
+   "license": "Public",
+   "n_instances": 34465,
+   "n_features": 118,
+   "n_numeric": 89,
+   "n_nominal": 29,
+   "n_classes": 2,
+   "majority_rate": 0.7144,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "numerai28.6",
+   "openml_id": 23517,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "numerai28.6",
+   "openml_version": 2,
+   "original_url": "https://www.kaggle.com/datasets/numerai/encrypted-stock-market-data-from-numerai",
+   "license": "Public",
+   "n_instances": 96320,
+   "n_features": 21,
+   "n_numeric": 21,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.5052,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "nursery",
+   "openml_id": 26,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "openml_name": "nursery",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/nursery",
+   "license": "Public",
+   "n_instances": 12960,
+   "n_features": 8,
+   "n_numeric": 0,
+   "n_nominal": 8,
+   "n_classes": 5,
+   "majority_rate": 0.3333,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "optdigits",
+   "openml_id": 28,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "optdigits",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/optical+recognition+of+handwritten+digits",
+   "license": "Public",
+   "n_instances": 5620,
+   "n_features": 64,
+   "n_numeric": 64,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1018,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "ozone-level-8hr",
+   "openml_id": 1487,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "ozone-level-8hr",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 2534,
+   "n_features": 72,
+   "n_numeric": 72,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.9369,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "PAMAP2",
+   "tags": [
+    "lord"
+   ],
+   "uci": "https://archive.ics.uci.edu/dataset/231/pamap2+physical+activity+monitoring",
+   "notes": "Not on OpenML; raw sensor recordings that need preprocessing into a classification table.",
+   "n_instances": 3850505
+  },
+  {
+   "name": "pc1",
+   "openml_id": 1068,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "pc1",
+   "openml_version": 1,
+   "original_url": "http://openscience.us/repo/defect/mccabehalsted/pc1.html",
+   "license": "Public",
+   "n_instances": 1109,
+   "n_features": 21,
+   "n_numeric": 21,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.9306,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "pc3",
+   "openml_id": 1050,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "pc3",
+   "openml_version": 1,
+   "original_url": "http://openscience.us/repo/defect/mccabehalsted/pc3.html",
+   "license": "Public",
+   "n_instances": 1563,
+   "n_features": 37,
+   "n_numeric": 37,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.8976,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "pc4",
+   "openml_id": 1049,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "pc4",
+   "openml_version": 1,
+   "original_url": "http://openscience.us/repo/defect/mccabehalsted/pc4.html",
+   "license": "Public",
+   "n_instances": 1458,
+   "n_features": 37,
+   "n_numeric": 37,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.8779,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "pendigits",
+   "openml_id": 32,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "pendigits",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/optical+recognition+of+handwritten+digits",
+   "license": "Public",
+   "n_instances": 10992,
+   "n_features": 16,
+   "n_numeric": 16,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.1041,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "PhishingWebsites",
+   "openml_id": 4534,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "PhishingWebsites",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 11055,
+   "n_features": 30,
+   "n_numeric": 0,
+   "n_nominal": 30,
+   "n_classes": 2,
+   "majority_rate": 0.5569,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "phoneme",
+   "openml_id": 1489,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "phoneme",
+   "openml_version": 1,
+   "original_url": "https://sci2s.ugr.es/keel/dataset.php?cod=105#sub2",
+   "license": "Public",
+   "n_instances": 5404,
+   "n_features": 5,
+   "n_numeric": 5,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.7065,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "primary-tumor",
+   "openml_id": 171,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "primary-tumor",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 339,
+   "n_features": 17,
+   "n_numeric": 0,
+   "n_nominal": 17,
+   "n_classes": 21,
+   "majority_rate": 0.2478,
+   "missing_rate": 0.6106
+  },
+  {
+   "name": "qsar-biodeg",
+   "openml_id": 1494,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "qsar-biodeg",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 1055,
+   "n_features": 41,
+   "n_numeric": 41,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.6626,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "satimage",
+   "openml_id": 182,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "satimage",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 6430,
+   "n_features": 36,
+   "n_numeric": 36,
+   "n_nominal": 0,
+   "n_classes": 6,
+   "majority_rate": 0.2381,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "secondary-mushroom",
+   "tags": [
+    "lord"
+   ],
+   "uci": "https://archive.ics.uci.edu/dataset/848/secondary+mushroom+dataset",
+   "notes": "LORD's 'sec-mushroom'. Not on OpenML; UCI serves a plain CSV.",
+   "n_instances": 61068,
+   "n_features": 20
+  },
+  {
+   "name": "segment",
+   "openml_id": 40984,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "segment",
+   "openml_version": 3,
+   "original_url": "http://archive.ics.uci.edu/ml/datasets/image+segmentation",
+   "license": "Public",
+   "n_instances": 2310,
+   "n_features": 18,
+   "n_numeric": 18,
+   "n_nominal": 0,
+   "n_classes": 7,
+   "majority_rate": 0.1429,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "sick",
+   "openml_id": 38,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "sick",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/thyroid+disease",
+   "license": "Public",
+   "n_instances": 3772,
+   "n_features": 29,
+   "n_numeric": 7,
+   "n_nominal": 22,
+   "n_classes": 2,
+   "majority_rate": 0.9388,
+   "missing_rate": 1.0
+  },
+  {
+   "name": "skin-segmentation",
+   "openml_id": 1502,
+   "tags": [
+    "lord"
+   ],
+   "notes": "LORD's 'skin'.",
+   "openml_name": "skin-segmentation",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/skin+segmentation",
+   "license": "Public",
+   "n_instances": 245057,
+   "n_features": 3,
+   "n_numeric": 3,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.7925,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "sonar",
+   "openml_id": 40,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "sonar",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Connectionist+Bench+(Sonar,+Mines+vs.+Rocks)",
+   "license": "Public",
+   "n_instances": 208,
+   "n_features": 60,
+   "n_numeric": 60,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.5337,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "soybean",
+   "openml_id": 42,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "soybean",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Soybean+(Large)",
+   "license": "Public",
+   "n_instances": 683,
+   "n_features": 35,
+   "n_numeric": 0,
+   "n_nominal": 35,
+   "n_classes": 19,
+   "majority_rate": 0.1347,
+   "missing_rate": 0.1772
+  },
+  {
+   "name": "spambase",
+   "openml_id": 44,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "spambase",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/spambase",
+   "license": "Public",
+   "n_instances": 4601,
+   "n_features": 57,
+   "n_numeric": 57,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.606,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "splice",
+   "openml_id": 46,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "splice",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Molecular+Biology+(Splice-junction+Gene+Sequences)",
+   "license": "Public",
+   "n_instances": 3190,
+   "n_features": 60,
+   "n_numeric": 0,
+   "n_nominal": 60,
+   "n_classes": 3,
+   "majority_rate": 0.5188,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "steel-plates-fault",
+   "openml_id": 40982,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "steel-plates-fault",
+   "openml_version": 3,
+   "license": "Public",
+   "n_instances": 1941,
+   "n_features": 27,
+   "n_numeric": 27,
+   "n_nominal": 0,
+   "n_classes": 7,
+   "majority_rate": 0.3467,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "SUSY",
+   "tags": [
+    "lord"
+   ],
+   "uci": "https://archive.ics.uci.edu/dataset/279/susy",
+   "notes": "5,000,000 rows; not on OpenML (only an unfinished upload, id 42226).",
+   "n_instances": 5000000
+  },
+  {
+   "name": "texture",
+   "openml_id": 40499,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "texture",
+   "openml_version": 1,
+   "original_url": "http://sci2s.ugr.es/keel/dataset.php?cod=72",
+   "license": "Public",
+   "n_instances": 5500,
+   "n_features": 40,
+   "n_numeric": 40,
+   "n_nominal": 0,
+   "n_classes": 11,
+   "majority_rate": 0.0909,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "tic-tac-toe",
+   "openml_id": 50,
+   "tags": [
+    "classic",
+    "lord",
+    "cc18"
+   ],
+   "openml_name": "tic-tac-toe",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Tic-Tac-Toe+Endgame",
+   "license": "Public",
+   "n_instances": 958,
+   "n_features": 9,
+   "n_numeric": 0,
+   "n_nominal": 9,
+   "n_classes": 2,
+   "majority_rate": 0.6534,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "Titanic",
+   "openml_id": 40945,
+   "tags": [
+    "xai"
+   ],
+   "drop": [
+    "name",
+    "ticket",
+    "cabin",
+    "boat",
+    "body",
+    "home.dest"
+   ],
+   "notes": "boat (lifeboat) and body (body identification number) reveal the outcome and are dropped, as are the free-text name/ticket/cabin/home.dest columns.",
+   "openml_name": "Titanic",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 1309,
+   "n_features": 7,
+   "n_numeric": 5,
+   "n_nominal": 2,
+   "n_classes": 2,
+   "majority_rate": 0.618,
+   "missing_rate": 0.2032
+  },
+  {
+   "name": "vehicle",
+   "openml_id": 54,
+   "tags": [
+    "classic",
+    "cc18"
+   ],
+   "openml_name": "vehicle",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Statlog+(Vehicle+Silhouettes)",
+   "license": "Public",
+   "n_instances": 846,
+   "n_features": 18,
+   "n_numeric": 18,
+   "n_nominal": 0,
+   "n_classes": 4,
+   "majority_rate": 0.2577,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "vote",
+   "openml_id": 56,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "openml_name": "vote",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/congressional+voting+records",
+   "license": "Public",
+   "n_instances": 435,
+   "n_features": 16,
+   "n_numeric": 0,
+   "n_nominal": 16,
+   "n_classes": 2,
+   "majority_rate": 0.6138,
+   "missing_rate": 0.4667
+  },
+  {
+   "name": "vowel",
+   "openml_id": 307,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "vowel",
+   "openml_version": 2,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Connectionist+Bench+(Vowel+Recognition+-+Deterding+Data)",
+   "license": "Public",
+   "n_instances": 990,
+   "n_features": 12,
+   "n_numeric": 10,
+   "n_nominal": 2,
+   "n_classes": 11,
+   "majority_rate": 0.0909,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "wall-robot-navigation",
+   "openml_id": 1497,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "wall-robot-navigation",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 5456,
+   "n_features": 24,
+   "n_numeric": 24,
+   "n_nominal": 0,
+   "n_classes": 4,
+   "majority_rate": 0.4041,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "waveform-5000",
+   "openml_id": 60,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "notes": "LORD's 'waveform'.",
+   "openml_name": "waveform-5000",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/Waveform+Database+Generator+(Version+2)",
+   "license": "Public",
+   "n_instances": 5000,
+   "n_features": 40,
+   "n_numeric": 40,
+   "n_nominal": 0,
+   "n_classes": 3,
+   "majority_rate": 0.3384,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "wdbc",
+   "openml_id": 1510,
+   "tags": [
+    "xai",
+    "cc18"
+   ],
+   "notes": "Wisconsin diagnostic breast cancer.",
+   "openml_name": "wdbc",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 569,
+   "n_features": 30,
+   "n_numeric": 30,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.6274,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "wearable-puc-rio",
+   "tags": [
+    "lord"
+   ],
+   "uci": "https://archive.ics.uci.edu/dataset/250/wearable+computing+classification+of+body+postures+and+movements+pucrio",
+   "notes": "LORD's 'puc-rio'. Not on OpenML.",
+   "n_instances": 165632
+  },
+  {
+   "name": "wilt",
+   "openml_id": 40983,
+   "tags": [
+    "cc18"
+   ],
+   "openml_name": "wilt",
+   "openml_version": 2,
+   "license": "Public",
+   "n_instances": 4839,
+   "n_features": 5,
+   "n_numeric": 5,
+   "n_nominal": 0,
+   "n_classes": 2,
+   "majority_rate": 0.9461,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "wine",
+   "openml_id": 187,
+   "tags": [
+    "classic",
+    "lord"
+   ],
+   "openml_name": "wine",
+   "openml_version": 1,
+   "original_url": "07/1991",
+   "license": "Public",
+   "n_instances": 178,
+   "n_features": 13,
+   "n_numeric": 13,
+   "n_nominal": 0,
+   "n_classes": 3,
+   "majority_rate": 0.3989,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "yeast",
+   "openml_id": 181,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "yeast",
+   "openml_version": 1,
+   "license": "Public",
+   "n_instances": 1484,
+   "n_features": 8,
+   "n_numeric": 8,
+   "n_nominal": 0,
+   "n_classes": 10,
+   "majority_rate": 0.312,
+   "missing_rate": 0.0
+  },
+  {
+   "name": "zoo",
+   "openml_id": 62,
+   "tags": [
+    "classic"
+   ],
+   "openml_name": "zoo",
+   "openml_version": 1,
+   "original_url": "https://archive.ics.uci.edu/ml/datasets/zoo",
+   "license": "Public",
+   "n_instances": 101,
+   "n_features": 16,
+   "n_numeric": 1,
+   "n_nominal": 15,
+   "n_classes": 7,
+   "majority_rate": 0.4059,
+   "missing_rate": 0.0
+  }
+ ]
+}

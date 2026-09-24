@@ -1,0 +1,131 @@
+"""The dataset catalog: the shipped file's consistency and the selection
+logic. Offline -- nothing here downloads data."""
+
+import pandas as pd
+import pytest
+
+from pyrulearn.data.catalog import (
+    ATTRIBUTE_KINDS, MEDIUM_MAX, SIZES, SMALL_MAX, TASKS, Catalog, CatalogEntry, prepare_frame,
+)
+
+KNOWN_TAGS = {"cc18", "lord", "xai", "classic"}
+
+
+@pytest.fixture(scope="module")
+def cat():
+    return Catalog.default()
+
+
+def test_shipped_catalog_is_consistent(cat):
+    assert len(cat) > 50
+    for e in cat:
+        assert e.tags and set(e.tags) <= KNOWN_TAGS, e.name
+        assert e.openml_id is not None or e.uci or e.kaggle, f"{e.name} has no source"
+        if e.loadable:
+            # the statistics tools/build_catalog.py fills in are all there
+            for f in ("n_instances", "n_features", "n_numeric", "n_nominal", "n_classes"):
+                assert getattr(e, f) is not None, (e.name, f)
+            assert e.n_numeric + e.n_nominal == e.n_features, e.name
+            assert e.task in TASKS and e.size in SIZES and e.attributes in ATTRIBUTE_KINDS, e.name
+    ids = [e.openml_id for e in cat if e.openml_id is not None]
+    assert len(ids) == len(set(ids)), "an OpenML dataset appears twice"
+
+
+def test_shipped_catalog_round_trips(cat):
+    again = Catalog.from_json(cat.to_json())
+    assert [vars(e) for e in again] == [vars(e) for e in cat]
+
+
+def test_shipped_catalog_covers_every_category(cat):
+    for task in TASKS:
+        for size in SIZES:
+            assert cat.select(task=task, size=size), (task, size)
+    for kind in ATTRIBUTE_KINDS:
+        assert cat.select(attributes=kind), kind
+    for tag in KNOWN_TAGS:
+        assert cat.select(tags=tag, loadable=None), tag
+
+
+def test_categories_follow_the_counts():
+    e = CatalogEntry("x", n_classes=2, n_instances=SMALL_MAX - 1, n_numeric=0, n_nominal=3)
+    assert (e.task, e.size, e.attributes) == ("binary", "small", "categorical")
+    e = CatalogEntry("x", n_classes=3, n_instances=MEDIUM_MAX, n_numeric=2, n_nominal=0)
+    assert (e.task, e.size, e.attributes) == ("multiclass", "medium", "numeric")
+    e = CatalogEntry("x", n_classes=5, n_instances=MEDIUM_MAX + 1, n_numeric=2, n_nominal=1)
+    assert (e.size, e.attributes) == ("large", "mixed")
+    assert CatalogEntry("x").task is None and not CatalogEntry("x").loadable
+
+
+def _toy():
+    return Catalog([
+        CatalogEntry("a", openml_id=1, tags=["lord"], n_classes=2, n_instances=100, n_numeric=0, n_nominal=4,
+                     missing_rate=0.0),
+        CatalogEntry("b", openml_id=2, tags=["cc18"], n_classes=2, n_instances=5000, n_numeric=3, n_nominal=0,
+                     missing_rate=0.1),
+        CatalogEntry("c", openml_id=3, tags=["cc18", "xai"], n_classes=4, n_instances=50000, n_numeric=1,
+                     n_nominal=1, missing_rate=0.0),
+        CatalogEntry("d", uci="https://archive.ics.uci.edu/dataset/1/x", tags=["lord"], n_instances=10**6),
+    ])
+
+
+def test_select_combines_axes_with_and_and_values_with_or():
+    cat = _toy()
+    names = lambda es: [e.name for e in es]  # noqa: E731
+    assert names(cat.select(task="binary")) == ["a", "b"]
+    assert names(cat.select(task="binary", size=["small", "medium"])) == ["a", "b"]
+    assert names(cat.select(task="binary", size="medium")) == ["b"]
+    assert names(cat.select(attributes=["categorical", "mixed"])) == ["a", "c"]
+    assert names(cat.select(tags="xai")) == ["c"]
+    assert names(cat.select(missing=True)) == ["b"]
+    # pointer-only entries are skipped unless asked for
+    assert names(cat.select(tags="lord")) == ["a"]
+    assert names(cat.select(tags="lord", loadable=None)) == ["a", "d"]
+    with pytest.raises(ValueError):
+        cat.select(size="huge")
+    with pytest.raises(KeyError):
+        cat.select(names="nope")
+
+
+def test_parse_sorts_words_onto_their_axis():
+    cat = _toy()
+    names = lambda es: [e.name for e in es]  # noqa: E731
+    assert names(cat.parse("binary,small,medium")) == ["a", "b"]
+    assert names(cat.parse("cc18")) == ["b", "c"]
+    assert names(cat.parse("multiclass,c")) == ["c"]
+    assert names(cat.parse("a,b")) == ["a", "b"]
+    assert names(cat.parse("binary,small,c")) == ["a", "c"]  # names add to the filtered selection
+    assert names(cat.parse("all")) == ["a", "b", "c"]
+    with pytest.raises(ValueError):
+        cat.parse("binary,nonsense")
+
+
+def test_prepare_applies_the_curated_fixes():
+    e = CatalogEntry("x", rename={"V1": "age", "V2": "sex", "V3": "leak", "V4": "code"},
+                     drop=["leak"], nominal=["code"], missing_markers={"age": [0]})
+    df = pd.DataFrame({"V1": [30.0, 0.0, 50.0, 40.0], "V2": ["m", "f", "m", "m"],
+                       "V3": [1, 2, 3, 4], "V4": [1.0, 2.0, 3.0, None],
+                       "const": [7, 7, 7, 7], "y": ["p", "n", None, "p"]})
+    out = e.prepare(df, "y")
+    assert list(out.columns) == ["age", "sex", "code", "y"]   # leak dropped, constant dropped
+    assert len(out) == 3                                      # row without a class dropped
+    assert pd.isna(out["age"].iloc[1])                        # 0 marks "not measured"
+    assert str(out["code"].dtype) == "category"
+    assert list(out["code"].iloc[:2]) == ["1", "2"] and pd.isna(out["code"].iloc[2])
+
+
+def test_prepare_frame_keeps_degenerate_columns_when_asked():
+    df = pd.DataFrame({"const": [1, 1], "y": ["a", "b"]})
+    assert list(prepare_frame(df, "y", drop_degenerate=False).columns) == ["const", "y"]
+
+
+if __name__ == "__main__":
+    c = Catalog.default()
+    test_shipped_catalog_is_consistent(c)
+    test_shipped_catalog_round_trips(c)
+    test_shipped_catalog_covers_every_category(c)
+    test_categories_follow_the_counts()
+    test_select_combines_axes_with_and_and_values_with_or()
+    test_parse_sorts_words_onto_their_axis()
+    test_prepare_applies_the_curated_fixes()
+    test_prepare_frame_keeps_degenerate_columns_when_asked()
+    print("All tests passed.")

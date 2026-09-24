@@ -40,5 +40,8 @@ Issues = "https://github.com/juffif/pyrulearn/issues"
 [tool.setuptools.packages.find]
 include = ["pyrulearn*"]
 
+[tool.setuptools.package-data]
+"pyrulearn.data" = ["catalog.json"]   # the dataset catalog (metadata only, no data)
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

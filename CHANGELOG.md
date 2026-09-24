@@ -26,6 +26,15 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- `pyrulearn.data.catalog`: a catalog of about 100 benchmark datasets
+  (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
+  rule-learning datasets), metadata and download pointers only. Select by
+  task (binary/multiclass), size (small/medium/large), attribute types
+  (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
+  or `.parse("binary,small,medium")` -- and `entry.load()` downloads and
+  caches the raw data with curated fixes applied (restored attribute
+  names, dropped leakage columns, category codes, missing-value markers).
+  `tools/build_catalog.py` maintains the catalog file.
 - Binary attributes: `AttributeType.BINARY` and
   `DataSpecBuilder.add_binary("sex", ["male", "female"])`, a closed set of
   exactly two values. They always get both features (`sex=male`,
