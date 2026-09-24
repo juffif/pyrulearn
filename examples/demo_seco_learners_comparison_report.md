@@ -1,6 +1,6 @@
 # JRip vs. pyrulearn's SeCo-based learners -- comparison across binary datasets
 
-Generated 2026-09-23 21:32:48. N_FOLDS=5, MAX_INTERVALS=8, FIT_TIMEOUT_SECONDS=60. sonar, ionosphere, kr-vs-kp, mushroom excluded (pass --include-large). `{model}_A`/`{model}_B` treat each dataset's (alphabetically) first/second class as positive (`pfoil`/`cn2beam1`/`cn2beam5`/`pfossil`/`aqr` only -- `jrip`/`lord`/`pylord` need no direction). `jrip`'s fit-time includes JVM subprocess startup overhead, not just the algorithm itself. See this module's own docstring for what each model is.
+Generated 2026-09-24 22:28:30. N_FOLDS=5, MAX_INTERVALS=8, FIT_TIMEOUT_SECONDS=60. sonar, ionosphere, kr-vs-kp, mushroom excluded (pass --include-large). `{model}_A`/`{model}_B` treat each dataset's (alphabetically) first/second class as positive (`pfoil`/`cn2beam1`/`cn2beam5`/`pfossil`/`aqr` only -- `jrip`/`lord`/`pylord` need no direction). `jrip`'s fit-time includes JVM subprocess startup overhead, not just the algorithm itself. See this module's own docstring for what each model is.
 
 ---
 
@@ -30,19 +30,19 @@ n=435, attributes=16, A='democrat', B='republican'
 
 | model | time |
 |---|---|
-| jrip | 0.473 |
-| lord | 1.343 |
-| pylord | 1.305 |
-| pfoil_A | 0.493 |
-| pfoil_B | 0.124 |
-| cn2beam1_A | 0.039 |
-| cn2beam1_B | 0.083 |
-| cn2beam5_A | 0.091 |
-| cn2beam5_B | 0.239 |
-| pfossil_A | 0.056 |
-| pfossil_B | 0.037 |
-| aqr_A | 0.255 |
-| aqr_B | 0.234 |
+| jrip | 0.577 |
+| lord | 1.523 |
+| pylord | 0.940 |
+| pfoil_A | 0.293 |
+| pfoil_B | 0.075 |
+| cn2beam1_A | 0.025 |
+| cn2beam1_B | 0.051 |
+| cn2beam5_A | 0.053 |
+| cn2beam5_B | 0.158 |
+| pfossil_A | 0.033 |
+| pfossil_B | 0.020 |
+| aqr_A | 0.169 |
+| aqr_B | 0.145 |
 
 **Rule complexity**
 
@@ -62,7 +62,7 @@ n=435, attributes=16, A='democrat', B='republican'
 | aqr_A | 8.8 | 3.44 |
 | aqr_B | 6.4 | 5.98 |
 
-(24.6s total)
+(20.9s total)
 
 ---
 
@@ -92,19 +92,19 @@ n=286, attributes=9, A='no-recurrence-events', B='recurrence-events'
 
 | model | time |
 |---|---|
-| jrip | 0.470 |
-| lord | 1.340 |
-| pylord | 2.781 |
-| pfoil_A | 0.532 |
-| pfoil_B | 0.373 |
+| jrip | 0.557 |
+| lord | 1.440 |
+| pylord | 3.119 |
+| pfoil_A | 0.596 |
+| pfoil_B | 0.422 |
 | cn2beam1_A | 0.021 |
-| cn2beam1_B | 0.010 |
-| cn2beam5_A | 0.077 |
-| cn2beam5_B | 0.034 |
-| pfossil_A | 0.175 |
-| pfossil_B | 0.110 |
-| aqr_A | 6.878 |
-| aqr_B | 4.541 |
+| cn2beam1_B | 0.008 |
+| cn2beam5_A | 0.079 |
+| cn2beam5_B | 0.038 |
+| pfossil_A | 0.192 |
+| pfossil_B | 0.114 |
+| aqr_A | 7.794 |
+| aqr_B | 5.136 |
 
 **Rule complexity**
 
@@ -124,7 +124,7 @@ n=286, attributes=9, A='no-recurrence-events', B='recurrence-events'
 | aqr_A | 20.6 | 21.81 |
 | aqr_B | 13.0 | 23.87 |
 
-(87.6s total)
+(98.4s total)
 
 ---
 
@@ -156,17 +156,17 @@ n=368, attributes=26, A='1', B='2'
 
 | model | time |
 |---|---|
-| jrip | 0.748 |
-| lord | 1.642 |
-| pylord | 28.851 |
-| pfoil_A | 5.804 |
-| pfoil_B | 7.159 |
-| cn2beam1_A | 2.166 |
-| cn2beam1_B | 1.352 |
-| cn2beam5_A | 3.427 |
-| cn2beam5_B | 2.070 |
-| pfossil_A | 3.919 |
-| pfossil_B | 2.654 |
+| jrip | 0.629 |
+| lord | 1.344 |
+| pylord | 17.258 |
+| pfoil_A | 4.869 |
+| pfoil_B | 4.715 |
+| cn2beam1_A | 1.792 |
+| cn2beam1_B | 0.986 |
+| cn2beam5_A | 2.805 |
+| cn2beam5_B | 1.559 |
+| pfossil_A | 3.179 |
+| pfossil_B | 2.031 |
 | aqr_A | nan |
 | aqr_B | nan |
 
@@ -188,7 +188,7 @@ n=368, attributes=26, A='1', B='2'
 | aqr_A | nan | nan |
 | aqr_B | nan | nan |
 
-(908.6s total)
+(813.5s total)
 
 ---
 
@@ -196,7 +196,7 @@ n=368, attributes=26, A='1', B='2'
 
 n=690, attributes=15, A='+', B='-'
 
-*10 model-fold combination(s) timed out (> 60s) or raised and were skipped for that fold -- see per-model failure counts below.*
+*3 model-fold combination(s) timed out (> 60s) or raised and were skipped for that fold -- see per-model failure counts below.*
 
 **Accuracy**
 
@@ -213,26 +213,26 @@ n=690, attributes=15, A='+', B='-'
 | cn2beam5_B | 55.51 +/- 0.35 | 0/5 |
 | pfossil_A | 84.06 +/- 2.51 | 0/5 |
 | pfossil_B | 55.51 +/- 0.35 | 0/5 |
-| aqr_A | n/a | 5/5 |
-| aqr_B | n/a | 5/5 |
+| aqr_A | 74.64 +/- 3.90 | 1/5 |
+| aqr_B | 55.31 +/- 0.34 | 2/5 |
 
 **Fit time (seconds/fold)**
 
 | model | time |
 |---|---|
-| jrip | 0.718 |
-| lord | 1.725 |
-| pylord | 25.937 |
-| pfoil_A | 3.778 |
-| pfoil_B | 4.763 |
-| cn2beam1_A | 0.746 |
-| cn2beam1_B | 1.366 |
-| cn2beam5_A | 1.628 |
-| cn2beam5_B | 2.963 |
-| pfossil_A | 0.582 |
-| pfossil_B | 1.302 |
-| aqr_A | nan |
-| aqr_B | nan |
+| jrip | 0.601 |
+| lord | 1.520 |
+| pylord | 13.936 |
+| pfoil_A | 1.714 |
+| pfoil_B | 2.112 |
+| cn2beam1_A | 0.311 |
+| cn2beam1_B | 0.640 |
+| cn2beam5_A | 0.772 |
+| cn2beam5_B | 1.466 |
+| pfossil_A | 0.307 |
+| pfossil_B | 0.567 |
+| aqr_A | 54.756 |
+| aqr_B | 52.238 |
 
 **Rule complexity**
 
@@ -249,10 +249,10 @@ n=690, attributes=15, A='+', B='-'
 | cn2beam5_B | 10.2 | 3.02 |
 | pfossil_A | 4.4 | 3.11 |
 | pfossil_B | 6.8 | 4.70 |
-| aqr_A | nan | nan |
-| aqr_B | nan | nan |
+| aqr_A | 32.2 | 36.85 |
+| aqr_B | 30.3 | 40.55 |
 
-(836.0s total)
+(678.5s total)
 
 ---
 
@@ -284,17 +284,17 @@ n=1000, attributes=20, A='bad', B='good'
 
 | model | time |
 |---|---|
-| jrip | 0.779 |
-| lord | 1.669 |
-| pylord | 28.037 |
-| pfoil_A | 5.385 |
-| pfoil_B | 6.498 |
-| cn2beam1_A | 0.380 |
-| cn2beam1_B | 0.632 |
-| cn2beam5_A | 1.739 |
-| cn2beam5_B | 2.607 |
-| pfossil_A | 0.704 |
-| pfossil_B | 0.492 |
+| jrip | 0.765 |
+| lord | 1.706 |
+| pylord | 28.189 |
+| pfoil_A | 4.760 |
+| pfoil_B | 6.241 |
+| cn2beam1_A | 0.334 |
+| cn2beam1_B | 0.612 |
+| cn2beam5_A | 1.424 |
+| cn2beam5_B | 2.415 |
+| pfossil_A | 0.586 |
+| pfossil_B | 0.478 |
 | aqr_A | nan |
 | aqr_B | nan |
 
@@ -316,7 +316,7 @@ n=1000, attributes=20, A='bad', B='good'
 | aqr_A | nan | nan |
 | aqr_B | nan | nan |
 
-(851.3s total)
+(844.7s total)
 
 ---
 
@@ -346,19 +346,19 @@ n=768, attributes=8, A='tested_negative', B='tested_positive'
 
 | model | time |
 |---|---|
-| jrip | 0.588 |
-| lord | 1.336 |
-| pylord | 10.279 |
-| pfoil_A | 1.826 |
-| pfoil_B | 1.726 |
-| cn2beam1_A | 0.315 |
-| cn2beam1_B | 0.225 |
-| cn2beam5_A | 1.003 |
-| cn2beam5_B | 0.677 |
-| pfossil_A | 0.271 |
-| pfossil_B | 0.201 |
-| aqr_A | 15.967 |
-| aqr_B | 9.860 |
+| jrip | 0.591 |
+| lord | 1.469 |
+| pylord | 10.320 |
+| pfoil_A | 1.784 |
+| pfoil_B | 1.682 |
+| cn2beam1_A | 0.302 |
+| cn2beam1_B | 0.220 |
+| cn2beam5_A | 1.004 |
+| cn2beam5_B | 0.649 |
+| pfossil_A | 0.226 |
+| pfossil_B | 0.179 |
+| aqr_A | 14.800 |
+| aqr_B | 9.947 |
 
 **Rule complexity**
 
@@ -378,7 +378,7 @@ n=768, attributes=8, A='tested_negative', B='tested_positive'
 | aqr_A | 22.8 | 29.14 |
 | aqr_B | 13.8 | 29.64 |
 
-(223.3s total)
+(217.6s total)
 
 ---
 
@@ -408,19 +408,19 @@ n=958, attributes=9, A='negative', B='positive'
 
 | model | time |
 |---|---|
-| jrip | 0.531 |
-| lord | 1.419 |
-| pylord | 5.255 |
-| pfoil_A | 0.179 |
-| pfoil_B | 0.117 |
-| cn2beam1_A | 0.101 |
-| cn2beam1_B | 0.071 |
-| cn2beam5_A | 0.318 |
-| cn2beam5_B | 0.215 |
-| pfossil_A | 0.119 |
-| pfossil_B | 0.102 |
-| aqr_A | 3.152 |
-| aqr_B | 3.905 |
+| jrip | 0.581 |
+| lord | 1.423 |
+| pylord | 5.562 |
+| pfoil_A | 0.178 |
+| pfoil_B | 0.120 |
+| cn2beam1_A | 0.102 |
+| cn2beam1_B | 0.073 |
+| cn2beam5_A | 0.337 |
+| cn2beam5_B | 0.219 |
+| pfossil_A | 0.120 |
+| pfossil_B | 0.105 |
+| aqr_A | 3.404 |
+| aqr_B | 4.134 |
 
 **Rule complexity**
 
@@ -440,7 +440,7 @@ n=958, attributes=9, A='negative', B='positive'
 | aqr_A | 36.6 | 10.39 |
 | aqr_B | 47.2 | 9.52 |
 
-(78.3s total)
+(82.7s total)
 
 ---
 
@@ -470,19 +470,19 @@ n=1372, attributes=4, A='1', B='2'
 
 | model | time |
 |---|---|
-| jrip | 0.547 |
-| lord | 1.334 |
-| pylord | 4.897 |
-| pfoil_A | 0.152 |
-| pfoil_B | 0.140 |
-| cn2beam1_A | 0.066 |
-| cn2beam1_B | 0.063 |
-| cn2beam5_A | 0.295 |
-| cn2beam5_B | 0.241 |
-| pfossil_A | 0.059 |
-| pfossil_B | 0.077 |
-| aqr_A | 0.747 |
-| aqr_B | 1.079 |
+| jrip | 0.586 |
+| lord | 1.343 |
+| pylord | 5.147 |
+| pfoil_A | 0.166 |
+| pfoil_B | 0.148 |
+| cn2beam1_A | 0.069 |
+| cn2beam1_B | 0.068 |
+| cn2beam5_A | 0.312 |
+| cn2beam5_B | 0.254 |
+| pfossil_A | 0.061 |
+| pfossil_B | 0.080 |
+| aqr_A | 0.777 |
+| aqr_B | 1.122 |
 
 **Rule complexity**
 
@@ -502,7 +502,7 @@ n=1372, attributes=4, A='1', B='2'
 | aqr_A | 5.2 | 9.24 |
 | aqr_B | 7.6 | 10.41 |
 
-(49.7s total)
+(51.9s total)
 
 ---
 
@@ -515,7 +515,7 @@ n=1372, attributes=4, A='1', B='2'
 | vote | 95.40 | 93.56 | 94.02 | 61.38 | 89.20 | 61.38 | 95.63 | 61.38 | 94.71 | 61.38 | 94.25 | 61.38 | 91.72 |
 | breast-cancer | 73.06 | 71.32 | 72.03 | 70.28 | 52.45 | 70.28 | 69.93 | 70.28 | 70.63 | 70.28 | 68.23 | 70.28 | 65.70 |
 | colic | 86.42 | 81.79 | 84.78 | 63.04 | 77.46 | 63.04 | 81.53 | 63.04 | 82.34 | 63.04 | 86.95 | nan | nan |
-| credit-approval | 85.65 | 84.49 | 84.06 | 80.43 | 55.51 | 74.06 | 55.51 | 76.23 | 55.51 | 84.06 | 55.51 | nan | nan |
+| credit-approval | 85.65 | 84.49 | 84.06 | 80.43 | 55.51 | 74.06 | 55.51 | 76.23 | 55.51 | 84.06 | 55.51 | 74.64 | 55.31 |
 | credit-g | 72.70 | 74.30 | 73.80 | 58.40 | 70.00 | 71.90 | 70.00 | 71.30 | 70.00 | 71.10 | 70.00 | nan | nan |
 | diabetes | 74.61 | 73.57 | 75.39 | 65.10 | 59.50 | 65.10 | 70.96 | 65.10 | 72.14 | 65.10 | 73.05 | 65.10 | 67.05 |
 | tic-tac-toe | 98.33 | 97.81 | 95.51 | 93.62 | 65.34 | 98.33 | 65.34 | 98.33 | 65.34 | 80.58 | 65.34 | 91.55 | 65.34 |
@@ -525,14 +525,14 @@ n=1372, attributes=4, A='1', B='2'
 
 | dataset | jrip | lord | pylord | pfoil_A | pfoil_B | cn2beam1_A | cn2beam1_B | cn2beam5_A | cn2beam5_B | pfossil_A | pfossil_B | aqr_A | aqr_B |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| vote | 0.473 | 1.343 | 1.305 | 0.493 | 0.124 | 0.039 | 0.083 | 0.091 | 0.239 | 0.056 | 0.037 | 0.255 | 0.234 |
-| breast-cancer | 0.470 | 1.340 | 2.781 | 0.532 | 0.373 | 0.021 | 0.010 | 0.077 | 0.034 | 0.175 | 0.110 | 6.878 | 4.541 |
-| colic | 0.748 | 1.642 | 28.851 | 5.804 | 7.159 | 2.166 | 1.352 | 3.427 | 2.070 | 3.919 | 2.654 | nan | nan |
-| credit-approval | 0.718 | 1.725 | 25.937 | 3.778 | 4.763 | 0.746 | 1.366 | 1.628 | 2.963 | 0.582 | 1.302 | nan | nan |
-| credit-g | 0.779 | 1.669 | 28.037 | 5.385 | 6.498 | 0.380 | 0.632 | 1.739 | 2.607 | 0.704 | 0.492 | nan | nan |
-| diabetes | 0.588 | 1.336 | 10.279 | 1.826 | 1.726 | 0.315 | 0.225 | 1.003 | 0.677 | 0.271 | 0.201 | 15.967 | 9.860 |
-| tic-tac-toe | 0.531 | 1.419 | 5.255 | 0.179 | 0.117 | 0.101 | 0.071 | 0.318 | 0.215 | 0.119 | 0.102 | 3.152 | 3.905 |
-| banknote-authentication | 0.547 | 1.334 | 4.897 | 0.152 | 0.140 | 0.066 | 0.063 | 0.295 | 0.241 | 0.059 | 0.077 | 0.747 | 1.079 |
+| vote | 0.577 | 1.523 | 0.940 | 0.293 | 0.075 | 0.025 | 0.051 | 0.053 | 0.158 | 0.033 | 0.020 | 0.169 | 0.145 |
+| breast-cancer | 0.557 | 1.440 | 3.119 | 0.596 | 0.422 | 0.021 | 0.008 | 0.079 | 0.038 | 0.192 | 0.114 | 7.794 | 5.136 |
+| colic | 0.629 | 1.344 | 17.258 | 4.869 | 4.715 | 1.792 | 0.986 | 2.805 | 1.559 | 3.179 | 2.031 | nan | nan |
+| credit-approval | 0.601 | 1.520 | 13.936 | 1.714 | 2.112 | 0.311 | 0.640 | 0.772 | 1.466 | 0.307 | 0.567 | 54.756 | 52.238 |
+| credit-g | 0.765 | 1.706 | 28.189 | 4.760 | 6.241 | 0.334 | 0.612 | 1.424 | 2.415 | 0.586 | 0.478 | nan | nan |
+| diabetes | 0.591 | 1.469 | 10.320 | 1.784 | 1.682 | 0.302 | 0.220 | 1.004 | 0.649 | 0.226 | 0.179 | 14.800 | 9.947 |
+| tic-tac-toe | 0.581 | 1.423 | 5.562 | 0.178 | 0.120 | 0.102 | 0.073 | 0.337 | 0.219 | 0.120 | 0.105 | 3.404 | 4.134 |
+| banknote-authentication | 0.586 | 1.343 | 5.147 | 0.166 | 0.148 | 0.069 | 0.068 | 0.312 | 0.254 | 0.061 | 0.080 | 0.777 | 1.122 |
 
 ### Rule count
 
@@ -541,7 +541,7 @@ n=1372, attributes=4, A='1', B='2'
 | vote | 2.2 | 29.2 | 34.6 | 11.6 | 10.8 | 5.2 | 8.0 | 4.8 | 7.0 | 5.8 | 2.8 | 8.8 | 6.4 |
 | breast-cancer | 1.0 | 81.0 | 84.8 | 22.0 | 17.6 | 1.2 | 0.2 | 2.0 | 1.0 | 5.6 | 3.0 | 20.6 | 13.0 |
 | colic | 3.2 | 62.2 | 68.6 | 15.4 | 16.4 | 12.8 | 6.0 | 13.4 | 6.2 | 10.8 | 6.6 | nan | nan |
-| credit-approval | 3.2 | 112.2 | 112.8 | 27.2 | 24.8 | 8.4 | 12.4 | 7.8 | 10.2 | 4.4 | 6.8 | nan | nan |
+| credit-approval | 3.2 | 112.2 | 112.8 | 27.2 | 24.8 | 8.4 | 12.4 | 7.8 | 10.2 | 4.4 | 6.8 | 32.2 | 30.3 |
 | credit-g | 3.0 | 223.6 | 226.2 | 42.0 | 47.4 | 5.8 | 9.0 | 8.6 | 15.4 | 1.8 | 1.6 | nan | nan |
 | diabetes | 3.0 | 178.4 | 196.0 | 39.8 | 32.0 | 10.8 | 7.6 | 10.8 | 8.0 | 5.2 | 2.6 | 22.8 | 13.8 |
 | tic-tac-toe | 8.0 | 35.8 | 57.4 | 13.0 | 9.2 | 8.4 | 5.8 | 8.0 | 5.0 | 7.6 | 7.2 | 36.6 | 47.2 |
@@ -554,7 +554,7 @@ n=1372, attributes=4, A='1', B='2'
 | vote | 1.87 | 2.94 | 3.05 | 2.44 | 3.38 | 2.11 | 3.16 | 2.15 | 3.26 | 2.49 | 3.10 | 3.44 | 5.98 |
 | breast-cancer | 1.80 | 4.35 | 4.59 | 3.74 | 3.12 | 1.70 | 0.20 | 1.83 | 0.48 | 4.59 | 3.11 | 21.81 | 23.87 |
 | colic | 1.97 | 1.98 | 1.96 | 3.02 | 2.57 | 1.40 | 1.68 | 1.69 | 1.78 | 2.95 | 3.05 | nan | nan |
-| credit-approval | 2.05 | 3.81 | 3.92 | 3.46 | 4.12 | 1.96 | 2.84 | 2.65 | 3.02 | 3.11 | 4.70 | nan | nan |
+| credit-approval | 2.05 | 3.81 | 3.92 | 3.46 | 4.12 | 1.96 | 2.84 | 2.65 | 3.02 | 3.11 | 4.70 | 36.85 | 40.55 |
 | credit-g | 3.77 | 3.81 | 3.83 | 4.87 | 4.54 | 2.29 | 2.64 | 2.77 | 2.78 | 11.13 | 7.40 | nan | nan |
 | diabetes | 2.68 | 4.59 | 5.32 | 4.10 | 4.56 | 2.59 | 2.74 | 2.91 | 2.97 | 3.21 | 4.23 | 29.14 | 29.64 |
 | tic-tac-toe | 3.08 | 3.83 | 4.19 | 3.64 | 3.37 | 3.00 | 3.00 | 3.00 | 3.03 | 3.74 | 3.47 | 10.39 | 9.52 |
@@ -565,34 +565,34 @@ n=1372, attributes=4, A='1', B='2'
 
 | model | accuracy (%) | fit time (s) | n_rules | avg_conditions | datasets fully failed |
 |---|---|---|---|---|---|
-| jrip | 85.60 | 0.607 | 3.6 | 2.44 | 0 |
-| lord | 84.50 | 1.476 | 93.6 | 3.51 | 0 |
-| pylord | 84.84 | 13.418 | 100.9 | 3.71 | 0 |
-| pfoil_A | 68.48 | 2.269 | 23.1 | 3.53 | 0 |
-| pfoil_B | 70.94 | 2.612 | 21.2 | 3.58 | 0 |
-| cn2beam1_A | 69.95 | 0.479 | 7.4 | 2.17 | 0 |
-| cn2beam1_B | 74.92 | 0.475 | 7.0 | 2.30 | 0 |
-| cn2beam5_A | 70.15 | 1.072 | 7.8 | 2.44 | 0 |
-| cn2beam5_B | 75.70 | 1.131 | 7.5 | 2.46 | 0 |
-| pfossil_A | 68.89 | 0.736 | 5.9 | 4.18 | 0 |
-| pfossil_B | 76.27 | 0.622 | 4.7 | 3.94 | 0 |
-| aqr_A | 68.77 | 5.400 | 18.8 | 14.80 | 3 |
-| aqr_B | 77.63 | 3.924 | 17.6 | 15.88 | 3 |
+| jrip | 85.60 | 0.611 | 3.6 | 2.44 | 0 |
+| lord | 84.50 | 1.471 | 93.6 | 3.51 | 0 |
+| pylord | 84.84 | 10.559 | 100.9 | 3.71 | 0 |
+| pfoil_A | 68.48 | 1.795 | 23.1 | 3.53 | 0 |
+| pfoil_B | 70.94 | 1.939 | 21.2 | 3.58 | 0 |
+| cn2beam1_A | 69.95 | 0.369 | 7.4 | 2.17 | 0 |
+| cn2beam1_B | 74.92 | 0.332 | 7.0 | 2.30 | 0 |
+| cn2beam5_A | 70.15 | 0.848 | 7.8 | 2.44 | 0 |
+| cn2beam5_B | 75.70 | 0.845 | 7.5 | 2.46 | 0 |
+| pfossil_A | 68.89 | 0.588 | 5.9 | 4.18 | 0 |
+| pfossil_B | 76.27 | 0.447 | 4.7 | 3.94 | 0 |
+| aqr_A | 69.75 | 13.616 | 21.0 | 18.48 | 2 |
+| aqr_B | 73.91 | 12.120 | 19.7 | 19.99 | 2 |
 
 **Average rank per criterion** (1 = best of 13; failed entries tie for last)
 
 | model | rank (accuracy) | rank (fit time) | rank (n_rules) | rank (avg_conditions) |
 |---|---|---|---|---|
-| jrip | 2.00 | 6.12 | 2.19 | 3.50 |
-| lord | 3.19 | 8.62 | 11.00 | 8.00 |
-| pylord | 2.88 | 11.75 | 12.25 | 8.62 |
+| jrip | 2.00 | 6.50 | 2.19 | 3.50 |
+| lord | 3.19 | 8.88 | 11.25 | 8.00 |
+| pylord | 2.88 | 11.75 | 12.50 | 8.62 |
 | pfoil_A | 8.81 | 8.62 | 9.75 | 7.88 |
-| pfoil_B | 9.38 | 7.62 | 9.12 | 8.75 |
-| cn2beam1_A | 7.69 | 2.75 | 5.06 | 1.88 |
-| cn2beam1_B | 7.50 | 2.50 | 4.62 | 3.00 |
-| cn2beam5_A | 7.69 | 6.50 | 5.12 | 3.75 |
-| cn2beam5_B | 6.50 | 6.38 | 4.81 | 4.88 |
-| pfossil_A | 8.25 | 3.88 | 3.88 | 7.38 |
-| pfossil_B | 6.88 | 3.25 | 3.38 | 8.38 |
-| aqr_A | 10.44 | 11.69 | 9.75 | 12.31 |
-| aqr_B | 9.81 | 11.31 | 10.06 | 12.69 |
+| pfoil_B | 9.50 | 7.62 | 9.12 | 8.75 |
+| cn2beam1_A | 7.81 | 2.62 | 5.06 | 1.88 |
+| cn2beam1_B | 7.62 | 2.62 | 4.62 | 3.00 |
+| cn2beam5_A | 7.69 | 6.38 | 5.12 | 3.75 |
+| cn2beam5_B | 6.62 | 6.25 | 4.81 | 4.88 |
+| pfossil_A | 8.25 | 3.62 | 3.88 | 7.38 |
+| pfossil_B | 7.00 | 3.12 | 3.38 | 8.38 |
+| aqr_A | 9.75 | 11.75 | 9.56 | 12.25 |
+| aqr_B | 9.88 | 11.25 | 9.75 | 12.75 |

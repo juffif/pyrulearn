@@ -1,6 +1,6 @@
 # Decision-tree -> rule-set import demo
 
-Generated 2026-09-23 09:01:27. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
+Generated 2026-09-24 22:13:17. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
 
 Only fold 1 of each dataset is shown in full detail (tree + every rule in all four `to_string` formats); all folds contribute to the summary statistics.
 
@@ -163,7 +163,7 @@ conditions: adoption-of-the-budget-resolution = ?, physician-fee-freeze ≠ y, e
 | 4 | 0.954 | 0.954 | 1.000 | 20 | 11 |
 | 5 | 0.897 | 0.897 | 1.000 | 18 | 11 |
 
-**Summary** (0.1s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
+**Summary** (0.2s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
 
 ---
 
@@ -177,8 +177,48 @@ n=286, attributes=9 (9 categorical, 0 numeric), classes=2
 validate_dataspec note(s) against the test fold: ["attribute 'age' has values in the data outside its known domain: ['20-29']"]
 
 Decision tree (19 leaves, depth 5):
-|--- deg-malig=3 <= 0.50
-|   |--- tumor-size=10-14 <= 0.50
+|--- deg-malig!=3 <= 0.50
+|   |--- inv-nodes=0-2 <= 0.50
+|   |   |--- node-caps!=? <= 0.50
+|   |   |   |--- class: no-recurrence-events
+|   |   |--- node-caps!=? >  0.50
+|   |   |   |--- breast=right <= 0.50
+|   |   |   |   |--- tumor-size=45-49 <= 0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |   |   |--- tumor-size=45-49 >  0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|   |   |   |--- breast=right >  0.50
+|   |   |   |   |--- tumor-size!=30-34 <= 0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |   |   |--- tumor-size!=30-34 >  0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|   |--- inv-nodes=0-2 >  0.50
+|   |   |--- age!=60-69 <= 0.50
+|   |   |   |--- breast-quad!=left_low <= 0.50
+|   |   |   |   |--- tumor-size!=30-34 <= 0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|   |   |   |   |--- tumor-size!=30-34 >  0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |   |--- breast-quad!=left_low >  0.50
+|   |   |   |   |--- tumor-size!=25-29 <= 0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|   |   |   |   |--- tumor-size!=25-29 >  0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |--- age!=60-69 >  0.50
+|   |   |   |--- menopause=premeno <= 0.50
+|   |   |   |   |--- breast-quad!=? <= 0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |   |   |--- breast-quad!=? >  0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|   |   |   |--- menopause=premeno >  0.50
+|   |   |   |   |--- age=40-49 <= 0.50
+|   |   |   |   |   |--- class: recurrence-events
+|   |   |   |   |--- age=40-49 >  0.50
+|   |   |   |   |   |--- class: no-recurrence-events
+|--- deg-malig!=3 >  0.50
+|   |--- tumor-size!=10-14 <= 0.50
+|   |   |--- class: no-recurrence-events
+|   |--- tumor-size!=10-14 >  0.50
 |   |   |--- breast-quad=right_low <= 0.50
 |   |   |   |--- node-caps=no <= 0.50
 |   |   |   |   |--- menopause=lt40 <= 0.50
@@ -192,143 +232,103 @@ Decision tree (19 leaves, depth 5):
 |   |   |   |   |   |--- class: recurrence-events
 |   |   |--- breast-quad=right_low >  0.50
 |   |   |   |--- class: no-recurrence-events
-|   |--- tumor-size=10-14 >  0.50
-|   |   |--- class: no-recurrence-events
-|--- deg-malig=3 >  0.50
-|   |--- inv-nodes=0-2 <= 0.50
-|   |   |--- node-caps!=? <= 0.50
-|   |   |   |--- class: no-recurrence-events
-|   |   |--- node-caps!=? >  0.50
-|   |   |   |--- breast!=left <= 0.50
-|   |   |   |   |--- breast-quad=central <= 0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |   |   |   |--- breast-quad=central >  0.50
-|   |   |   |   |   |--- class: no-recurrence-events
-|   |   |   |--- breast!=left >  0.50
-|   |   |   |   |--- tumor-size=30-34 <= 0.50
-|   |   |   |   |   |--- class: no-recurrence-events
-|   |   |   |   |--- tumor-size=30-34 >  0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |--- inv-nodes=0-2 >  0.50
-|   |   |--- age=60-69 <= 0.50
-|   |   |   |--- menopause!=premeno <= 0.50
-|   |   |   |   |--- age=40-49 <= 0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |   |   |   |--- age=40-49 >  0.50
-|   |   |   |   |   |--- class: no-recurrence-events
-|   |   |   |--- menopause!=premeno >  0.50
-|   |   |   |   |--- breast-quad=? <= 0.50
-|   |   |   |   |   |--- class: no-recurrence-events
-|   |   |   |   |--- breast-quad=? >  0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |   |--- age=60-69 >  0.50
-|   |   |   |--- breast-quad!=left_low <= 0.50
-|   |   |   |   |--- tumor-size=20-24 <= 0.50
-|   |   |   |   |   |--- class: no-recurrence-events
-|   |   |   |   |--- tumor-size=20-24 >  0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |   |   |--- breast-quad!=left_low >  0.50
-|   |   |   |   |--- tumor-size=25-29 <= 0.50
-|   |   |   |   |   |--- class: recurrence-events
-|   |   |   |   |--- tumor-size=25-29 >  0.50
-|   |   |   |   |   |--- class: no-recurrence-events
 
 Extracted DisjointRuleSet (19 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 8/9
 
-logic:      menopause ≠ lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- menopause(X, V1), V1 \= lt40, tumor-size(X, V2), V2 \= 10-14, node-caps(X, V3), V3 \= no, deg-malig(X, V4), V4 \= 3, breast-quad(X, V5), V5 \= right_low.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: menopause ≠ lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
-
-logic:      menopause = lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
-prolog:     'recurrence-events'(X) :- menopause(X, lt40), tumor-size(X, V1), V1 \= 10-14, node-caps(X, V2), V2 \= no, deg-malig(X, V3), V3 \= 3, breast-quad(X, V4), V4 \= right_low.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: menopause = lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
-
-logic:      tumor-size ≠ 10-14 ∧ tumor-size ≠ 45-49 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 10-14, tumor-size(X, V2), V2 \= 45-49, node-caps(X, no), deg-malig(X, V3), V3 \= 3, breast-quad(X, V4), V4 \= right_low.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: tumor-size ≠ 10-14, tumor-size ≠ 45-49, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
-
-logic:      tumor-size = 45-49 ∧ tumor-size ≠ 10-14 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
-prolog:     'recurrence-events'(X) :- tumor-size(X, 45-49), tumor-size(X, V1), V1 \= 10-14, node-caps(X, no), deg-malig(X, V2), V2 \= 3, breast-quad(X, V3), V3 \= right_low.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: tumor-size = 45-49, tumor-size ≠ 10-14, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
-
-logic:      tumor-size ≠ 10-14 ∧ deg-malig ≠ 3 ∧ breast-quad = right_low → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 10-14, deg-malig(X, V2), V2 \= 3, breast-quad(X, right_low).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0
-conditions: tumor-size ≠ 10-14, deg-malig ≠ 3, breast-quad = right_low
-
-logic:      tumor-size = 10-14 ∧ deg-malig ≠ 3 → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- tumor-size(X, 10-14), deg-malig(X, V1), V1 \= 3.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: tumor-size = 10-14, deg-malig ≠ 3
-
 logic:      inv-nodes ≠ 0-2 ∧ node-caps = ? ∧ deg-malig = 3 → no-recurrence-events
 prolog:     'no-recurrence-events'(X) :- inv-nodes(X, V1), V1 \= 0-2, node-caps(X, ?), deg-malig(X, 3).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: inv-nodes ≠ 0-2, node-caps = ?, deg-malig = 3
 
-logic:      inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left ∧ breast-quad ≠ central → recurrence-events
-prolog:     'recurrence-events'(X) :- inv-nodes(X, V1), V1 \= 0-2, node-caps(X, V2), V2 \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, V3), V3 \= central.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0
-conditions: inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left, breast-quad ≠ central
+logic:      tumor-size ≠ 45-49 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left → recurrence-events
+prolog:     'recurrence-events'(X) :- tumor-size(X, V1), V1 \= 45-49, inv-nodes(X, V2), V2 \= 0-2, node-caps(X, V3), V3 \= ?, deg-malig(X, 3), breast(X, left).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: tumor-size ≠ 45-49, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left
 
-logic:      inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left ∧ breast-quad = central → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- inv-nodes(X, V1), V1 \= 0-2, node-caps(X, V2), V2 \= ?, deg-malig(X, 3), breast(X, left), breast-quad(X, central).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left, breast-quad = central
+logic:      tumor-size = 45-49 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = left → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, 45-49), inv-nodes(X, V1), V1 \= 0-2, node-caps(X, V2), V2 \= ?, deg-malig(X, 3), breast(X, left).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: tumor-size = 45-49, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = left
 
-logic:      tumor-size ≠ 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast ≠ left → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 30-34, inv-nodes(X, V2), V2 \= 0-2, node-caps(X, V3), V3 \= ?, deg-malig(X, 3), breast(X, V4), V4 \= left.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: tumor-size ≠ 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast ≠ left
+logic:      tumor-size = 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = right → recurrence-events
+prolog:     'recurrence-events'(X) :- tumor-size(X, 30-34), inv-nodes(X, V1), V1 \= 0-2, node-caps(X, V2), V2 \= ?, deg-malig(X, 3), breast(X, right).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: tumor-size = 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = right
 
-logic:      tumor-size = 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast ≠ left → recurrence-events
-prolog:     'recurrence-events'(X) :- tumor-size(X, 30-34), inv-nodes(X, V1), V1 \= 0-2, node-caps(X, V2), V2 \= ?, deg-malig(X, 3), breast(X, V3), V3 \= left.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: tumor-size = 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast ≠ left
+logic:      tumor-size ≠ 30-34 ∧ inv-nodes ≠ 0-2 ∧ node-caps ≠ ? ∧ deg-malig = 3 ∧ breast = right → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 30-34, inv-nodes(X, V2), V2 \= 0-2, node-caps(X, V3), V3 \= ?, deg-malig(X, 3), breast(X, right).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: tumor-size ≠ 30-34, inv-nodes ≠ 0-2, node-caps ≠ ?, deg-malig = 3, breast = right
+
+logic:      age = 60-69 ∧ tumor-size = 30-34 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 30-34), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
+pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0
+conditions: age = 60-69, tumor-size = 30-34, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
+
+logic:      age = 60-69 ∧ tumor-size ≠ 30-34 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → recurrence-events
+prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V1), V1 \= 30-34, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
+pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0
+conditions: age = 60-69, tumor-size ≠ 30-34, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
+
+logic:      age = 60-69 ∧ tumor-size = 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 25-29), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V1), V1 \= left_low.
+pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
+conditions: age = 60-69, tumor-size = 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
+
+logic:      age = 60-69 ∧ tumor-size ≠ 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → recurrence-events
+prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V1), V1 \= 25-29, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V2), V2 \= left_low.
+pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
+conditions: age = 60-69, tumor-size ≠ 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
+
+logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = ? → recurrence-events
+prolog:     'recurrence-events'(X) :- age(X, V1), V1 \= 60-69, menopause(X, V2), V2 \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, ?).
+pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad = ?
+
+logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ ? → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- age(X, V1), V1 \= 60-69, menopause(X, V2), V2 \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V3), V3 \= ?.
+pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ ?
 
 logic:      age ≠ 40-49 ∧ age ≠ 60-69 ∧ menopause = premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 → recurrence-events
 prolog:     'recurrence-events'(X) :- age(X, V1), V1 \= 40-49, age(X, V2), V2 \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
-pattern:    0 0 0 0 0 0 1 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 1 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age ≠ 40-49, age ≠ 60-69, menopause = premeno, inv-nodes = 0-2, deg-malig = 3
 
 logic:      age = 40-49 ∧ age ≠ 60-69 ∧ menopause = premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 → no-recurrence-events
 prolog:     'no-recurrence-events'(X) :- age(X, 40-49), age(X, V1), V1 \= 60-69, menopause(X, premeno), inv-nodes(X, 0-2), deg-malig(X, 3).
-pattern:    0 1 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 1 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: age = 40-49, age ≠ 60-69, menopause = premeno, inv-nodes = 0-2, deg-malig = 3
 
-logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ ? → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- age(X, V1), V1 \= 60-69, menopause(X, V2), V2 \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V3), V3 \= ?.
-pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0
-conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ ?
+logic:      tumor-size = 10-14 ∧ deg-malig ≠ 3 → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, 10-14), deg-malig(X, V1), V1 \= 3.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: tumor-size = 10-14, deg-malig ≠ 3
 
-logic:      age ≠ 60-69 ∧ menopause ≠ premeno ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = ? → recurrence-events
-prolog:     'recurrence-events'(X) :- age(X, V1), V1 \= 60-69, menopause(X, V2), V2 \= premeno, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, ?).
-pattern:    0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: age ≠ 60-69, menopause ≠ premeno, inv-nodes = 0-2, deg-malig = 3, breast-quad = ?
+logic:      menopause ≠ lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- menopause(X, V1), V1 \= lt40, tumor-size(X, V2), V2 \= 10-14, node-caps(X, V3), V3 \= no, deg-malig(X, V4), V4 \= 3, breast-quad(X, V5), V5 \= right_low.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+conditions: menopause ≠ lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
 
-logic:      age = 60-69 ∧ tumor-size ≠ 20-24 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V1), V1 \= 20-24, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
-pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: age = 60-69, tumor-size ≠ 20-24, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
+logic:      menopause = lt40 ∧ tumor-size ≠ 10-14 ∧ node-caps ≠ no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
+prolog:     'recurrence-events'(X) :- menopause(X, lt40), tumor-size(X, V1), V1 \= 10-14, node-caps(X, V2), V2 \= no, deg-malig(X, V3), V3 \= 3, breast-quad(X, V4), V4 \= right_low.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+conditions: menopause = lt40, tumor-size ≠ 10-14, node-caps ≠ no, deg-malig ≠ 3, breast-quad ≠ right_low
 
-logic:      age = 60-69 ∧ tumor-size = 20-24 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad = left_low → recurrence-events
-prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 20-24), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, left_low).
-pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: age = 60-69, tumor-size = 20-24, inv-nodes = 0-2, deg-malig = 3, breast-quad = left_low
+logic:      tumor-size ≠ 10-14 ∧ tumor-size ≠ 45-49 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 10-14, tumor-size(X, V2), V2 \= 45-49, node-caps(X, no), deg-malig(X, V3), V3 \= 3, breast-quad(X, V4), V4 \= right_low.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+conditions: tumor-size ≠ 10-14, tumor-size ≠ 45-49, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
 
-logic:      age = 60-69 ∧ tumor-size ≠ 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → recurrence-events
-prolog:     'recurrence-events'(X) :- age(X, 60-69), tumor-size(X, V1), V1 \= 25-29, inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V2), V2 \= left_low.
-pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
-conditions: age = 60-69, tumor-size ≠ 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
+logic:      tumor-size = 45-49 ∧ tumor-size ≠ 10-14 ∧ node-caps = no ∧ deg-malig ≠ 3 ∧ breast-quad ≠ right_low → recurrence-events
+prolog:     'recurrence-events'(X) :- tumor-size(X, 45-49), tumor-size(X, V1), V1 \= 10-14, node-caps(X, no), deg-malig(X, V2), V2 \= 3, breast-quad(X, V3), V3 \= right_low.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+conditions: tumor-size = 45-49, tumor-size ≠ 10-14, node-caps = no, deg-malig ≠ 3, breast-quad ≠ right_low
 
-logic:      age = 60-69 ∧ tumor-size = 25-29 ∧ inv-nodes = 0-2 ∧ deg-malig = 3 ∧ breast-quad ≠ left_low → no-recurrence-events
-prolog:     'no-recurrence-events'(X) :- age(X, 60-69), tumor-size(X, 25-29), inv-nodes(X, 0-2), deg-malig(X, 3), breast-quad(X, V1), V1 \= left_low.
-pattern:    0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
-conditions: age = 60-69, tumor-size = 25-29, inv-nodes = 0-2, deg-malig = 3, breast-quad ≠ left_low
+logic:      tumor-size ≠ 10-14 ∧ deg-malig ≠ 3 ∧ breast-quad = right_low → no-recurrence-events
+prolog:     'no-recurrence-events'(X) :- tumor-size(X, V1), V1 \= 10-14, deg-malig(X, V2), V2 \= 3, breast-quad(X, right_low).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0
+conditions: tumor-size ≠ 10-14, deg-malig ≠ 3, breast-quad = right_low
 
 ```
 
@@ -336,13 +336,13 @@ conditions: age = 60-69, tumor-size = 25-29, inv-nodes = 0-2, deg-malig = 3, bre
 
 | fold | tree acc | rule-set acc | agreement | n rules | attrs used |
 |---|---|---|---|---|---|
-| 1 | 0.741 | 0.741 | 1.000 | 19 | 8 |
+| 1 | 0.724 | 0.724 | 1.000 | 19 | 8 |
 | 2 | 0.737 | 0.737 | 1.000 | 20 | 9 |
 | 3 | 0.719 | 0.719 | 1.000 | 18 | 7 |
-| 4 | 0.702 | 0.702 | 1.000 | 19 | 7 |
-| 5 | 0.719 | 0.719 | 1.000 | 19 | 7 |
+| 4 | 0.702 | 0.702 | 1.000 | 19 | 8 |
+| 5 | 0.702 | 0.702 | 1.000 | 19 | 7 |
 
-**Summary** (0.1s): tree accuracy 0.724 +/- 0.014, rule-set accuracy 0.724 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.6 of 9 available.
+**Summary** (0.2s): tree accuracy 0.717 +/- 0.014, rule-set accuracy 0.717 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.8 of 9 available.
 
 ---
 
@@ -356,94 +356,94 @@ n=3196, attributes=36 (36 categorical, 0 numeric), classes=2
 validate_dataspec note(s) against the test fold: ["attribute 'spcop' has values in the data outside its known domain: ['t']"]
 
 Decision tree (11 leaves, depth 5):
-|--- rimmx=f <= 0.50
-|   |--- class: won
-|--- rimmx=f >  0.50
+|--- rimmx=t <= 0.50
 |   |--- wknck=t <= 0.50
-|   |   |--- bxqsq!=t <= 0.50
-|   |   |   |--- class: nowin
-|   |   |--- bxqsq!=t >  0.50
-|   |   |   |--- wkna8!=t <= 0.50
+|   |   |--- bxqsq=t <= 0.50
+|   |   |   |--- wkna8=t <= 0.50
+|   |   |   |   |--- bkxbq=f <= 0.50
+|   |   |   |   |   |--- class: won
+|   |   |   |   |--- bkxbq=f >  0.50
+|   |   |   |   |   |--- class: won
+|   |   |   |--- wkna8=t >  0.50
 |   |   |   |   |--- class: nowin
-|   |   |   |--- wkna8!=t >  0.50
-|   |   |   |   |--- bkxbq!=f <= 0.50
-|   |   |   |   |   |--- class: won
-|   |   |   |   |--- bkxbq!=f >  0.50
-|   |   |   |   |   |--- class: won
+|   |   |--- bxqsq=t >  0.50
+|   |   |   |--- class: nowin
 |   |--- wknck=t >  0.50
-|   |   |--- r2ar8!=t <= 0.50
+|   |   |--- r2ar8=f <= 0.50
 |   |   |   |--- wkovl=t <= 0.50
-|   |   |   |   |--- bkxcr=f <= 0.50
+|   |   |   |   |--- bkxcr=t <= 0.50
 |   |   |   |   |   |--- class: nowin
-|   |   |   |   |--- bkxcr=f >  0.50
+|   |   |   |   |--- bkxcr=t >  0.50
 |   |   |   |   |   |--- class: nowin
 |   |   |   |--- wkovl=t >  0.50
 |   |   |   |   |--- class: nowin
-|   |   |--- r2ar8!=t >  0.50
-|   |   |   |--- bkxcr!=f <= 0.50
+|   |   |--- r2ar8=f >  0.50
+|   |   |   |--- bkxcr=t <= 0.50
 |   |   |   |   |--- skrxp=f <= 0.50
 |   |   |   |   |   |--- class: nowin
 |   |   |   |   |--- skrxp=f >  0.50
 |   |   |   |   |   |--- class: nowin
-|   |   |   |--- bkxcr!=f >  0.50
+|   |   |   |--- bkxcr=t >  0.50
 |   |   |   |   |--- class: nowin
+|--- rimmx=t >  0.50
+|   |--- class: won
 
 Extracted DisjointRuleSet (11 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 9/36
 
-logic:      rimmx ≠ f → won
-prolog:     won(X) :- rimmx(X, V1), V1 \= f.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: rimmx ≠ f
+logic:      bkxbq = t ∧ bxqsq = f ∧ rimmx = f ∧ wkna8 = f ∧ wknck = f → won
+prolog:     won(X) :- bkxbq(X, t), bxqsq(X, f), rimmx(X, f), wkna8(X, f), wknck(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0
+conditions: bkxbq = t, bxqsq = f, rimmx = f, wkna8 = f, wknck = f
 
-logic:      bxqsq = t ∧ rimmx = f ∧ wknck ≠ t → nowin
-prolog:     nowin(X) :- bxqsq(X, t), rimmx(X, f), wknck(X, V1), V1 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bxqsq = t, rimmx = f, wknck ≠ t
+logic:      bkxbq = f ∧ bxqsq = f ∧ rimmx = f ∧ wkna8 = f ∧ wknck = f → won
+prolog:     won(X) :- bkxbq(X, f), bxqsq(X, f), rimmx(X, f), wkna8(X, f), wknck(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0
+conditions: bkxbq = f, bxqsq = f, rimmx = f, wkna8 = f, wknck = f
 
-logic:      bxqsq ≠ t ∧ rimmx = f ∧ wkna8 = t ∧ wknck ≠ t → nowin
-prolog:     nowin(X) :- bxqsq(X, V1), V1 \= t, rimmx(X, f), wkna8(X, t), wknck(X, V2), V2 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bxqsq ≠ t, rimmx = f, wkna8 = t, wknck ≠ t
+logic:      bxqsq = f ∧ rimmx = f ∧ wkna8 = t ∧ wknck = f → nowin
+prolog:     nowin(X) :- bxqsq(X, f), rimmx(X, f), wkna8(X, t), wknck(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0
+conditions: bxqsq = f, rimmx = f, wkna8 = t, wknck = f
 
-logic:      bkxbq = f ∧ bxqsq ≠ t ∧ rimmx = f ∧ wkna8 ≠ t ∧ wknck ≠ t → won
-prolog:     won(X) :- bkxbq(X, f), bxqsq(X, V1), V1 \= t, rimmx(X, f), wkna8(X, V2), V2 \= t, wknck(X, V3), V3 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bkxbq = f, bxqsq ≠ t, rimmx = f, wkna8 ≠ t, wknck ≠ t
+logic:      bxqsq = t ∧ rimmx = f ∧ wknck = f → nowin
+prolog:     nowin(X) :- bxqsq(X, t), rimmx(X, f), wknck(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+conditions: bxqsq = t, rimmx = f, wknck = f
 
-logic:      bkxbq ≠ f ∧ bxqsq ≠ t ∧ rimmx = f ∧ wkna8 ≠ t ∧ wknck ≠ t → won
-prolog:     won(X) :- bkxbq(X, V1), V1 \= f, bxqsq(X, V2), V2 \= t, rimmx(X, f), wkna8(X, V3), V3 \= t, wknck(X, V4), V4 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bkxbq ≠ f, bxqsq ≠ t, rimmx = f, wkna8 ≠ t, wknck ≠ t
+logic:      bkxcr = f ∧ r2ar8 = t ∧ rimmx = f ∧ wknck = t ∧ wkovl = f → nowin
+prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, t), rimmx(X, f), wknck(X, t), wkovl(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0
+conditions: bkxcr = f, r2ar8 = t, rimmx = f, wknck = t, wkovl = f
 
-logic:      bkxcr ≠ f ∧ r2ar8 = t ∧ rimmx = f ∧ wknck = t ∧ wkovl ≠ t → nowin
-prolog:     nowin(X) :- bkxcr(X, V1), V1 \= f, r2ar8(X, t), rimmx(X, f), wknck(X, t), wkovl(X, V2), V2 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0
-conditions: bkxcr ≠ f, r2ar8 = t, rimmx = f, wknck = t, wkovl ≠ t
-
-logic:      bkxcr = f ∧ r2ar8 = t ∧ rimmx = f ∧ wknck = t ∧ wkovl ≠ t → nowin
-prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, t), rimmx(X, f), wknck(X, t), wkovl(X, V1), V1 \= t.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0
-conditions: bkxcr = f, r2ar8 = t, rimmx = f, wknck = t, wkovl ≠ t
+logic:      bkxcr = t ∧ r2ar8 = t ∧ rimmx = f ∧ wknck = t ∧ wkovl = f → nowin
+prolog:     nowin(X) :- bkxcr(X, t), r2ar8(X, t), rimmx(X, f), wknck(X, t), wkovl(X, f).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0
+conditions: bkxcr = t, r2ar8 = t, rimmx = f, wknck = t, wkovl = f
 
 logic:      r2ar8 = t ∧ rimmx = f ∧ wknck = t ∧ wkovl = t → nowin
 prolog:     nowin(X) :- r2ar8(X, t), rimmx(X, f), wknck(X, t), wkovl(X, t).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0
 conditions: r2ar8 = t, rimmx = f, wknck = t, wkovl = t
 
-logic:      bkxcr = f ∧ r2ar8 ≠ t ∧ rimmx = f ∧ skrxp ≠ f ∧ wknck = t → nowin
-prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, V1), V1 \= t, rimmx(X, f), skrxp(X, V2), V2 \= f, wknck(X, t).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bkxcr = f, r2ar8 ≠ t, rimmx = f, skrxp ≠ f, wknck = t
+logic:      bkxcr = f ∧ r2ar8 = f ∧ rimmx = f ∧ skrxp = t ∧ wknck = t → nowin
+prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, f), rimmx(X, f), skrxp(X, t), wknck(X, t).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0
+conditions: bkxcr = f, r2ar8 = f, rimmx = f, skrxp = t, wknck = t
 
-logic:      bkxcr = f ∧ r2ar8 ≠ t ∧ rimmx = f ∧ skrxp = f ∧ wknck = t → nowin
-prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, V1), V1 \= t, rimmx(X, f), skrxp(X, f), wknck(X, t).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bkxcr = f, r2ar8 ≠ t, rimmx = f, skrxp = f, wknck = t
+logic:      bkxcr = f ∧ r2ar8 = f ∧ rimmx = f ∧ skrxp = f ∧ wknck = t → nowin
+prolog:     nowin(X) :- bkxcr(X, f), r2ar8(X, f), rimmx(X, f), skrxp(X, f), wknck(X, t).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0
+conditions: bkxcr = f, r2ar8 = f, rimmx = f, skrxp = f, wknck = t
 
-logic:      bkxcr ≠ f ∧ r2ar8 ≠ t ∧ rimmx = f ∧ wknck = t → nowin
-prolog:     nowin(X) :- bkxcr(X, V1), V1 \= f, r2ar8(X, V2), V2 \= t, rimmx(X, f), wknck(X, t).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: bkxcr ≠ f, r2ar8 ≠ t, rimmx = f, wknck = t
+logic:      bkxcr = t ∧ r2ar8 = f ∧ rimmx = f ∧ wknck = t → nowin
+prolog:     nowin(X) :- bkxcr(X, t), r2ar8(X, f), rimmx(X, f), wknck(X, t).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0
+conditions: bkxcr = t, r2ar8 = f, rimmx = f, wknck = t
+
+logic:      rimmx = t → won
+prolog:     won(X) :- rimmx(X, t).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: rimmx = t
 
 ```
 
@@ -457,7 +457,7 @@ conditions: bkxcr ≠ f, r2ar8 ≠ t, rimmx = f, wknck = t
 | 4 | 0.942 | 0.942 | 1.000 | 12 | 9 |
 | 5 | 0.956 | 0.956 | 1.000 | 12 | 10 |
 
-**Summary** (0.4s): tree accuracy 0.941 +/- 0.011, rule-set accuracy 0.941 +/- 0.011, tree/rule-set agreement 1.0000, mean rules/fold 11.4, mean attributes used/fold 9.4 of 36 available.
+**Summary** (0.3s): tree accuracy 0.941 +/- 0.011, rule-set accuracy 0.941 +/- 0.011, tree/rule-set agreement 1.0000, mean rules/fold 11.4, mean attributes used/fold 9.4 of 36 available.
 
 ---
 
@@ -469,33 +469,8 @@ n=3772, attributes=27 (21 categorical, 6 numeric), classes=4
 
 ```text
 Decision tree (13 leaves, depth 5):
-|--- TSH>=6.05 <= 0.50
-|   |--- TT4<51.5 <= 0.50
-|   |   |--- class: negative
-|   |--- TT4<51.5 >  0.50
-|   |   |--- referral_source=other <= 0.50
-|   |   |   |--- class: negative
-|   |   |--- referral_source=other >  0.50
-|   |   |   |--- sex!=M <= 0.50
-|   |   |   |   |--- class: negative
-|   |   |   |--- sex!=M >  0.50
-|   |   |   |   |--- class: secondary_hypothyroid
-|--- TSH>=6.05 >  0.50
-|   |--- FTI>=61.5 <= 0.50
-|   |   |--- thyroid_surgery=t <= 0.50
-|   |   |   |--- T3>=2.55 <= 0.50
-|   |   |   |   |--- TSH>=8.55 <= 0.50
-|   |   |   |   |   |--- class: primary_hypothyroid
-|   |   |   |   |--- TSH>=8.55 >  0.50
-|   |   |   |   |   |--- class: primary_hypothyroid
-|   |   |   |--- T3>=2.55 >  0.50
-|   |   |   |   |--- class: negative
-|   |   |--- thyroid_surgery=t >  0.50
-|   |   |   |--- T3>=1.25 <= 0.50
-|   |   |   |   |--- class: negative
-|   |   |   |--- T3>=1.25 >  0.50
-|   |   |   |   |--- class: primary_hypothyroid
-|   |--- FTI>=61.5 >  0.50
+|--- TSH<6.05 <= 0.50
+|   |--- FTI<61.5 <= 0.50
 |   |   |--- on_thyroxine=f <= 0.50
 |   |   |   |--- class: negative
 |   |   |--- on_thyroxine=f >  0.50
@@ -506,73 +481,98 @@ Decision tree (13 leaves, depth 5):
 |   |   |   |   |   |--- class: compensated_hypothyroid
 |   |   |   |--- thyroid_surgery=t >  0.50
 |   |   |   |   |--- class: negative
+|   |--- FTI<61.5 >  0.50
+|   |   |--- thyroid_surgery=f <= 0.50
+|   |   |   |--- FTI<51.5 <= 0.50
+|   |   |   |   |--- class: primary_hypothyroid
+|   |   |   |--- FTI<51.5 >  0.50
+|   |   |   |   |--- class: negative
+|   |   |--- thyroid_surgery=f >  0.50
+|   |   |   |--- T3<2.55 <= 0.50
+|   |   |   |   |--- class: negative
+|   |   |   |--- T3<2.55 >  0.50
+|   |   |   |   |--- TSH<8.55 <= 0.50
+|   |   |   |   |   |--- class: primary_hypothyroid
+|   |   |   |   |--- TSH<8.55 >  0.50
+|   |   |   |   |   |--- class: primary_hypothyroid
+|--- TSH<6.05 >  0.50
+|   |--- TT4>=51.5 <= 0.50
+|   |   |--- referral_source!=other <= 0.50
+|   |   |   |--- sex!=F <= 0.50
+|   |   |   |   |--- class: secondary_hypothyroid
+|   |   |   |--- sex!=F >  0.50
+|   |   |   |   |--- class: negative
+|   |   |--- referral_source!=other >  0.50
+|   |   |   |--- class: negative
+|   |--- TT4>=51.5 >  0.50
+|   |   |--- class: negative
 
 Extracted DisjointRuleSet (13 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 8/27
 
-logic:      TSH < 6.05 ∧ TT4 >= 51.5 → negative
-prolog:     negative(X) :- TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 >= 51.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: TSH < 6.05, TT4 >= 51.5
+logic:      on_thyroxine = t ∧ TSH >= 6.05 ∧ FTI >= 61.5 → negative
+prolog:     negative(X) :- on_thyroxine(X, t), TSH(X, V1), V1 >= 6.05, FTI(X, V2), V2 >= 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: on_thyroxine = t, TSH >= 6.05, FTI >= 61.5
 
-logic:      TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source ≠ other → negative
-prolog:     negative(X) :- TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 < 51.5, referral_source(X, V3), V3 \= other.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
-conditions: TSH < 6.05, TT4 < 51.5, referral_source ≠ other
+logic:      on_thyroxine = f ∧ thyroid_surgery = f ∧ TSH >= 6.05 ∧ TT4 < 51.5 ∧ FTI >= 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, f), TSH(X, V1), V1 >= 6.05, TT4(X, V2), V2 < 51.5, FTI(X, V3), V3 >= 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: on_thyroxine = f, thyroid_surgery = f, TSH >= 6.05, TT4 < 51.5, FTI >= 61.5
 
-logic:      sex = M ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → negative
-prolog:     negative(X) :- sex(X, M), TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 < 51.5, referral_source(X, other).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: sex = M, TSH < 6.05, TT4 < 51.5, referral_source = other
-
-logic:      sex ≠ M ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → secondary_hypothyroid
-prolog:     secondary_hypothyroid(X) :- sex(X, V1), V1 \= M, TSH(X, V2), V2 < 6.05, TT4(X, V3), V3 < 51.5, referral_source(X, other).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
-conditions: sex ≠ M, TSH < 6.05, TT4 < 51.5, referral_source = other
-
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TSH < 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V1), V1 \= t, TSH(X, V2), V2 >= 6.05, TSH(X, V3), V3 < 8.55, T3(X, V4), V4 < 2.55, FTI(X, V5), V5 < 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.05, TSH < 8.55, T3 < 2.55, FTI < 61.5
-
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TSH >= 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, V1), V1 \= t, TSH(X, V2), V2 >= 6.05, TSH(X, V3), V3 >= 8.55, T3(X, V4), V4 < 2.55, FTI(X, V5), V5 < 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.05, TSH >= 8.55, T3 < 2.55, FTI < 61.5
-
-logic:      thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ T3 >= 2.55 ∧ FTI < 61.5 → negative
-prolog:     negative(X) :- thyroid_surgery(X, V1), V1 \= t, TSH(X, V2), V2 >= 6.05, T3(X, V3), V3 >= 2.55, FTI(X, V4), V4 < 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery ≠ t, TSH >= 6.05, T3 >= 2.55, FTI < 61.5
-
-logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ T3 < 1.25 ∧ FTI < 61.5 → negative
-prolog:     negative(X) :- thyroid_surgery(X, t), TSH(X, V1), V1 >= 6.05, T3(X, V2), V2 < 1.25, FTI(X, V3), V3 < 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery = t, TSH >= 6.05, T3 < 1.25, FTI < 61.5
-
-logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ T3 >= 1.25 ∧ FTI < 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, t), TSH(X, V1), V1 >= 6.05, T3(X, V2), V2 >= 1.25, FTI(X, V3), V3 < 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: thyroid_surgery = t, TSH >= 6.05, T3 >= 1.25, FTI < 61.5
-
-logic:      on_thyroxine ≠ f ∧ TSH >= 6.05 ∧ FTI >= 61.5 → negative
-prolog:     negative(X) :- on_thyroxine(X, V1), V1 \= f, TSH(X, V2), V2 >= 6.05, FTI(X, V3), V3 >= 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine ≠ f, TSH >= 6.05, FTI >= 61.5
-
-logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TT4 < 51.5 ∧ FTI >= 61.5 → primary_hypothyroid
-prolog:     primary_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V1), V1 \= t, TSH(X, V2), V2 >= 6.05, TT4(X, V3), V3 < 51.5, FTI(X, V4), V4 >= 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.05, TT4 < 51.5, FTI >= 61.5
-
-logic:      on_thyroxine = f ∧ thyroid_surgery ≠ t ∧ TSH >= 6.05 ∧ TT4 >= 51.5 ∧ FTI >= 61.5 → compensated_hypothyroid
-prolog:     compensated_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, V1), V1 \= t, TSH(X, V2), V2 >= 6.05, TT4(X, V3), V3 >= 51.5, FTI(X, V4), V4 >= 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: on_thyroxine = f, thyroid_surgery ≠ t, TSH >= 6.05, TT4 >= 51.5, FTI >= 61.5
+logic:      on_thyroxine = f ∧ thyroid_surgery = f ∧ TSH >= 6.05 ∧ TT4 >= 51.5 ∧ FTI >= 61.5 → compensated_hypothyroid
+prolog:     compensated_hypothyroid(X) :- on_thyroxine(X, f), thyroid_surgery(X, f), TSH(X, V1), V1 >= 6.05, TT4(X, V2), V2 >= 51.5, FTI(X, V3), V3 >= 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: on_thyroxine = f, thyroid_surgery = f, TSH >= 6.05, TT4 >= 51.5, FTI >= 61.5
 
 logic:      on_thyroxine = f ∧ thyroid_surgery = t ∧ TSH >= 6.05 ∧ FTI >= 61.5 → negative
 prolog:     negative(X) :- on_thyroxine(X, f), thyroid_surgery(X, t), TSH(X, V1), V1 >= 6.05, FTI(X, V2), V2 >= 61.5.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: on_thyroxine = f, thyroid_surgery = t, TSH >= 6.05, FTI >= 61.5
+
+logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ FTI >= 51.5 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, t), TSH(X, V1), V1 >= 6.05, FTI(X, V2), V2 >= 51.5, FTI(X, V3), V3 < 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: thyroid_surgery = t, TSH >= 6.05, FTI >= 51.5, FTI < 61.5
+
+logic:      thyroid_surgery = t ∧ TSH >= 6.05 ∧ FTI < 51.5 ∧ FTI < 61.5 → negative
+prolog:     negative(X) :- thyroid_surgery(X, t), TSH(X, V1), V1 >= 6.05, FTI(X, V2), V2 < 51.5, FTI(X, V3), V3 < 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: thyroid_surgery = t, TSH >= 6.05, FTI < 51.5, FTI < 61.5
+
+logic:      thyroid_surgery = f ∧ TSH >= 6.05 ∧ T3 >= 2.55 ∧ FTI < 61.5 → negative
+prolog:     negative(X) :- thyroid_surgery(X, f), TSH(X, V1), V1 >= 6.05, T3(X, V2), V2 >= 2.55, FTI(X, V3), V3 < 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: thyroid_surgery = f, TSH >= 6.05, T3 >= 2.55, FTI < 61.5
+
+logic:      thyroid_surgery = f ∧ TSH >= 6.05 ∧ TSH >= 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, f), TSH(X, V1), V1 >= 6.05, TSH(X, V2), V2 >= 8.55, T3(X, V3), V3 < 2.55, FTI(X, V4), V4 < 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: thyroid_surgery = f, TSH >= 6.05, TSH >= 8.55, T3 < 2.55, FTI < 61.5
+
+logic:      thyroid_surgery = f ∧ TSH >= 6.05 ∧ TSH < 8.55 ∧ T3 < 2.55 ∧ FTI < 61.5 → primary_hypothyroid
+prolog:     primary_hypothyroid(X) :- thyroid_surgery(X, f), TSH(X, V1), V1 >= 6.05, TSH(X, V2), V2 < 8.55, T3(X, V3), V3 < 2.55, FTI(X, V4), V4 < 61.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: thyroid_surgery = f, TSH >= 6.05, TSH < 8.55, T3 < 2.55, FTI < 61.5
+
+logic:      sex = F ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → secondary_hypothyroid
+prolog:     secondary_hypothyroid(X) :- sex(X, F), TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 < 51.5, referral_source(X, other).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
+conditions: sex = F, TSH < 6.05, TT4 < 51.5, referral_source = other
+
+logic:      sex ≠ F ∧ TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source = other → negative
+prolog:     negative(X) :- sex(X, V1), V1 \= F, TSH(X, V2), V2 < 6.05, TT4(X, V3), V3 < 51.5, referral_source(X, other).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0
+conditions: sex ≠ F, TSH < 6.05, TT4 < 51.5, referral_source = other
+
+logic:      TSH < 6.05 ∧ TT4 < 51.5 ∧ referral_source ≠ other → negative
+prolog:     negative(X) :- TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 < 51.5, referral_source(X, V3), V3 \= other.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
+conditions: TSH < 6.05, TT4 < 51.5, referral_source ≠ other
+
+logic:      TSH < 6.05 ∧ TT4 >= 51.5 → negative
+prolog:     negative(X) :- TSH(X, V1), V1 < 6.05, TT4(X, V2), V2 >= 51.5.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: TSH < 6.05, TT4 >= 51.5
 
 ```
 
@@ -581,12 +581,12 @@ conditions: on_thyroxine = f, thyroid_surgery = t, TSH >= 6.05, FTI >= 61.5
 | fold | tree acc | rule-set acc | agreement | n rules | attrs used |
 |---|---|---|---|---|---|
 | 1 | 0.993 | 0.993 | 1.000 | 13 | 8 |
-| 2 | 0.988 | 0.988 | 1.000 | 11 | 7 |
+| 2 | 0.987 | 0.987 | 1.000 | 11 | 7 |
 | 3 | 0.991 | 0.991 | 1.000 | 15 | 8 |
 | 4 | 0.995 | 0.995 | 1.000 | 15 | 8 |
-| 5 | 0.995 | 0.995 | 1.000 | 15 | 8 |
+| 5 | 0.993 | 0.993 | 1.000 | 15 | 8 |
 
-**Summary** (0.9s): tree accuracy 0.992 +/- 0.003, rule-set accuracy 0.992 +/- 0.003, tree/rule-set agreement 1.0000, mean rules/fold 13.8, mean attributes used/fold 7.8 of 27 available.
+**Summary** (1.0s): tree accuracy 0.992 +/- 0.003, rule-set accuracy 0.992 +/- 0.003, tree/rule-set agreement 1.0000, mean rules/fold 13.8, mean attributes used/fold 7.8 of 27 available.
 
 ---
 
@@ -600,116 +600,116 @@ n=683, attributes=35 (35 categorical, 0 numeric), classes=19
 Decision tree (14 leaves, depth 5):
 |--- leafspot-size=gt-1/8 <= 0.50
 |   |--- canker-lesion!=dk-brown-blk <= 0.50
-|   |   |--- fruit-spots=brown-w/blk-specks <= 0.50
-|   |   |   |--- fruit-spots!=absent <= 0.50
-|   |   |   |   |--- class: anthracnose
-|   |   |   |--- fruit-spots!=absent >  0.50
-|   |   |   |   |--- class: phytophthora-rot
-|   |   |--- fruit-spots=brown-w/blk-specks >  0.50
+|   |   |--- fruit-spots!=brown-w/blk-specks <= 0.50
 |   |   |   |--- class: anthracnose
+|   |   |--- fruit-spots!=brown-w/blk-specks >  0.50
+|   |   |   |--- plant-stand=normal <= 0.50
+|   |   |   |   |--- class: phytophthora-rot
+|   |   |   |--- plant-stand=normal >  0.50
+|   |   |   |   |--- class: anthracnose
 |   |--- canker-lesion!=dk-brown-blk >  0.50
-|   |   |--- int-discolor!=brown <= 0.50
-|   |   |   |--- class: brown-stem-rot
-|   |   |--- int-discolor!=brown >  0.50
+|   |   |--- int-discolor=brown <= 0.50
 |   |   |   |--- stem-cankers!=below-soil <= 0.50
 |   |   |   |   |--- class: rhizoctonia-root-rot
 |   |   |   |--- stem-cankers!=below-soil >  0.50
-|   |   |   |   |--- sclerotia!=present <= 0.50
+|   |   |   |   |--- int-discolor!=black <= 0.50
 |   |   |   |   |   |--- class: charcoal-rot
-|   |   |   |   |--- sclerotia!=present >  0.50
+|   |   |   |   |--- int-discolor!=black >  0.50
 |   |   |   |   |   |--- class: bacterial-blight
+|   |   |--- int-discolor=brown >  0.50
+|   |   |   |--- class: brown-stem-rot
 |--- leafspot-size=gt-1/8 >  0.50
-|   |--- fruit-pods=diseased <= 0.50
-|   |   |--- fruiting-bodies!=present <= 0.50
-|   |   |   |--- class: brown-spot
-|   |   |--- fruiting-bodies!=present >  0.50
-|   |   |   |--- leaf-mild!=lower-surf <= 0.50
-|   |   |   |   |--- class: downy-mildew
-|   |   |   |--- leaf-mild!=lower-surf >  0.50
-|   |   |   |   |--- date!=june <= 0.50
-|   |   |   |   |   |--- class: brown-spot
-|   |   |   |   |--- date!=june >  0.50
-|   |   |   |   |   |--- class: alternarialeaf-spot
-|   |--- fruit-pods=diseased >  0.50
-|   |   |--- fruit-spots=colored <= 0.50
+|   |--- fruit-pods!=diseased <= 0.50
+|   |   |--- external-decay!=firm-and-dry <= 0.50
+|   |   |   |--- class: frog-eye-leaf-spot
+|   |   |--- external-decay!=firm-and-dry >  0.50
 |   |   |   |--- germination=90-100 <= 0.50
 |   |   |   |   |--- class: brown-spot
 |   |   |   |--- germination=90-100 >  0.50
 |   |   |   |   |--- class: frog-eye-leaf-spot
-|   |   |--- fruit-spots=colored >  0.50
-|   |   |   |--- class: frog-eye-leaf-spot
+|   |--- fruit-pods!=diseased >  0.50
+|   |   |--- fruiting-bodies!=present <= 0.50
+|   |   |   |--- class: brown-spot
+|   |   |--- fruiting-bodies!=present >  0.50
+|   |   |   |--- leaf-mild=lower-surf <= 0.50
+|   |   |   |   |--- date=june <= 0.50
+|   |   |   |   |   |--- class: alternarialeaf-spot
+|   |   |   |   |--- date=june >  0.50
+|   |   |   |   |   |--- class: brown-spot
+|   |   |   |--- leaf-mild=lower-surf >  0.50
+|   |   |   |   |--- class: downy-mildew
 
-Extracted DisjointRuleSet (14 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 11/35
-
-logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots = absent ∧ fruit-spots ≠ brown-w/blk-specks → anthracnose
-prolog:     anthracnose(X) :- leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, absent), fruit-spots(X, V2), V2 \= brown-w/blk-specks.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots = absent, fruit-spots ≠ brown-w/blk-specks
-
-logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots ≠ absent ∧ fruit-spots ≠ brown-w/blk-specks → phytophthora-rot
-prolog:     'phytophthora-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, V2), V2 \= absent, fruit-spots(X, V3), V3 \= brown-w/blk-specks.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots ≠ absent, fruit-spots ≠ brown-w/blk-specks
+Extracted DisjointRuleSet (14 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 12/35
 
 logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots = brown-w/blk-specks → anthracnose
 prolog:     anthracnose(X) :- leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, brown-w/blk-specks).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots = brown-w/blk-specks
 
-logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor = brown → brown-stem-rot
-prolog:     'brown-stem-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, V2), V2 \= dk-brown-blk, int-discolor(X, brown).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size ≠ gt-1/8, canker-lesion ≠ dk-brown-blk, int-discolor = brown
+logic:      plant-stand ≠ normal ∧ leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots ≠ brown-w/blk-specks → phytophthora-rot
+prolog:     'phytophthora-rot'(X) :- plant-stand(X, V1), V1 \= normal, leafspot-size(X, V2), V2 \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, V3), V3 \= brown-w/blk-specks.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: plant-stand ≠ normal, leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots ≠ brown-w/blk-specks
+
+logic:      plant-stand = normal ∧ leafspot-size ≠ gt-1/8 ∧ canker-lesion = dk-brown-blk ∧ fruit-spots ≠ brown-w/blk-specks → anthracnose
+prolog:     anthracnose(X) :- plant-stand(X, normal), leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, dk-brown-blk), fruit-spots(X, V2), V2 \= brown-w/blk-specks.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: plant-stand = normal, leafspot-size ≠ gt-1/8, canker-lesion = dk-brown-blk, fruit-spots ≠ brown-w/blk-specks
 
 logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers = below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown → rhizoctonia-root-rot
 prolog:     'rhizoctonia-root-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, stem-cankers(X, below-soil), canker-lesion(X, V2), V2 \= dk-brown-blk, int-discolor(X, V3), V3 \= brown.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size ≠ gt-1/8, stem-cankers = below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown
 
-logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown ∧ sclerotia = present → charcoal-rot
-prolog:     'charcoal-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, stem-cankers(X, V2), V2 \= below-soil, canker-lesion(X, V3), V3 \= dk-brown-blk, int-discolor(X, V4), V4 \= brown, sclerotia(X, present).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown, sclerotia = present
+logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor = black ∧ int-discolor ≠ brown → charcoal-rot
+prolog:     'charcoal-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, stem-cankers(X, V2), V2 \= below-soil, canker-lesion(X, V3), V3 \= dk-brown-blk, int-discolor(X, black), int-discolor(X, V4), V4 \= brown.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor = black, int-discolor ≠ brown
 
-logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ brown ∧ sclerotia ≠ present → bacterial-blight
-prolog:     'bacterial-blight'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, stem-cankers(X, V2), V2 \= below-soil, canker-lesion(X, V3), V3 \= dk-brown-blk, int-discolor(X, V4), V4 \= brown, sclerotia(X, V5), V5 \= present.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ brown, sclerotia ≠ present
+logic:      leafspot-size ≠ gt-1/8 ∧ stem-cankers ≠ below-soil ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor ≠ black ∧ int-discolor ≠ brown → bacterial-blight
+prolog:     'bacterial-blight'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, stem-cankers(X, V2), V2 \= below-soil, canker-lesion(X, V3), V3 \= dk-brown-blk, int-discolor(X, V4), V4 \= black, int-discolor(X, V5), V5 \= brown.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: leafspot-size ≠ gt-1/8, stem-cankers ≠ below-soil, canker-lesion ≠ dk-brown-blk, int-discolor ≠ black, int-discolor ≠ brown
+
+logic:      leafspot-size ≠ gt-1/8 ∧ canker-lesion ≠ dk-brown-blk ∧ int-discolor = brown → brown-stem-rot
+prolog:     'brown-stem-rot'(X) :- leafspot-size(X, V1), V1 \= gt-1/8, canker-lesion(X, V2), V2 \= dk-brown-blk, int-discolor(X, brown).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: leafspot-size ≠ gt-1/8, canker-lesion ≠ dk-brown-blk, int-discolor = brown
+
+logic:      leafspot-size = gt-1/8 ∧ external-decay = firm-and-dry ∧ fruit-pods = diseased → frog-eye-leaf-spot
+prolog:     'frog-eye-leaf-spot'(X) :- leafspot-size(X, gt-1/8), external-decay(X, firm-and-dry), fruit-pods(X, diseased).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: leafspot-size = gt-1/8, external-decay = firm-and-dry, fruit-pods = diseased
+
+logic:      germination ≠ 90-100 ∧ leafspot-size = gt-1/8 ∧ external-decay ≠ firm-and-dry ∧ fruit-pods = diseased → brown-spot
+prolog:     'brown-spot'(X) :- germination(X, V1), V1 \= 90-100, leafspot-size(X, gt-1/8), external-decay(X, V2), V2 \= firm-and-dry, fruit-pods(X, diseased).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: germination ≠ 90-100, leafspot-size = gt-1/8, external-decay ≠ firm-and-dry, fruit-pods = diseased
+
+logic:      germination = 90-100 ∧ leafspot-size = gt-1/8 ∧ external-decay ≠ firm-and-dry ∧ fruit-pods = diseased → frog-eye-leaf-spot
+prolog:     'frog-eye-leaf-spot'(X) :- germination(X, 90-100), leafspot-size(X, gt-1/8), external-decay(X, V1), V1 \= firm-and-dry, fruit-pods(X, diseased).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: germination = 90-100, leafspot-size = gt-1/8, external-decay ≠ firm-and-dry, fruit-pods = diseased
 
 logic:      leafspot-size = gt-1/8 ∧ fruiting-bodies = present ∧ fruit-pods ≠ diseased → brown-spot
 prolog:     'brown-spot'(X) :- leafspot-size(X, gt-1/8), fruiting-bodies(X, present), fruit-pods(X, V1), V1 \= diseased.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: leafspot-size = gt-1/8, fruiting-bodies = present, fruit-pods ≠ diseased
-
-logic:      leafspot-size = gt-1/8 ∧ leaf-mild = lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → downy-mildew
-prolog:     'downy-mildew'(X) :- leafspot-size(X, gt-1/8), leaf-mild(X, lower-surf), fruiting-bodies(X, V1), V1 \= present, fruit-pods(X, V2), V2 \= diseased.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size = gt-1/8, leaf-mild = lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
-
-logic:      date = june ∧ leafspot-size = gt-1/8 ∧ leaf-mild ≠ lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → brown-spot
-prolog:     'brown-spot'(X) :- date(X, june), leafspot-size(X, gt-1/8), leaf-mild(X, V1), V1 \= lower-surf, fruiting-bodies(X, V2), V2 \= present, fruit-pods(X, V3), V3 \= diseased.
-pattern:    0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: date = june, leafspot-size = gt-1/8, leaf-mild ≠ lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
 logic:      date ≠ june ∧ leafspot-size = gt-1/8 ∧ leaf-mild ≠ lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → alternarialeaf-spot
 prolog:     'alternarialeaf-spot'(X) :- date(X, V1), V1 \= june, leafspot-size(X, gt-1/8), leaf-mild(X, V2), V2 \= lower-surf, fruiting-bodies(X, V3), V3 \= present, fruit-pods(X, V4), V4 \= diseased.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: date ≠ june, leafspot-size = gt-1/8, leaf-mild ≠ lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
-logic:      germination ≠ 90-100 ∧ leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots ≠ colored → brown-spot
-prolog:     'brown-spot'(X) :- germination(X, V1), V1 \= 90-100, leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V2), V2 \= colored.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: germination ≠ 90-100, leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots ≠ colored
+logic:      date = june ∧ leafspot-size = gt-1/8 ∧ leaf-mild ≠ lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → brown-spot
+prolog:     'brown-spot'(X) :- date(X, june), leafspot-size(X, gt-1/8), leaf-mild(X, V1), V1 \= lower-surf, fruiting-bodies(X, V2), V2 \= present, fruit-pods(X, V3), V3 \= diseased.
+pattern:    0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: date = june, leafspot-size = gt-1/8, leaf-mild ≠ lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
-logic:      germination = 90-100 ∧ leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots ≠ colored → frog-eye-leaf-spot
-prolog:     'frog-eye-leaf-spot'(X) :- germination(X, 90-100), leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, V1), V1 \= colored.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: germination = 90-100, leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots ≠ colored
-
-logic:      leafspot-size = gt-1/8 ∧ fruit-pods = diseased ∧ fruit-spots = colored → frog-eye-leaf-spot
-prolog:     'frog-eye-leaf-spot'(X) :- leafspot-size(X, gt-1/8), fruit-pods(X, diseased), fruit-spots(X, colored).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots = colored
+logic:      leafspot-size = gt-1/8 ∧ leaf-mild = lower-surf ∧ fruiting-bodies ≠ present ∧ fruit-pods ≠ diseased → downy-mildew
+prolog:     'downy-mildew'(X) :- leafspot-size(X, gt-1/8), leaf-mild(X, lower-surf), fruiting-bodies(X, V1), V1 \= present, fruit-pods(X, V2), V2 \= diseased.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: leafspot-size = gt-1/8, leaf-mild = lower-surf, fruiting-bodies ≠ present, fruit-pods ≠ diseased
 
 ```
 
@@ -717,13 +717,13 @@ conditions: leafspot-size = gt-1/8, fruit-pods = diseased, fruit-spots = colored
 
 | fold | tree acc | rule-set acc | agreement | n rules | attrs used |
 |---|---|---|---|---|---|
-| 1 | 0.664 | 0.664 | 1.000 | 14 | 11 |
-| 2 | 0.606 | 0.606 | 1.000 | 14 | 11 |
+| 1 | 0.664 | 0.664 | 1.000 | 14 | 12 |
+| 2 | 0.599 | 0.599 | 1.000 | 14 | 9 |
 | 3 | 0.620 | 0.620 | 1.000 | 14 | 11 |
 | 4 | 0.676 | 0.676 | 1.000 | 14 | 11 |
-| 5 | 0.684 | 0.684 | 1.000 | 14 | 10 |
+| 5 | 0.699 | 0.699 | 1.000 | 14 | 10 |
 
-**Summary** (0.7s): tree accuracy 0.650 +/- 0.031, rule-set accuracy 0.650 +/- 0.031, tree/rule-set agreement 1.0000, mean rules/fold 14.0, mean attributes used/fold 10.8 of 35 available.
+**Summary** (0.5s): tree accuracy 0.652 +/- 0.037, rule-set accuracy 0.652 +/- 0.037, tree/rule-set agreement 1.0000, mean rules/fold 14.0, mean attributes used/fold 10.6 of 35 available.
 
 ---
 
@@ -736,15 +736,8 @@ n=8124, attributes=21 (21 categorical, 0 numeric), classes=2
 ```text
 Decision tree (12 leaves, depth 5):
 |--- odor!=n <= 0.50
-|   |--- spore-print-color!=r <= 0.50
-|   |   |--- class: p
-|   |--- spore-print-color!=r >  0.50
-|   |   |--- stalk-surface-below-ring!=y <= 0.50
-|   |   |   |--- ring-number!=t <= 0.50
-|   |   |   |   |--- class: e
-|   |   |   |--- ring-number!=t >  0.50
-|   |   |   |   |--- class: p
-|   |   |--- stalk-surface-below-ring!=y >  0.50
+|   |--- spore-print-color=r <= 0.50
+|   |   |--- stalk-surface-below-ring=y <= 0.50
 |   |   |   |--- cap-surface=g <= 0.50
 |   |   |   |   |--- cap-shape!=c <= 0.50
 |   |   |   |   |   |--- class: p
@@ -752,85 +745,92 @@ Decision tree (12 leaves, depth 5):
 |   |   |   |   |   |--- class: e
 |   |   |   |--- cap-surface=g >  0.50
 |   |   |   |   |--- class: p
-|--- odor!=n >  0.50
-|   |--- stalk-root=c <= 0.50
-|   |   |--- stalk-surface-below-ring!=y <= 0.50
-|   |   |   |--- class: e
-|   |   |--- stalk-surface-below-ring!=y >  0.50
-|   |   |   |--- spore-print-color!=u <= 0.50
+|   |   |--- stalk-surface-below-ring=y >  0.50
+|   |   |   |--- gill-size=n <= 0.50
 |   |   |   |   |--- class: e
-|   |   |   |--- spore-print-color!=u >  0.50
+|   |   |   |--- gill-size=n >  0.50
+|   |   |   |   |--- class: p
+|   |--- spore-print-color=r >  0.50
+|   |   |--- class: p
+|--- odor!=n >  0.50
+|   |--- stalk-root!=c <= 0.50
+|   |   |--- ring-type=n <= 0.50
+|   |   |   |--- class: e
+|   |   |--- ring-type=n >  0.50
+|   |   |   |--- class: p
+|   |--- stalk-root!=c >  0.50
+|   |   |--- stalk-surface-below-ring=y <= 0.50
+|   |   |   |--- spore-print-color=u <= 0.50
 |   |   |   |   |--- odor!=a <= 0.50
 |   |   |   |   |   |--- class: e
 |   |   |   |   |--- odor!=a >  0.50
 |   |   |   |   |   |--- class: p
-|   |--- stalk-root=c >  0.50
-|   |   |--- ring-number=n <= 0.50
+|   |   |   |--- spore-print-color=u >  0.50
+|   |   |   |   |--- class: e
+|   |   |--- stalk-surface-below-ring=y >  0.50
 |   |   |   |--- class: e
-|   |   |--- ring-number=n >  0.50
-|   |   |   |--- class: p
 
-Extracted DisjointRuleSet (12 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 7/21
-
-logic:      odor = n ∧ spore-print-color = r → p
-prolog:     p(X) :- odor(X, n), spore-print-color(X, r).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor = n, spore-print-color = r
-
-logic:      odor = n ∧ stalk-surface-below-ring = y ∧ ring-number = t ∧ spore-print-color ≠ r → e
-prolog:     e(X) :- odor(X, n), stalk-surface-below-ring(X, y), ring-number(X, t), spore-print-color(X, V1), V1 \= r.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor = n, stalk-surface-below-ring = y, ring-number = t, spore-print-color ≠ r
-
-logic:      odor = n ∧ stalk-surface-below-ring = y ∧ ring-number ≠ t ∧ spore-print-color ≠ r → p
-prolog:     p(X) :- odor(X, n), stalk-surface-below-ring(X, y), ring-number(X, V1), V1 \= t, spore-print-color(X, V2), V2 \= r.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor = n, stalk-surface-below-ring = y, ring-number ≠ t, spore-print-color ≠ r
+Extracted DisjointRuleSet (12 rules) -- is_disjoint=True, is_exhaustive=True, attributes used: 8/21
 
 logic:      cap-shape = c ∧ cap-surface ≠ g ∧ odor = n ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color ≠ r → p
 prolog:     p(X) :- cap-shape(X, c), cap-surface(X, V1), V1 \= g, odor(X, n), stalk-surface-below-ring(X, V2), V2 \= y, spore-print-color(X, V3), V3 \= r.
-pattern:    0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: cap-shape = c, cap-surface ≠ g, odor = n, stalk-surface-below-ring ≠ y, spore-print-color ≠ r
 
 logic:      cap-shape ≠ c ∧ cap-surface ≠ g ∧ odor = n ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color ≠ r → e
 prolog:     e(X) :- cap-shape(X, V1), V1 \= c, cap-surface(X, V2), V2 \= g, odor(X, n), stalk-surface-below-ring(X, V3), V3 \= y, spore-print-color(X, V4), V4 \= r.
-pattern:    0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: cap-shape ≠ c, cap-surface ≠ g, odor = n, stalk-surface-below-ring ≠ y, spore-print-color ≠ r
 
 logic:      cap-surface = g ∧ odor = n ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color ≠ r → p
 prolog:     p(X) :- cap-surface(X, g), odor(X, n), stalk-surface-below-ring(X, V1), V1 \= y, spore-print-color(X, V2), V2 \= r.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: cap-surface = g, odor = n, stalk-surface-below-ring ≠ y, spore-print-color ≠ r
 
-logic:      odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring = y → e
-prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, V2), V2 \= c, stalk-surface-below-ring(X, y).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring = y
+logic:      odor = n ∧ gill-size = b ∧ stalk-surface-below-ring = y ∧ spore-print-color ≠ r → e
+prolog:     e(X) :- odor(X, n), gill-size(X, b), stalk-surface-below-ring(X, y), spore-print-color(X, V1), V1 \= r.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor = n, gill-size = b, stalk-surface-below-ring = y, spore-print-color ≠ r
 
-logic:      odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color = u → e
-prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, V2), V2 \= c, stalk-surface-below-ring(X, V3), V3 \= y, spore-print-color(X, u).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring ≠ y, spore-print-color = u
+logic:      odor = n ∧ gill-size = n ∧ stalk-surface-below-ring = y ∧ spore-print-color ≠ r → p
+prolog:     p(X) :- odor(X, n), gill-size(X, n), stalk-surface-below-ring(X, y), spore-print-color(X, V1), V1 \= r.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor = n, gill-size = n, stalk-surface-below-ring = y, spore-print-color ≠ r
+
+logic:      odor = n ∧ spore-print-color = r → p
+prolog:     p(X) :- odor(X, n), spore-print-color(X, r).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor = n, spore-print-color = r
+
+logic:      odor ≠ n ∧ stalk-root = c ∧ ring-type ≠ n → e
+prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, c), ring-type(X, V2), V2 \= n.
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor ≠ n, stalk-root = c, ring-type ≠ n
+
+logic:      odor ≠ n ∧ stalk-root = c ∧ ring-type = n → p
+prolog:     p(X) :- odor(X, V1), V1 \= n, stalk-root(X, c), ring-type(X, n).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor ≠ n, stalk-root = c, ring-type = n
 
 logic:      odor = a ∧ odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color ≠ u → e
 prolog:     e(X) :- odor(X, a), odor(X, V1), V1 \= n, stalk-root(X, V2), V2 \= c, stalk-surface-below-ring(X, V3), V3 \= y, spore-print-color(X, V4), V4 \= u.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: odor = a, odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring ≠ y, spore-print-color ≠ u
 
 logic:      odor ≠ a ∧ odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color ≠ u → p
 prolog:     p(X) :- odor(X, V1), V1 \= a, odor(X, V2), V2 \= n, stalk-root(X, V3), V3 \= c, stalk-surface-below-ring(X, V4), V4 \= y, spore-print-color(X, V5), V5 \= u.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 conditions: odor ≠ a, odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring ≠ y, spore-print-color ≠ u
 
-logic:      odor ≠ n ∧ stalk-root = c ∧ ring-number ≠ n → e
-prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, c), ring-number(X, V2), V2 \= n.
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor ≠ n, stalk-root = c, ring-number ≠ n
+logic:      odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring ≠ y ∧ spore-print-color = u → e
+prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, V2), V2 \= c, stalk-surface-below-ring(X, V3), V3 \= y, spore-print-color(X, u).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring ≠ y, spore-print-color = u
 
-logic:      odor ≠ n ∧ stalk-root = c ∧ ring-number = n → p
-prolog:     p(X) :- odor(X, V1), V1 \= n, stalk-root(X, c), ring-number(X, n).
-pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-conditions: odor ≠ n, stalk-root = c, ring-number = n
+logic:      odor ≠ n ∧ stalk-root ≠ c ∧ stalk-surface-below-ring = y → e
+prolog:     e(X) :- odor(X, V1), V1 \= n, stalk-root(X, V2), V2 \= c, stalk-surface-below-ring(X, y).
+pattern:    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+conditions: odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring = y
 
 ```
 
@@ -838,13 +838,13 @@ conditions: odor ≠ n, stalk-root = c, ring-number = n
 
 | fold | tree acc | rule-set acc | agreement | n rules | attrs used |
 |---|---|---|---|---|---|
-| 1 | 0.995 | 0.995 | 1.000 | 12 | 7 |
+| 1 | 0.995 | 0.995 | 1.000 | 12 | 8 |
 | 2 | 0.996 | 0.996 | 1.000 | 12 | 7 |
-| 3 | 1.000 | 1.000 | 1.000 | 12 | 7 |
-| 4 | 0.999 | 0.999 | 1.000 | 12 | 7 |
-| 5 | 0.999 | 0.999 | 1.000 | 12 | 7 |
+| 3 | 1.000 | 1.000 | 1.000 | 12 | 8 |
+| 4 | 0.999 | 0.999 | 1.000 | 12 | 8 |
+| 5 | 0.999 | 0.999 | 1.000 | 12 | 8 |
 
-**Summary** (1.2s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.0 of 21 available.
+**Summary** (0.9s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.8 of 21 available.
 
 ---
 
@@ -1145,7 +1145,7 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 | 4 | 0.736 | 0.736 | 1.000 | 238 | 34 |
 | 5 | 0.738 | 0.738 | 1.000 | 237 | 34 |
 
-**Summary** (383.8s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
+**Summary** (370.4s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
 
 ---
 
@@ -1155,10 +1155,10 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 
 | dataset | n | categ. | numeric | tree acc | rule acc | agree | rules/fold | attrs used/fold | time(s) |
 |---|---|---|---|---|---|---|---|---|---|
-| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.1 |
-| breast-cancer | 286 | 9 | 0 | 0.724±0.014 | 0.724±0.014 | 1.000 | 19.0 | 7.6 | 0.1 |
-| kr-vs-kp | 3196 | 36 | 0 | 0.941±0.011 | 0.941±0.011 | 1.000 | 11.4 | 9.4 | 0.4 |
-| hypothyroid | 3772 | 21 | 6 | 0.992±0.003 | 0.992±0.003 | 1.000 | 13.8 | 7.8 | 0.9 |
-| soybean | 683 | 35 | 0 | 0.650±0.031 | 0.650±0.031 | 1.000 | 14.0 | 10.8 | 0.7 |
-| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.0 | 1.2 |
-| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 383.8 |
+| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.2 |
+| breast-cancer | 286 | 9 | 0 | 0.717±0.014 | 0.717±0.014 | 1.000 | 19.0 | 7.8 | 0.2 |
+| kr-vs-kp | 3196 | 36 | 0 | 0.941±0.011 | 0.941±0.011 | 1.000 | 11.4 | 9.4 | 0.3 |
+| hypothyroid | 3772 | 21 | 6 | 0.992±0.003 | 0.992±0.003 | 1.000 | 13.8 | 7.8 | 1.0 |
+| soybean | 683 | 35 | 0 | 0.652±0.037 | 0.652±0.037 | 1.000 | 14.0 | 10.6 | 0.5 |
+| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.8 | 0.9 |
+| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 370.4 |
