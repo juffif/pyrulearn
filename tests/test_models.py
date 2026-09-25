@@ -774,11 +774,12 @@ def test_decision_list_to_string_sequential_and_if_elif_else():
 
     logic = dl.to_string(fmt="logic")
     lines = logic.splitlines()
-    assert lines[0].startswith("if  ") and lines[0].endswith("→ A")
-    assert lines[1].startswith("elif") and lines[1].endswith("→ B")
-    assert lines[2] == "else → C"
+    assert lines[0] == "% conflict resolution: first matching rule" and lines[1] == ""
+    assert lines[2].startswith("if  ") and lines[2].endswith("→ A")
+    assert lines[3].startswith("elif") and lines[3].endswith("→ B")
+    assert lines[4] == "else → C"
 
-    prolog = dl.to_string(fmt="prolog")
+    prolog = dl.to_string(fmt="prolog", show_resolution=False)
     plines = prolog.splitlines()
     # uppercase-leading targets aren't valid bare Prolog atoms (that's a
     # variable, not a predicate name) -- quoted, same as a Rule printed alone
@@ -806,6 +807,23 @@ def test_list_resolved_rule_set_prints_in_its_deciding_order():
     assert "% class:" in FlatRuleSet([r1, r2], default_prediction="C").to_string(fmt="prolog")
     one_head = FlatRuleSet([r1, Rule.from_pos_neg(pos=[1], target="Z", dataspec=ds)], combiner="list")
     assert "% class: Z" in one_head.to_string(fmt="prolog")
+
+
+def test_conflict_resolution_line_only_where_rules_can_conflict():
+    ds = DataSpec(["a", "b"])
+    ra = Rule.from_pos_neg(pos=[0], target="A", dataspec=ds)
+    rb = Rule.from_pos_neg(pos=[1], target="B", dataspec=ds)
+    ra2 = Rule.from_pos_neg(pos=[1], target="A", dataspec=ds)
+    head = "% conflict resolution: "
+    assert FlatRuleSet([ra, rb]).to_string(fmt="prolog").startswith(head + "max Laplace\n")
+    assert FlatRuleSet([ra, rb], combiner="vote").to_string(fmt="prolog").startswith(
+        head + "vote (one vote per covering rule)\n")
+    assert DecisionList([ra, rb]).to_string(fmt="prolog").startswith(head + "first matching rule\n")
+    # nothing to resolve: one head only, disjoint rules, a lone rule
+    for model in (FlatRuleSet([ra, ra2]), ConceptModel([ra, ra2], label="A"),
+                  DisjointRuleSet([ra, rb]), SingleRule(ra)):
+        assert head not in model.to_string(fmt="prolog"), type(model).__name__
+    assert head not in FlatRuleSet([ra, rb]).to_string(fmt="prolog", show_resolution=False)
 
 
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():

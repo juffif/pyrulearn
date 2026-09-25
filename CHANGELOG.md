@@ -33,6 +33,17 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Changed (may change results or printouts)
 
+- Printed models whose rules predict more than one class now start with a
+  `% conflict resolution: ...` line naming how conflicts are decided (e.g.
+  `max Laplace`, `sum of covered class counts`, `first matching rule`),
+  from the new `RuleCombiner.describe()`; `to_string(show_resolution=False)`
+  omits it. Rule heuristics got a readable `repr` (`Laplace`,
+  `MEstimate(m=5)`) for it.
+- Ties no longer depend on rule position. `max` first lets the tied
+  top-scoring rules vote; any remaining tie, for every combiner, goes to
+  the class more frequent in the training data, then to the one that
+  sorts first. (Before, `max`, `vote` and the distribution combiners fell
+  back on rule or class insertion order.) Only `"list"` is order-based.
 - `AQR().fit(data)` now returns a `DecisionList` instead of a
   `FlatRuleSet` resolved by `combiner="list"`. Predictions are identical
   (the first covering rule in learn order wins either way), but the

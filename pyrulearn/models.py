@@ -929,6 +929,31 @@ def _bare(rule: Rule, fmt: str, ascii: bool) -> str:
     return base.to_string(fmt=fmt, ascii=ascii)
 
 
+def _conflict_resolution(model: "RuleModel") -> Optional[str]:
+    """The one-line description of how `model` resolves a row covered by
+    rules predicting different classes -- `None` where that can't happen
+    (rules all sharing one head, pairwise-disjoint rules). The shared tie
+    convention isn't part of it (see `pyrulearn.combiners`)."""
+    resolution = getattr(model, "resolution", None)
+    if resolution is None or isinstance(resolution, Exclusive):
+        return None
+    if len({r.target for r in model.rules}) < 2:
+        return None
+    if isinstance(resolution, Combine):
+        return _resolve_combiner(resolution.combiner).describe()
+    if isinstance(resolution, FirstMatch):
+        return "first matching rule"
+    return None
+
+
+def _assemble(rendered: str, legend_classes: Tuple[Any, ...], resolution: Optional[str]) -> str:
+    """`rendered` under the printed-once header lines: the conflict
+    resolution (if any), then the class legend (if any)."""
+    header = ([f"% conflict resolution: {resolution}"] if resolution else []) + (
+        [_class_legend(legend_classes)] if legend_classes else [])
+    return "\n".join(header) + "\n\n" + rendered if header else rendered
+
+
 def _class_legend(class_order: Tuple[Any, ...]) -> str:
     """The one-line, printed-once ``% classes: [...]`` header that gives
     `_decorate`'s short-form distribution vectors their order -- see
@@ -992,6 +1017,7 @@ class RuleSet(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+        show_resolution: bool = True,
     ) -> str:
         """Render every rule, grouped by target label -- one section per
         label, headed by ``% class: <target>``. For "logic" format, each
@@ -1020,6 +1046,11 @@ class RuleSet(RuleModel):
         (e.g. naming a model's relevant classes as a label on its own) --
         see `_distribution_class_order`/`_legend_class_order`.
 
+        A model whose rules predict more than one class starts with a
+        ``% conflict resolution: ...`` line naming how a row covered by
+        rules of different classes is decided (its combiner's `describe()`,
+        e.g. ``max Laplace``); `show_resolution=False` omits it.
+
         A set resolved by list order (its own combiner ``"list"``, rules
         with more than one head) prints like a `DecisionList` instead --
         in list order, ungrouped -- since that order is what decides its
@@ -1027,7 +1058,8 @@ class RuleSet(RuleModel):
         """
         if self._resolved_by_list_order():
             return RuleList.to_string(self, fmt=fmt, ascii=ascii, show_stats=show_stats,
-                                      show_distribution=show_distribution, show_classes=show_classes)
+                                      show_distribution=show_distribution, show_classes=show_classes,
+                                      show_resolution=show_resolution)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
@@ -1044,7 +1076,7 @@ class RuleSet(RuleModel):
             default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
             sections.append(f"% default\n{default_text}")
         rendered = "\n\n".join(sections)
-        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
+        return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
     def to_rulelist(
         self, key: Optional[Callable[[Rule], Any]] = None, reverse: bool = True,
@@ -1104,6 +1136,7 @@ class RuleList(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+        show_resolution: bool = True,
     ) -> str:
         """Render this decision list in order -- no label-grouping, since
         order (not shared target) is what decision-list semantics
@@ -1146,7 +1179,7 @@ class RuleList(RuleModel):
                 default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
                 lines.append(f"% default\n{default_text}")
             rendered = "\n".join(lines)
-        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
+        return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
 
 # ================================================================= concrete ===
@@ -1284,6 +1317,7 @@ class SingleRule(RuleSet):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+        show_resolution: bool = True,
     ) -> str:
         """Renders the wrapped `Rule` directly -- a lone rule needs no
         per-target grouping or DNF collapsing (see the class docstring
@@ -1781,6 +1815,7 @@ class EnsembleModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+        show_resolution: bool = True,
     ) -> str:
         """Render every member in turn, headed by ``% member <k>``
         (``(weight: ...)`` appended where `member_weights` is set --
@@ -1803,7 +1838,8 @@ class EnsembleModel(CompositeModel):
             if self.member_weights is not None:
                 header += f"  (weight: {self.member_weights[k]:g})"
             body = member.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
-                                    show_distribution=show_distribution, show_classes=show_classes)
+                                    show_distribution=show_distribution, show_classes=show_classes,
+                                    show_resolution=show_resolution)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)
@@ -2051,6 +2087,7 @@ class PairwiseModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
+        show_resolution: bool = True,
     ) -> str:
         """Render every pair's sub-model in turn, headed by ``% pair: a
         vs b`` (``(member weight: ...)`` appended for `"accuracy_vote"`
@@ -2083,7 +2120,8 @@ class PairwiseModel(CompositeModel):
             if getattr(self.combiner, "weight_source", None) == "member" and self.member_weights is not None:
                 header += f"  (member weight: {self.member_weights[k]:g})"
             body = sub.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
-                                 show_distribution=show_distribution, show_classes=per_pair_show_classes)
+                                 show_distribution=show_distribution, show_classes=per_pair_show_classes,
+                                 show_resolution=show_resolution)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)

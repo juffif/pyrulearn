@@ -57,6 +57,16 @@ distribution involved, so nothing to be missing), so they're direct
 instance directly, or one of the built-in shortcuts' string names
 ("list"/"max"/"vote"/"micro_vote"/"macro_vote"/"micro_max"/"macro_max")
 -- see `_resolve_combiner`.
+
+**Ties.** When a combiner's own criterion leaves several classes level
+(`HeuristicMaxCombiner` first applies a step of its own, see there), every
+combiner breaks the tie the same way, never by rule position: the class
+that is more frequent in the training data wins (read from the covering
+rules' frozen training stats), then the class that sorts first (the
+order a printed model's class legend uses). Only `ListCombiner` is
+order-based -- that is its definition. `describe()` gives the one-line
+description a printed model shows as its conflict resolution; the tie
+convention isn't printed.
 """
 
 from __future__ import annotations
@@ -116,6 +126,44 @@ def _heuristic_score(rule: Rule, heuristic: "RuleHeuristic") -> "Score":
     return heuristic.score(stats)
 
 
+def _training_frequencies(rules: Sequence[Rule], covering: Sequence[int]) -> Dict[Any, int]:
+    """How many training rows each class has, read from the first
+    covering rule that carries frozen training stats (a rule's confusion
+    matrix counts every training row by its true label); empty if none
+    does."""
+    from .evaluation import ABSTAIN  # local: evaluation imports this module's users
+    for i in covering:
+        stats_fn = getattr(rules[i], "stats", None)
+        ms = stats_fn() if callable(stats_fn) else None
+        if ms is not None and ms.confusion is not None:
+            cm = ms.confusion
+            totals = cm.counts.sum(axis=1)
+            return {c: int(n) for c, n in zip(cm.labels, totals) if c is not ABSTAIN}
+    return {}
+
+
+def _label_sortkey(c: Any):
+    """Same total order as `pyrulearn.models._sortkey` (numbers numeric,
+    everything else by its string) -- the class legend's order."""
+    return (0, c) if isinstance(c, (int, float)) else (1, str(c))
+
+
+def _break_tie(tied: Sequence[Any], rules: Sequence[Rule], covering: Sequence[int]) -> Any:
+    """The shared tie-break (see the module docstring): among the `tied`
+    classes, the one most frequent in the training data, then the one
+    that sorts first."""
+    if len(tied) == 1:
+        return tied[0]
+    freq = _training_frequencies(rules, covering)
+    return min(tied, key=lambda c: (-freq.get(c, 0), _label_sortkey(c)))
+
+
+def _argmax_classes(totals: Dict[Any, Any]) -> List[Any]:
+    """Every class with the highest value in `totals`."""
+    best = max(totals.values())
+    return [c for c, v in totals.items() if v == best]
+
+
 def _predicted_distribution(rule: Rule) -> Optional[Dict[Any, float]]:
     """The true-label distribution among rows this rule predicted its
     own target for -- the `ConfusionMatrix` column for `rule.target`,
@@ -137,6 +185,11 @@ class RuleCombiner(ABC):
         that cover one example; return the target to predict for it."""
         raise NotImplementedError
 
+    def describe(self) -> str:
+        """One line naming how this combiner resolves a conflict -- what a
+        printed model shows (``% conflict resolution: ...``)."""
+        return type(self).__name__
+
 
 class ListCombiner(RuleCombiner):
     """Pick whichever covering rule comes first in `rules`' own list
@@ -145,6 +198,9 @@ class ListCombiner(RuleCombiner):
 
     def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
         return rules[covering[0]].target
+
+    def describe(self) -> str:
+        return "first matching rule"
 
 
 class CountVoteCombiner(RuleCombiner):
@@ -159,18 +215,17 @@ class CountVoteCombiner(RuleCombiner):
     probability-based voting, matching sklearn's own
     `RandomForestClassifier.predict()`).
 
-    Ties broken by whichever target's first-covering rule appears
-    earliest in `rules` (deterministic, no randomness).
+    Ties go to the shared tie-break (module docstring).
     """
 
     def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
         tally: Dict[Any, int] = {}
-        first_seen: Dict[Any, int] = {}
-        for order, i in enumerate(covering):
-            target = rules[i].target
-            tally[target] = tally.get(target, 0) + 1
-            first_seen.setdefault(target, order)
-        return max(tally, key=lambda t: (tally[t], -first_seen[t]))
+        for i in covering:
+            tally[rules[i].target] = tally.get(rules[i].target, 0) + 1
+        return _break_tie(_argmax_classes(tally), rules, covering)
+
+    def describe(self) -> str:
+        return "vote (one vote per covering rule)"
 
 
 # -- heuristic-on-stats ---------------------------------------------------
@@ -211,12 +266,14 @@ class HeuristicCombiner(RuleCombiner):
         #: `.combiners` -- a genuine cycle if resolved eagerly).
         self.heuristic = heuristic
 
+    def _heuristic(self) -> "RuleHeuristic":
+        if self.heuristic is not None:
+            return self.heuristic
+        from .heuristics import Laplace
+        return Laplace()
+
     def _score(self, rule: Rule) -> "Score":
-        heuristic = self.heuristic
-        if heuristic is None:
-            from .heuristics import Laplace
-            heuristic = Laplace()
-        return _heuristic_score(rule, heuristic)
+        return _heuristic_score(rule, self._heuristic())
 
 
 class HeuristicMaxCombiner(HeuristicCombiner):
@@ -224,16 +281,29 @@ class HeuristicMaxCombiner(HeuristicCombiner):
     highest heuristic score -- for each candidate class, this is
     equivalent to taking its most-confident covering rule and then
     comparing across classes, since the globally highest-scoring rule
-    trivially wins its own class's comparison too. Ties within the max
-    broken by whichever comes first.
+    trivially wins its own class's comparison too.
+
+    Ties: when several covering rules share the top score but predict
+    different classes, those tied rules vote -- the class with the most of
+    them wins (a rule with a lower score doesn't count). If that is level
+    too, the shared tie-break applies (module docstring: training
+    frequency, then class order). Never rule position.
     """
 
     def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
         trivial = _trivial_target(rules, covering)
         if trivial is not None:
             return trivial
-        best = max(covering, key=lambda i: self._score(rules[i]))
-        return rules[best].target
+        scores = {i: self._score(rules[i]) for i in covering}
+        best = max(scores.values())
+        tally: Dict[Any, int] = {}
+        for i, sc in scores.items():
+            if sc == best:
+                tally[rules[i].target] = tally.get(rules[i].target, 0) + 1
+        return _break_tie(_argmax_classes(tally), rules, covering)
+
+    def describe(self) -> str:
+        return f"max {self._heuristic()!r}"
 
 
 class HeuristicVoteCombiner(HeuristicCombiner):
@@ -241,9 +311,8 @@ class HeuristicVoteCombiner(HeuristicCombiner):
     `HeuristicMaxCombiner`/`ListCombiner`, which each pick one covering
     rule and use its target, this tallies all of them, each one's vote
     weighted by its heuristic score (see `CountVoteCombiner` for the
-    unweighted version). Ties broken first by total vote weight, then
-    by whichever target's first-covering rule appears earliest in
-    `rules` (deterministic, no randomness).
+    unweighted version). Ties go to the shared tie-break (module
+    docstring).
     """
 
     def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
@@ -251,27 +320,33 @@ class HeuristicVoteCombiner(HeuristicCombiner):
         if trivial is not None:
             return trivial
         tally: Dict[Any, float] = {}
-        first_seen: Dict[Any, int] = {}
-        for order, i in enumerate(covering):
+        for i in covering:
             r = rules[i]
             tally[r.target] = tally.get(r.target, 0.0) + self._score(r)
-            first_seen.setdefault(r.target, order)
-        return max(tally, key=lambda t: (tally[t], -first_seen[t]))
+        return _break_tie(_argmax_classes(tally), rules, covering)
+
+    def describe(self) -> str:
+        return f"vote weighted by {self._heuristic()!r}"
 
 
 # -- distribution-based ---------------------------------------------------
 
-def _combine_class_scores(scores_per_rule: Sequence[Dict[Any, float]], op: Callable[[List[float]], float]) -> Any:
+def _combine_class_scores(
+    scores_per_rule: Sequence[Dict[Any, float]], op: Callable[[List[float]], float],
+    rules: Sequence[Rule], covering: Sequence[int],
+) -> Any:
     """Shared aggregation for `DistributionCombiner`s: `op` is `sum`
     (vote -- total support per class) or `max` (max rule -- best single
     supporting rule's confidence per class); returns the argmax class
-    over the combined per-class scores."""
+    over the combined per-class scores, ties to the shared tie-break."""
+    from .evaluation import ABSTAIN  # local: evaluation imports this module's users
     per_class: Dict[Any, List[float]] = {}
     for scores in scores_per_rule:
         for cls, v in scores.items():
-            per_class.setdefault(cls, []).append(v)
+            if cls is not ABSTAIN:
+                per_class.setdefault(cls, []).append(v)
     totals = {cls: op(vs) for cls, vs in per_class.items()}
-    return max(totals, key=totals.get)
+    return _break_tie(_argmax_classes(totals), rules, covering)
 
 
 class DistributionCombiner(RuleCombiner):
@@ -316,7 +391,10 @@ class MicroVoteCombiner(DistributionCombiner):
         if trivial is not None:
             return trivial
         scores = [self._raw_counts(rules[i]) for i in covering]
-        return _combine_class_scores(scores, sum)
+        return _combine_class_scores(scores, sum, rules, covering)
+
+    def describe(self) -> str:
+        return "sum of covered class counts"
 
 
 class MacroVoteCombiner(DistributionCombiner):
@@ -333,7 +411,10 @@ class MacroVoteCombiner(DistributionCombiner):
         if trivial is not None:
             return trivial
         scores = [self._normalized(rules[i]) for i in covering]
-        return _combine_class_scores(scores, sum)
+        return _combine_class_scores(scores, sum, rules, covering)
+
+    def describe(self) -> str:
+        return "sum of covered class proportions"
 
 
 class MicroMaxCombiner(DistributionCombiner):
@@ -345,7 +426,10 @@ class MicroMaxCombiner(DistributionCombiner):
         if trivial is not None:
             return trivial
         scores = [self._raw_counts(rules[i]) for i in covering]
-        return _combine_class_scores(scores, max)
+        return _combine_class_scores(scores, max, rules, covering)
+
+    def describe(self) -> str:
+        return "max covered class count"
 
 
 class MacroMaxCombiner(DistributionCombiner):
@@ -360,7 +444,10 @@ class MacroMaxCombiner(DistributionCombiner):
         if trivial is not None:
             return trivial
         scores = [self._normalized(rules[i]) for i in covering]
-        return _combine_class_scores(scores, max)
+        return _combine_class_scores(scores, max, rules, covering)
+
+    def describe(self) -> str:
+        return "max covered class proportion"
 
 
 _COMBINER_SHORTCUTS: Dict[str, RuleCombiner] = {

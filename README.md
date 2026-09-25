@@ -572,6 +572,21 @@ Omitted, `predict` falls back to the set's own `self.combiner` (settable at
 construction, itself defaulting to `"max"`), so a `RuleSet` built with a
 particular strategy keeps it without every `predict` call re-passing it.
 
+A printed model whose rules predict more than one class names its conflict
+resolution in its first line -- the combiner's `describe()`, e.g.
+`% conflict resolution: max Laplace`, `... sum of covered class counts`,
+or `... first matching rule` for a decision list (`to_string(...,
+show_resolution=False)` omits it). Together with each rule's printed
+training stats, that is everything needed to work out a prediction by hand.
+
+**Ties** never depend on where a rule sits in the model. When a combiner's
+own criterion leaves several classes level, `max` first lets the tied
+top-scoring rules vote (the class with the most of them wins); any tie
+left after that, for every combiner, goes to the class that is more
+frequent in the training data, then to the one that sorts first. This
+convention is documented rather than printed. Only `"list"` is order-based,
+by definition.
+
 `RuleCombiner.resolve(rules, covering)` is the one abstract method
 (`covering`: non-empty indices into `rules`). `ListCombiner` and
 `CountVoteCombiner` stand alone; everything else falls under one of two
