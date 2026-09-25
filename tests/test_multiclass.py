@@ -188,6 +188,22 @@ def test_target_class_still_does_one_binary_problem():
     assert "x" in set(np.unique(np.asarray(binary.predict(data)).astype(str)))
 
 
+def test_every_decomposition_gives_its_default_rule_training_stats():
+    # the default rule covers every training row, so its frozen stats are
+    # the class distribution of the entire training data
+    data, ds, y = _three_class()
+    for model in (ConceptSet, ConceptCascade, PairwiseModel):
+        m = _cn2().fit(data, model=model)
+        dr = m.default_rule
+        st = dr.stats()
+        assert st is not None, model.__name__
+        assert st.n_rows == data.n_samples
+        rs = st.confusion.rule_stats(dr.target)
+        assert rs.tp == int(np.sum(y == dr.target)) and rs.tp + rs.fp == data.n_samples
+        default_line = m.to_string(fmt="prolog").split("% default")[-1]
+        assert "% (" in default_line or "% [" in default_line, model.__name__  # (tp/fp), or CN2's distribution
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

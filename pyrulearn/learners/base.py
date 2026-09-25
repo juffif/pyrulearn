@@ -40,7 +40,7 @@ from ..data import DataRepresentation
 from ..interfaces.base import ObjectRuleImporter
 from ..models import (
     ConceptCascade, ConceptModel, ConceptSet, MajorityClass, PairwiseModel,
-    Provenance, RuleModel, can_convert, convert,
+    Provenance, RuleModel, annotate_default_rule, can_convert, convert,
 )
 
 
@@ -291,7 +291,7 @@ class DecomposingLearner:
         y = np.asarray(data.y)
         concepts = [ConceptModel(list(self._fit_binary(data, c).rules), label=c)
                     for c in np.unique(y)]
-        return ConceptSet(concepts, default_prediction=MajorityClass(data))
+        return annotate_default_rule(ConceptSet(concepts, default_prediction=MajorityClass(data)), data)
 
     @produces(ConceptCascade)
     def _fit_ordered(self, data: DataRepresentation, *,
@@ -304,7 +304,7 @@ class DecomposingLearner:
             stage = data if in_scope.all() else data.select_rows(in_scope)
             concepts.append(ConceptModel(list(self._fit_binary(stage, c).rules), label=c))
             in_scope = in_scope & (y != c)
-        return ConceptCascade(concepts, default_prediction=labels[-1])
+        return annotate_default_rule(ConceptCascade(concepts, default_prediction=labels[-1]), data)
 
     @produces(PairwiseModel)
     def _fit_pairwise(self, data: DataRepresentation, *,
@@ -325,8 +325,9 @@ class DecomposingLearner:
                     members.append((pos, neg, sub))
                     mweights.append(float(np.mean(
                         np.asarray(sub.predict(stage)) == np.asarray(stage.y))))
-        return PairwiseModel(members, default_prediction=MajorityClass(data),
-                             label_priors=cnt, member_weights=mweights)
+        model = PairwiseModel(members, default_prediction=MajorityClass(data),
+                              label_priors=cnt, member_weights=mweights)
+        return annotate_default_rule(model, data)
 
 
 class RelabelingExternalLearner(DecomposingLearner, ExternalRuleLearner):

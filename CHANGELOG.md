@@ -39,6 +39,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   from the new `RuleCombiner.describe()`; `to_string(show_resolution=False)`
   omits it. Rule heuristics got a readable `repr` (`Laplace`,
   `MEstimate(m=5)`) for it.
+- The default rule of a decomposed model (`ConceptSet`, `ConceptCascade`,
+  `PairwiseModel`, as built by one-vs-rest, ordered or pairwise fitting)
+  now carries training statistics like every other default rule: its
+  coverage of the entire training data, i.e. the class distribution.
 - Ties no longer depend on rule position. `max` first lets the tied
   top-scoring rules vote; any remaining tie, for every combiner, goes to
   the class more frequent in the training data, then to the one that
