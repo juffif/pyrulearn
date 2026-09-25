@@ -74,6 +74,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- In the `"conditions"` and `"pattern"` formats, models now show the class
+  a rule predicts where it was missing: decision lists prefix each rule
+  with it (`z: ¬f0, ¬f1`), and every model's default section names it
+  (`% default: x`). Before, a decision list printed in these formats
+  didn't say which class any rule predicted.
 - `to_string(pretty=True)` (rules and every model): each condition on its
   own line, indented under the head, and the coverage comment on its own
   line above the head. Prolog format only so far.

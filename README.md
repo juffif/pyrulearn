@@ -488,6 +488,12 @@ family:
   `RuleList` output, or the pseudocode's own `else` line for `RuleList` +
   `fmt="logic"`.
 
+The `"conditions"` and `"pattern"` formats render only a rule's body. Inside
+a model the class is still shown: a decision list prefixes each rule with
+it (`z: ¬f0, ¬f1`, `z: 0 1 0 1`), and every model's default section names
+it (`% default: x`); a rule set's `% class:` headers already cover its
+rules.
+
 `pretty=True` prints each rule's conditions on separate lines, indented
 under the head, with its coverage comment on a line of its own above the
 head (Prolog format; the other formats are unaffected so far):

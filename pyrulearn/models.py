@@ -937,6 +937,28 @@ def _decorate(
     return f"{comment}\n{text}" if above else f"{text}  {comment}"
 
 
+#: rule formats that render only the body, no head (see `Rule.to_string`):
+#: inside a model, the class a rule predicts has to be printed separately
+_HEADLESS_FORMATS = ("conditions", "pattern")
+
+
+def _default_section(dr: "SingleRule", fmt: str, ascii: bool, pretty: bool,
+                     dec: Callable[[Rule, str], str]) -> str:
+    """A model's trailing default-rule section: ``% default`` above the
+    rendered default rule -- or, for a format without heads, the class on
+    the header line itself (``% default: x``), since the rule's empty body
+    wouldn't show it."""
+    if fmt in _HEADLESS_FORMATS:
+        return dec(dr, f"% default: {dr.target}")
+    return f"% default\n{dec(dr, _bare(dr, fmt, ascii, pretty))}"
+
+
+def _stored_dec(show_stats: bool, above: bool) -> Callable[[Rule, str], str]:
+    """A decorator adding a rule's own stored stats, as the model
+    printers' `dec` does (used where no model-wide coverage is at hand)."""
+    return lambda r, text: _decorate(r, text, _frozen_coverage(r) if show_stats else None, (), above)
+
+
 def _bare(rule: Rule, fmt: str, ascii: bool, pretty: bool = False) -> str:
     """One member rule's text without any coverage comment -- a container
     decorates its rules itself, once (a `SingleRule`'s own `to_string`
@@ -1094,8 +1116,7 @@ class RuleSet(RuleModel):
                 body = "\n".join(dec(r, _bare(r, resolved, ascii, pretty)) for r in group)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii, pretty))
-            sections.append(f"% default\n{default_text}")
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
         rendered = "\n\n".join(sections)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
@@ -1196,10 +1217,17 @@ class RuleList(RuleModel):
                 lines.append(f"else {default_text}")
             rendered = "\n".join(lines)
         else:
-            lines = [dec(r, _bare(r, resolved, ascii, pretty)) for r in rules]
+            # a format without heads gets the class in front, "z: ¬f0, ¬f1":
+            # no class headers here to say which class a rule predicts.
+            # Labels are padded to the longest class name, so bodies line up.
+            if resolved in _HEADLESS_FORMATS:
+                width = max((len(str(r.target)) for r in rules), default=0) + 1
+                label = lambda r: f"{str(r.target) + ':':<{width}} "  # noqa: E731
+            else:
+                label = lambda r: ""  # noqa: E731
+            lines = [dec(r, label(r) + _bare(r, resolved, ascii, pretty)) for r in rules]
             if self.default_rule is not None:
-                default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii, pretty))
-                lines.append(f"% default\n{default_text}")
+                lines.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
             rendered = "\n".join(lines)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
@@ -1890,8 +1918,9 @@ class EnsembleModel(CompositeModel):
                                     show_resolution=show_resolution, pretty=pretty)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats, pretty=pretty)
-            sections.append(f"% default\n{default_text}")
+            resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
+            dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         resolution = (self._resolution_description()
@@ -2174,8 +2203,9 @@ class PairwiseModel(CompositeModel):
                                  show_resolution=show_resolution, pretty=pretty)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats, pretty=pretty)
-            sections.append(f"% default\n{default_text}")
+            resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
+            dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered

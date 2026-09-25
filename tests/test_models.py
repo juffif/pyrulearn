@@ -858,6 +858,30 @@ def test_pretty_prolog_puts_a_rules_stats_above_its_head():
     assert dl.to_string(fmt="logic", pretty=True) == dl.to_string(fmt="logic")
 
 
+def test_headless_formats_name_the_class_inside_models():
+    # "conditions"/"pattern" render only a rule's body; inside a model the
+    # class must still be visible
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
+    dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
+    assert dl.to_string(fmt="conditions", show_resolution=False).splitlines() == [
+        "pos: f0, f1  % (1/0)", "neg: f1  % (1/1)", "% default: neg  % (2/1)"]
+    assert dl.to_string(fmt="pattern", show_resolution=False).splitlines() == [
+        "pos: 1 1  % (1/0)", "neg: 0 1  % (1/1)", "% default: neg  % (2/1)"]
+    # a rule set already has class headers; only its default names the class
+    fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="neg"), data)
+    text = fs.to_string(fmt="conditions")
+    assert "% class: pos\nf0, f1  % (1/0)" in text and text.endswith("% default: neg  % (2/1)")
+    # labels are padded to the longest class name, so the bodies line up
+    mixed = DecisionList([Rule([0], target="yes", dataspec=ds), Rule([1], target="n", dataspec=ds)])
+    assert mixed.to_string(fmt="pattern", show_resolution=False).splitlines() == ["yes: 1 0", "n:   0 1"]
+    # headed formats are unchanged, and a lone rule stays a bare body
+    assert "% default\nneg(X) :- true.  % (2/1)" in dl.to_string()
+    assert rules[0].rule.to_string("conditions") == "f0, f1"
+
+
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     r = Rule.from_pos_neg(pos=[0], target="a", n_features=2)
     sr = SingleRule(r)
