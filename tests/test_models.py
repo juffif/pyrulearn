@@ -828,6 +828,15 @@ def test_conflict_resolution_line_only_where_rules_can_conflict():
     assert head not in FlatRuleSet([ra, rb]).to_string(fmt="prolog", show_resolution=False)
 
 
+def test_single_rule_repr_shows_the_rule_and_its_stats():
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    rule = Rule([0], target="pos", dataspec=ds)
+    assert repr(SingleRule(rule)) == "SingleRule(pos(X) :- f0(X).)"
+    assert repr(annotate_rules([rule], data)[0]) == "SingleRule(pos(X) :- f0(X).  % (1/1))"
+
+
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     r = Rule.from_pos_neg(pos=[0], target="a", n_features=2)
     sr = SingleRule(r)

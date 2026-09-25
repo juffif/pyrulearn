@@ -1302,6 +1302,13 @@ class SingleRule(RuleSet):
             raise AttributeError(name)
         return getattr(self._rule, name)
 
+    def __repr__(self) -> str:
+        """The rule itself (in its own default format, as `Rule.__repr__`)
+        plus its stored training stats, e.g. ``SingleRule(pos(X) :-
+        f0(X).  % (57/21))`` -- not the generic ``SingleRule(1 rules)``
+        a model's repr would give."""
+        return f"SingleRule({self.to_string(fmt=self._rule.default_fmt)})"
+
     def _rebuild_kwargs(self) -> Dict[str, Any]:
         return {"default_prediction": self._default_prediction}
 
