@@ -5,19 +5,24 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
-### Changed (may break code: frozen rule statistics)
+### Changed (may break code: statistics redesigned)
 
-- A rule's training statistics are frozen once set: they are part of the
-  model (combiners score from them, printing shows them), so a later
-  `rule.stats(other_data)` or `annotate_rules(rules, other_data)` on the
-  default split now raises instead of silently changing what the model
-  predicts. Measure other data under another split name
-  (`rule.stats(test_rep, split="test")`); replace training statistics
-  deliberately with `SingleRule.reset_stats(data)`,
-  `annotate_rules(..., reset=True)` or `set_stats_from_counts(..., reset=True)`.
-  `annotate_rules(..., copy=True)` annotates fresh copies instead; the
-  distillers (`CBA`, `IDS`) now use it, so they no longer re-annotate the
-  shared rule pool's rules in place.
+- Only rules store measurements: a rule's training statistics,
+  `rule.stats()`, set once where it is produced (`fit`, an importer's
+  `data=`, `annotate_rules`, or the new `SingleRule.set_stats(data)`).
+  They are frozen: they are part of the model (combiners score from them,
+  printing shows them), so setting them again raises instead of silently
+  changing what the model predicts. `SingleRule.reset_stats(data)`,
+  `annotate_rules(..., reset=True)` and `set_stats_from_counts(..., reset=True)`
+  replace them deliberately. `annotate_rules(..., copy=True)` annotates
+  fresh copies instead; the distillers (`CBA`, `IDS`) now use it, so they
+  no longer re-annotate the shared rule pool's rules in place.
+- New `RuleModel.evaluate(data)` measures any model (or rule) on any data
+  and returns a `ModelStats` without storing it. It replaces
+  `RuleModel.annotate`, `stats(data)` and the `split=` names, which are
+  gone: containers no longer store snapshots of their own performance
+  (nothing read them), and `RuleSetClassifier.fit` no longer computes an
+  unused one.
 - `to_string` no longer takes `data=`: it prints each rule's own stored
   statistics (`(tp/fp)`, or the class distribution for distribution
   combiners), which are exactly the numbers the model uses, and does so by

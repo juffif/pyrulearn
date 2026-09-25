@@ -49,13 +49,12 @@ fall-through stats.
 
 `WeightedRule` (`pyrulearn.rule`) carries the declarative per-rule
 `weight` -- part of the model, usable at predict time, no dataset
-needed. `stats(data, split)` carries *measured* performance instead: a
-`pyrulearn.evaluation.ModelStats` snapshot (a `ConfusionMatrix` from this
-model's own `predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`),
-`None` until annotated. Every `SingleRule` leaf has its own `stats` too
--- the recursion is structural (`CompositeModel`/`_ConceptIndexed`
-members are themselves full `RuleModel`s), not a tree embedded inside
-one stats object.
+needed. *Measured* performance is separate: every rule (`SingleRule`)
+holds its frozen training stats, `stats()` -- a `pyrulearn.evaluation.
+ModelStats` (a `ConfusionMatrix` from the rule's own predictions vs the
+training labels, plus `n_rules`/`n_conditions`), `None` if it has none.
+Containers store no measurements; `evaluate(data)` measures any model on
+any data without storing anything.
 """
 
 from __future__ import annotations
@@ -307,35 +306,18 @@ class RuleModel(ABC):
     """A collection of rules you can `predict` with. Subclasses supply
     the structure (`rules`) and the prediction (`predict`); this base
     provides the coverage matrix, the `covered_by` explanation, the
-    `default_prediction` policy, on-demand `stats`, and `filter`/`remap`.
+    `default_prediction` policy, `evaluate`, and `filter`/`remap`.
+    A model stores no measurements of its own; only its rules
+    (`SingleRule`s) hold their frozen training stats.
     """
-
-    #: the `split` holding a model's training stats -- the default
-    #: everywhere. For a rule (`SingleRule`) it is frozen once set: what
-    #: predictions and printing read (see `SingleRule`).
-    TRAINING_SPLIT = "data"
-    #: whether `TRAINING_SPLIT` stats may only be written once (`SingleRule`).
-    _FREEZES_TRAINING_STATS = False
 
     def __init__(self, *, default_prediction: Any = None):
         self._default_prediction: Any = default_prediction
         self._default_rule: Optional["SingleRule"] = None
-        self._stats: Dict[str, Any] = {}
         #: what built this model -- see `Provenance`. `None` until a
         #: `RuleLearner.fit` call or a direct importer `import_model`/
         #: `parse` call stamps it.
         self.provenance: Optional[Provenance] = None
-
-    def _check_writable(self, split: str) -> None:
-        """Refuse to overwrite a rule's frozen training stats -- see
-        `SingleRule` and `SingleRule.reset_stats`."""
-        if self._FREEZES_TRAINING_STATS and split == self.TRAINING_SPLIT and split in self._stats:
-            raise ValueError(
-                f"{type(self).__name__}(target={getattr(self, 'target', None)!r}) already has frozen "
-                f"training stats (split {split!r}) -- predictions and printing read them, so they "
-                "aren't overwritten implicitly. Use reset_stats(data) to replace them deliberately, "
-                "or another split name (e.g. split='test') to measure other data."
-            )
 
     # -- structure ------------------------------------------------------
 
@@ -456,7 +438,7 @@ class RuleModel(ABC):
         deterministic for every model type (a stored list, or built from
         stored sub-structures), so `coverage_matrix` and `self.rules`
         stay aligned as long as the model isn't structurally mutated
-        between the two calls. Methods that use both (`annotate`,
+        between the two calls. Methods that use both (`evaluate`,
         `covered_by`, `predict`) fetch them together, so they're safe;
         the same `Rule` object at two positions just gets two identical
         rows -- no de-dup."""
@@ -502,26 +484,16 @@ class RuleModel(ABC):
         `resolution`; concept-indexed and composite models override."""
         raise NotImplementedError
 
-    def annotate(self, data: DataRepresentation, split: str = "data") -> None:
-        """Compute and store this model's measured training/test-set
-        performance under `split` (call again with another `split` name
-        to keep train/test side by side) -- a `ModelStats` snapshot: a
-        `ConfusionMatrix` from this model's own `predict(data)` vs
-        `data.y` (`None` if `data.y` isn't available), plus
-        `n_rules`/`n_conditions`. Read back with `stats(split=...)`.
+    def evaluate(self, data: DataRepresentation) -> "ModelStats":
+        """This model measured on `data`, as a `ModelStats`: a
+        `ConfusionMatrix` from its own `predict(data)` vs `data.y` (`None`
+        if `data.y` isn't available), plus `n_rows`/`n_rules`/
+        `n_conditions`. A pure measurement -- nothing is stored, so
+        evaluating on test data never touches what the model holds (a
+        rule's frozen training stats are `SingleRule.stats()`).
 
-        Only this model's *own* prediction is scored -- a composite's
-        members (or a `_FlatRules`/`_ConceptIndexed` container's
-        `SingleRule`s) each carry their own `stats`/`.annotate()` too,
-        called separately against whatever data is relevant to them; this
-        doesn't cascade down to them automatically (a `PairwiseModel`
-        member, say, is only meaningful evaluated against its own pair's
-        training subset, not the whole dataset this call was given).
-
-        A rule's (`SingleRule`'s) training stats (`TRAINING_SPLIT`, the
-        default) are frozen once set: this raises instead of overwriting
-        them (see `SingleRule.reset_stats`)."""
-        self._check_writable(split)
+        Only this model's *own* prediction is scored; composite members
+        and a container's rules aren't measured separately."""
         from .evaluation import ConfusionMatrix, ModelStats  # local: avoids a load-order cycle
                                                               # (models -> evaluation -> classifier ->
                                                               # models, via classifier.py's
@@ -530,21 +502,12 @@ class RuleModel(ABC):
         preds = self.predict(data)
         confusion = (ConfusionMatrix.from_predictions(data.y, preds, labels=self.labels)
                     if data.y is not None else None)
-        self._stats[split] = ModelStats(
+        return ModelStats(
             n_rows=int(data.n_samples),
             confusion=confusion,
             n_rules=len(rules),
             n_conditions=sum(len(r.conditions) for r in rules),
         )
-
-    def stats(self, data: Optional[DataRepresentation] = None, split: str = "data") -> Optional["ModelStats"]:
-        """This model's measured performance/complexity under `split`, as
-        a `ModelStats`. Annotates first if `data` is given. Returns
-        `None` if never annotated and no `data` passed -- callers must
-        handle `None`. Uniform across every subclass."""
-        if data is not None:
-            self.annotate(data, split)
-        return self._stats.get(split)
 
     # -- default-prediction policy --------------------------------
 
@@ -651,20 +614,20 @@ def _carry_provenance(source: "RuleModel", result: "RuleModel") -> "RuleModel":
     directly."""
     result.provenance = source.provenance
     src_default = source._default_rule
-    if src_default is not None and src_default._stats and result is not source:
+    if src_default is not None and src_default._stats is not None and result is not source:
         dst_default = result.default_rule
-        if dst_default is not None and dst_default.target == src_default.target and not dst_default._stats:
-            dst_default._stats = dict(src_default._stats)
+        if dst_default is not None and dst_default.target == src_default.target and dst_default._stats is None:
+            dst_default._stats = src_default._stats
     return result
 
 
 def annotate_rules(
-    rules: Sequence[Union[Rule, "SingleRule"]], data: Optional[DataRepresentation], split: str = "data",
+    rules: Sequence[Union[Rule, "SingleRule"]], data: Optional[DataRepresentation],
     *, reset: bool = False, copy: bool = False,
 ) -> List["SingleRule"]:
     """Wrap each rule as a `SingleRule` (via `_as_single_rule`, so an
     already-`SingleRule` item is kept, not re-wrapped) and, if `data` is
-    given, populate its `stats(data, split)` against it -- the exact
+    given, set its training stats against it (`SingleRule.set_stats`) -- the exact
     rows it was learned or read back from. `data=None` just wraps,
     stamping no stats -- the case for an importer's `parse`/`import_model`
     call made on its own, with no live training data to measure against
@@ -712,14 +675,14 @@ def annotate_rules(
         sr = _detached(r) if copy else _as_single_rule(r)
         if data is not None:
             if reset:
-                sr.reset_stats(data, split)
+                sr.reset_stats(data)
             else:
-                sr.stats(data, split)
+                sr.set_stats(data)
         out.append(sr)
     return out
 
 
-def annotate_default_rule(model: "RuleModel", data: DataRepresentation, split: str = "data") -> "RuleModel":
+def annotate_default_rule(model: "RuleModel", data: DataRepresentation) -> "RuleModel":
     """If `model.default_rule` materializes to something, populate its
     stats too (against the same `data` its sibling rules were annotated
     against), then return `model` unchanged -- lets a producer method
@@ -727,7 +690,7 @@ def annotate_default_rule(model: "RuleModel", data: DataRepresentation, split: s
     policy or a non-constant `DefaultPrediction`, where `default_rule`
     is `None`."""
     if model.default_rule is not None:
-        model.default_rule.stats(data, split)
+        model.default_rule.set_stats(data)
     return model
 
 
@@ -814,7 +777,7 @@ def _frozen_coverage(rule: Rule) -> Optional[dict]:
     own frozen training stats (see `SingleRule`) -- the true-label counts
     among the rows it covers (`ConfusionMatrix.predicted_as` on its own
     target). `None` if the rule has no stats (or no target)."""
-    from .evaluation import ABSTAIN  # local: same load-order reason as `annotate`
+    from .evaluation import ABSTAIN  # local: same load-order reason as `evaluate`
     stats_fn = getattr(rule, "stats", None)
     ms = stats_fn() if callable(stats_fn) else None
     if ms is None or ms.confusion is None or rule.target is None:
@@ -1212,22 +1175,21 @@ class SingleRule(RuleSet):
     `Rule` directly instead.
 
     **Frozen training stats.** The stats a rule gets where it's produced
-    or imported (`TRAINING_SPLIT`, via `annotate_rules`, an importer's
-    `data=`, or `set_stats_from_counts`) are part of the model: combiners
-    score rules from them, and `to_string` prints them. They are written
-    once -- a later `stats(data)`/`annotate(data)` on the same split
-    raises rather than silently changing what the model predicts. Replace
-    them deliberately with `reset_stats(data)`; measure other data under
-    another split name (`stats(test_rep, split="test")`), which nothing
-    predicts from. `remap` keeps them (a rebased rule still covers the
-    same rows)."""
+    or imported (`set_stats`, via `annotate_rules`, an importer's `data=`,
+    or `set_stats_from_counts`) are part of the model: combiners score
+    rules from them, and `to_string` prints them. `stats()` returns them.
+    They are set once -- a second `set_stats` raises rather than silently
+    changing what the model predicts; `reset_stats(data)` replaces them
+    deliberately. Measuring other data is `evaluate(data)`, which stores
+    nothing. `remap` keeps them (a rebased rule still covers the same
+    rows)."""
 
     resolution = Exclusive()
-    _FREEZES_TRAINING_STATS = True
 
     def __init__(self, rule: Rule, *, default_prediction: Any = None):
         super().__init__(default_prediction=default_prediction)  # -> RuleModel.__init__
         self._rule: Rule = rule
+        self._stats: Optional["ModelStats"] = None
 
     @property
     def rule(self) -> Rule:
@@ -1237,35 +1199,53 @@ class SingleRule(RuleSet):
     def rules(self) -> List["SingleRule"]:
         return [self]
 
-    def reset_stats(self, data: DataRepresentation, split: str = "data") -> "SingleRule":
-        """Deliberately replace this rule's stats under `split` (by
-        default its frozen training stats) with ones measured on `data`.
-        Returns `self`."""
-        self._stats.pop(split, None)
-        self.annotate(data, split)
+    def stats(self) -> Optional["ModelStats"]:
+        """This rule's frozen training stats (a `ModelStats`), or `None`
+        if it has none -- callers must handle `None`."""
+        return self._stats
+
+    def _check_unset(self) -> None:
+        if self._stats is not None:
+            raise ValueError(
+                f"SingleRule(target={self._rule.target!r}) already has training stats -- they are "
+                "frozen (predictions and printing read them). Use reset_stats(data) to replace them "
+                "deliberately, or evaluate(data) to measure other data without storing anything."
+            )
+
+    def set_stats(self, data: DataRepresentation) -> "SingleRule":
+        """Set this rule's training stats, measured on `data` (see
+        `evaluate`). Raises if it already has some -- they are frozen;
+        see `reset_stats`. Returns `self`."""
+        self._check_unset()
+        self._stats = self.evaluate(data)
+        return self
+
+    def reset_stats(self, data: DataRepresentation) -> "SingleRule":
+        """Deliberately replace this rule's frozen training stats with
+        ones measured on `data`. Returns `self`."""
+        self._stats = self.evaluate(data)
         return self
 
     def set_stats_from_counts(
-        self, covered: Dict[Any, int], totals: Dict[Any, int], split: str = "data", *, reset: bool = False,
+        self, covered: Dict[Any, int], totals: Dict[Any, int], *, reset: bool = False,
     ) -> "SingleRule":
         """Store this rule's measured stats from counts its producer
         already knows -- `covered[c]`: rows the rule covers with true label
         `c`; `totals[c]`: rows of the whole data with label `c` -- instead
-        of `annotate`'s predict-over-the-data pass. Produces exactly the
-        `ModelStats` `annotate` would (see `ConfusionMatrix.
+        of `set_stats`'s predict-over-the-data pass. Produces exactly the
+        `ModelStats` `set_stats` would (see `ConfusionMatrix.
         from_rule_counts`), for a rule with no default prediction. Use it
         where the counts fall out of the construction anyway (a CAR
         miner's per-class supports, a tree leaf's class counts): stamping
         a large pool this way is ~10x faster than `annotate_rules`.
-        Frozen like `annotate`'s stats: `reset=True` to replace existing
+        Frozen like `set_stats`: `reset=True` to replace existing
         training stats deliberately. Returns `self`."""
-        from .evaluation import ConfusionMatrix, ModelStats  # local: same load-order reason as `annotate`
-        if reset:
-            self._stats.pop(split, None)
-        self._check_writable(split)
+        from .evaluation import ConfusionMatrix, ModelStats  # local: same load-order reason as `evaluate`
+        if not reset:
+            self._check_unset()
         if self._default_prediction is not None:
             raise ValueError("set_stats_from_counts assumes no default prediction (the rule abstains elsewhere)")
-        self._stats[split] = ModelStats(
+        self._stats = ModelStats(
             n_rows=int(sum(totals.values())),
             confusion=ConfusionMatrix.from_rule_counts(self._rule.target, covered, totals),
             n_rules=1,
@@ -1298,7 +1278,7 @@ class SingleRule(RuleSet):
         """The rule rebuilt against `new_dataspec` (`Rule.remap`), keeping
         its stats: the rebased rule covers exactly the same rows."""
         rebased = SingleRule(self._rule.remap(new_dataspec), default_prediction=self._default_prediction)
-        rebased._stats = dict(self._stats)
+        rebased._stats = self._stats
         return _carry_provenance(self, rebased)
 
     def to_string(
@@ -1489,10 +1469,10 @@ class PooledRuleSet(FlatRuleSet):
     everything its measured stats derive from -- is ~35 bytes per rule in
     columns. So the pool stores columns, and a `SingleRule` is **built the
     first time someone looks at it** (and then cached, so it stays one
-    persistent object: writing `rule.weight`, stamping another `split`'s
-    stats, or keying a dict on `id(rule)` all keep working). Every rule you
-    do see is completely filled -- the same `ModelStats` `annotate` would
-    produce, stamped from the counts by `SingleRule.set_stats_from_counts`.
+    persistent object: writing `rule.weight` or keying a dict on
+    `id(rule)` keeps working). Every rule you do see is completely filled
+    -- the same `ModelStats` `set_stats` would produce, stamped from the
+    counts by `SingleRule.set_stats_from_counts`.
 
     It is a `FlatRuleSet` in every other respect (`isinstance` holds;
     `predict`, `default_prediction`, `combiner`, `stats`, ... unchanged).
@@ -1845,7 +1825,7 @@ def _pairwise_weight(rule: Rule) -> float:
     stats = _rule_stats(rule)
     if stats is None:
         return 0.5
-    from .heuristics import Laplace  # local: see annotate()'s own lazy-import note
+    from .heuristics import Laplace  # local: see evaluate()'s own lazy-import note
     return float(Laplace().score(stats))
 
 

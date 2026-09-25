@@ -145,7 +145,6 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
             self.rule_set_ = self.rules if isinstance(self.rules, RuleModel) else FlatRuleSet(self.rules)
         if self.default_class is not None:
             self.rule_set_.default_prediction = self.default_class
-        self.rule_set_.annotate(rep)
         if rep.y is not None:
             self.classes_ = np.unique(rep.y)
         return self

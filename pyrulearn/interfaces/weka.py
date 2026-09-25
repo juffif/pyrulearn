@@ -885,11 +885,11 @@ class JRip(_WekaRuleLearner):
         for r in decision_list.rules:
             if r.target == label:
                 sr = models.SingleRule(r.rule, default_prediction=models.MajorityClass(data))
-                sr.stats(data)
+                sr.set_stats(data)
                 return sr
         empty = Rule([], target=label, dataspec=data.spec)
         sr = models.SingleRule(empty, default_prediction=models.MajorityClass(data))
-        sr.stats(data)
+        sr.set_stats(data)
         return sr
 
 

@@ -165,11 +165,10 @@ def test_concept_cascade_unique_mask_credits_the_whole_first_concept():
 
 # ------------------------------------------------------------------------ stats ---
 
-def test_stats_is_none_until_annotated_then_returns_a_model_stats():
+def test_evaluate_returns_a_model_stats_and_stores_nothing():
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS), Rule([1], target="a", dataspec=DS)],
                      default_prediction="a")
-    assert rs.stats() is None
-    st = rs.stats(DATA)
+    st = rs.evaluate(DATA)
     assert type(st).__name__ == "ModelStats"
     assert st.n_rows == 5
     assert st.n_rules == 2
@@ -177,13 +176,16 @@ def test_stats_is_none_until_annotated_then_returns_a_model_stats():
     assert st.confusion is not None
     assert st.confusion.labels == ["a", "b"]
     assert 0.0 <= st.confusion.accuracy <= 1.0
-    assert rs.stats(split="data") is st   # cached, same object back
+    # a pure measurement: nothing is stored on the model or its rules
+    assert not hasattr(rs, "stats")
+    assert all(r.stats() is None for r in rs.rules)
+    assert rs.evaluate(DATA) is not st
 
 
 def test_stats_confusion_is_none_without_labels():
     rep_no_y = BooleanDataRepresentation(DS, X)  # no labels available to score a confusion matrix against
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS)], default_prediction="a")
-    st = rs.stats(rep_no_y)
+    st = rs.evaluate(rep_no_y)
     assert st.confusion is None
     assert st.n_rules == 1
 
@@ -391,7 +393,7 @@ def test_default_rule_is_a_single_rule_with_its_own_stats_and_provenance():
     assert type(dr) is SingleRule
     assert dr.target == "b" and dr.conditions == ()
     assert dr.stats() is None                   # nothing measured yet
-    dr.stats(DATA)                               # fall-through stats land here, like any other leaf
+    dr.set_stats(DATA)                           # fall-through stats land here, like any other leaf
     assert fs.default_rule is dr and fs.default_rule.stats() is not None
     assert fs.default_rule.provenance is None   # settable, just like any other RuleModel
 
@@ -497,21 +499,6 @@ def test_annotate_default_rule_is_a_noop_when_there_is_no_default_rule():
     assert result is fs
 
 
-def test_stats_multiple_splits_coexist():
-    X_train = np.array([[1, 0], [1, 1], [0, 0]], dtype=bool)
-    X_test = np.array([[1, 0], [0, 0]], dtype=bool)
-    ds = DataSpec(["a", "b"])
-    train_rep = BooleanDataRepresentation(ds, X_train)
-    test_rep = BooleanDataRepresentation(ds, X_test)
-    r = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
-    fs = FlatRuleSet([r])
-
-    fs.annotate(train_rep, split="train")
-    fs.annotate(test_rep, split="test")
-    assert fs.stats(split="train").n_rows == 3
-    assert fs.stats(split="test").n_rows == 2  # annotating "test" didn't clobber "train"
-
-
 # ------------------------------------------------------- default_prediction ---
 
 def test_predict_default_prediction_bare_label_and_none():
@@ -538,7 +525,7 @@ def test_default_rule_reassignment_discards_materialized_rule_and_stats():
     assert dr is not None and dr.target == "fallback" and len(dr.conditions) == 0
     assert fs.default_rule is dr  # cached: same object each access
 
-    fs.default_rule.stats(DATA)
+    fs.default_rule.set_stats(DATA)
     assert fs.default_rule.stats() is not None
 
     # reassigning the policy discards the materialized rule (and its stats)
@@ -846,11 +833,12 @@ def test_to_string_prints_only_the_rules_own_frozen_stats():
     assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (1/0)" in before
     assert "high_risk(X) :- high_bp(X).  % (0/1)" in before
 
-    # stats measured on other data go under another split name and never
-    # change what's printed (nor what's predicted)
+    # evaluating on other data stores nothing, so it never changes what's
+    # printed (nor what's predicted)
     test = BooleanDataRepresentation(ds, np.array([[1, 1, 1]] * 3, dtype=bool), np.array(["high_risk"] * 3))
+    fs.evaluate(test)
     for r in fs.rules:
-        r.stats(test, split="test")
+        r.evaluate(test)
     assert fs.to_string(fmt="prolog") == before
     # show_stats=False: the bare rules
     assert "% (" not in fs.to_string(fmt="prolog", show_stats=False)
@@ -863,8 +851,7 @@ def test_training_stats_are_frozen_and_only_replaced_deliberately():
     sr = annotate_rules([Rule([0], target="x", dataspec=ds)], train)[0]
     assert sr.to_string("prolog").endswith("% (1/1)")
 
-    for overwrite in (lambda: sr.stats(other), lambda: sr.annotate(other),
-                      lambda: annotate_rules([sr], other),
+    for overwrite in (lambda: sr.set_stats(other), lambda: annotate_rules([sr], other),
                       lambda: sr.set_stats_from_counts({"x": 1}, {"x": 2})):
         with pytest.raises(ValueError, match="frozen"):
             overwrite()

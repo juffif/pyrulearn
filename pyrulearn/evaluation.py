@@ -23,11 +23,12 @@ genuinely different `RuleStats` from the same matrix (tp/fp for one
 label are the other's fn/tn mirrored, not a stored, retrievable pair),
 so this is a computation, not a lookup.
 
-`ModelStats` is the per-model, per-split snapshot `pyrulearn.models.
-RuleModel.stats()` returns: a `ConfusionMatrix` from a whole fitted
-model's own `predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`
-complexity counts -- how a whole model's training/test performance is
-tracked, as opposed to one candidate rule's `RuleStats`. Lives in this
+`ModelStats` is what `pyrulearn.models.RuleModel.evaluate(data)`
+returns (and what a rule's frozen training stats, `SingleRule.stats()`,
+are): a `ConfusionMatrix` from a fitted model's own `predict(data)` vs
+`data.y`, plus `n_rules`/`n_conditions` complexity counts -- a whole
+model's (or one rule's) measured performance, as opposed to one
+candidate rule's `RuleStats`. Lives in this
 module (not `models.py`) alongside the `ConfusionMatrix` it wraps, kept
 apart from `pyrulearn.models`'s own `RuleModel` hierarchy definitions.
 
@@ -343,7 +344,7 @@ class ConfusionMatrix:
         rows of the whole data do. Identical -- labels, order, counts,
         the trailing `ABSTAIN` column present iff some row is uncovered --
         to `from_predictions(y, rule_predictions, labels=[target])`, which
-        is what `RuleModel.annotate` produces for a `SingleRule` with no
+        is what `RuleModel.evaluate` produces for a `SingleRule` with no
         default prediction (checked by `tests/test_evaluation`-style
         equivalence tests); it just skips the coverage pass, for producers
         (a CAR miner, a decision-tree leaf) that already know the counts.
@@ -391,7 +392,7 @@ class ConfusionMatrix:
 
         For a `SingleRule`'s own `ConfusionMatrix` (it predicts only its
         own target, or abstains elsewhere -- see `pyrulearn.models.
-        RuleModel.annotate`), calling this with the rule's own target
+        RuleModel.evaluate`), calling this with the rule's own target
         gives exactly a decision-tree leaf's classic per-class count
         breakdown, generalized to any rule -- what `pyrulearn.combiners.
         DistributionCombiner` reads: the true-label distribution among
@@ -418,19 +419,16 @@ class ConfusionMatrix:
 
 
 class ModelStats:
-    """Per-split snapshot of a model's own measured training/test-set
-    performance and complexity -- what `pyrulearn.models.RuleModel.
-    annotate`/`.stats()` build and return. `confusion` (a
+    """A model's measured performance and complexity on some data --
+    what `pyrulearn.models.RuleModel.evaluate` returns, and what a rule's
+    frozen training stats (`SingleRule.stats()`) are. `confusion` (a
     `ConfusionMatrix` from the model's `predict(data)` vs `data.y`) is
     `None` when `data.y` wasn't available to score against -- `n_rows`/
     `n_rules`/`n_conditions` are still meaningful then.
 
     `n_rules`/`n_conditions` are the model's own rule-count/condition-
-    count at annotate time, recomputed fresh each call rather than cached
-    separately -- a `CompositeModel`'s pooled `.rules` is already the
-    recursive view, so this doesn't walk the tree twice; there's no
-    live-vs-cached tension to manage on top of the `predict()` pass
-    `annotate` already has to make.
+    count at measurement time -- a `CompositeModel`'s pooled `.rules` is
+    already the recursive view, so this doesn't walk the tree twice.
 
     No per-rule breakdown here (deliberately -- that's not a "constituent
     model" in the recursive sense; call `.stats()` on an actual member/

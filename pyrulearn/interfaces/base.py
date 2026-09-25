@@ -92,10 +92,10 @@ class RuleImporter(ABC):
             out.append(sr)
         return out
 
-    def _stamp_rule_stats(self, rules: Sequence[Rule], data: Optional[Any] = None, split: str = "data") -> list:
+    def _stamp_rule_stats(self, rules: Sequence[Rule], data: Optional[Any] = None) -> list:
         """Wrap each of `rules` as a `SingleRule` (as `_stamp_rule_provenance`
-        does) and, if `data` is given, populate its measured `stats(data,
-        split)` against it -- the exact rows a `fit()` round trip wrote
+        does) and, if `data` is given, set its frozen training stats
+        against it (`SingleRule.set_stats`) -- the exact rows a `fit()` round trip wrote
         out for the external tool and is now reading these rules back
         against. `data` is only ever given by that round trip
         (`ExternalRuleLearner._fit_native`, via each learner's `_import`);
@@ -113,7 +113,7 @@ class RuleImporter(ABC):
         guessing"). See `pyrulearn.models.annotate_rules`.
         """
         from ..models import annotate_rules
-        return annotate_rules(rules, data, split)
+        return annotate_rules(rules, data)
 
     def _stamp_provenance(self, model: Any, **params: Any) -> Any:
         """Set `model.provenance` (see `pyrulearn.models.Provenance`) to

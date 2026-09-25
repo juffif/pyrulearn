@@ -289,10 +289,9 @@ Only `shared` ever needs a full Boolean data matrix built for it; the
 per-model DataSpecs used during import don't (`remap` needs nothing but
 their feature *names*), which keeps memory to one dataset's worth
 regardless of how many models get combined. The rules keep their
-training stats through `remap`; to measure them on `shared_rep`, use
-another split name (`stats(shared_rep, split="shared")`), or
-`reset_stats(shared_rep)` to replace the training stats deliberately
-(see *Statistics*).
+training stats through `remap`; `model.evaluate(shared_rep)` measures a
+model on `shared_rep` without storing anything, and `reset_stats` replaces
+a rule's training stats deliberately (see *Statistics*).
 
 ### Reading ARFF / CSV data
 
@@ -687,29 +686,29 @@ directly on `model.covered_by(data)`'s output, or as `covered_by`'s own
 
 ### Statistics
 
-`stats(data=None, split="data")`: every `RuleModel` (down to each
-`SingleRule` leaf) can measure its own performance against `data`. It
-returns a `pyrulearn.evaluation.ModelStats` snapshot (a `ConfusionMatrix`
-from `predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`), cached
-under `split` (pass a different `split` name, e.g. `"test"`, to keep
-several side by side).
+Only rules store measurements. Each rule (`SingleRule`) holds its
+**training stats**, `rule.stats()`: a `pyrulearn.evaluation.ModelStats` (a
+`ConfusionMatrix` of the rule's own predictions vs the training labels,
+plus `n_rules`/`n_conditions`), or `None` if it has none. They are set
+where the rule is produced -- a learner's `fit`, an importer's `data=`,
+or `pyrulearn.models.annotate_rules(rules, data)`, which wraps a plain
+rule list and sets each rule's stats in one call -- so
+combiners/`sort_rules`/`covered_by` have real measured stats to score
+from.
 
-`pyrulearn.models.annotate_rules(rules, data)` wraps a plain rule list and
-stats each one against `data` in one call. This is what every native
-learner and importer `fit()`/`data=` round trip already does, so
-combiners/`sort_rules`/`covered_by` have real measured stats to score from.
+Those stats are **frozen**: they are part of the model -- combiners score
+from them and `to_string` prints them -- so setting them a second time
+(`rule.set_stats(other_data)`, `annotate_rules(rules, other_data)`) raises
+instead of silently changing what the model predicts. Replace them
+deliberately with `rule.reset_stats(data)` (or `annotate_rules(...,
+reset=True)`). `annotate_rules(..., copy=True)` annotates fresh copies of
+the rules and leaves the given ones untouched -- what the rule
+distillers (`CBA`, `IDS`) do with the pool they select from. `remap`,
+`filter` and model conversions keep the stats.
 
-A rule's training stats (the default split) are **frozen** once set: they
-are part of the model -- combiners score from them and `to_string` prints
-them -- so a later `rule.stats(other_data)` or `annotate_rules(rules,
-other_data)` raises instead of silently changing what the model predicts.
-Measure other data under another split name (`rule.stats(test_rep,
-split="test")`); replace the training stats deliberately with
-`rule.reset_stats(data)` (or `annotate_rules(..., reset=True)`).
-`annotate_rules(..., copy=True)` annotates fresh copies of the rules and
-leaves the given ones untouched -- what the rule distillers (`CBA`, `IDS`)
-do with the pool they select from. `remap`, `filter` and model
-conversions keep the stats.
+Measuring on other data is `model.evaluate(data)`, available on every
+model and every rule: it returns a `ModelStats` (the model's own
+`predict(data)` vs `data.y`) and stores nothing.
 
 ### Rule-evaluation heuristics
 

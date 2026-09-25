@@ -1521,7 +1521,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         if rule is None:
             rule = Rule([], target=target, dataspec=data.spec)
         sr = SingleRule(rule, default_prediction=MajorityClass(data))
-        sr.stats(data)
+        sr.set_stats(data)
         return sr
 
     @produces(DecisionList)

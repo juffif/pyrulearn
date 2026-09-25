@@ -6,7 +6,7 @@ import numpy as np
 from pyrulearn import (
     BooleanDataRepresentation, DataSpec, DataSpecBuilder, PatternStringImporter, Rule, RuleSetClassifier,
 )
-from pyrulearn.models import DisjointRuleSet, FlatRuleSet
+from pyrulearn.models import DisjointRuleSet, FlatRuleSet, annotate_rules
 from pyrulearn.interfaces.sklearn import from_sklearn_tree
 from pyrulearn.evaluation import summarize, coverage_space_plot, coverage_space_auc, rule_refinement_plot
 
@@ -44,12 +44,13 @@ assert r1.covers(X_full[0].tolist()) == bool(cov_a[0])
 print("Rule:", r1)
 print("  covers", int(cov_a.sum()), "of", n, "examples")
 
-# 2. FlatRuleSet + annotate (multi-rule, multi-class stats)
+# 2. FlatRuleSet: rules annotated with their (frozen) training stats, and the
+#    whole model evaluated on the data (a measurement; nothing is stored)
 r2 = Rule.from_pos_neg(pos=[], neg=[ds.feature_index("f0")], target="neg", dataspec=ds)
-rs = FlatRuleSet([r1, r2])
-rs.annotate(rep)
+rs = FlatRuleSet(annotate_rules([r1, r2], rep))
 for r in rs:
-    print(r, "stats:", r.stats(rep))
+    print(r, "stats:", r.stats())
+print("model:", rs.evaluate(rep))
 
 print("summary:", summarize(rs, rep))
 
@@ -59,7 +60,6 @@ from sklearn.model_selection import cross_val_score
 
 clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
 tree_rules = from_sklearn_tree(clf, dataspec=ds)
-tree_rules.annotate(rep)
 print(f"\nExtracted {len(tree_rules)} rules from decision tree:")
 for r in tree_rules:
     print(" ", r, "n_covered=", int(r.covers_data(rep).sum()))
