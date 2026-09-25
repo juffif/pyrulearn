@@ -74,6 +74,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- `to_string(pretty=True)` (rules and every model): each condition on its
+  own line, indented under the head, and the coverage comment on its own
+  line above the head. Prolog format only so far.
 - Binary attributes: `AttributeType.BINARY` and
   `DataSpecBuilder.add_binary("sex", ["male", "female"])`, a closed set of
   exactly two values. They always get both features (`sex=male`,
