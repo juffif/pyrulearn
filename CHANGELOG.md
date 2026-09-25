@@ -48,6 +48,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   the class more frequent in the training data, then to the one that
   sorts first. (Before, `max`, `vote` and the distribution combiners fell
   back on rule or class insertion order.) Only `"list"` is order-based.
+  `EnsembleModel` vote ties follow the same convention instead of member
+  order, and an ensemble prints `% conflict resolution: (weighted) vote of
+  members`.
 - `AQR().fit(data)` now returns a `DecisionList` instead of a
   `FlatRuleSet` resolved by `combiner="list"`. Predictions are identical
   (the first covering rule in learn order wins either way), but the

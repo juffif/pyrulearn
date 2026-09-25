@@ -68,7 +68,10 @@ from typing import (
 
 import numpy as np
 
-from .combiners import DistributionCombiner, ListCombiner, RuleCombiner, _resolve_combiner, _rule_stats
+from .combiners import (
+    DistributionCombiner, ListCombiner, RuleCombiner, _argmax_classes, _label_sortkey, _resolve_combiner,
+    _rule_stats, _training_frequencies,
+)
 from .data import DataRepresentation
 from .data import DataSpec
 from .rule import Rule
@@ -1774,7 +1777,12 @@ class EnsembleModel(CompositeModel):
     independently, then a per-row plurality vote -- optionally weighted
     by `member_weights` (one scalar per member) -- picks the label. Rows
     every member abstains on fall back to `default_prediction`. The
-    umbrella for bagging / boosting-style rule ensembles."""
+    umbrella for bagging / boosting-style rule ensembles.
+
+    Ties follow the combiners' convention (see `pyrulearn.combiners`),
+    never member order: the label more frequent in the training data
+    (read from the members' rules' frozen stats), then the one that
+    sorts first."""
 
     def __init__(
         self,
@@ -1799,18 +1807,29 @@ class EnsembleModel(CompositeModel):
         cols = [np.asarray(m.predict(data)) for m in self.members]
         fb = self._fallback(data)
         out = np.empty(data.n_samples, dtype=object)
+        freq: Optional[Dict[Any, int]] = None  # training frequencies, read only if a tie occurs
         for j in range(data.n_samples):
             tally: Dict[Any, float] = {}
-            first: Dict[Any, int] = {}
             for k, col in enumerate(cols):
                 p = col[j]
                 if p is None:
                     continue
                 w = float(self.member_weights[k]) if self.member_weights is not None else 1.0
                 tally[p] = tally.get(p, 0.0) + w
-                first.setdefault(p, k)
-            out[j] = (max(tally, key=lambda l: (tally[l], -first[l])) if tally else fb(j))
+            if not tally:
+                out[j] = fb(j)
+                continue
+            tied = _argmax_classes(tally)
+            if len(tied) > 1:
+                if freq is None:
+                    rules = self.rules
+                    freq = _training_frequencies(rules, range(len(rules)))
+                tied = [min(tied, key=lambda c: (-freq.get(c, 0), _label_sortkey(c)))]
+            out[j] = tied[0]
         return out
+
+    def _resolution_description(self) -> str:
+        return "weighted vote of members" if self.member_weights is not None else "vote of members"
 
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
@@ -1824,7 +1843,9 @@ class EnsembleModel(CompositeModel):
         each member's own rules that a reader needs to manually redo the
         vote), `default_rule` (if set) as a trailing ``% default``
         section, and a top-level ``% classes: [...]`` header naming this
-        model's own `labels` (see `_container_legend`).
+        model's own `labels` (see `_container_legend`), below a
+        ``% conflict resolution: (weighted) vote of members`` line
+        (`show_resolution=False` omits it).
 
         `show_stats`, `show_distribution` and `show_classes` are passed
         through unchanged to every member's own `to_string` -- each member covers
@@ -1846,7 +1867,9 @@ class EnsembleModel(CompositeModel):
             sections.append(f"% default\n{default_text}")
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
-        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
+        resolution = (self._resolution_description()
+                      if show_resolution and len(self.labels) > 1 else None)
+        return _assemble(rendered, legend_classes, resolution)
 
 
 # -------------------------------------------------- pairwise voting combiners ---

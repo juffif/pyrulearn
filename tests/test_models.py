@@ -204,7 +204,9 @@ def test_ensemble_model_votes_over_members():
     m2 = SingleRule(Rule([1], target="b", dataspec=DS), default_prediction=None)   # q -> b
     m3 = SingleRule(Rule([], target="a", dataspec=DS), default_prediction=None)    # TRUE -> a
     ens = EnsembleModel([m1, m2, m3], default_prediction="b")
-    assert list(ens.predict(DATA)) == ["a", "b", "a", "a", "a"]   # row1: tie -> earlier member (m2) -> b
+    # row1: a (m3) vs b (m2) tie -- never decided by member order; no stats
+    # to read training frequencies from, so the label that sorts first: a
+    assert list(ens.predict(DATA)) == ["a", "a", "a", "a", "a"]
     assert isinstance(ens, CompositeModel) and len(ens.rules) == 3
     with pytest.raises(TypeError):
         ens.add(Rule([0], target="a"))
@@ -1109,6 +1111,39 @@ def test_ensemblemodel_to_string_shows_member_weights_and_top_level_legend():
     assert "cat(X) :- a(X).  % (2/1)" in text
     print("EnsembleModel.to_string shows each member's own weight, its stored "
           "stats, and a top-level classes legend: OK")
+
+
+def test_ensemble_vote_ties_never_depend_on_member_order():
+    ds = DataSpec(["a"])
+
+    def members(y):
+        train = BooleanDataRepresentation(ds, np.array([[1]] * len(y), dtype=bool), np.array(y))
+        good = ConceptModel(annotate_rules([Rule([0], target="good", dataspec=ds)], train), label="good")
+        bad = ConceptModel(annotate_rules([Rule([0], target="bad", dataspec=ds)], train), label="bad")
+        return good, bad
+
+    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    for y, expected in ((["good"] * 3 + ["bad"], "good"),     # good more frequent
+                        (["good"] + ["bad"] * 3, "bad"),       # bad more frequent
+                        (["good", "bad"], "bad")):             # level -> the label sorting first
+        good, bad = members(y)
+        for order in ([good, bad], [bad, good]):
+            assert EnsembleModel(order).predict(row)[0] == expected, (y, order)
+    # an unequal weighted vote isn't a tie
+    good, bad = members(["good", "bad"])
+    assert EnsembleModel([good, bad], member_weights=[0.6, 0.4]).predict(row)[0] == "good"
+
+
+def test_ensemble_prints_its_conflict_resolution():
+    data = _three_class_fixture_data()
+    ds = data.spec
+    cat = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)], data), label="cat")
+    dog = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)], data), label="dog")
+    head = "% conflict resolution: "
+    assert EnsembleModel([cat, dog]).to_string(fmt="prolog").startswith(head + "vote of members\n")
+    assert EnsembleModel([cat, dog], member_weights=[0.7, 0.3]).to_string(fmt="prolog").startswith(
+        head + "weighted vote of members\n")
+    assert head not in EnsembleModel([cat, dog]).to_string(fmt="prolog", show_resolution=False)
 
 
 # ------------------------------------------------------------------ covered_by ---
