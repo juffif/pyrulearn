@@ -69,12 +69,25 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   regression over the coverage of a rule pool (`rules=`, or mined like
   CBA's), multinomial for more than two classes. `C` sets the sparsity,
   `cv=` chooses it by cross-validation, and `include_features=True` adds
-  the single features as candidates. Needs scikit-learn.
+  the single features as candidates. Binary pure-L1 fits use the fast
+  `liblinear` solver, everything else `saga` (`solver=` overrides).
+  Needs scikit-learn.
 - `LinearRuleModel`, the model `RuleFit` returns: rules with signed
   weights, an empty-body rule per class as its intercept, and the class
   with the highest summed weight wins (`WeightedSum` resolution, printed
   as `% conflict resolution: sum of rule weights per class, highest
   wins`). `scores(data)` gives the per-class sums.
+- `RuleFitImporter` and `ImodelsRuleFit` (`pyrulearn.interfaces.imodels`):
+  `imodels.RuleFitClassifier` imported exactly as a `LinearRuleModel`.
+  imodels predicts the positive class only where the logistic output is
+  above 0.5 instead of 0 (a bug in its `predict_proba`); the import
+  reproduces that by default, as a visible `0.5::<negative class>(X) :-
+  true.` rule, and `imodels_threshold=False` gives the logistic decision.
+- `rulefit_candidates(data)` (`pyrulearn.interfaces.imodels`): RuleFit's
+  tree-based candidate rules as a pool, e.g. for
+  `RuleFit(rules=rulefit_candidates(data))`.
+- `examples/demo_rulefit_comparison.py`: imodels' RuleFit vs. the native
+  one, swapping the candidate step and the fitting step separately.
 - `to_string(weight_format=...)` (rules and every model): a Python format
   spec for rule weights, e.g. `"6.2f"` to line them up.
 - `to_string(pretty=True)` (rules and every model): each condition on its

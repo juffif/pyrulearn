@@ -21,8 +21,8 @@ the pool is ignored: only its body is a candidate feature (duplicate
 bodies count once), and the head of a kept rule is the class its
 coefficient belongs to.
 
-The fit is `sklearn.linear_model.LogisticRegression` with the `saga`
-solver: multinomial for more than two classes (one coefficient per
+The fit is `sklearn.linear_model.LogisticRegression`: multinomial for
+more than two classes (one coefficient per
 class and rule, the classes' scores directly comparable), a single
 coefficient vector for the positive class (`classes_[1]`) with two --
 the other class then scores 0, so a negative weight counts against the
@@ -35,6 +35,14 @@ cross-validation (`LogisticRegressionCV`, scored by `scoring`, log loss
 by default). `include_features=True` adds
 every single feature as a length-1 candidate -- RuleFit's "linear
 terms", which for Boolean features are just the features.
+
+`solver="auto"` (the default) uses `liblinear` for a binary pure-L1 fit
+-- two orders of magnitude faster than `saga` on these 0/1 matrices,
+especially under `cv=` -- and `saga` otherwise (more than two classes,
+or the elastic net, which `liblinear` can't do). `liblinear` penalizes
+the intercept like any coefficient; a large `intercept_scaling` (100)
+makes that penalty negligible, so both solvers fit the same model up to
+convergence. `solver="saga"` forces `saga`.
 
 After `fit`, `estimator_` is the fitted scikit-learn estimator and
 `candidates_` the candidate bodies (tuples of feature indices), in its
@@ -62,7 +70,7 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
     `max_auto_convert_cells`) are `RuleDistiller`'s; `min_confidence`
     defaults to 0 here, since the regression, not a confidence cut,
     decides which bodies matter. Fit options: `C`, `cv`/`Cs`/`scoring`,
-    `l1_ratio`, `include_features`, `max_iter`, `random_state`.
+    `l1_ratio`, `include_features`, `solver`, `max_iter`, `random_state`.
     """
 
     def __init__(
@@ -78,6 +86,7 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
         scoring: Any = "neg_log_loss",
         l1_ratio: float = 1.0,
         include_features: bool = False,
+        solver: str = "auto",
         max_iter: int = 5000,
         random_state: Optional[int] = None,
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
@@ -91,6 +100,7 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
         self.scoring = scoring
         self.l1_ratio = l1_ratio
         self.include_features = include_features
+        self.solver = solver
         self.max_iter = max_iter
         self.random_state = random_state
 
@@ -110,17 +120,23 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
                 seen.setdefault((f,), None)
         return list(seen)
 
-    def _estimator(self):
+    def _solver(self, n_classes: int) -> str:
+        if self.solver != "auto":
+            return self.solver
+        return "liblinear" if n_classes == 2 and self.l1_ratio == 1.0 else "saga"
+
+    def _estimator(self, n_classes: int):
         from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+        solver = self._solver(n_classes)
+        extra = {"intercept_scaling": 100.0} if solver == "liblinear" else {}
         if self.cv is not None:
-            extra = {}
             if "use_legacy_attributes" in inspect.signature(LogisticRegressionCV).parameters:
                 extra["use_legacy_attributes"] = False   # scikit-learn >= 1.8's simplified attributes
-            return LogisticRegressionCV(Cs=self.Cs, cv=self.cv, l1_ratios=[self.l1_ratio], solver="saga",
+            return LogisticRegressionCV(Cs=self.Cs, cv=self.cv, l1_ratios=[self.l1_ratio], solver=solver,
                                         scoring=self.scoring, max_iter=self.max_iter,
                                         random_state=self.random_state, **extra)
-        return LogisticRegression(C=self.C, l1_ratio=self.l1_ratio, solver="saga",
-                                  max_iter=self.max_iter, random_state=self.random_state)
+        return LogisticRegression(C=self.C, l1_ratio=self.l1_ratio, solver=solver,
+                                  max_iter=self.max_iter, random_state=self.random_state, **extra)
 
     @produces(LinearRuleModel)
     def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
@@ -132,7 +148,8 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
             raise ValueError("RuleFit: the rule pool has no non-empty candidate rules")
         probes = [Rule(list(b), target=None, dataspec=spec) for b in bodies]
         X = FlatRuleSet(probes).coverage_matrix(data).T.astype(float)   # (n_samples, n_candidates)
-        estimator = self._estimator().fit(X, np.asarray(data.y))
+        y = np.asarray(data.y)
+        estimator = self._estimator(len(np.unique(y))).fit(X, y)
         self.estimator_, self.candidates_ = estimator, bodies
 
         classes = [c.item() if isinstance(c, np.generic) else c for c in estimator.classes_]

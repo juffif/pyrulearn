@@ -12,6 +12,8 @@ from pyrulearn.interfaces.imodels import (  # noqa: E402
     BayesianRuleListImporter,
     BayesianRuleSet,
     BayesianRuleSetImporter,
+    ImodelsRuleFit,
+    RuleFitImporter,
 )
 from pyrulearn.rule import Literal  # noqa: E402
 
@@ -349,3 +351,74 @@ if __name__ == "__main__":
     test_brs_fit_external_rejects_multiclass_target()
     test_brs_nominal_attributes_via_build_dataspec_one_hot()
     print("\nAll tests passed.")
+
+
+# ------------------------------------------------------------------ RuleFit
+
+def _rulefit_data():
+    rng = np.random.default_rng(0)
+    raw = rng.random((600, 6)) < 0.5
+    y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & (rng.random(600) < 0.5), "good", "bad")
+    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+
+
+@pytest.mark.parametrize("imodels_threshold", [True, False])
+def test_rulefit_import_reproduces_the_models_scores_exactly(imodels_threshold):
+    from pyrulearn.models import LinearRuleModel
+    data = _rulefit_data()
+    learner = ImodelsRuleFit(imodels_threshold=imodels_threshold, random_state=0)
+    model = learner.fit(data)
+    assert isinstance(model, LinearRuleModel)
+    ext = learner.fit_external(data.X, data.y, data.spec.feature_names)
+    X = data.X.astype(float)
+    f = ext._predict_continuous_output(X)
+    offset = 0.5 if imodels_threshold else 0.0
+    scores = model.scores(data)
+    np.testing.assert_allclose(scores[:, 1] - scores[:, 0], f - offset, atol=1e-9)
+    if imodels_threshold:   # imodels' own predict: f > 0.5
+        np.testing.assert_array_equal(model.predict(data), ext.predict(X))
+    else:                   # the logistic decision: f > 0
+        np.testing.assert_array_equal(model.predict(data), np.where(f > 0, "good", "bad"))
+
+
+def test_rulefit_offset_rule_is_visible_and_rules_bind_to_negation_features():
+    data = _rulefit_data()
+    model = ImodelsRuleFit(random_state=0).fit(data)
+    text = model.to_string(fmt="prolog", show_stats=False)
+    assert text.splitlines()[0] == "% conflict resolution: sum of rule weights per class, highest wins"
+    assert "0.5::bad(X) :- true." in text
+    assert all(r.target == "good" for r in model.rules if r.conditions)
+    assert r"\+f" in text                 # "<= 0.5" terms land on negation features
+    assert all(r.provenance.source == "imodels.RuleFitClassifier" for r in model.rules)
+    assert all(r.stats() is not None for r in model.rules)
+
+
+def test_rulefit_linear_term_on_a_trimmed_feature_folds_into_the_intercept():
+    # a feature True in 1% of the rows is winsorized to a constant 0
+    from pyrulearn.interfaces.imodels import _rulefit_linear_map
+    rng = np.random.default_rng(0)
+    X = (rng.random((400, 3)) < [0.5, 0.5, 0.01]).astype(float)
+    y = np.where(X[:, 0] == 1, "a", "b")
+    ext = imodels.RuleFitClassifier(random_state=0).fit(X, y)
+    assert _rulefit_linear_map(ext, 2) == (0.0, 0.0)
+    assert _rulefit_linear_map(ext, 0) == (0.0, 1.0)
+
+
+def test_rulefit_fit_external_rejects_non_boolean_input():
+    with pytest.raises(ValueError, match="0/1"):
+        ImodelsRuleFit().fit_external(np.array([[0.3, 1.0], [1.0, 0.0]]), ["a", "b"])
+
+
+def test_rulefit_candidates_is_a_pool_for_the_native_distiller():
+    from pyrulearn.interfaces.imodels import rulefit_candidates
+    from pyrulearn.learners.rulefit import RuleFit
+    data = _rulefit_data()
+    pool = rulefit_candidates(data, random_state=0)
+    bodies = [tuple(sorted(l.feature for l in r.conditions)) for r in pool.rules]
+    assert len(bodies) == len(set(bodies)) > 10          # distinct, non-empty
+    for r in pool.rules:                                 # head = covered majority
+        st = r.stats().confusion.rule_stats(r.target)
+        assert st.tp >= st.fp
+    model = RuleFit(rules=pool, random_state=0).fit(data)
+    assert np.mean(np.asarray(model.predict(data)) == data.y) > 0.8
+

@@ -145,6 +145,18 @@ def test_rulefit_accepts_an_external_pool_include_features_and_cv():
     assert hasattr(rf.estimator_, "C_")
 
 
+def test_rulefit_auto_solver_is_liblinear_only_for_binary_lasso():
+    data = _conjunction_data(noise=0.1)
+    fast = RuleFit(max_len=2, random_state=0)
+    fast.fit(data)
+    assert fast.estimator_.solver == "liblinear"
+    slow = RuleFit(max_len=2, solver="saga", random_state=0)
+    slow.fit(data)
+    np.testing.assert_array_equal(fast.fit(data).predict(data), slow.fit(data).predict(data))
+    assert RuleFit(l1_ratio=0.5)._solver(2) == "saga"
+    assert RuleFit()._solver(3) == "saga"
+
+
 def test_rulefit_rejects_a_ridge_l1_ratio():
     with pytest.raises(ValueError, match="l1_ratio"):
         RuleFit(l1_ratio=0.0)

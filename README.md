@@ -35,7 +35,7 @@ Requires Python ≥ 3.10, `numpy` and `scikit-learn` (the latter because
 | `data` | `pandas`, `scipy` | `pyrulearn.data.io` (reading ARFF/CSV; `scipy` for ARFF and sparse representations) |
 | `plot` | `matplotlib`, `networkx` | coverage-space and refinement-graph plotting in `pyrulearn.evaluation` |
 | `wittgenstein` | `wittgenstein` | `pyrulearn.interfaces.wittgenstein` (IREP, RIPPER) |
-| `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets) |
+| `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets, RuleFit) |
 | `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, which must be built separately (no Windows wheels) |
 | `test` | `pytest` | running the test suite |
 | `all` | all of the above except `pyarc` | |
@@ -87,6 +87,7 @@ random forest — and returns its own, much smaller model.
 | **RIPPER** | `wittgenstein.RIPPERk`, `RIPPERImporter` | `wittgenstein` | Cohen 1995 |
 | **Bayesian Rule Lists** | `imodels.BayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
 | **Bayesian Rule Sets** | `imodels.BayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
+| **RuleFit** | `imodels.ImodelsRuleFit`, `RuleFitImporter` | `imodels` | Friedman & Popescu 2008 |
 | **JRip** (Weka's RIPPER) | `weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
 | **PART** | `weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
 | **J48** (Weka's C4.5) | `weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
@@ -110,7 +111,7 @@ details.
 | `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
-| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
+| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
 | `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
@@ -1289,7 +1290,7 @@ receives, then the importers.
 |---|---|---|---|---|
 | scikit-learn | `DecisionTree`, `RandomForest` | directly | `data.X` as-is: the Boolean feature matrix, in memory | not needed to fit; the importer binds the thresholds back to the `DataSpec` |
 | wittgenstein | `IREP`, `RIPPERk` | directly | `data.X` and the labels, in memory; binary only, so `pos_class` is required | the `DataSpec`'s own feature names |
-| imodels | `BayesianRuleList`, `BayesianRuleSet` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL); BRS refuses anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
+| imodels | `BayesianRuleList`, `BayesianRuleSet`, `ImodelsRuleFit` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL; RuleFit gets floats); BRS and RuleFit refuse anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
 | Weka | `JRip`, `PART`, `J48` | by parsing text | an ARFF file in a temporary directory: every feature a `{False,True}` nominal attribute, plus a `class` column; run as `java -cp weka.jar <classifier> -t train.arff -no-cv` | placeholders `f0..fN` |
 | LORD | `LordJar` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
 | pyarc | `PyarcCBA` | directly | transactions (via `TransactionDB.from_DataFrame`) holding only each row's True features plus the class; False cells are dropped, which matches this library's own item semantics | placeholders `f0..fN` |
@@ -1508,7 +1509,7 @@ still get a correct conversion, the same two as for
   rules = importer.import_model(model, ds, feature_names=["age", "color"])
   ```
 
-### imodels: Bayesian rule lists and rule sets
+### imodels: Bayesian rule lists, rule sets and RuleFit
 
 `BayesianRuleListImporter` (`pyrulearn.interfaces.imodels`, an
 optional dependency on `imodels`) extracts Letham et al.'s Bayesian
@@ -1584,6 +1585,48 @@ bug that can raise a bare `list.remove(x): x not in list`.
 from pyrulearn.interfaces.imodels import BayesianRuleSet
 
 rules = BayesianRuleSet(random_state=0, maxlen=3).fit(train_rep)   # a RuleSet
+```
+
+`RuleFitImporter` reads an `imodels.RuleFitClassifier` as a
+`LinearRuleModel`, the model the native `learners.rulefit.RuleFit`
+returns, and `ImodelsRuleFit` is the learner (named apart from the native
+one). The conversion is exact on 0/1 input: tree-path tests become
+features or their negation features, imodels' scaled linear terms become
+length-1 rules (with any constant part folded into the intercept), and
+the imported model's scores equal imodels' own decision function.
+
+**imodels predicts with the wrong threshold.** The regression is logistic,
+so the positive class should win where its output `f` is above 0; but
+`predict_proba` takes the softmax of `[1 - f, f]`, so `predict` needs `f >
+0.5`. By default the import reproduces imodels' `predict`, and shows the
+offset as a rule of its own; `imodels_threshold=False` imports the
+logistic model as fitted:
+
+```prolog
+% conflict resolution: sum of rule weights per class, highest wins
+
+% class: bad
+0.50::bad(X) :- true.
+
+% class: good
+0.00::good(X) :- true.
+6.53::good(X) :- f0(X), f1(X).
+-2.19::good(X) :- \+f0(X), \+f2(X).
+...
+```
+
+`rulefit_candidates(data)` runs only RuleFit's candidate generation
+(imodels' boosted trees, same parameters and defaults) and returns the
+rules as a pool, so `RuleFit(rules=rulefit_candidates(data))` is RuleFit's
+two steps with pyrulearn's own fit. `examples/demo_rulefit_comparison.py`
+compares the two implementations step by step.
+
+```python
+from pyrulearn.interfaces.imodels import ImodelsRuleFit, rulefit_candidates
+from pyrulearn.learners.rulefit import RuleFit
+
+imported = ImodelsRuleFit(random_state=0).fit(train_rep)         # a LinearRuleModel
+native = RuleFit(rules=rulefit_candidates(train_rep, random_state=0), cv=5).fit(train_rep)
 ```
 
 ### weka: JRip, PART and J48
@@ -1792,9 +1835,8 @@ against it).
   package is unmaintained since 2021 and its declared `sklearn` dependency
   is a now-broken PyPI package name (installs with `--no-deps`; a full
   compatibility check on a modern Python is still open).
-  `imodels.RuleFitClassifier` and `SlipperClassifier` are addressed below
-  instead, not here -- both are better served by native machinery than by
-  a direct import.
+  `imodels`' `SlipperClassifier` is addressed below instead, not here --
+  it is better served by native machinery than by a direct import.
 
 - **Closing gaps between native algorithms and their reference papers.**
   `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
