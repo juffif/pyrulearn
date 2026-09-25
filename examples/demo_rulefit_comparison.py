@@ -4,42 +4,9 @@ RuleFit: imodels' implementation vs. pyrulearn's native distiller
 
 RuleFit has two independent steps -- candidate rules from a tree
 ensemble, then a sparse (L1) logistic regression over them -- and
-imodels and pyrulearn differ in both, so the variants below swap one
-step at a time:
-
-- imodels            `imodels.RuleFitClassifier` (defaults: 100 boosted
-                     trees, linear terms, <= 30 terms, C by CV accuracy),
-                     imported exactly (`ImodelsRuleFit`), predicting as
-                     imodels' own `predict` does (f > 0.5)
-- imodels, f > 0     the same fitted models, imported with the logistic
-                     decision threshold (`imodels_threshold=False`) --
-                     what the regression actually fitted
-- trees + native     imodels' candidate generator (same parameters and
-                     seed, `rulefit_candidates`) + the native fit
-                     (`RuleFit`: saga, C by CV log loss, no term cap)
-- trees + native +lin  the same, plus the single features as linear terms
-- CAR + native +lin  a mined class-association-rule pool instead of trees:
-                     support >= 0.05, length <= 3 (<= 2 above 200
-                     features: the frequent negation features make
-                     length-3 mining explode on e.g. sonar), confidence
-                     >= 0.6, then the 500 most confident (a pool about the
-                     size of the forest's; the full one runs to tens of
-                     thousands)
-- RF + native +lin   the leaves of a shallow random forest (100 trees,
-                     depth <= 3) as the pool
-
-Two benchmarks that aren't linear rule models:
-
-- random forest      sklearn's `RandomForestClassifier` (defaults: 100
-                     fully grown trees) on the same binarized features;
-                     "terms" is its total number of leaves, "len" their
-                     mean depth
-- Pypper             pyrulearn's RIPPER re-implementation (a decision
-                     list); "terms" is its number of rules
-
-Stratified 5-fold CV on binary OpenML datasets, binarized by
-`build_dataspec` (numeric attributes into <= 6 intervals). "terms" counts
-the non-empty rules with a non-zero weight; "len" is their mean length.
+imodels and pyrulearn differ in both. The variants swap one step at a
+time; `DESCRIPTION` below describes the setup and each variant, and is
+written into the report too.
 
 Run from the repo root: ``python examples/demo_rulefit_comparison.py``.
 Writes `demo_rulefit_comparison_report.md` next to this file.
@@ -80,7 +47,63 @@ DATASETS = [
     "hepatitis", "heart-statlog", "kr-vs-kp",
 ]
 VARIANTS = ["imodels", "imodels, f > 0", "trees + native", "trees + native +lin", "CAR + native +lin",
-            "RF + native +lin", "random forest", "Pypper"]
+            "RF d3 + native +lin", "RF + native +lin", "random forest", "Pypper"]
+
+DESCRIPTION = f"""\
+RuleFit (Friedman & Popescu 2008) has two independent steps: it
+generates candidate rules from the nodes of a tree ensemble, and then
+fits a sparse (L1-regularized) logistic regression over the rules'
+0/1 coverage, keeping the rules with a non-zero weight. imodels'
+`RuleFitClassifier` and pyrulearn's native `RuleFit` distiller differ in
+both steps, so the variants below change one step at a time, and add
+two benchmarks that aren't linear rule models.
+
+**Data and protocol.** {len(DATASETS)} binary-class OpenML datasets,
+stratified {N_FOLDS}-fold cross-validation (at most {MAX_ROWS} rows per
+dataset, uniformly subsampled). Every fold binarizes its training part
+with `build_dataspec` (numeric attributes into at most {MAX_INTERVALS}
+intervals, every value feature paired with a negation feature) and
+applies that to the test part. All learners see the same binarized
+features.
+
+**Variants.**
+
+- *imodels*: `imodels.RuleFitClassifier` with its defaults: 100
+  gradient-boosted regression trees with about 4 leaves each (all their
+  nodes are candidates), the features as linear terms, and C chosen as
+  the least regularization that keeps at most 30 terms, by
+  cross-validated accuracy (liblinear). Imported exactly with
+  `ImodelsRuleFit`, predicting as imodels' own `predict` does, i.e. the
+  positive class where the logistic output f > 0.5.
+- *imodels, f > 0*: the same fitted models with the correct logistic
+  threshold f > 0 (`imodels_threshold=False`).
+- *trees + native*: imodels' candidate generator with the same
+  parameters and seed (`rulefit_candidates`), fitted by the native
+  `RuleFit`: C chosen from 10 values by 5-fold cross-validated log loss,
+  no cap on the number of terms.
+- *trees + native +lin*: the same, plus every single feature as a
+  candidate (RuleFit's linear terms).
+- *CAR + native +lin*: mined class association rules instead of trees
+  (support >= 0.05, confidence >= 0.6, length <= 3, or <= 2 above 200
+  features, where the frequent negation features make length-3 mining
+  explode), of which the 500 most confident are kept (the full pool runs
+  to tens of thousands), plus the single features; native fit.
+- *RF d3 + native +lin*: the leaves of a shallow random forest (100
+  trees, depth <= 3) as candidates, plus the single features; native fit.
+- *RF + native +lin*: the leaves of the benchmark random forest below
+  (100 fully grown trees) as candidates, plus the single features;
+  native fit. Only leaves, not the trees' inner nodes.
+
+**Benchmarks.**
+
+- *random forest*: sklearn's `RandomForestClassifier` with its defaults
+  (100 fully grown trees).
+- *Pypper*: pyrulearn's re-implementation of RIPPER (a decision list).
+
+**Measures.** Test accuracy; the number of terms (rules with a non-empty
+body and a non-zero weight -- leaves for the forest, rules for Pypper);
+their mean length (conditions per rule, leaf depth for the forest); and
+fit time per fold, including candidate generation."""
 
 
 def load(name):
@@ -173,11 +196,17 @@ def run_fold(train, test):
     shallow.fit(train.X, train.y)
     pool = from_random_forest(shallow, dataspec=train.spec)
     m = RuleFit(rules=pool, include_features=True, cv=5, random_state=RANDOM_STATE).fit(train)
-    record("RF + native +lin", m, time.perf_counter() - t)
+    record("RF d3 + native +lin", m, time.perf_counter() - t)
 
     t = time.perf_counter()
     rf = RandomForestClassifier(n_estimators=100, random_state=RANDOM_STATE).fit(train.X, train.y)
-    record("random forest", rf, time.perf_counter() - t, forest_size(rf))
+    rf_s = time.perf_counter() - t
+    record("random forest", rf, rf_s, forest_size(rf))
+
+    t = time.perf_counter()
+    pool = from_random_forest(rf, dataspec=train.spec)
+    m = RuleFit(rules=pool, include_features=True, cv=5, random_state=RANDOM_STATE).fit(train)
+    record("RF + native +lin", m, rf_s + time.perf_counter() - t)
 
     t = time.perf_counter()
     m = Pypper(random_state=RANDOM_STATE).fit(train)
@@ -221,10 +250,11 @@ def write_report(res):
 
     text = f"""# RuleFit: imodels vs. native
 
-Generated by `examples/demo_rulefit_comparison.py` (see its docstring for
-the variants). Stratified {N_FOLDS}-fold CV, at most {MAX_ROWS} rows per
-dataset, numeric attributes binarized into at most {MAX_INTERVALS}
-intervals.
+Generated by `examples/demo_rulefit_comparison.py`.
+
+## Setup
+
+{DESCRIPTION}
 
 ## Accuracy
 
