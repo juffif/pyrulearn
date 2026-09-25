@@ -5,7 +5,36 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Added
+
+- `pyrulearn.data.catalog`: a catalog of 100 benchmark datasets on OpenML
+  (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
+  rule-learning datasets) plus a few pointer-only entries, metadata and
+  download pointers only. Select by
+  task (binary/multiclass), size (small/medium/large), attribute types
+  (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
+  or `.parse("binary,small,medium")`, optionally picking `n` of the matches
+  at random -- and `entry.load()` downloads and
+  caches the raw data with curated fixes applied (restored attribute
+  names, dropped leakage columns, category codes, missing-value markers).
+  `tools/build_catalog.py` maintains the catalog file.
+
+## 0.1.3 (2026-09-25)
+
+A bug-fix release: binary attributes and missing values handled
+correctly, AQR's covering fixed, and several printing fixes.
+
 ### Changed (may change results or printouts)
+
+- `Rule.to_string("prolog")` quotes a head that isn't a valid bare Prolog
+  atom (`'1'(X) :- ...`, `'Yes'(X) :- ...`, `'no-recurrence-events'(X) :- ...`),
+  and gives each condition that introduces a value its own variable
+  (`age(X, V1), V1 < 30, income(X, V2), V2 >= 50000`) instead of reusing
+  one `V`, which forced unrelated attributes to unify.
+- `tree_thresholds` (decision-tree discretization) rounds each split
+  point to the coarsest value that still lies strictly between the two
+  neighbouring observed values -- `15.17` instead of `15.172899999999998`.
+  Display only: every row stays on the same side of the split.
 
 - `AQR().fit(data)` now returns a `DecisionList` instead of a
   `FlatRuleSet` resolved by `combiner="list"`. Predictions are identical
@@ -26,17 +55,6 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
-- `pyrulearn.data.catalog`: a catalog of 100 benchmark datasets on OpenML
-  (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
-  rule-learning datasets) plus a few pointer-only entries, metadata and
-  download pointers only. Select by
-  task (binary/multiclass), size (small/medium/large), attribute types
-  (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
-  or `.parse("binary,small,medium")`, optionally picking `n` of the matches
-  at random -- and `entry.load()` downloads and
-  caches the raw data with curated fixes applied (restored attribute
-  names, dropped leakage columns, category codes, missing-value markers).
-  `tools/build_catalog.py` maintains the catalog file.
 - Binary attributes: `AttributeType.BINARY` and
   `DataSpecBuilder.add_binary("sex", ["male", "female"])`, a closed set of
   exactly two values. They always get both features (`sex=male`,
@@ -50,6 +68,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   binary, and a binary one with a nominal one (or with a binary one over
   different values) as the nominal union. `Rule.remap` turns `x!=a` into
   `x=b` when the target attribute is binary over `{a, b}`.
+- `examples/demo_covering.py`: a step-by-step separate-and-conquer teaching
+  demo (PFossil's covering and hill climbing replayed on Titanic, one set
+  of plots per search step).
 
 ### Changed (may change feature counts)
 
