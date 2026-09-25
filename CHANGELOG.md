@@ -64,6 +64,19 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- `RuleFit` (`pyrulearn.learners.rulefit`), a RuleFit-style rule
+  distiller: a sparse (L1, or elastic-net with `l1_ratio`) logistic
+  regression over the coverage of a rule pool (`rules=`, or mined like
+  CBA's), multinomial for more than two classes. `C` sets the sparsity,
+  `cv=` chooses it by cross-validation, and `include_features=True` adds
+  the single features as candidates. Needs scikit-learn.
+- `LinearRuleModel`, the model `RuleFit` returns: rules with signed
+  weights, an empty-body rule per class as its intercept, and the class
+  with the highest summed weight wins (`WeightedSum` resolution, printed
+  as `% conflict resolution: sum of rule weights per class, highest
+  wins`). `scores(data)` gives the per-class sums.
+- `to_string(weight_format=...)` (rules and every model): a Python format
+  spec for rule weights, e.g. `"6.2f"` to line them up.
 - `to_string(pretty=True)` (rules and every model): each condition on its
   own line, indented under the head, and the coverage comment on its own
   line above the head. Prolog format only so far.

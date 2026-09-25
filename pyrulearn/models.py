@@ -82,9 +82,10 @@ if TYPE_CHECKING:
 __all__ = [
     "RuleModel", "SingleRule",
     "RuleSet", "FlatRuleSet", "PooledRuleSet", "RuleView", "ConceptModel", "ConceptSet", "DisjointRuleSet",
+    "LinearRuleModel",
     "RuleList", "DecisionList", "ConceptCascade",
     "CompositeModel", "EnsembleModel", "PairwiseModel", "DeepModel",
-    "Resolution", "FirstMatch", "Exclusive", "Combine",
+    "Resolution", "FirstMatch", "Exclusive", "Combine", "WeightedSum",
     "DefaultPrediction", "MajorityClass", "Provenance", "ModelStats",
     "PairwiseVote", "PairwiseCombiner", "MajorityVote", "WeightedVote", "AccuracyWeightedVote",
     "can_convert", "convert", "annotate_rules", "annotate_default_rule",
@@ -301,6 +302,51 @@ class Combine(Resolution):
             else:
                 um[i] = cov[i]
         return um
+
+
+class WeightedSum(Resolution):
+    """A linear model over the rules' 0/1 coverage: every covering rule
+    adds its (signed) `weight` to its head's score, and the class with the
+    highest score wins. Unlike `Combine`, every class in `classes`
+    competes on every row -- a class no covering rule predicts scores 0,
+    which is how a negative weight counts *against* its head (a binary
+    logistic model: all rules on the positive class, the negative class
+    at 0). An always-covering rule (empty body) is the intercept.
+
+    Ties follow the combiners' convention (see `pyrulearn.combiners`):
+    the class more frequent in the training data (from the rules' frozen
+    stats), then the one that sorts first."""
+
+    def __init__(self, classes: Sequence[Any]):
+        self.classes = list(classes)
+
+    def describe(self) -> str:
+        return "sum of rule weights per class, highest wins"
+
+    def scores(self, rules: Sequence[Rule], cov: np.ndarray) -> np.ndarray:
+        """`(n_classes, n_samples)`: each class's summed weight per row."""
+        idx = {c: i for i, c in enumerate(self.classes)}
+        n = cov.shape[1] if cov.ndim == 2 else 0
+        out = np.zeros((len(self.classes), n))
+        for i, r in enumerate(rules):
+            out[idx[r.target]] += float(r.weight) * cov[i]
+        return out
+
+    def predict(self, rules, cov, fallback, n_samples):
+        scores = self.scores(rules, cov) if len(rules) else np.zeros((len(self.classes), n_samples))
+        best = scores.max(axis=0)
+        top = scores == best
+        preds = np.asarray(self.classes, dtype=object)[np.argmax(scores, axis=0)]
+        tied_rows = np.flatnonzero(top.sum(axis=0) > 1)
+        if len(tied_rows):
+            freq = _training_frequencies(rules, range(len(rules)))
+            for j in tied_rows:
+                tied = [self.classes[k] for k in np.flatnonzero(top[:, j])]
+                preds[j] = min(tied, key=lambda c: (-freq.get(c, 0), _label_sortkey(c)))
+        return preds
+
+    def unique_mask(self, cov, rules):
+        return cov.copy()
 
 
 # ================================================================ base model ===
@@ -943,14 +989,14 @@ _HEADLESS_FORMATS = ("conditions", "pattern")
 
 
 def _default_section(dr: "SingleRule", fmt: str, ascii: bool, pretty: bool,
-                     dec: Callable[[Rule, str], str]) -> str:
+                     dec: Callable[[Rule, str], str], weight_format: Optional[str] = None) -> str:
     """A model's trailing default-rule section: ``% default`` above the
     rendered default rule -- or, for a format without heads, the class on
     the header line itself (``% default: x``), since the rule's empty body
     wouldn't show it."""
     if fmt in _HEADLESS_FORMATS:
         return dec(dr, f"% default: {dr.target}")
-    return f"% default\n{dec(dr, _bare(dr, fmt, ascii, pretty))}"
+    return f"% default\n{dec(dr, _bare(dr, fmt, ascii, pretty, weight_format))}"
 
 
 def _stored_dec(show_stats: bool, above: bool) -> Callable[[Rule, str], str]:
@@ -959,12 +1005,13 @@ def _stored_dec(show_stats: bool, above: bool) -> Callable[[Rule, str], str]:
     return lambda r, text: _decorate(r, text, _frozen_coverage(r) if show_stats else None, (), above)
 
 
-def _bare(rule: Rule, fmt: str, ascii: bool, pretty: bool = False) -> str:
+def _bare(rule: Rule, fmt: str, ascii: bool, pretty: bool = False,
+          weight_format: Optional[str] = None) -> str:
     """One member rule's text without any coverage comment -- a container
     decorates its rules itself, once (a `SingleRule`'s own `to_string`
     would otherwise add its stats a second time)."""
     base = rule.rule if isinstance(rule, SingleRule) else rule
-    return base.to_string(fmt=fmt, ascii=ascii, pretty=pretty)
+    return base.to_string(fmt=fmt, ascii=ascii, pretty=pretty, weight_format=weight_format)
 
 
 def _conflict_resolution(model: "RuleModel") -> Optional[str]:
@@ -975,6 +1022,8 @@ def _conflict_resolution(model: "RuleModel") -> Optional[str]:
     resolution = getattr(model, "resolution", None)
     if resolution is None or isinstance(resolution, Exclusive):
         return None
+    if isinstance(resolution, WeightedSum):  # every class competes, rules or not
+        return resolution.describe() if len(resolution.classes) > 1 else None
     if len({r.target for r in model.rules}) < 2:
         return None
     if isinstance(resolution, Combine):
@@ -1024,6 +1073,10 @@ class RuleSet(RuleModel):
     `_FlatRules` or `_ConceptIndexed`).
     """
 
+    #: logic format: collapse each class's rules into one DNF expression
+    #: (off for `LinearRuleModel`, whose rules each carry their own weight)
+    _LOGIC_AS_DNF = True
+
     resolution: Resolution = Combine("max")
 
     def predict(
@@ -1055,7 +1108,7 @@ class RuleSet(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True, pretty: bool = False,
+        show_resolution: bool = True, pretty: bool = False, weight_format: Optional[str] = None,
     ) -> str:
         """Render every rule, grouped by target label -- one section per
         label, headed by ``% class: <target>``. For "logic" format, each
@@ -1101,7 +1154,8 @@ class RuleSet(RuleModel):
         if self._resolved_by_list_order():
             return RuleList.to_string(self, fmt=fmt, ascii=ascii, show_stats=show_stats,
                                       show_distribution=show_distribution, show_classes=show_classes,
-                                      show_resolution=show_resolution, pretty=pretty)
+                                      show_resolution=show_resolution, pretty=pretty,
+                                      weight_format=weight_format)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         above = pretty and resolved == "prolog"
@@ -1110,13 +1164,13 @@ class RuleSet(RuleModel):
         for t in sorted({r.target for r in self.rules}, key=_sortkey):
             group = [r for r in self.rules if r.target == t]
             header = f"% class: {t}"
-            if resolved == "logic":
+            if resolved == "logic" and self._LOGIC_AS_DNF:
                 body = "\n".join(_dnf_lines(group, ascii=ascii, dec=dec))
             else:
-                body = "\n".join(dec(r, _bare(r, resolved, ascii, pretty)) for r in group)
+                body = "\n".join(dec(r, _bare(r, resolved, ascii, pretty, weight_format)) for r in group)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
         rendered = "\n\n".join(sections)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
@@ -1178,7 +1232,7 @@ class RuleList(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True, pretty: bool = False,
+        show_resolution: bool = True, pretty: bool = False, weight_format: Optional[str] = None,
     ) -> str:
         """Render this decision list in order -- no label-grouping, since
         order (not shared target) is what decision-list semantics
@@ -1225,9 +1279,9 @@ class RuleList(RuleModel):
                 label = lambda r: f"{str(r.target) + ':':<{width}} "  # noqa: E731
             else:
                 label = lambda r: ""  # noqa: E731
-            lines = [dec(r, label(r) + _bare(r, resolved, ascii, pretty)) for r in rules]
+            lines = [dec(r, label(r) + _bare(r, resolved, ascii, pretty, weight_format)) for r in rules]
             if self.default_rule is not None:
-                lines.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
+                lines.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
             rendered = "\n".join(lines)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
 
@@ -1374,7 +1428,7 @@ class SingleRule(RuleSet):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True, pretty: bool = False,
+        show_resolution: bool = True, pretty: bool = False, weight_format: Optional[str] = None,
     ) -> str:
         """Renders the wrapped `Rule` directly -- a lone rule needs no
         per-target grouping or DNF collapsing (see the class docstring
@@ -1388,7 +1442,7 @@ class SingleRule(RuleSet):
         `show_distribution=True`/`show_classes=True` can still force the
         vector/legend on."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-        text = self._rule.to_string(fmt=resolved, ascii=ascii, pretty=pretty)
+        text = self._rule.to_string(fmt=resolved, ascii=ascii, pretty=pretty, weight_format=weight_format)
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         if id(self) not in coverage:
             return text
@@ -1698,6 +1752,49 @@ class DisjointRuleSet(_FlatRules, RuleSet):
     resolution = Exclusive()
 
 
+class LinearRuleModel(_FlatRules, RuleSet):
+    """A linear model over rules (RuleFit and relatives): each rule is a
+    `WeightedRule` whose signed weight counts for its head (see
+    `WeightedSum`), `classes` are the classes that compete -- all of
+    them on every row -- and an empty-body rule is a class's intercept.
+    The weights are fitted values (e.g. L1-regularized logistic-regression
+    coefficients, `pyrulearn.learners.rulefit.RuleFit`), not recomputable
+    from the rules' stats, so they are part of the model and print with
+    each rule (``-0.85::good(X) :- ...``; `to_string(weight_format=...)`
+    aligns them). `scores(data)` gives the per-class sums.
+
+    Every rule must carry a weight, and every head must be one of
+    `classes`.
+    """
+
+    _LOGIC_AS_DNF = False
+
+    def __init__(self, rules: Optional[Sequence[Rule]] = None, *, classes: Sequence[Any],
+                 default_prediction: Any = None):
+        super().__init__(rules, default_prediction=default_prediction)
+        self._classes = list(classes)
+        known = set(self._classes)
+        for r in self._rules:
+            if getattr(r, "weight", None) is None:
+                raise ValueError(f"LinearRuleModel needs weighted rules; {r!r} has no weight")
+            if r.target not in known:
+                raise ValueError(f"rule head {r.target!r} is not one of the model's classes {self._classes}")
+        self.resolution = WeightedSum(self._classes)
+
+    @property
+    def labels(self) -> List[Any]:
+        return list(self._classes)
+
+    def _rebuild_kwargs(self) -> Dict[str, Any]:
+        return {"classes": self._classes, "default_prediction": self._default_prediction}
+
+    def scores(self, data: DataRepresentation) -> np.ndarray:
+        """`(n_samples, n_classes)`: each class's summed rule weight per
+        row, classes in `labels` order -- the linear model's decision
+        function (the highest wins)."""
+        return self.resolution.scores(self.rules, self.coverage_matrix(data)).T
+
+
 class DecisionList(_FlatRules, RuleList):
     """A linearly ordered decision list (RIPPER/CN2-style sequential
     covering): rules are tried in `self.rules` order and the first that
@@ -1889,7 +1986,7 @@ class EnsembleModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True, pretty: bool = False,
+        show_resolution: bool = True, pretty: bool = False, weight_format: Optional[str] = None,
     ) -> str:
         """Render every member in turn, headed by ``% member <k>``
         (``(weight: ...)`` appended where `member_weights` is set --
@@ -1915,12 +2012,13 @@ class EnsembleModel(CompositeModel):
                 header += f"  (weight: {self.member_weights[k]:g})"
             body = member.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                     show_distribution=show_distribution, show_classes=show_classes,
-                                    show_resolution=show_resolution, pretty=pretty)
+                                    show_resolution=show_resolution, pretty=pretty,
+                                 weight_format=weight_format)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
             dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
-            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         resolution = (self._resolution_description()
@@ -2200,7 +2298,7 @@ class PairwiseModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True, pretty: bool = False,
+        show_resolution: bool = True, pretty: bool = False, weight_format: Optional[str] = None,
     ) -> str:
         """Render every pair's sub-model in turn, headed by ``% pair: a
         vs b`` (``(member weight: ...)`` appended for `"accuracy_vote"`
@@ -2234,12 +2332,13 @@ class PairwiseModel(CompositeModel):
                 header += f"  (member weight: {self.member_weights[k]:g})"
             body = sub.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                  show_distribution=show_distribution, show_classes=per_pair_show_classes,
-                                 show_resolution=show_resolution, pretty=pretty)
+                                 show_resolution=show_resolution, pretty=pretty,
+                                 weight_format=weight_format)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
             dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
-            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
+            sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         resolution = self.combiner.describe() if show_resolution and len(self.labels) > 1 else None

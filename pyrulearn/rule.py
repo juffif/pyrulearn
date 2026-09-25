@@ -642,7 +642,8 @@ class Rule:
         lits = [self._literal_str(l, ascii=ascii) for l in self._display_conditions()]
         return and_sym.join(lits) if lits else "TRUE"
 
-    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False) -> str:
+    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False,
+                  weight_format: Optional[str] = None) -> str:
         """Render this rule in one of several formats.
 
         fmt
@@ -672,6 +673,10 @@ class Rule:
                 \\+f1(X).
 
         A rule without conditions stays on one line.
+
+        `weight_format` is accepted for a uniform signature with
+        `WeightedRule.to_string` and ignored here (a plain rule has no
+        weight).
         """
         if fmt is None:
             fmt = self.default_fmt if self.default_fmt is not None else Rule.DEFAULT_FORMAT
@@ -756,17 +761,20 @@ class Rule:
         return f"{type(self).__name__}({self.to_string()})"
 
 
-def _fmt_weight(w: float) -> str:
-    """Compact weight rendering: ``0.8``, ``1``, ``0.333`` -- no trailing
-    zeros, no scientific notation for the usual [0, 1] range."""
-    return f"{w:g}"
+def _fmt_weight(w: float, spec: Optional[str] = None) -> str:
+    """A weight as text: `spec`, a Python format spec (``"6.2f"``,
+    ``" .3f"``, ``"+.2e"``), if given; else compact -- ``0.8``, ``1``,
+    ``0.333``, no trailing zeros."""
+    return format(w, spec) if spec else f"{w:g}"
 
 
 class WeightedRule(Rule):
     """A `Rule` with one extra, purely **declarative** field: a scalar
     `weight`. This is the home for a probability (ProbLog-style
     ``0.8::head :- body``), a learned per-rule confidence a model commits
-    to, or any other number that is *part of the model* rather than
+    to, a signed coefficient of a linear model over rules
+    (`pyrulearn.models.LinearRuleModel`), or any other number that is
+    *part of the model* rather than
     measured against a dataset -- see `pyrulearn.models` for the
     weight-vs-stats split (weight: declarative, usable at predict time;
     stats: measured, annotation only).
@@ -782,7 +790,8 @@ class WeightedRule(Rule):
 
     `to_string` / `__repr__` prefix or annotate the base rendering with
     the weight: ``0.8::target(X) :- f0(X).`` for ``prolog``, a trailing
-    ``[0.8]`` / ``% 0.8`` otherwise.
+    ``[0.8]`` / ``% 0.8`` otherwise; `to_string(weight_format=...)` sets
+    the number format.
     """
 
     def __init__(
@@ -827,10 +836,14 @@ class WeightedRule(Rule):
             weight=self.weight,
         )
 
-    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False) -> str:
+    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False,
+                  weight_format: Optional[str] = None) -> str:
+        """`Rule.to_string` plus the weight, formatted with
+        `weight_format` (a Python format spec, e.g. ``"6.2f"`` -- a width
+        aligns the heads of a printed model) or compactly by default."""
         base = super().to_string(fmt=fmt, ascii=ascii, pretty=pretty)
         resolved = fmt if fmt is not None else (self.default_fmt or Rule.DEFAULT_FORMAT)
-        w = _fmt_weight(self.weight)
+        w = _fmt_weight(self.weight, weight_format)
         if resolved == "prolog":
             return f"{w}::{base}"
         if resolved == "logic":

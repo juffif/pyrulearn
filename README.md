@@ -11,7 +11,7 @@ data representation, pluggable rule-evaluation heuristics and combiners,
 configurable separate-and-conquer (SeCo) framework and the algorithms that
 are instantiations of it, such as CN2, AQR, PFOIL, FOSSIL and Pypper, a
 RIPPER re-implementation; plus locally optimal rules and the associative
-classifiers CBA, CMAR and IDS), and
+classifiers CBA, CMAR and IDS, and a RuleFit-style linear model), and
 [interfaces to external learners](#interfaced-external-implementations) (scikit-learn, wittgenstein,
 imodels, Weka, LORD, pyarc), so that native and external algorithms can be
 run and compared through one API.
@@ -69,9 +69,10 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
 | **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
+| **RuleFit** (distiller) | `rulefit.RuleFit` | a sparse (L1 / elastic-net) logistic regression over a rule pool's coverage, multinomial for multiclass; returns a `LinearRuleModel`. Only RuleFit's fitting step: candidates come from the pool, not from a tree ensemble | Friedman & Popescu 2008 |
 | **Multiclass decomposition** | `multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
 
-`CBA`, `CMAR` and `IDS` are *rule distillers*: each consumes any pool of
+`CBA`, `CMAR`, `IDS` and `RuleFit` are *rule distillers*: each consumes any pool of
 rules given as a `FlatRuleSet` (`rules=`) — mined by
 `CARMiner` by default, but equally one extracted from a
 random forest — and returns its own, much smaller model.
@@ -110,7 +111,7 @@ details.
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -408,9 +409,10 @@ and what built a rule on `SingleRule.provenance`.
 
 `WeightedRule` is the `Rule` subclass that adds a weight: one declarative
 number that is *part of the model* (e.g. a ProbLog-style probability), as
-opposed to statistics measured against a dataset. Weights are meant to be
-used when they are part of a model, but nothing in prediction uses them yet:
-a clear strategy for that is still to be found.
+opposed to statistics measured against a dataset. Weights are reserved for
+values that are fitted or set explicitly and can't be recomputed from a
+rule's stats. So far the one model that predicts from them is
+`LinearRuleModel` (below).
 
 `RuleModel` (in `pyrulearn.models`) is the shared abstract base for
 collections of `Rule`s that make predictions together. The hierarchy is
@@ -432,6 +434,11 @@ rules apply:
     otherwise.
   - `ConceptSet` -- one `ConceptModel` per label, `combiner`-resolved
     where several concepts cover the same row.
+  - `LinearRuleModel` -- a linear model over rules (RuleFit): each rule's
+    signed weight counts for its head, every class competes on every row
+    (a class no covering rule predicts scores 0), an empty-body rule is a
+    class's intercept, and the highest sum wins. `scores(data)` gives the
+    sums. `learners.rulefit.RuleFit` fits one.
   - `DisjointRuleSet` -- rules assumed pairwise mutually exclusive --
     e.g. a decision tree's leaves, whose path conditions partition the
     feature space by construction, so there's never actually a tie to
@@ -511,7 +518,19 @@ good(X) :-
 
 A `WeightedRule` prints its weight as part of the rule: in front of it in
 the default Prolog format (`0.8::head :- body`), and appended in the other
-formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). Every rule that carries
+formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). `weight_format=`, a
+Python format spec, formats the weights -- `to_string(weight_format="6.2f")`
+gives every weight the same width, so the heads line up even with signs and
+differing magnitudes:
+
+```prolog
+% conflict resolution: sum of rule weights per class, highest wins
+% class: good
+ -3.02::good(X) :- true.  % (101/299)
+  5.00::good(X) :- f0(X), f1(X).  % (97/2)
+```
+
+Every rule that carries
 training stats is suffixed with a coverage comment read from those stats --
 exactly the numbers the model holds and its combiner scores from, never
 recomputed against other data (`show_stats=False` prints the bare rules):
@@ -606,7 +625,10 @@ top-scoring rules vote (the class with the most of them wins); any tie
 left after that, for every combiner, goes to the class that is more
 frequent in the training data, then to the one that sorts first. This
 convention is documented rather than printed. Only `"list"` is order-based,
-by definition.
+by definition. A `LinearRuleModel` doesn't use a combiner: its resolution
+is the weighted sum, printed as `% conflict resolution: sum of rule weights
+per class, highest wins`, and its (rare, exact) ties follow the same
+convention.
 
 `RuleCombiner.resolve(rules, covering)` is the one abstract method
 (`covering`: non-empty indices into `rules`). `ListCombiner` and
@@ -1801,18 +1823,11 @@ against it).
     same example-reweighting machinery, but driven by gradient/residual
     updates after each added rule, with additive rather than list/set
     prediction.
-  - A planned **RuleFit-style distiller** needs weights at the *opposite*
-    end instead: given any rule pool (mined or externally supplied, the
-    same `RuleDistiller` pattern as `CBA`/`CMAR`/`IDS`), fit a LASSO over
-    the rules' coverage-indicator features (`RuleModel.coverage_matrix`
-    already gives that matrix) and keep the rules with a nonzero weight.
-    Preferred over importing `imodels.RuleFitClassifier` directly, since
-    its own rule-generation step is an unrelated `GradientBoostingRegressor`
-    detour, not the LASSO fit that's actually its contribution. Needs a
-    new `RuleModel` type (`intercept + sum(weight * indicator)`
-    prediction, not covering-rule combination) and `WeightedRule.weight`'s
-    docstring loosened to admit signed coefficients -- no code change
-    there, since nothing reads `.weight` at prediction time yet.
+  - The **RuleFit-style distiller** (`learners.rulefit.RuleFit`, with
+    `LinearRuleModel`) covers weights at the *opposite* end -- fitted after
+    induction -- and is done; its own candidate generation (RuleFit's
+    gradient-boosted trees) is not, since any pool, e.g. one from
+    `from_random_forest`, can be passed as `rules=`.
 
 - **Representation and analysis extensions.** Rule bodies beyond pure
   conjunctions (e.g. general CNF/DNF rules); native readers for sparse
