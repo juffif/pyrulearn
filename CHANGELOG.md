@@ -47,6 +47,12 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   `PairwiseModel`, as built by one-vs-rest, ordered or pairwise fitting)
   now carries training statistics like every other default rule: its
   coverage of the entire training data, i.e. the class distribution.
+- Pairwise voting: `WeightedVote(heuristic=...)` makes the deciding rule's
+  weight configurable (default `Laplace`, as before), and a printed
+  `PairwiseModel` names its combination (`% conflict resolution: pairwise
+  vote weighted by Laplace of each pair's deciding rule`). Vote ties go to
+  the tied labels' duel, then training frequency (the recorded priors,
+  else read from the rules' stats), then label order.
 - Ties no longer depend on rule position. `max` first lets the tied
   top-scoring rules vote; any remaining tie, for every combiner, goes to
   the class more frequent in the training data, then to the one that

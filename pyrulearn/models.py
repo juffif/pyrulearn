@@ -1930,20 +1930,6 @@ class EnsembleModel(CompositeModel):
 
 # -------------------------------------------------- pairwise voting combiners ---
 
-def _pairwise_weight(rule: Rule) -> float:
-    """A rule's confidence for pairwise soft voting: `Laplace` on its
-    own measured stats (matching `HeuristicMaxCombiner`'s predict-time
-    default and `sort_rules`' inspection-time default -- the same
-    "rank/weigh by measured reliability" operation everywhere), or the
-    neutral 0.5 when it carries no stats at all (0.0 would dump the
-    whole vote on the *other* class)."""
-    stats = _rule_stats(rule)
-    if stats is None:
-        return 0.5
-    from .heuristics import Laplace  # local: see evaluate()'s own lazy-import note
-    return float(Laplace().score(stats))
-
-
 class PairwiseVote(NamedTuple):
     """One member's verdict on one row: `predicted` is `positive`,
     `negative`, or `None` (abstained). `weight` in ``[0, 1]`` is its
@@ -1970,6 +1956,11 @@ class PairwiseCombiner(ABC):
     def scores(self, votes: Sequence[PairwiseVote], labels: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
+    def describe(self) -> str:
+        """One line naming how the pair votes are combined -- what a
+        printed `PairwiseModel` shows (``% conflict resolution: ...``)."""
+        return type(self).__name__
+
     def decide(self, votes, labels, label_priors=None) -> Optional[Any]:
         s = self.scores(votes, labels)
         best = s.max() if len(s) else 0.0
@@ -1984,8 +1975,11 @@ class PairwiseCombiner(ABC):
 
 class _VotingCombiner(PairwiseCombiner):
     """Shared `tie_break` for `MajorityVote`/`WeightedVote`: ``"direct"``
-    (the tied labels' own duel; default), ``"prior"`` (most frequent in
-    `label_priors`), ``"first"`` (sorts first), or a callable
+    (default: the tied labels' own duel, then the label more frequent in
+    the training data (`label_priors`), then the one that sorts first --
+    the combiners' tie convention plus one pairwise step, never member
+    order), ``"prior"`` (training frequency, then label order),
+    ``"first"`` (label order only), or a callable
     ``f(tied, votes, priors) -> label``."""
 
     def __init__(self, tie_break: Union[str, Callable[..., Any]] = "direct"):
@@ -2015,6 +2009,9 @@ class _VotingCombiner(PairwiseCombiner):
 class MajorityVote(_VotingCombiner):
     """One hard vote per deciding member; `scores` = vote count per label."""
 
+    def describe(self) -> str:
+        return "pairwise vote"
+
     def scores(self, votes, labels):
         idx = {c: i for i, c in enumerate(labels)}
         s = np.zeros(len(labels), dtype=float)
@@ -2025,12 +2022,40 @@ class MajorityVote(_VotingCombiner):
 
 
 class WeightedVote(_VotingCombiner):
-    """Soft voting: each member's ``p_ij`` (the deciding rule's weight,
-    clamped to ``[0, 1]``) goes to the predicted label, ``1 - p_ij`` to
-    the other. `weight_source = "rule"`."""
+    """Soft voting: each member's ``p_ij`` goes to the label it predicts,
+    ``1 - p_ij`` to the other label of its pair. ``p_ij`` is `heuristic`
+    (default `Laplace`) on the *deciding rule*'s frozen training stats,
+    clamped to ``[0, 1]`` -- the rule that decides the pair's vote: the
+    best-scoring covering rule of the predicted label (the first entry
+    of the sub-model's `covered_by`), or, when no rule covers the row,
+    the sub-model's default rule. A rule without stats counts as the
+    neutral 0.5. (A sub-model whose default varies per row has no
+    default rule; an uncovered row then gets no vote from that pair.)
+    `weight_source = "rule"`."""
 
     needs_weights = True
     weight_source = "rule"
+
+    def __init__(self, heuristic: Optional["RuleHeuristic"] = None,
+                 tie_break: Union[str, Callable[..., Any]] = "direct"):
+        super().__init__(tie_break=tie_break)
+        self.heuristic = heuristic
+
+    def _heuristic(self) -> "RuleHeuristic":
+        if self.heuristic is not None:
+            return self.heuristic
+        from .heuristics import Laplace  # local: see evaluate()'s own lazy-import note
+        return Laplace()
+
+    def rule_weight(self, rule: Rule) -> float:
+        """The deciding `rule`'s ``p_ij``: `heuristic` on its frozen
+        stats, or the neutral 0.5 without stats (0.0 would hand the whole
+        vote to the *other* label)."""
+        stats = _rule_stats(rule)
+        return 0.5 if stats is None else float(self._heuristic().score(stats))
+
+    def describe(self) -> str:
+        return f"pairwise vote weighted by {self._heuristic()!r} of each pair's deciding rule"
 
     def scores(self, votes, labels):
         idx = {c: i for i, c in enumerate(labels)}
@@ -2053,6 +2078,9 @@ class AccuracyWeightedVote(WeightedVote):
     not the deciding rule's weight. `weight_source = "member"`."""
 
     weight_source = "member"
+
+    def describe(self) -> str:
+        return "pairwise vote weighted by each pair's training accuracy"
 
 
 _PAIRWISE_COMBINER_SHORTCUTS: Dict[str, Callable[[], PairwiseCombiner]] = {
@@ -2143,6 +2171,12 @@ class PairwiseModel(CompositeModel):
 
         classes = np.asarray(self._labels, dtype=object)
         fb = self._fallback(data)
+        # training frequencies for the tie-break: the recorded priors, else
+        # read from the members' rules' frozen stats (as the combiners do)
+        priors = self.label_priors
+        if priors is None:
+            rules = self.rules
+            priors = _training_frequencies(rules, range(len(rules))) or None
         out = np.empty(data.n_samples, dtype=object)
         for j in range(data.n_samples):
             votes: List[PairwiseVote] = []
@@ -2153,13 +2187,13 @@ class PairwiseModel(CompositeModel):
                         votes.append(PairwiseVote(None, a, b)); continue
                     top = deciders[0]
                     p = top.target if top.target in (a, b) else None
-                    votes.append(PairwiseVote(p, a, b, _pairwise_weight(top)))
+                    votes.append(PairwiseVote(p, a, b, self.combiner.rule_weight(top)))
                 else:
                     p = col[j]
                     p = p if p in (a, b) else None
                     w = float(self.member_weights[k]) if src == "member" else 1.0
                     votes.append(PairwiseVote(p, a, b, w))
-            decided = self.combiner.decide(votes, classes, self.label_priors)
+            decided = self.combiner.decide(votes, classes, priors)
             out[j] = decided if decided is not None else fb(j)
         return out
 
@@ -2208,7 +2242,8 @@ class PairwiseModel(CompositeModel):
             sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
-        return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
+        resolution = self.combiner.describe() if show_resolution and len(self.labels) > 1 else None
+        return _assemble(rendered, legend_classes, resolution)
 
 
 class DeepModel(CompositeModel):

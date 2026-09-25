@@ -7,7 +7,7 @@ from pyrulearn.rule import Rule, WeightedRule
 from pyrulearn.models import (
     CompositeModel, ConceptCascade, ConceptModel, ConceptSet, DecisionList,
     DeepModel, DefaultPrediction, DisjointRuleSet, EnsembleModel, FlatRuleSet, MajorityClass,
-    PairwiseModel, Provenance, RuleList, RuleModel, RuleSet, SingleRule,
+    PairwiseModel, Provenance, RuleList, RuleModel, RuleSet, SingleRule, WeightedVote,
     can_convert, conceptcascade_to_decision_list, conceptset_to_flatruleset, convert,
     ensemblemodel_to_flatruleset,
     flatruleset_to_conceptset, flatruleset_to_decision_list,
@@ -1114,8 +1114,9 @@ def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
     )
     text = pw.to_string(fmt="prolog")
 
-    # top-level legend: every class this model spans
-    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    # conflict resolution, then the top-level legend: every class this model spans
+    assert text.splitlines()[0] == "% conflict resolution: pairwise vote weighted by each pair's training accuracy"
+    assert text.splitlines()[1] == "% classes: [bird, cat, dog]"
     # each pair's own header names it and, for accuracy_vote, its member weight
     assert "% pair: cat vs dog  (member weight: 0.9)" in text
     assert "% pair: cat vs bird  (member weight: 0.75)" in text
@@ -1133,6 +1134,40 @@ def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
     assert "cat(X) :- a(X).  % (2/1)" in text
     print("PairwiseModel.to_string forces each pair's own two-class legend and "
           "shows accuracy_vote's per-pair member weight: OK")
+
+
+def test_pairwise_weighted_vote_heuristic_is_configurable_and_printed():
+    from pyrulearn.heuristics import Precision
+    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    members = [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)]
+    head = "% conflict resolution: "
+    assert PairwiseModel(members).to_string(fmt="prolog").startswith(head + "pairwise vote\n")
+    lap = PairwiseModel(members, combiner="weighted_vote")
+    assert lap.to_string(fmt="prolog").startswith(
+        head + "pairwise vote weighted by Laplace of each pair's deciding rule\n")
+    prec = PairwiseModel(members, combiner=WeightedVote(heuristic=Precision()))
+    assert prec.to_string(fmt="prolog").startswith(
+        head + "pairwise vote weighted by Precision of each pair's deciding rule\n")
+    # the weight is that heuristic on the deciding rule's frozen stats
+    rule = cat_bird.rules[0]                        # (2/1) on its pair's rows
+    assert prec.combiner.rule_weight(rule) == pytest.approx(2 / 3)
+    assert lap.combiner.rule_weight(rule) == pytest.approx(3 / 5)
+    assert WeightedVote().rule_weight(SingleRule(Rule([0], target="cat", dataspec=data.spec))) == 0.5
+    assert head not in lap.to_string(fmt="prolog", show_resolution=False)
+
+
+def test_pairwise_ties_use_training_frequencies_from_stats_when_no_priors_are_given():
+    ds = DataSpec(["a"])
+    # a 2-class model whose only pair abstains-free vote is a tie: one
+    # member per direction, each voting for its own positive class
+    y = ["yes"] * 3 + ["no"]
+    train = BooleanDataRepresentation(ds, np.array([[1]] * 4, dtype=bool), np.array(y))
+    yes = ConceptModel(annotate_rules([Rule([0], target="yes", dataspec=ds)], train), label="yes")
+    no = ConceptModel(annotate_rules([Rule([0], target="no", dataspec=ds)], train), label="no")
+    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    # no label_priors recorded: read from the rules' stats -> "yes" (3 of 4)
+    for members in ([("yes", "no", yes), ("no", "yes", no)], [("no", "yes", no), ("yes", "no", yes)]):
+        assert PairwiseModel(members).predict(row)[0] == "yes"
 
 
 def test_pairwisemodel_to_string_show_classes_false_suppresses_everything():

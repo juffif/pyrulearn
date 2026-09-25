@@ -552,9 +552,9 @@ member's own rules a reader needs to redo the vote by hand; `show_stats`/
 since they all cover the same overall multiclass problem. `PairwiseModel`
 headers each pair `% pair: a vs b`, with `(member weight: ...)` appended for
 `"accuracy_vote"` specifically -- `"weighted_vote"`'s own per-row deciding-
-rule weight is exactly `Laplace` on that rule's own measured stats, already
-fully reconstructable from its own printed `(tp/fp)`, so nothing extra is
-needed for that combiner. Each pair's rules carry stats measured on that
+rule weight is its heuristic (named in the model's conflict-resolution line)
+on that rule's printed training stats, so nothing extra is needed for that
+combiner. Each pair's rules carry stats measured on that
 pair's own two classes' rows (where they were fitted), and, unlike
 `EnsembleModel`, its own `show_classes` defaults to forced-on (`None` here means "force", not
 "auto") -- a sub-model's rules may only ever explicitly predict *one* of its
@@ -1215,11 +1215,16 @@ calls, for the older call style or to bundle a `random_state`/non-default
   a `PairwiseCombiner` (`pyrulearn.models`) turns the votes into a
   label:
   - `combiner="vote"` → `MajorityVote` — one hard vote per member;
-    `tie_break` `"direct"`/`"prior"`/`"first"`/callable.
-  - `combiner="weighted_vote"` → `WeightedVote` — the deciding rule's
-    weight `p_ij` (`Laplace` on its own *measured* stats, computed
-    fresh at predict time, 0.5 if it has none) goes to the predicted
-    label, `1 - p_ij` to the other (clamped to `[0, 1]`; pulled per row
+    `tie_break` `"direct"` (default: the tied labels' own duel, then
+    training frequency, then label order -- never member order),
+    `"prior"`, `"first"` or a callable. Training frequencies are the
+    model's `label_priors`, else read from its rules' stats.
+  - `combiner="weighted_vote"` → `WeightedVote(heuristic=Laplace())` —
+    the deciding rule's weight `p_ij` (the heuristic on its frozen
+    training stats, 0.5 if it has none) goes to the predicted label,
+    `1 - p_ij` to the other (clamped to `[0, 1]`). The deciding rule is
+    the best-scoring covering rule of the predicted label, or the
+    sub-model's default rule when no rule covers the row (pulled per row
     via `covered_by`). Swap it onto an already-fitted model
     (`pm.combiner = WeightedVote()`) --
     no retraining, just re-predict. `WeightedVote` is a real gain when
