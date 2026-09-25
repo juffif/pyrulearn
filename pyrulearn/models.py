@@ -580,7 +580,16 @@ class RuleModel(ABC):
         return iter(self.rules)
 
     def __repr__(self) -> str:
+        """A short identification -- ``FlatRuleSet(3 rules)``; `str` (and
+        so `print`) gives the full rendering, `to_string()`."""
         return f"{type(self).__name__}({len(self.rules)} rules)"
+
+    def __str__(self) -> str:
+        """The full rendering, `to_string()` with its defaults -- what
+        `print(model)` shows. (A model without a `to_string`, such as the
+        `DeepModel` stub, falls back to its `repr`.)"""
+        to_string = getattr(self, "to_string", None)
+        return to_string() if callable(to_string) else repr(self)
 
 
 # =============================================== storage mixins (traits) =======
@@ -1303,11 +1312,11 @@ class SingleRule(RuleSet):
         return getattr(self._rule, name)
 
     def __repr__(self) -> str:
-        """The rule itself (in its own default format, as `Rule.__repr__`)
-        plus its stored training stats, e.g. ``SingleRule(pos(X) :-
-        f0(X).  % (57/21))`` -- not the generic ``SingleRule(1 rules)``
-        a model's repr would give."""
-        return f"SingleRule({self.to_string(fmt=self._rule.default_fmt)})"
+        """A short identification like any model's, counting conditions
+        instead of rules -- ``SingleRule(2 conditions)``; `print(rule)`
+        shows the rule itself (`to_string()`)."""
+        n = len(self._rule.conditions)
+        return f"SingleRule({n} condition{'' if n == 1 else 's'})"
 
     def _rebuild_kwargs(self) -> Dict[str, Any]:
         return {"default_prediction": self._default_prediction}

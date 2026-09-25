@@ -39,9 +39,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   from the new `RuleCombiner.describe()`; `to_string(show_resolution=False)`
   omits it. Rule heuristics got a readable `repr` (`Laplace`,
   `MEstimate(m=5)`) for it.
-- A rule taken from a model (`SingleRule`) now displays itself and its
-  training stats, `SingleRule(pos(X) :- f0(X).  % (57/21))`, instead of
-  the generic `SingleRule(1 rules)`.
+- `print(model)` now shows the full rendering (`to_string()`) for every
+  model, rules included; the short `repr` identifies it --
+  `FlatRuleSet(3 rules)`, and for a rule `SingleRule(2 conditions)`
+  instead of `SingleRule(1 rules)`.
 - The default rule of a decomposed model (`ConceptSet`, `ConceptCascade`,
   `PairwiseModel`, as built by one-vs-rest, ordered or pairwise fitting)
   now carries training statistics like every other default rule: its

@@ -828,13 +828,17 @@ def test_conflict_resolution_line_only_where_rules_can_conflict():
     assert head not in FlatRuleSet([ra, rb]).to_string(fmt="prolog", show_resolution=False)
 
 
-def test_single_rule_repr_shows_the_rule_and_its_stats():
+def test_repr_identifies_and_print_renders_every_model():
     ds = DataSpec(["f0", "f1"])
     data = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
                                      np.array(["pos", "neg", "neg"]))
-    rule = Rule([0], target="pos", dataspec=ds)
-    assert repr(SingleRule(rule)) == "SingleRule(pos(X) :- f0(X).)"
-    assert repr(annotate_rules([rule], data)[0]) == "SingleRule(pos(X) :- f0(X).  % (1/1))"
+    sr = annotate_rules([Rule([0, 1], target="pos", dataspec=ds)], data)[0]
+    assert repr(sr) == "SingleRule(2 conditions)"
+    assert repr(SingleRule(Rule([0], target="pos", dataspec=ds))) == "SingleRule(1 condition)"
+    assert str(sr) == sr.to_string() == "pos(X) :- f0(X), f1(X).  % (0/1)"  # covers row 1: neg
+    fs = FlatRuleSet([sr, Rule([1], target="neg", dataspec=ds)])
+    assert repr(fs) == "FlatRuleSet(2 rules)"
+    assert str(fs) == fs.to_string()
 
 
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
