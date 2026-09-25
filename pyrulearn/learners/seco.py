@@ -810,24 +810,32 @@ class SeedExample(SearchSpaceInit):
         self.random_state = random_state
         self.index = index
 
+    def pick_seed(
+        self, data: BooleanDataRepresentation, target_class: Any,
+        example_mask: Optional[np.ndarray] = None,
+    ) -> int:
+        """The row this strategy seeds on: `index`, or the first / a
+        random positive example within `example_mask`. Also used by
+        `SeCo._covering_loop`, which picks seeds itself so that a seed
+        with no acceptable rule can be set aside and the next one tried."""
+        if self.strategy == "index":
+            return int(self.index)
+        positive = data.y == target_class
+        in_scope = positive if example_mask is None else (positive & example_mask)
+        candidates = np.flatnonzero(in_scope)
+        if candidates.size == 0:
+            raise ValueError("SeedExample: no uncovered positive example to seed on")
+        if self.strategy == "first":
+            return int(candidates[0])
+        rng = np.random.default_rng(self.random_state)
+        return int(rng.choice(candidates))
+
     def initial_candidates(
         self, data: BooleanDataRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Sequence[Tuple[Rule, FrozenSet[int]]]:
         ds = data.spec
-        if self.strategy == "index":
-            seed = int(self.index)
-        else:
-            positive = data.y == target_class
-            in_scope = positive if example_mask is None else (positive & example_mask)
-            candidates = np.flatnonzero(in_scope)
-            if candidates.size == 0:
-                raise ValueError("SeedExample: no uncovered positive example to seed on")
-            if self.strategy == "first":
-                seed = int(candidates[0])
-            else:
-                rng = np.random.default_rng(self.random_state)
-                seed = int(rng.choice(candidates))
+        seed = self.pick_seed(data, target_class, example_mask)
         open_mask = frozenset(int(i) for i in data.features_of(seed))
         empty = Rule([], target=target_class, dataspec=ds)
         return [(empty, open_mask)]
@@ -1425,28 +1433,52 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     def _covering_loop(self, data: BooleanDataRepresentation, target: Any) -> List[Rule]:
         """The separate-and-conquer covering loop for one class `target`
         vs. the rest, plus `optimization` if set. Shared by the binary
-        `_fit_default` path and `_fit_covering`."""
+        `_fit_default` path and `_fit_covering`.
+
+        A learner that searches from a seed example (`SeedExample`, i.e.
+        `AQR`) only ever sees the generalizations of that one example, so
+        failing to find an acceptable rule for it -- or `stop_covering`
+        rejecting the rule found -- says nothing about the other
+        uncovered positives: that seed is just dropped from the uncovered
+        examples (as if covered) and the next one tried, so the loop only
+        stops once every positive has been covered or dropped. (One noisy
+        seed would otherwise end the whole class.) Dropping a positive
+        can't affect later rules' consistency, which only negatives
+        decide. A learner searching all rules at once stops at its first
+        failure, since no other search would find anything else."""
         positive = data.y == target
         remaining = np.ones(data.n_samples, dtype=bool)
         rules: List[Rule] = []
+        space_init = getattr(self.single_rule_learner, "space_init", None)
+        seeded = isinstance(space_init, SeedExample) and space_init.strategy != "index"
 
         while True:
             if self.max_rules is not None and len(rules) >= self.max_rules:
                 break
             if not np.any(positive & remaining):
-                break  # every positive example is already covered
+                break  # every positive example is covered (or dropped as a failed seed)
 
-            rule = self.single_rule_learner.learn_one_rule(data, target, remaining)
-            if rule is None:
-                break  # the single-rule search found nothing acceptable
-            stats = RuleStats.from_rule(rule, data, target, example_mask=remaining)
-            if stats.tp == 0:
-                break  # covers nothing new -- adding it would be pure waste
-            if rule.length() == 0:
+            if seeded:
+                seed = space_init.pick_seed(data, target, remaining)
+                rule = self.single_rule_learner.learn_one_rule(
+                    data, target, remaining, space_init=SeedExample(strategy="index", index=seed),
+                )
+            else:
+                rule = self.single_rule_learner.learn_one_rule(data, target, remaining)
+            stats = (RuleStats.from_rule(rule, data, target, example_mask=remaining)
+                     if rule is not None else None)
+            if rule is not None and stats.tp > 0 and rule.length() == 0:
                 break  # unconditional -- the default-rule mechanism covers this
-            if self.stop_covering is not None and self.stop_covering.evaluate(
-                rule, stats, data, target, remaining
-            ):
+            acceptable = (rule is not None and stats.tp > 0 and not (
+                self.stop_covering is not None
+                and self.stop_covering.evaluate(rule, stats, data, target, remaining)
+            ))
+            if not acceptable:
+                # nothing acceptable found (no rule, one covering nothing
+                # new, or one `stop_covering` rejects)
+                if seeded:
+                    remaining[seed] = False
+                    continue
                 break
 
             rules.append(rule)

@@ -1437,6 +1437,22 @@ def test_aqr_stops_when_no_consistent_rule_can_be_found():
     print("AQR stops (empty ruleset) when the data admits no consistent rule: OK")
 
 
+def test_aqr_sets_a_bad_seed_aside_and_keeps_covering():
+    # the first positive (row 0) is a noisy duplicate of a negative (row 1),
+    # so no consistent rule can cover it. AQR seeds on the first uncovered
+    # positive: it must set that seed aside and still learn the real concept
+    # (a) from the other positives -- not stop with an empty rule set
+    X = np.array([[0, 0], [0, 0], [1, 0], [1, 1], [0, 1], [0, 1], [0, 0]], dtype=bool)
+    y = np.array(["pos", "neg", "pos", "pos", "neg", "neg", "neg"])
+    rep = BooleanDataRepresentation(DataSpec(["a", "b"]), X, y)
+
+    for strategy in ("first", "random"):
+        ruleset = AQR(target_class="pos", seed_strategy=strategy, random_state=0).fit(rep)
+        assert [set(r.pos) for r in ruleset.rules] == [{0}], strategy
+        assert list(ruleset.predict(rep)) == ["neg", "neg", "pos", "pos", "neg", "neg", "neg"]
+    print("AQR sets a seed with no consistent rule aside and keeps covering: OK")
+
+
 def test_aqr_require_consistency_false_lets_an_inconsistent_rule_through():
     # same unfittable data as above, but with the consistency gate off AQR
     # will accept the best rule its LEF finds even though it covers a negative

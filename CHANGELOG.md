@@ -51,6 +51,14 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Fixed
 
+- `AQR` with a target class (and in its one-vs-rest, cascade and pairwise
+  decompositions) stopped learning for a class as soon as the example it
+  seeded on admitted no acceptable rule -- typically a noisy example --
+  leaving every other positive uncovered: with 3% label noise it often
+  learned no rule at all. A failed seed is now dropped and the next
+  uncovered positive tried; learning stops only once every positive is
+  covered or dropped. Learners that search all rules at once (CN2, PFoil,
+  PFossil) are unchanged.
 - `read_arff` turned ARFF's missing marker `?` into an ordinary category
   (`sex=?`); it is now a missing value. Nominal attributes also take their
   values from the header's declared list rather than only the values
