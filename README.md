@@ -1812,7 +1812,7 @@ If you use pyrulearn, please cite it via [`CITATION.cff`](CITATION.cff)
   author  = {F{\"u}rnkranz, Johannes},
   title   = {pyrulearn},
   year    = {2026},
-  version = {0.1.2},
+  version = {0.1.3},
   url     = {https://github.com/juffif/pyrulearn}
 }
 ```
