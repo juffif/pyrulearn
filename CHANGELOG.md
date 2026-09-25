@@ -61,6 +61,37 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   `EnsembleModel` vote ties follow the same convention instead of member
   order, and an ensemble prints `% conflict resolution: (weighted) vote of
   members`.
+
+### Added
+
+- `to_string(pretty=True)` (rules and every model): each condition on its
+  own line, indented under the head, and the coverage comment on its own
+  line above the head. Prolog format only so far.
+### Fixed
+
+- In the `"conditions"` and `"pattern"` formats, models now show the class
+  a rule predicts where it was missing: decision lists prefix each rule
+  with it (`z: ¬f0, ¬f1`), and every model's default section names it
+  (`% default: x`). Before, a decision list printed in these formats
+  didn't say which class any rule predicted.
+
+## 0.1.3 (2026-09-25)
+
+A bug-fix release: binary attributes and missing values handled
+correctly, AQR's covering fixed, and several printing fixes.
+
+### Changed (may change results or printouts)
+
+- `Rule.to_string("prolog")` quotes a head that isn't a valid bare Prolog
+  atom (`'1'(X) :- ...`, `'Yes'(X) :- ...`, `'no-recurrence-events'(X) :- ...`),
+  and gives each condition that introduces a value its own variable
+  (`age(X, V1), V1 < 30, income(X, V2), V2 >= 50000`) instead of reusing
+  one `V`, which forced unrelated attributes to unify.
+- `tree_thresholds` (decision-tree discretization) rounds each split
+  point to the coarsest value that still lies strictly between the two
+  neighbouring observed values -- `15.17` instead of `15.172899999999998`.
+  Display only: every row stays on the same side of the split.
+
 - `AQR().fit(data)` now returns a `DecisionList` instead of a
   `FlatRuleSet` resolved by `combiner="list"`. Predictions are identical
   (the first covering rule in learn order wins either way), but the
@@ -80,14 +111,6 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
-- In the `"conditions"` and `"pattern"` formats, models now show the class
-  a rule predicts where it was missing: decision lists prefix each rule
-  with it (`z: ¬f0, ¬f1`), and every model's default section names it
-  (`% default: x`). Before, a decision list printed in these formats
-  didn't say which class any rule predicted.
-- `to_string(pretty=True)` (rules and every model): each condition on its
-  own line, indented under the head, and the coverage comment on its own
-  line above the head. Prolog format only so far.
 - Binary attributes: `AttributeType.BINARY` and
   `DataSpecBuilder.add_binary("sex", ["male", "female"])`, a closed set of
   exactly two values. They always get both features (`sex=male`,
@@ -101,6 +124,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   binary, and a binary one with a nominal one (or with a binary one over
   different values) as the nominal union. `Rule.remap` turns `x!=a` into
   `x=b` when the target attribute is binary over `{a, b}`.
+- `examples/demo_covering.py`: a step-by-step separate-and-conquer teaching
+  demo (PFossil's covering and hill climbing replayed on Titanic, one set
+  of plots per search step).
 
 ### Changed (may change feature counts)
 
