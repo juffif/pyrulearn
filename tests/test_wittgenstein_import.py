@@ -48,8 +48,10 @@ def test_learner_matches_importer_and_wittgenstein_predict(learner_cls, importer
     imported = importer_cls().import_model(wmodel, rep.spec)
 
     # same random_state -> identical rules (compare by logic-string
-    # rendering, since Rule equality ignores provenance)
-    assert sorted(r.to_string("logic") for r in learned) == sorted(r.to_string("logic") for r in imported)
+    # rendering, since Rule equality ignores provenance; show_stats=False,
+    # since the learner's rules carry training stats and the bare import doesn't)
+    assert (sorted(r.to_string("logic", show_stats=False) for r in learned)
+            == sorted(r.to_string("logic", show_stats=False) for r in imported))
 
     # the imported model itself has no default_rule (see module
     # docstring); the learner-produced one does, since it can see

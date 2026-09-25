@@ -5,6 +5,27 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Changed (may break code: frozen rule statistics)
+
+- A rule's training statistics are frozen once set: they are part of the
+  model (combiners score from them, printing shows them), so a later
+  `rule.stats(other_data)` or `annotate_rules(rules, other_data)` on the
+  default split now raises instead of silently changing what the model
+  predicts. Measure other data under another split name
+  (`rule.stats(test_rep, split="test")`); replace training statistics
+  deliberately with `SingleRule.reset_stats(data)`,
+  `annotate_rules(..., reset=True)` or `set_stats_from_counts(..., reset=True)`.
+  `annotate_rules(..., copy=True)` annotates fresh copies instead; the
+  distillers (`CBA`, `IDS`) now use it, so they no longer re-annotate the
+  shared rule pool's rules in place.
+- `to_string` no longer takes `data=`: it prints each rule's own stored
+  statistics (`(tp/fp)`, or the class distribution for distribution
+  combiners), which are exactly the numbers the model uses, and does so by
+  default whenever rules carry statistics. `show_stats=False` prints the
+  bare rules.
+- `remap` (and `filter`, and model conversions) keep the rules' statistics,
+  the default rule's included; `remap` used to drop them.
+
 ### Changed (may change results or printouts)
 
 - `AQR().fit(data)` now returns a `DecisionList` instead of a

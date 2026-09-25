@@ -828,39 +828,88 @@ def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     assert sr.to_string(fmt="prolog") == r.to_string(fmt="prolog")
 
 
-def test_to_string_coverage_decoration_needs_no_prior_annotation():
+def test_to_string_prints_only_the_rules_own_frozen_stats():
     ds = DataSpec(["age_gt_30", "smoker", "high_bp"])
     r1 = Rule.from_pos_neg(pos=[0, 1], target="high_risk", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[2], target="high_risk", dataspec=ds)
+
+    # rules without stats print bare; there is no data= to measure against
     fs = FlatRuleSet([r1, r2])
+    assert "% (" not in fs.to_string(fmt="prolog")
+    with pytest.raises(TypeError):
+        fs.to_string(fmt="prolog", data=None)
 
-    # undecorated by default -- identical to the plain rendering
-    assert fs.to_string(fmt="prolog") == fs.to_string(fmt="prolog", data=None)
+    train = BooleanDataRepresentation(ds, np.array([[1, 1, 0], [0, 0, 1]], dtype=bool),
+                                      np.array(["high_risk", "low_risk"]))
+    fs = FlatRuleSet(annotate_rules([r1, r2], train))
+    before = fs.to_string(fmt="prolog")
+    assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (1/0)" in before
+    assert "high_risk(X) :- high_bp(X).  % (0/1)" in before
 
-    X = np.array([[1, 1, 0], [0, 0, 1]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X)
-    prolog = fs.to_string(fmt="prolog", data=data_rep)
-    assert "  % (1)" in prolog  # no labels -> plain "(n_covered)"
+    # stats measured on other data go under another split name and never
+    # change what's printed (nor what's predicted)
+    test = BooleanDataRepresentation(ds, np.array([[1, 1, 1]] * 3, dtype=bool), np.array(["high_risk"] * 3))
+    for r in fs.rules:
+        r.stats(test, split="test")
+    assert fs.to_string(fmt="prolog") == before
+    # show_stats=False: the bare rules
+    assert "% (" not in fs.to_string(fmt="prolog", show_stats=False)
+
+
+def test_training_stats_are_frozen_and_only_replaced_deliberately():
+    ds = DataSpec(["a"])
+    train = BooleanDataRepresentation(ds, np.array([[1], [1], [0]], dtype=bool), np.array(["x", "y", "y"]))
+    other = BooleanDataRepresentation(ds, np.array([[1], [0]], dtype=bool), np.array(["x", "x"]))
+    sr = annotate_rules([Rule([0], target="x", dataspec=ds)], train)[0]
+    assert sr.to_string("prolog").endswith("% (1/1)")
+
+    for overwrite in (lambda: sr.stats(other), lambda: sr.annotate(other),
+                      lambda: annotate_rules([sr], other),
+                      lambda: sr.set_stats_from_counts({"x": 1}, {"x": 2})):
+        with pytest.raises(ValueError, match="frozen"):
+            overwrite()
+    assert sr.to_string("prolog").endswith("% (1/1)")  # untouched
+
+    sr.reset_stats(other)                               # deliberate replacement
+    assert sr.to_string("prolog").endswith("% (1/0)")
+    annotate_rules([sr], train, reset=True)
+    assert sr.to_string("prolog").endswith("% (1/1)")
+    # copy=True annotates fresh SingleRules and leaves the given ones alone
+    (fresh,) = annotate_rules([sr], other, copy=True)
+    assert fresh is not sr and fresh.rule is sr.rule
+    assert fresh.to_string("prolog").endswith("% (1/0)") and sr.to_string("prolog").endswith("% (1/1)")
+
+
+def test_remap_and_filter_keep_the_frozen_stats():
+    ds = DataSpec(["a", "b"])
+    train = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+                                      np.array(["x", "y", "y"]))
+    rules = annotate_rules([Rule([0], target="x", dataspec=ds), Rule([1], target="y", dataspec=ds)], train)
+    fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="y"), train)
+    before = fs.to_string(fmt="prolog")
+    wider = DataSpec(["b", "a", "c"])                    # different order, extra feature
+    remapped = fs.remap(wider)
+    assert remapped.to_string(fmt="prolog") == before
+    assert remapped.default_rule.stats() is not None
+    assert "x(X) :- a(X).  % (1/1)" in fs.filter("x").to_string(fmt="prolog")
 
 
 def test_to_string_coverage_correctness_counts():
     # row0: covered by r1 only, label matches target (correct)
     # row1: covered by r2 only, label does NOT match target (wrong)
-    # row2: covered by both r1 and r2 (not unique to either), label matches target
+    # row2: covered by both r1 and r2, label matches target
     ds = DataSpec(["age_gt_30", "smoker", "high_bp"])
     r1 = Rule.from_pos_neg(pos=[0, 1], target="high_risk", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[2], target="high_risk", dataspec=ds)
-    fs = FlatRuleSet([r1, r2])
-
     X = np.array([
         [1, 1, 0],  # row0: age_gt_30 & smoker -> covered by r1 only
         [0, 0, 1],  # row1: high_bp -> covered by r2 only
         [1, 1, 1],  # row2: all three -> covered by both
     ], dtype=bool)
     y = np.array(["high_risk", "low_risk", "high_risk"])
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    fs = FlatRuleSet(annotate_rules([r1, r2], BooleanDataRepresentation(ds, X, y)))
 
-    prolog = fs.to_string(fmt="prolog", data=data_rep)
+    prolog = fs.to_string(fmt="prolog")
     # r1: covers rows 0,2, both high_risk (its own target) -> tp=2, fp=0
     assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (2/0)" in prolog
     # r2: covers rows 1,2 -- row1 is low_risk (wrong), row2 is high_risk -> tp=1, fp=1
@@ -868,27 +917,28 @@ def test_to_string_coverage_correctness_counts():
 
 
 def _three_class_dog_rule():
-    # one rule, covering 16 training rows: 1 bird, 1 cat, 14 dog
+    # one rule, trained on 19 rows; it covers 16: 1 bird, 1 cat, 14 dog
     ds = DataSpec(["barks"])
     X = np.array([[1]] * 16 + [[0]] * 3, dtype=bool)
     y = np.array(["bird"] + ["cat"] + ["dog"] * 14 + ["bird", "cat", "dog"])
+    data = BooleanDataRepresentation(ds, X, y)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    return FlatRuleSet([rule]), BooleanDataRepresentation(ds, X, y)
+    return FlatRuleSet(annotate_rules([rule], data)), data
 
 
 def test_to_string_prints_the_full_distribution_only_for_a_distributioncombiner():
-    fs, data_rep = _three_class_dog_rule()
+    fs, _ = _three_class_dog_rule()
 
     # a DistributionCombiner and >2 classes -> the full per-class breakdown,
     # with a printed-once legend giving its order (sorted: bird, cat, dog)
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # "max" (the default) -- no distribution, no legend, plain (tp/fp)
     fs.combiner = "max"
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
     print("to_string shows the full class distribution + legend only for a "
@@ -902,10 +952,9 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
     X = np.array([[1]] * 5 + [[0]] * 5, dtype=bool)
     y = np.array(["dog"] * 5 + ["cat"] * 5)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    fs = FlatRuleSet([rule], combiner="micro_vote")
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    fs = FlatRuleSet(annotate_rules([rule], BooleanDataRepresentation(ds, X, y)), combiner="micro_vote")
 
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (5/0)" in text
     print("Binary problems skip the distribution bracket/legend even under a "
@@ -915,41 +964,40 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
 def test_to_string_singlerule_default_never_prints_the_distribution():
     # SingleRule.resolution is Exclusive, never a Combine -- by default there's
     # only one rule, so no distribution-scored disagreement to make visible
-    _, data_rep = _three_class_dog_rule()
-    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
-    sr = SingleRule(rule)
-    text = sr.to_string(fmt="prolog", data=data_rep)
+    _, data = _three_class_dog_rule()
+    sr = annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=data.spec)], data)[0]
+    text = sr.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert text == "dog(X) :- barks(X).  % (14/2)"
     print("A standalone SingleRule defaults to plain (tp/fp), never a distribution: OK")
 
 
 def test_to_string_show_distribution_forces_the_choice_either_way():
-    fs, data_rep = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
+    fs, data = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
 
     # show_distribution=True forces the vector even though "max" never needs it
-    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=True)
+    text = fs.to_string(fmt="prolog", show_distribution=True)
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # show_distribution=False suppresses it even under a genuine DistributionCombiner
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=False)
+    text = fs.to_string(fmt="prolog", show_distribution=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
 
     # forcing it on works even where the model structurally never has a
     # DistributionCombiner at all: a lone SingleRule, and a binary problem
-    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
-    sr_text = SingleRule(rule).to_string(fmt="prolog", data=data_rep, show_distribution=True)
-    assert sr_text == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]"
+    sr = annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=data.spec)], data)[0]
+    assert (sr.to_string(fmt="prolog", show_distribution=True)
+            == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]")
 
     ds2 = DataSpec(["barks"])
     binary_data = BooleanDataRepresentation(
         ds2, np.array([[1]] * 5 + [[0]] * 5, dtype=bool), np.array(["dog"] * 5 + ["cat"] * 5))
-    binary_rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)
-    binary_fs = FlatRuleSet([binary_rule])  # default "max"
-    text = binary_fs.to_string(fmt="prolog", data=binary_data, show_distribution=True)
+    binary_fs = FlatRuleSet(annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)],
+                                           binary_data))  # default "max"
+    text = binary_fs.to_string(fmt="prolog", show_distribution=True)
     assert "% classes: [cat, dog]" in text
     assert "dog(X) :- barks(X).  % [0, 5]" in text  # cat=0, dog=5, class order [cat, dog]
     print("show_distribution=True/False forces the vector on or off regardless of "
@@ -957,46 +1005,53 @@ def test_to_string_show_distribution_forces_the_choice_either_way():
 
 
 def test_to_string_show_classes_is_independent_of_show_distribution():
-    fs, data_rep = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
+    fs, _ = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
 
     # show_classes=True prints the legend even though no rule shows a distribution
-    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=True)
+    text = fs.to_string(fmt="prolog", show_classes=True)
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % (14/2)" in text  # still plain (tp/fp) -- show_distribution untouched
 
     # show_classes=False suppresses the legend even while a distribution IS shown
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=False)
+    text = fs.to_string(fmt="prolog", show_classes=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text  # the vector itself is untouched
     print("show_classes independently forces the legend on or off, regardless of "
           "whether any rule is actually showing a distribution vector: OK")
 
 
-def _three_class_pairwise_fixture():
-    # cat/dog/bird, 3 pairs, each sub-model's rule only ever explicitly
-    # predicts ONE of its own two classes -- the other only ever surfaces as
-    # that sub-model's own default_prediction
+def _three_class_fixture_data():
     ds = DataSpec(["a", "b"])
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0], [1, 0], [0, 1]], dtype=bool)
     y = np.array(["cat", "cat", "dog", "dog", "bird", "bird"])
-    data = BooleanDataRepresentation(ds, X, y)
-    cat_dog = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
-                           label="cat", default_prediction="dog")
-    cat_bird = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
-                            label="cat", default_prediction="bird")
-    dog_bird = ConceptModel([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)],
-                            label="dog", default_prediction="bird")
-    return cat_dog, cat_bird, dog_bird, data
+    return BooleanDataRepresentation(ds, X, y)
+
+
+def _three_class_pairwise_fixture():
+    # cat/dog/bird, 3 pairs, each sub-model's rule only ever explicitly
+    # predicts ONE of its own two classes -- the other only ever surfaces as
+    # that sub-model's own default_prediction. Each sub-model's rules are
+    # annotated on its own pair's rows, as a pairwise fit does.
+    data = _three_class_fixture_data()
+    ds = data.spec
+
+    def concept(pair, feature, label, default):
+        rows = data.select_rows(np.isin(data.y, list(pair)))
+        return ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[feature], target=label, dataspec=ds)], rows),
+                            label=label, default_prediction=default)
+
+    return (concept(("cat", "dog"), 0, "cat", "dog"), concept(("cat", "bird"), 0, "cat", "bird"),
+            concept(("dog", "bird"), 1, "dog", "bird"), data)
 
 
 def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
-    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    cat_dog, cat_bird, dog_bird, _ = _three_class_pairwise_fixture()
     pw = PairwiseModel(
         [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)],
         combiner="accuracy_vote", member_weights=[0.9, 0.75, 0.6], default_prediction="cat",
     )
-    text = pw.to_string(fmt="prolog", data=data)
+    text = pw.to_string(fmt="prolog")
 
     # top-level legend: every class this model spans
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
@@ -1009,40 +1064,46 @@ def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
     assert "% classes: [cat, dog]" in text
     assert "% classes: [bird, cat]" in text
     assert "% classes: [bird, dog]" in text
-    # data handed to each sub-model is narrowed to that pair's own rows:
-    # cat_dog's rule (a=1 -> cat) sees only the 2 cat + 2 dog rows -> tp=2, fp=0
+    # each sub-model prints the stats it was trained with, on its own pair's
+    # rows: cat_dog's rule (a=1 -> cat) over the 2 cat + 2 dog rows -> 2/0
     assert "cat(X) :- a(X).  % (2/0)" in text
-    # cat_bird's *same* rule, but narrowed to cat+bird rows instead -- the
-    # one bird row with a=1 is now a false positive -- tp=2, fp=1
+    # cat_bird's *same* rule, over cat+bird rows -- the one bird row with
+    # a=1 is a false positive there -- 2/1
     assert "cat(X) :- a(X).  % (2/1)" in text
     print("PairwiseModel.to_string forces each pair's own two-class legend and "
           "shows accuracy_vote's per-pair member weight: OK")
 
 
 def test_pairwisemodel_to_string_show_classes_false_suppresses_everything():
-    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    cat_dog, cat_bird, dog_bird, _ = _three_class_pairwise_fixture()
     pw = PairwiseModel([("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)])
-    text = pw.to_string(fmt="prolog", data=data, show_classes=False)
+    text = pw.to_string(fmt="prolog", show_classes=False)
     assert "% classes:" not in text
     print("PairwiseModel.to_string's show_classes=False suppresses the top-level "
           "and every per-pair legend: OK")
 
 
 def test_ensemblemodel_to_string_shows_member_weights_and_top_level_legend():
-    cat_dog, _, dog_bird, data = _three_class_pairwise_fixture()
-    ens = EnsembleModel([cat_dog, dog_bird], member_weights=[0.7, 0.3])
-    text = ens.to_string(fmt="prolog", data=data)
+    # members trained on the full data -- unlike pairwise sub-models
+    data = _three_class_fixture_data()
+    ds = data.spec
+    cat = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)], data),
+                       label="cat", default_prediction="dog")
+    dog = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)], data),
+                       label="dog", default_prediction="bird")
+    ens = EnsembleModel([cat, dog], member_weights=[0.7, 0.3])
+    text = ens.to_string(fmt="prolog")
     # .labels is rule heads + the ensemble's OWN default (unset here) --
     # "bird" never appears as either, only as a *sub-model's own* default,
     # so it's genuinely outside this model's declared label set
     assert "% classes: [cat, dog]" in text
     assert "% member 0  (weight: 0.7)" in text
     assert "% member 1  (weight: 0.3)" in text
-    # members see the *full*, unfiltered data -- cat_dog's rule (a=1 -> cat)
-    # over all 6 rows also covers the a=1 bird row as a false positive
+    # cat's rule (a=1 -> cat) over all 6 training rows also covers the a=1
+    # bird row as a false positive
     assert "cat(X) :- a(X).  % (2/1)" in text
-    print("EnsembleModel.to_string shows each member's own weight, unfiltered "
-          "data, and a top-level classes legend: OK")
+    print("EnsembleModel.to_string shows each member's own weight, its stored "
+          "stats, and a top-level classes legend: OK")
 
 
 # ------------------------------------------------------------------ covered_by ---

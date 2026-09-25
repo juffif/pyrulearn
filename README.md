@@ -264,11 +264,10 @@ new_dataspec.feature_index(name)`) -- the same name-based identity
 (no data touched, nothing recomputed) and raises rather than silently
 dropping a condition if a name has no match in `new_dataspec`.
 `RuleModel.remap(new_dataspec)` applies it to every rule and carries the
-`default_prediction` policy (and `.provenance`) over unchanged (the
-materialized `default_rule` re-derives against the remapped rules'
-dataspec on demand, dropping any stats measured against the old one --
-re-annotate against whatever data comes next), returning a new instance
-of the same concrete class.
+`default_prediction` policy (and `.provenance`) over unchanged, and
+keeps every rule's stats (the default rule's too): a rebased rule covers
+exactly the same rows. It returns a new instance of the same concrete
+class.
 
 This is the fix for reading in several rule-based models over "the same"
 dataset when each was imported against its own per-model `DataSpec`
@@ -289,11 +288,11 @@ shared_rep = BooleanDataRepresentation(shared, binarize(shared, df))
 Only `shared` ever needs a full Boolean data matrix built for it; the
 per-model DataSpecs used during import don't (`remap` needs nothing but
 their feature *names*), which keeps memory to one dataset's worth
-regardless of how many models get combined. `remap` deliberately drops
-any stats measured before the rebase (a rule's `stats()` was computed
-against the *old* dataspec's rows, which no longer applies) --
-re-annotate against `shared_rep` (`annotate_rules`, or a fresh
-`to_string(data=shared_rep)`/`stats(shared_rep)` call) for fresh numbers.
+regardless of how many models get combined. The rules keep their
+training stats through `remap`; to measure them on `shared_rep`, use
+another split name (`stats(shared_rep, split="shared")`), or
+`reset_stats(shared_rep)` to replace the training stats deliberately
+(see *Statistics*).
 
 ### Reading ARFF / CSV data
 
@@ -460,7 +459,7 @@ rules apply:
 
 ### Printing a model
 
-`to_string(fmt=None, ascii=False, data=None)` renders a whole model,
+`to_string(fmt=None, ascii=False, show_stats=True)` renders a whole model,
 applying one resolved format (explicit `fmt=`, else `Rule.DEFAULT_FORMAT`)
 to *every* rule, regardless of any individual rule's own `default_fmt`.
 This is what keeps a printed model internally consistent even when its
@@ -492,16 +491,14 @@ family:
 
 A `WeightedRule` prints its weight as part of the rule: in front of it in
 the default Prolog format (`0.8::head :- body`), and appended in the other
-formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). The one optional
-decoration is `data=<a DataRepresentation>`, which suffixes every rule with
-a trailing coverage comment, computed *fresh* against it (no separate
-annotation call needed first):
+formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). Every rule that carries
+training stats is suffixed with a coverage comment read from those stats --
+exactly the numbers the model holds and its combiner scores from, never
+recomputed against other data (`show_stats=False` prints the bare rules):
 
-- Ordinarily `% (tp/fp)` -- covered rows that are, or aren't, actually this
-  rule's own target (the classic C4.5/RIPPER rule-quality notation; 0 `fp`
-  reads as a perfect rule). Labels (`data.y`) are needed to compute it and a
-  target to check correctness against; where either is missing, just the
-  bare covered count, `% (n_covered)`.
+- Ordinarily `% (tp/fp)` -- covered training rows that are, or aren't,
+  actually this rule's own target (the classic C4.5/RIPPER rule-quality
+  notation; 0 `fp` reads as a perfect rule).
 - For a model whose own `combiner` is genuinely a `DistributionCombiner`
   (`"micro_vote"`/`"macro_vote"`/`"micro_max"`/`"macro_max"`) *and* has more
   than two classes, the full per-class breakdown instead -- `% [n0, n1, ...]`
@@ -513,9 +510,9 @@ annotation call needed first):
 
 Both are choices, not hard rules -- `to_string`'s `show_distribution`/
 `show_classes` (`None` by default) force either one independently, for any
-model, any class count, any combiner: the raw per-class counts are always
-computable from `data.y`, whether or not a given model's own resolution
-actually consults them. `show_distribution=True`/`False` forces the vector
+model, any class count, any combiner: the per-class counts are always in a
+rule's stats, whether or not a given model's own resolution actually
+consults them. `show_distribution=True`/`False` forces the vector
 on or off outright (e.g. showing it for a plain `combiner="max"` model, or
 suppressing it for a genuine `DistributionCombiner`); `show_classes=True`/
 `False` independently forces the legend on or off, regardless of whether any
@@ -530,16 +527,16 @@ in turn plus a top-level `% classes: [...]` naming the model's own `labels`
 `EnsembleModel` headers each member `% member <k>`, with `(weight: ...)`
 appended where `member_weights` is set -- exactly the number `predict`'s
 plurality vote weighs that member's verdict by, so the one thing beyond each
-member's own rules a reader needs to redo the vote by hand; `data`/
+member's own rules a reader needs to redo the vote by hand; `show_stats`/
 `show_distribution`/`show_classes` pass through unchanged to every member,
 since they all cover the same overall multiclass problem. `PairwiseModel`
 headers each pair `% pair: a vs b`, with `(member weight: ...)` appended for
 `"accuracy_vote"` specifically -- `"weighted_vote"`'s own per-row deciding-
 rule weight is exactly `Laplace` on that rule's own measured stats, already
 fully reconstructable from its own printed `(tp/fp)`, so nothing extra is
-needed for that combiner. Unlike `EnsembleModel`, each pair's `data` is
-narrowed to just its own two classes' rows first (via `select_rows`), and
-its own `show_classes` defaults to forced-on (`None` here means "force", not
+needed for that combiner. Each pair's rules carry stats measured on that
+pair's own two classes' rows (where they were fitted), and, unlike
+`EnsembleModel`, its own `show_classes` defaults to forced-on (`None` here means "force", not
 "auto") -- a sub-model's rules may only ever explicitly predict *one* of its
 two classes (the other only ever surfacing as its own `default_prediction`),
 so without this a reader may have no way to tell which two classes a given
@@ -694,13 +691,25 @@ directly on `model.covered_by(data)`'s output, or as `covered_by`'s own
 `SingleRule` leaf) can measure its own performance against `data`. It
 returns a `pyrulearn.evaluation.ModelStats` snapshot (a `ConfusionMatrix`
 from `predict(data)` vs `data.y`, plus `n_rules`/`n_conditions`), cached
-under `split` (pass a different `split` name, e.g. `"train"` then
-`"test"`, to keep several side by side).
+under `split` (pass a different `split` name, e.g. `"test"`, to keep
+several side by side).
 
 `pyrulearn.models.annotate_rules(rules, data)` wraps a plain rule list and
 stats each one against `data` in one call. This is what every native
 learner and importer `fit()`/`data=` round trip already does, so
 combiners/`sort_rules`/`covered_by` have real measured stats to score from.
+
+A rule's training stats (the default split) are **frozen** once set: they
+are part of the model -- combiners score from them and `to_string` prints
+them -- so a later `rule.stats(other_data)` or `annotate_rules(rules,
+other_data)` raises instead of silently changing what the model predicts.
+Measure other data under another split name (`rule.stats(test_rep,
+split="test")`); replace the training stats deliberately with
+`rule.reset_stats(data)` (or `annotate_rules(..., reset=True)`).
+`annotate_rules(..., copy=True)` annotates fresh copies of the rules and
+leaves the given ones untouched -- what the rule distillers (`CBA`, `IDS`)
+do with the pool they select from. `remap`, `filter` and model
+conversions keep the stats.
 
 ### Rule-evaluation heuristics
 

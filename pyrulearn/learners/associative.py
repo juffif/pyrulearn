@@ -628,7 +628,7 @@ class CBA(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         ordered_rules = sort_by_measured_precedence(self._resolve_rules(data))
         kept, default_label = self._select(ordered_rules, data)
         default = default_label if default_label is not None else MajorityClass(data)
-        model = DecisionList(annotate_rules(kept, data), default_prediction=default)
+        model = DecisionList(annotate_rules(kept, data, copy=True), default_prediction=default)
         return annotate_default_rule(model, data)
 
     @produces(ConceptModel)
@@ -641,7 +641,7 @@ class CBA(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         ordered_rules = sort_by_measured_precedence(self._resolve_rules(data, only_class=target))
         kept, _default_label = self._select(ordered_rules, data)
         default = fallback if fallback is not None else MajorityClass(data)
-        model = ConceptModel(annotate_rules(kept, data), label=target, default_prediction=default)
+        model = ConceptModel(annotate_rules(kept, data, copy=True), label=target, default_prediction=default)
         return annotate_default_rule(model, data)
 
     @staticmethod

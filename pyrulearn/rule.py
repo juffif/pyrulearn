@@ -335,10 +335,8 @@ class Rule:
         Raises `ValueError` if this rule has no `dataspec` (nothing to
         resolve feature names from), or if any condition's feature name
         has no match in `new_dataspec` -- never silently drops a
-        condition. Any measured `stats()` a `SingleRule` wrapper carries
-        is NOT carried over -- it was computed against the *old*
-        DataSpec's rows and is stale after a remap; re-annotate against
-        `new_dataspec`'s data for fresh stats.
+        condition. A `SingleRule` wrapper's `remap` keeps its stats: the
+        rebased rule covers exactly the same rows.
         """
         if self.dataspec is None:
             raise ValueError("remap() needs self.dataspec to resolve condition feature names from")

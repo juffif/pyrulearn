@@ -149,7 +149,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from pyrulearn.combiners import MacroVoteCombiner
 from pyrulearn.data import merge_dataspecs
-from pyrulearn.models import FlatRuleSet, annotate_rules
+from pyrulearn.models import FlatRuleSet
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 # BayesianRuleList/BayesianRuleSet are imported lazily, inside _fit_brl_binarized/_fit_brs
 # below (not here) -- they run much longer than the rest of the models and pull in
@@ -882,15 +882,10 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, raw_train_df: pd.Dat
 
         if merged_ok:
             test_rep2 = BooleanDataRepresentation(merged, binarize(merged, test_df_oh), test_y)
-            train_rep2 = None
             for name, rules, _, fit_time in per_model:
+                # remap keeps each rule's training stats (the forest leaves'
+                # class counts MacroVoteCombiner reads): same rows, new spec
                 remapped = rules.remap(merged)
-                if name in combiners:
-                    # remap drops measured stats; a DistributionCombiner (MacroVoteCombiner)
-                    # needs them, so re-measure each leaf on the training rows under `merged`
-                    if train_rep2 is None:
-                        train_rep2 = BooleanDataRepresentation(merged, binarize(merged, train_df_oh), train_y)
-                    remapped = FlatRuleSet(annotate_rules(remapped.rules, train_rep2))
                 record("Original", name, *_eval(remapped, test_rep2, test_y, combiner=combiners.get(name)), fit_time)
         else:
             for name, rules, ds, fit_time in per_model:

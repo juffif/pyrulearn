@@ -310,6 +310,13 @@ class RuleModel(ABC):
     `default_prediction` policy, on-demand `stats`, and `filter`/`remap`.
     """
 
+    #: the `split` holding a model's training stats -- the default
+    #: everywhere. For a rule (`SingleRule`) it is frozen once set: what
+    #: predictions and printing read (see `SingleRule`).
+    TRAINING_SPLIT = "data"
+    #: whether `TRAINING_SPLIT` stats may only be written once (`SingleRule`).
+    _FREEZES_TRAINING_STATS = False
+
     def __init__(self, *, default_prediction: Any = None):
         self._default_prediction: Any = default_prediction
         self._default_rule: Optional["SingleRule"] = None
@@ -318,6 +325,17 @@ class RuleModel(ABC):
         #: `RuleLearner.fit` call or a direct importer `import_model`/
         #: `parse` call stamps it.
         self.provenance: Optional[Provenance] = None
+
+    def _check_writable(self, split: str) -> None:
+        """Refuse to overwrite a rule's frozen training stats -- see
+        `SingleRule` and `SingleRule.reset_stats`."""
+        if self._FREEZES_TRAINING_STATS and split == self.TRAINING_SPLIT and split in self._stats:
+            raise ValueError(
+                f"{type(self).__name__}(target={getattr(self, 'target', None)!r}) already has frozen "
+                f"training stats (split {split!r}) -- predictions and printing read them, so they "
+                "aren't overwritten implicitly. Use reset_stats(data) to replace them deliberately, "
+                "or another split name (e.g. split='test') to measure other data."
+            )
 
     # -- structure ------------------------------------------------------
 
@@ -498,7 +516,12 @@ class RuleModel(ABC):
         called separately against whatever data is relevant to them; this
         doesn't cascade down to them automatically (a `PairwiseModel`
         member, say, is only meaningful evaluated against its own pair's
-        training subset, not the whole dataset this call was given)."""
+        training subset, not the whole dataset this call was given).
+
+        A rule's (`SingleRule`'s) training stats (`TRAINING_SPLIT`, the
+        default) are frozen once set: this raises instead of overwriting
+        them (see `SingleRule.reset_stats`)."""
+        self._check_writable(split)
         from .evaluation import ConfusionMatrix, ModelStats  # local: avoids a load-order cycle
                                                               # (models -> evaluation -> classifier ->
                                                               # models, via classifier.py's
@@ -605,20 +628,39 @@ def _as_single_rule(r: Union[Rule, "SingleRule"]) -> "SingleRule":
     return r if isinstance(r, SingleRule) else SingleRule(r)
 
 
+def _detached(r: Union[Rule, "SingleRule"]) -> "SingleRule":
+    """A fresh, stat-less `SingleRule` around `r`'s `Rule`, carrying its
+    provenance -- see `annotate_rules`'s `copy=`."""
+    if not isinstance(r, SingleRule):
+        return SingleRule(r)
+    fresh = SingleRule(r.rule, default_prediction=r._default_prediction)
+    fresh.provenance = r.provenance
+    return fresh
+
+
 def _carry_provenance(source: "RuleModel", result: "RuleModel") -> "RuleModel":
     """`filter`/`remap`/a model->model `convert` all build a genuinely
     new container object -- but none of them change WHAT built the
     rules, only which ones are kept, which dataspec they're bound to, or
     how they're packaged; `RuleModel.__init__` resets a fresh object's
     `provenance` to `None` regardless, so callers copy the source's
-    provenance across explicitly. Returns `result`, so a `filter`/`remap`
-    method can wrap its return statement directly."""
+    provenance across explicitly. The same goes for the default rule's
+    stats: the new container re-materializes its `default_rule` lazily
+    (same policy, same rows), so they're copied over too. Returns
+    `result`, so a `filter`/`remap` method can wrap its return statement
+    directly."""
     result.provenance = source.provenance
+    src_default = source._default_rule
+    if src_default is not None and src_default._stats and result is not source:
+        dst_default = result.default_rule
+        if dst_default is not None and dst_default.target == src_default.target and not dst_default._stats:
+            dst_default._stats = dict(src_default._stats)
     return result
 
 
 def annotate_rules(
     rules: Sequence[Union[Rule, "SingleRule"]], data: Optional[DataRepresentation], split: str = "data",
+    *, reset: bool = False, copy: bool = False,
 ) -> List["SingleRule"]:
     """Wrap each rule as a `SingleRule` (via `_as_single_rule`, so an
     already-`SingleRule` item is kept, not re-wrapped) and, if `data` is
@@ -657,12 +699,22 @@ def annotate_rules(
     `pyrulearn.interfaces.weka`'s module docstring for a concrete
     case (JRip/PART's own printed per-rule support is covering-loop-
     scoped, not standalone) and its cross-check test.
+
+    A rule's training stats are frozen once set (see `SingleRule`):
+    annotating an already-annotated rule raises, unless `reset=True`
+    deliberately replaces them. `copy=True` annotates fresh `SingleRule`s
+    around the same `Rule`s (provenance kept) instead, leaving the given
+    ones untouched -- for a consumer building its own model from rules
+    it doesn't own, e.g. a `RuleDistiller` selecting from a shared pool.
     """
     out = []
     for r in rules:
-        sr = _as_single_rule(r)
+        sr = _detached(r) if copy else _as_single_rule(r)
         if data is not None:
-            sr.stats(data, split)
+            if reset:
+                sr.reset_stats(data, split)
+            else:
+                sr.stats(data, split)
         out.append(sr)
     return out
 
@@ -757,66 +809,61 @@ class _ConceptIndexed:
 
 # =============================================================== printing ===
 
-def _rule_coverage_dicts(model: "RuleModel", data: DataRepresentation) -> Dict[int, dict]:
+def _frozen_coverage(rule: Rule) -> Optional[dict]:
+    """`{"n_covered", "n_covered_by_class"}` for one rule, read from its
+    own frozen training stats (see `SingleRule`) -- the true-label counts
+    among the rows it covers (`ConfusionMatrix.predicted_as` on its own
+    target). `None` if the rule has no stats (or no target)."""
+    from .evaluation import ABSTAIN  # local: same load-order reason as `annotate`
+    stats_fn = getattr(rule, "stats", None)
+    ms = stats_fn() if callable(stats_fn) else None
+    if ms is None or ms.confusion is None or rule.target is None:
+        return None
+    by_class = {c: n for c, n in ms.confusion.predicted_as(rule.target).items() if c is not ABSTAIN}
+    return {"n_covered": sum(by_class.values()), "n_covered_by_class": by_class}
+
+
+def _rule_coverage_dicts(model: "RuleModel") -> Dict[int, dict]:
     """`id(rule) -> {"n_covered", "n_covered_by_class"}` for every rule in
-    `model` (plus `model.default_rule`, if any), computed fresh against
-    `data` -- the `to_string(data=...)` coverage-decoration input.
-    Deliberately NOT cached onto the rule (the old `RuleClassifier.
-    annotate_coverage` did that): printing shouldn't have to be preceded
-    by a separate annotation call, and shouldn't mutate a rule's own
-    stats cache either -- this is a pure, throwaway read, recomputed on
-    every call, same spirit as `annotate_rules`'s own on-demand
-    philosophy.
+    `model` that carries stats (plus `model.default_rule`, if it does) --
+    the coverage-decoration input. Read from each rule's own *frozen*
+    training stats, never recomputed against other data: what's printed
+    is exactly what the model holds and its combiner scores from.
 
     `n_covered`/`n_covered_by_class` are each rule's own *raw* coverage,
     independent of siblings -- what `_decorate`'s `(tp/fp)` and full-
     distribution printing both read from."""
-    rules = model.rules
-    cov = model.coverage_matrix(data)
-    classes = np.unique(data.y) if data.y is not None else ()
-
-    def _stats(covered_mask: np.ndarray) -> dict:
-        stats: dict = {"n_covered": int(covered_mask.sum())}
-        if data.y is not None:
-            stats["n_covered_by_class"] = {
-                c: int(np.sum(covered_mask & (data.y == c))) for c in classes
-            }
-        return stats
-
-    out = {id(r): _stats(cov[i]) for i, r in enumerate(rules)}
-    dr = model.default_rule
-    if dr is not None:
-        out[id(dr)] = _stats(np.ones(data.n_samples, dtype=bool))
+    out: Dict[int, dict] = {}
+    for r in list(model.rules) + ([model.default_rule] if model.default_rule is not None else []):
+        cov = _frozen_coverage(r)
+        if cov is not None:
+            out[id(r)] = cov
     return out
 
 
-def _resolved_class_order(data: Optional[DataRepresentation]) -> Tuple[Any, ...]:
-    """Every class in `data.y`, sorted and numpy-scalar-unwrapped -- the
-    raw material `show_distribution=True`/`show_classes=True` force-print
-    from, regardless of `model`'s own combiner. `()` with no label data
-    to draw it from."""
-    if data is None or data.y is None:
-        return ()
-    return tuple(sorted((c.item() if isinstance(c, np.generic) else c
-                        for c in np.unique(data.y)), key=_sortkey))
+def _resolved_class_order(coverage: Dict[int, dict]) -> Tuple[Any, ...]:
+    """Every class the rules' stats know about, sorted and numpy-scalar-
+    unwrapped -- the classes a distribution vector and the legend range
+    over. `()` if no rule carries stats."""
+    classes = {c for cov in coverage.values() for c in cov.get("n_covered_by_class", {})}
+    return tuple(sorted((c.item() if isinstance(c, np.generic) else c for c in classes), key=_sortkey))
 
 
 def _distribution_class_order(
-    model: "RuleModel", data: Optional[DataRepresentation], show_distribution: Optional[bool],
+    model: "RuleModel", classes: Tuple[Any, ...], show_distribution: Optional[bool],
 ) -> Tuple[Any, ...]:
     """The class order `_decorate`'s per-rule `[n0, n1, ...]` vector
     uses, or `()` for the plain `(tp/fp)` form instead.
 
     `show_distribution=True`/`False` forces the choice outright, for any
-    class count and any combiner -- the raw per-class counts are always
-    computable from `data.y`, whether or not `model`'s own resolution
-    actually consults them. Left `None` (the default): the vector only
-    if `model`'s own resolution is genuinely score-by-class-distribution
-    (a `DistributionCombiner`) *and* there are more than two classes --
-    with exactly two, `(tp/fp)` already *is* the two-entry distribution
-    (just target-first instead of class-sorted), so the vector would say
+    class count and any combiner -- the per-class counts are always in a
+    rule's stats, whether or not `model`'s own resolution actually
+    consults them. Left `None` (the default): the vector only if
+    `model`'s own resolution is genuinely score-by-class-distribution (a
+    `DistributionCombiner`) *and* there are more than two classes -- with
+    exactly two, `(tp/fp)` already *is* the two-entry distribution (just
+    target-first instead of class-sorted), so the vector would say
     nothing `(tp/fp)` doesn't."""
-    classes = _resolved_class_order(data)
     if show_distribution is False or not classes:
         return ()
     if show_distribution is True:
@@ -830,25 +877,37 @@ def _distribution_class_order(
 
 
 def _legend_class_order(
-    class_order: Tuple[Any, ...], data: Optional[DataRepresentation], show_classes: Optional[bool],
+    class_order: Tuple[Any, ...], classes: Tuple[Any, ...], show_classes: Optional[bool],
 ) -> Tuple[Any, ...]:
     """The class order the printed-once ``% classes: [...]`` legend
     shows, or `()` for no legend at all.
 
-    `show_classes=True` forces it -- whatever classes `data.y` has, even
-    if `class_order` is empty and no rule ends up printing a distribution
-    vector at all (e.g. a future `PairwiseModel` sub-model whose rules
-    only ever explicitly predict one of its two classes still wants its
-    own two classes named). `show_classes=False` suppresses it outright,
-    even if `class_order` is non-empty (a caller who already knows the
-    order and wants less noise). Left `None` (the default): shown iff
-    `class_order` -- the vector `_decorate` is actually using -- is
-    non-empty; today's coupled behavior."""
+    `show_classes=True` forces it -- every class the rules' stats know
+    (`classes`), even if `class_order` is empty and no rule ends up
+    printing a distribution vector at all (e.g. a `PairwiseModel`
+    sub-model whose rules only ever explicitly predict one of its two
+    classes still wants its own two classes named). `show_classes=False`
+    suppresses it outright, even if `class_order` is non-empty (a caller
+    who already knows the order and wants less noise). Left `None` (the
+    default): shown iff `class_order` -- the vector `_decorate` is
+    actually using -- is non-empty."""
     if show_classes is False:
         return ()
     if show_classes is True:
-        return _resolved_class_order(data)
+        return classes
     return class_order
+
+
+def _decoration(
+    model: "RuleModel", show_stats: bool, show_distribution: Optional[bool], show_classes: Optional[bool],
+) -> Tuple[Dict[int, dict], Tuple[Any, ...], Tuple[Any, ...]]:
+    """`(coverage, class_order, legend_classes)` for one `to_string`
+    call: the coverage comments come from the rules' frozen stats, or
+    none at all with `show_stats=False`."""
+    coverage = _rule_coverage_dicts(model) if show_stats else {}
+    classes = _resolved_class_order(coverage) if show_stats else ()
+    class_order = _distribution_class_order(model, classes, show_distribution)
+    return coverage, class_order, _legend_class_order(class_order, classes, show_classes)
 
 
 def _container_legend(labels: Sequence[Any], show_classes: Optional[bool]) -> Tuple[Any, ...]:
@@ -871,7 +930,7 @@ def _decorate(
 ) -> str:
     """Wrap one rule's already-rendered `text` with a trailing coverage
     comment from `coverage` (one entry of `_rule_coverage_dicts`'s
-    result, or `None` to decorate nothing):
+    result -- the rule's frozen stats -- or `None` to decorate nothing):
 
     - `class_order` non-empty (see `_distribution_class_order`): the
       rule's own raw per-class coverage, in that order --
@@ -897,6 +956,14 @@ def _decorate(
     else:
         suffix = f"  % ({coverage['n_covered']})"
     return f"{text}{suffix}"
+
+
+def _bare(rule: Rule, fmt: str, ascii: bool) -> str:
+    """One member rule's text without any coverage comment -- a container
+    decorates its rules itself, once (a `SingleRule`'s own `to_string`
+    would otherwise add its stats a second time)."""
+    base = rule.rule if isinstance(rule, SingleRule) else rule
+    return base.to_string(fmt=fmt, ascii=ascii)
 
 
 def _class_legend(class_order: Tuple[Any, ...]) -> str:
@@ -960,8 +1027,7 @@ class RuleSet(RuleModel):
                 and len({r.target for r in self.rules}) > 1)
 
     def to_string(
-        self, fmt: Optional[str] = None, ascii: bool = False,
-        data: Optional[DataRepresentation] = None,
+        self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render every rule, grouped by target label -- one section per
@@ -976,11 +1042,12 @@ class RuleSet(RuleModel):
         individual rule's own `default_fmt`. A `WeightedRule` renders its
         own weight natively as part of that.
 
-        `data`, if given, decorates every rule with a trailing coverage
-        comment computed fresh against it (see `_rule_coverage_dicts`) --
-        no separate annotation call needed first. Ordinarily ``% (tp/fp)``
-        (covered rows that are, or aren't, actually this rule's own
-        target); for a model actually resolved by a `DistributionCombiner`
+        Every rule carrying stats is decorated with a trailing coverage
+        comment read from its own *frozen* training stats (see
+        `SingleRule`) -- the numbers the model actually holds, never
+        recomputed against other data; `show_stats=False` prints the bare
+        rules. Ordinarily ``% (tp/fp)`` (covered rows that are, or aren't,
+        actually this rule's own target); for a model actually resolved by a `DistributionCombiner`
         with more than two classes, the full per-class breakdown instead
         -- ``% [n0, n1, ...]``, in the order a ``% classes: [...]`` header
         (printed once, above the rest of the output) gives. `show_distribution`
@@ -996,12 +1063,10 @@ class RuleSet(RuleModel):
         predictions and grouping by label would hide it.
         """
         if self._resolved_by_list_order():
-            return RuleList.to_string(self, fmt=fmt, ascii=ascii, data=data,
+            return RuleList.to_string(self, fmt=fmt, ascii=ascii, show_stats=show_stats,
                                       show_distribution=show_distribution, show_classes=show_classes)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-        coverage = _rule_coverage_dicts(self, data) if data is not None else {}
-        class_order = _distribution_class_order(self, data, show_distribution)
-        legend_classes = _legend_class_order(class_order, data, show_classes)
+        coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
         sections = []
         for t in sorted({r.target for r in self.rules}, key=_sortkey):
@@ -1010,10 +1075,10 @@ class RuleSet(RuleModel):
             if resolved == "logic":
                 body = "\n".join(_dnf_lines(group, ascii=ascii, dec=dec))
             else:
-                body = "\n".join(dec(r, r.to_string(fmt=resolved, ascii=ascii)) for r in group)
+                body = "\n".join(dec(r, _bare(r, resolved, ascii)) for r in group)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = dec(self.default_rule, self.default_rule.to_string(fmt=resolved, ascii=ascii))
+            default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
             sections.append(f"% default\n{default_text}")
         rendered = "\n\n".join(sections)
         return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
@@ -1074,8 +1139,7 @@ class RuleList(RuleModel):
         return pts
 
     def to_string(
-        self, fmt: Optional[str] = None, ascii: bool = False,
-        data: Optional[DataRepresentation] = None,
+        self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render this decision list in order -- no label-grouping, since
@@ -1088,20 +1152,18 @@ class RuleList(RuleModel):
         section (an if/elif chain's ``else`` already says "default" for
         "logic", so no extra label is needed there).
 
-        `data`, `show_distribution` and `show_classes` decorate every
-        rule the same way as `RuleSet.to_string` -- see there. Left at
-        their `None` defaults, this is always the plain `(tp/fp)` form
-        here: `RuleList.resolution` is `FirstMatch`, never a `Combine`,
-        so there's never anything `predict()` needs the distribution for
-        -- order alone already fully explains how a `RuleList` decides.
+        `show_stats`, `show_distribution` and `show_classes` decorate
+        every rule the same way as `RuleSet.to_string` -- see there. Left
+        at their defaults, this is always the plain `(tp/fp)` form here:
+        `RuleList.resolution` is `FirstMatch`, never a `Combine`, so
+        there's never anything `predict()` needs the distribution for --
+        order alone already fully explains how a `RuleList` decides.
         `show_distribution=True`/`show_classes=True` can still force the
-        vector/legend on regardless, since the raw per-class counts are
-        always computable from `data.y` whether or not this model's own
-        resolution happens to consult them."""
+        vector/legend on regardless, since the per-class counts are in
+        every rule's stats whether or not this model's own resolution
+        happens to consult them."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-        coverage = _rule_coverage_dicts(self, data) if data is not None else {}
-        class_order = _distribution_class_order(self, data, show_distribution)
-        legend_classes = _legend_class_order(class_order, data, show_classes)
+        coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
         rules = self.rules
         if resolved == "logic":
@@ -1116,9 +1178,9 @@ class RuleList(RuleModel):
                 lines.append(f"else {default_text}")
             rendered = "\n".join(lines)
         else:
-            lines = [dec(r, r.to_string(fmt=resolved, ascii=ascii)) for r in rules]
+            lines = [dec(r, _bare(r, resolved, ascii)) for r in rules]
             if self.default_rule is not None:
-                default_text = dec(self.default_rule, self.default_rule.to_string(fmt=resolved, ascii=ascii))
+                default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
                 lines.append(f"% default\n{default_text}")
             rendered = "\n".join(lines)
         return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
@@ -1147,9 +1209,21 @@ class SingleRule(RuleSet):
     (inherited otherwise) groups `self.rules` by target and calls
     `.to_string` on each -- for a `SingleRule`, whose `self.rules == [self]`,
     that would recurse forever, so it's overridden to render the wrapped
-    `Rule` directly instead."""
+    `Rule` directly instead.
+
+    **Frozen training stats.** The stats a rule gets where it's produced
+    or imported (`TRAINING_SPLIT`, via `annotate_rules`, an importer's
+    `data=`, or `set_stats_from_counts`) are part of the model: combiners
+    score rules from them, and `to_string` prints them. They are written
+    once -- a later `stats(data)`/`annotate(data)` on the same split
+    raises rather than silently changing what the model predicts. Replace
+    them deliberately with `reset_stats(data)`; measure other data under
+    another split name (`stats(test_rep, split="test")`), which nothing
+    predicts from. `remap` keeps them (a rebased rule still covers the
+    same rows)."""
 
     resolution = Exclusive()
+    _FREEZES_TRAINING_STATS = True
 
     def __init__(self, rule: Rule, *, default_prediction: Any = None):
         super().__init__(default_prediction=default_prediction)  # -> RuleModel.__init__
@@ -1163,8 +1237,16 @@ class SingleRule(RuleSet):
     def rules(self) -> List["SingleRule"]:
         return [self]
 
+    def reset_stats(self, data: DataRepresentation, split: str = "data") -> "SingleRule":
+        """Deliberately replace this rule's stats under `split` (by
+        default its frozen training stats) with ones measured on `data`.
+        Returns `self`."""
+        self._stats.pop(split, None)
+        self.annotate(data, split)
+        return self
+
     def set_stats_from_counts(
-        self, covered: Dict[Any, int], totals: Dict[Any, int], split: str = "data",
+        self, covered: Dict[Any, int], totals: Dict[Any, int], split: str = "data", *, reset: bool = False,
     ) -> "SingleRule":
         """Store this rule's measured stats from counts its producer
         already knows -- `covered[c]`: rows the rule covers with true label
@@ -1175,8 +1257,12 @@ class SingleRule(RuleSet):
         where the counts fall out of the construction anyway (a CAR
         miner's per-class supports, a tree leaf's class counts): stamping
         a large pool this way is ~10x faster than `annotate_rules`.
-        Returns `self`."""
+        Frozen like `annotate`'s stats: `reset=True` to replace existing
+        training stats deliberately. Returns `self`."""
         from .evaluation import ConfusionMatrix, ModelStats  # local: same load-order reason as `annotate`
+        if reset:
+            self._stats.pop(split, None)
+        self._check_writable(split)
         if self._default_prediction is not None:
             raise ValueError("set_stats_from_counts assumes no default prediction (the rule abstains elsewhere)")
         self._stats[split] = ModelStats(
@@ -1209,33 +1295,32 @@ class SingleRule(RuleSet):
         return _carry_provenance(self, FlatRuleSet([], default_prediction=self._default_prediction))
 
     def remap(self, new_dataspec: DataSpec) -> "SingleRule":
-        return _carry_provenance(self, SingleRule(
-            self._rule.remap(new_dataspec), default_prediction=self._default_prediction))
+        """The rule rebuilt against `new_dataspec` (`Rule.remap`), keeping
+        its stats: the rebased rule covers exactly the same rows."""
+        rebased = SingleRule(self._rule.remap(new_dataspec), default_prediction=self._default_prediction)
+        rebased._stats = dict(self._stats)
+        return _carry_provenance(self, rebased)
 
     def to_string(
-        self, fmt: Optional[str] = None, ascii: bool = False,
-        data: Optional[DataRepresentation] = None,
+        self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Renders the wrapped `Rule` directly -- a lone rule needs no
         per-target grouping or DNF collapsing (see the class docstring
-        for why this can't just inherit `RuleSet.to_string`). `data`,
-        `show_distribution` and `show_classes` decorate with this rule's
-        own coverage the same way as `RuleSet.to_string` -- see there.
-        Left at their `None` defaults, this is always the plain `(tp/fp)`
-        form here: `SingleRule.resolution` is `Exclusive`, never a
-        `Combine`, so there's no distribution-scored disagreement to
+        for why this can't just inherit `RuleSet.to_string`).
+        `show_stats`, `show_distribution` and `show_classes` decorate with
+        this rule's own frozen stats the same way as `RuleSet.to_string`
+        -- see there. Left at their defaults, this is always the plain
+        `(tp/fp)` form here: `SingleRule.resolution` is `Exclusive`, never
+        a `Combine`, so there's no distribution-scored disagreement to
         make visible in the first place (there's only ever one rule);
         `show_distribution=True`/`show_classes=True` can still force the
-        vector/legend on, since the raw per-class counts are always
-        computable from `data.y` regardless."""
+        vector/legend on."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         text = self._rule.to_string(fmt=resolved, ascii=ascii)
-        if data is None:
+        coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
+        if id(self) not in coverage:
             return text
-        coverage = _rule_coverage_dicts(self, data)
-        class_order = _distribution_class_order(self, data, show_distribution)
-        legend_classes = _legend_class_order(class_order, data, show_classes)
         decorated = _decorate(self._rule, text, coverage.get(id(self)), class_order)
         return f"{_class_legend(legend_classes)}\n\n{decorated}" if legend_classes else decorated
 
@@ -1714,8 +1799,7 @@ class EnsembleModel(CompositeModel):
         return out
 
     def to_string(
-        self, fmt: Optional[str] = None, ascii: bool = False,
-        data: Optional[DataRepresentation] = None,
+        self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render every member in turn, headed by ``% member <k>``
@@ -1727,8 +1811,8 @@ class EnsembleModel(CompositeModel):
         section, and a top-level ``% classes: [...]`` header naming this
         model's own `labels` (see `_container_legend`).
 
-        `data`, `show_distribution` and `show_classes` are passed through
-        unchanged to every member's own `to_string` -- each member covers
+        `show_stats`, `show_distribution` and `show_classes` are passed
+        through unchanged to every member's own `to_string` -- each member covers
         the same overall multiclass problem (unlike `PairwiseModel`'s
         pairwise sub-models, which each only ever see two of the
         classes), so there's no need to force anything member-side; only
@@ -1738,11 +1822,12 @@ class EnsembleModel(CompositeModel):
             header = f"% member {k}"
             if self.member_weights is not None:
                 header += f"  (weight: {self.member_weights[k]:g})"
-            body = member.to_string(fmt=fmt, ascii=ascii, data=data,
+            body = member.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                     show_distribution=show_distribution, show_classes=show_classes)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            sections.append(f"% default\n{self.default_rule.to_string(fmt=fmt, ascii=ascii)}")
+            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)
+            sections.append(f"% default\n{default_text}")
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered
@@ -1984,8 +2069,7 @@ class PairwiseModel(CompositeModel):
         return out
 
     def to_string(
-        self, fmt: Optional[str] = None, ascii: bool = False,
-        data: Optional[DataRepresentation] = None,
+        self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
     ) -> str:
         """Render every pair's sub-model in turn, headed by ``% pair: a
@@ -2008,22 +2092,22 @@ class PairwiseModel(CompositeModel):
         `default_prediction`), so without this a reader may have no way
         to tell which two classes a given pair is even about. Pass
         `show_classes=False` to suppress this (and the top-level header)
-        if that's not wanted. `data`, if given and labelled, is narrowed
-        to just each pair's own two classes' rows before being handed to
-        that sub-model -- so a forced per-class distribution/legend
-        reflects that pair, not the full label set."""
+        if that's not wanted. Each sub-model's rules carry stats measured
+        on that pair's own two classes' rows (where they were fitted), so
+        a forced per-class distribution/legend reflects that pair, not the
+        full label set."""
         per_pair_show_classes = True if show_classes is None else show_classes
         sections = []
         for k, (a, b, sub) in enumerate(self._triples):
-            pair_data = data.select_rows(np.isin(data.y, [a, b])) if data is not None and data.y is not None else data
             header = f"% pair: {a} vs {b}"
             if getattr(self.combiner, "weight_source", None) == "member" and self.member_weights is not None:
                 header += f"  (member weight: {self.member_weights[k]:g})"
-            body = sub.to_string(fmt=fmt, ascii=ascii, data=pair_data,
+            body = sub.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                  show_distribution=show_distribution, show_classes=per_pair_show_classes)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            sections.append(f"% default\n{self.default_rule.to_string(fmt=fmt, ascii=ascii)}")
+            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)
+            sections.append(f"% default\n{default_text}")
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
         return f"{_class_legend(legend_classes)}\n\n{rendered}" if legend_classes else rendered

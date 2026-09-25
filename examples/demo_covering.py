@@ -65,7 +65,7 @@ from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.evaluation import CoverageSpace, rule_refinement_path
 from pyrulearn.heuristics import Correlation, RuleStats
 from pyrulearn.learners.seco import PFossil
-from pyrulearn.models import DecisionList
+from pyrulearn.models import DecisionList, annotate_rules
 from pyrulearn.pruning import ThresholdPrePruning
 from pyrulearn.rule import Rule
 
@@ -416,16 +416,14 @@ def render_markdown(data, attempts, rules, heuristic, criterion, target_class, n
             ]
         if attempt["rule"] is not None:
             accepted_so_far.append(attempt["rule"])
-            # the model so far, as an actual DecisionList -- its own
-            # to_string(data=...) reports each rule's *unique* (first-match)
-            # tp/fp under decision-list order, not each rule's raw coverage
-            # in isolation, so rules that would otherwise overlap don't get
-            # double-counted
-            model_so_far = DecisionList(accepted_so_far)
+            # the model so far, as an actual DecisionList, its rules annotated
+            # on the training data -- to_string prints each rule's stored
+            # (tp/fp), its raw coverage of that data
+            model_so_far = DecisionList(annotate_rules(accepted_so_far, data))
             lines += [
                 "", f"**Rule {rule_idx + 1} accepted:** `{attempt['rule'].to_string('prolog')}`", "",
                 f"Model so far ({len(accepted_so_far)} rule{'s' if len(accepted_so_far) != 1 else ''}):", "",
-                "```prolog", model_so_far.to_string(data=data), "```",
+                "```prolog", model_so_far.to_string(), "```",
             ]
         else:
             lines += [
