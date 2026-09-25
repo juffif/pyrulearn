@@ -5,7 +5,7 @@ import pytest
 from pyrulearn.data import DataSpec
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.models import (
-    ConceptCascade, ConceptModel, ConceptSet, DisjointRuleSet, FlatRuleSet, PairwiseModel,
+    ConceptCascade, ConceptModel, ConceptSet, DecisionList, DisjointRuleSet, FlatRuleSet, PairwiseModel,
     annotate_rules,
 )
 from pyrulearn.combiners import HeuristicMaxCombiner, MicroVoteCombiner
@@ -983,8 +983,8 @@ def test_seco_seed_covering_is_one_loop_over_all_classes():
     ds = neg_spec([f"f{i}" for i in range(5)])
     rep = BooleanDataRepresentation(ds, neg_X(raw), y)
 
-    m = AQR(random_state=0).fit(rep)                       # AQR default is model=FlatRuleSet
-    assert type(m) is FlatRuleSet and m.combiner == "list"
+    m = AQR(random_state=0).fit(rep)                       # AQR default is model=DecisionList
+    assert type(m) is DecisionList
     assert {r.target for r in m.rules} == {"x", "y", "z"}  # one loop, rules for every class
     assert m.default_prediction.constant_target == "x"     # training majority
     assert np.mean(np.asarray(m.predict(rep)) == y) > 0.9
@@ -994,10 +994,16 @@ def test_seco_seed_covering_is_one_loop_over_all_classes():
     other = AQR(random_state=1).fit(rep)
     assert [r.pos for r in m.rules] != [r.pos for r in other.rules]
 
+    # model=FlatRuleSet: the same rules, resolved by learn order -- same predictions
+    fs = AQR(random_state=0).fit(rep, model=FlatRuleSet)
+    assert type(fs) is FlatRuleSet and fs.combiner == "list"
+    assert [r.pos for r in fs.rules] == [r.pos for r in m.rules]
+    assert list(fs.predict(rep)) == list(m.predict(rep))
+
     # also available (non-default) on the other SeCo learners
     cn2 = CN2(random_state=0).fit(rep, model=FlatRuleSet)
     assert type(cn2) is FlatRuleSet and {r.target for r in cn2.rules} <= {"x", "y", "z"}
-    print("model=FlatRuleSet / AQR default: one seed-covering loop over all classes: OK")
+    print("model=DecisionList / AQR default: one seed-covering loop over all classes: OK")
 
 
 def test_seco_rejects_unconditional_rule_even_straight_from_search():

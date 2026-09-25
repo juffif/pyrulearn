@@ -476,7 +476,10 @@ family:
   treatment: consecutive clauses sharing a head already read as a
   disjunction, so each rule just stays its own clause under the header.
   `"pattern"`/`"conditions"` have no natural merged form, so rules are
-  listed under the label header unmerged.
+  listed under the label header unmerged. The exception is a rule set
+  whose own combiner is `"list"` (first covering rule wins) and whose
+  rules have more than one head: list order decides its predictions, so
+  it prints like a `DecisionList`, in that order.
 - `RuleList` (`DecisionList`/`ConceptCascade`) doesn't group by label --
   order, not shared target, is what decision-list semantics depend on.
   `fmt="logic"` renders as if/elif/else pseudocode (order = priority,
@@ -1194,10 +1197,10 @@ The `SeCo` family reaches for this itself: `fit(data)` with no
 `target_class` and no `model=` builds each learner's own multi-class
 default (`_MULTICLASS_DEFAULT`) — `ConceptSet` (one-vs-rest) for
 `CN2`/`PFoil`/`PFossil`/`Pypper`, so `CN2().fit(iris_rep)` just works;
-`FlatRuleSet` for `AQR` (one seed-covering loop over all classes at
+`DecisionList` for `AQR` (one seed-covering loop over all classes at
 once, each rule seeded on a random uncovered example and headed with
 its own label — AQ's multi-class covering, the same per-example seeding
-`PyLORD` does). Pass `model=ConceptCascade`/`PairwiseModel` explicitly
+`PyLORD` does; rules stay in learn order and the first match wins). Pass `model=ConceptCascade`/`PairwiseModel` explicitly
 for the other decompositions on any of them.
 
 ## Interfacing with external learners

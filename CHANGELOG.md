@@ -5,6 +5,17 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Changed (may change results or printouts)
+
+- `AQR().fit(data)` now returns a `DecisionList` instead of a
+  `FlatRuleSet` resolved by `combiner="list"`. Predictions are identical
+  (the first covering rule in learn order wins either way), but the
+  model now prints in that deciding order. `fit(data, model=FlatRuleSet)`
+  still gives the list-resolved rule set, e.g. to compare combiners.
+- A rule set whose own combiner is `"list"` and whose rules have more
+  than one head now prints in list order, like a `DecisionList`, instead
+  of grouped by label, which hid the order that decides.
+
 ### Changed (may break imports)
 
 - `pyrulearn.attributes` moved to `pyrulearn.data.attributes`, next to

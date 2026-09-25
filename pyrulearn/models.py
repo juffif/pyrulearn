@@ -69,7 +69,7 @@ from typing import (
 
 import numpy as np
 
-from .combiners import DistributionCombiner, RuleCombiner, _resolve_combiner, _rule_stats
+from .combiners import DistributionCombiner, ListCombiner, RuleCombiner, _resolve_combiner, _rule_stats
 from .data import DataRepresentation
 from .data import DataSpec
 from .rule import Rule
@@ -950,6 +950,15 @@ class RuleSet(RuleModel):
     def _unique_mask(self, cov: np.ndarray) -> np.ndarray:
         return self.resolution.unique_mask(cov, self.rules)
 
+    def _resolved_by_list_order(self) -> bool:
+        """Whether list order decides this set's predictions: its own
+        combiner is `ListCombiner` (``"list"``) *and* its rules have more
+        than one head (with a single head, e.g. a `ConceptModel`, any
+        covering rule gives the same label, so order can't matter)."""
+        res = self.resolution
+        return (isinstance(res, Combine) and isinstance(_resolve_combiner(res.combiner), ListCombiner)
+                and len({r.target for r in self.rules}) > 1)
+
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False,
         data: Optional[DataRepresentation] = None,
@@ -980,7 +989,15 @@ class RuleSet(RuleModel):
         off, regardless of whether any rule is actually showing a vector
         (e.g. naming a model's relevant classes as a label on its own) --
         see `_distribution_class_order`/`_legend_class_order`.
+
+        A set resolved by list order (its own combiner ``"list"``, rules
+        with more than one head) prints like a `DecisionList` instead --
+        in list order, ungrouped -- since that order is what decides its
+        predictions and grouping by label would hide it.
         """
+        if self._resolved_by_list_order():
+            return RuleList.to_string(self, fmt=fmt, ascii=ascii, data=data,
+                                      show_distribution=show_distribution, show_classes=show_classes)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage = _rule_coverage_dicts(self, data) if data is not None else {}
         class_order = _distribution_class_order(self, data, show_distribution)

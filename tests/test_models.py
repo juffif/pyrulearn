@@ -801,6 +801,26 @@ def test_decision_list_to_string_sequential_and_if_elif_else():
     assert plines[3] == "'C'(X) :- true."
 
 
+def test_list_resolved_rule_set_prints_in_its_deciding_order():
+    # combiner="list": the first covering rule in list order decides, so
+    # printing grouped by label would hide what decides -- it prints like
+    # the equivalent DecisionList instead (and predicts like it)
+    ds = DataSpec(["a", "b"])
+    r1 = Rule.from_pos_neg(pos=[0], target="Z", dataspec=ds)
+    r2 = Rule.from_pos_neg(pos=[1], target="A", dataspec=ds)
+    fs = FlatRuleSet([r1, r2], default_prediction="C", combiner="list")
+    dl = DecisionList([r1, r2], default_prediction="C")
+    for fmt in ("logic", "prolog"):
+        assert fs.to_string(fmt=fmt) == dl.to_string(fmt=fmt)
+    assert "% class:" not in fs.to_string(fmt="prolog")
+    rep = BooleanDataRepresentation(ds, np.array([[1, 1], [0, 1], [0, 0]], dtype=bool))
+    assert list(fs.predict(rep)) == list(dl.predict(rep)) == ["Z", "A", "C"]
+    # other combiners, and a single-head set, still print grouped by label
+    assert "% class:" in FlatRuleSet([r1, r2], default_prediction="C").to_string(fmt="prolog")
+    one_head = FlatRuleSet([r1, Rule.from_pos_neg(pos=[1], target="Z", dataspec=ds)], combiner="list")
+    assert "% class: Z" in one_head.to_string(fmt="prolog")
+
+
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     r = Rule.from_pos_neg(pos=[0], target="a", n_features=2)
     sr = SingleRule(r)

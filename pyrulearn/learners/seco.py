@@ -61,10 +61,12 @@ for the SeCo family):
   PairwiseModel` -- one-vs-rest / ordered peeling / round robin, via
   `DecomposingLearner`; `pyrulearn.learners.multiclass` wraps these as thin sugar)
   fitting copies of itself with `target_class` set; or
-- `model=FlatRuleSet` (`AQR`'s own `_MULTICLASS_DEFAULT`):
+- `model=DecisionList` (`AQR`'s own `_MULTICLASS_DEFAULT`):
   `SeCo._seed_covering_fit`, one covering loop over all classes at once,
   each rule seeded on a random uncovered example and headed with that
-  example's own label -- AQ's multi-class covering.
+  example's own label -- AQ's multi-class covering, rules kept in learn
+  order (`model=FlatRuleSet` gives the same rules resolved by that order,
+  `combiner="list"`).
 
 A single global "best rule for any class" search (the early-CN2 entropy
 heuristic) is a different, deferred thing; when built it would also wrap
@@ -90,7 +92,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from ..models import (
-    ConceptCascade, ConceptModel, ConceptSet, FlatRuleSet, MajorityClass, SingleRule,
+    ConceptCascade, ConceptModel, ConceptSet, DecisionList, FlatRuleSet, MajorityClass, SingleRule,
     annotate_default_rule, annotate_rules,
 )
 from ..heuristics import (
@@ -1034,7 +1036,7 @@ class SingleRuleLearner:
         straight from `RuleSearch.search` -- post-processing is skipped).
 
         `space_init` overrides `self.space_init` for this call only --
-        used by `SeCo`'s `model=FlatRuleSet` seed-covering loop
+        used by `SeCo`'s `model=DecisionList` seed-covering loop
         (`_seed_covering_fit`) to seed each rule on a specific chosen
         example."""
         si = space_init if space_init is not None else self.space_init
@@ -1313,19 +1315,21 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
       then comes from `target_class`).
     - `fit(data)` with no `target_class` -- the family multi-class default
       (`_MULTICLASS_DEFAULT`): `ConceptSet` (one-vs-rest) for the SeCo
-      family, `FlatRuleSet` (one seed-covering loop) for `AQR`.
+      family, `DecisionList` (one seed-covering loop) for `AQR`.
     - `fit(data, model=ConceptSet | ConceptCascade | PairwiseModel)` --
       one-vs-rest / ordered peeling / round robin, via `DecomposingLearner`
       (each fits per-class copies through the covering loop).
-    - `fit(data, model=FlatRuleSet)` -- `_seed_covering_fit`: one covering
+    - `fit(data, model=DecisionList)` -- `_seed_covering_fit`: one covering
       loop over all classes at once (random uncovered example -> its label
-      as the head -> learn -> remove -> repeat; AQ's multi-class covering).
-    - `model=DecisionList` reaches via the `FlatRuleSet -> DecisionList`
-      converter.
+      as the head -> learn -> remove -> repeat; AQ's multi-class covering),
+      rules in learn order, first match wins.
+    - `fit(data, model=FlatRuleSet)` -- the same rules, as a rule set
+      resolved by learn order (`combiner="list"`), e.g. to compare other
+      combiners on them.
 
     `SeCo` takes no default-prediction or combiner arguments -- it sets
-    sensible ones on the result (`MajorityClass(data)` fallback; `"max"` /
-    ``"list"`` combiner) and leaves the rest to the caller. Reassign
+    sensible ones on the result (`MajorityClass(data)` fallback; `"max"`
+    combiner for a `ConceptSet`) and leaves the rest to the caller. Reassign
     either on the returned model.
 
     Learned rules carry no declarative weight -- `combiner = "max"`
@@ -1338,13 +1342,13 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     covering loop is done, reworking the whole class's rules before they
     become a `FlatRuleSet` -- RIPPER's optimization phase. Only in the
     binary path (`target_class` set, or a per-class stage of a decomposition);
-    ignored by `model=FlatRuleSet` seed-covering, which has no single
-    target class.
+    ignored by the all-classes seed covering (`model=DecisionList` /
+    `FlatRuleSet`), which has no single target class.
     """
 
     #: model type `fit(data)` builds with no `model=` and no `target_class`.
     #: `ConceptSet` (one-vs-rest) for the SeCo family; `AQR` overrides to
-    #: `FlatRuleSet` (one seed-covering loop).
+    #: `DecisionList` (one seed-covering loop).
     _MULTICLASS_DEFAULT: type = ConceptSet
 
     def __init__(
@@ -1365,7 +1369,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
 
     def _default_model(self, data: BooleanDataRepresentation) -> type:
         """`fit(data)` with no `model=`: one concept (`target_class` set)
-        or the family's multi-class default (`ConceptSet`; `FlatRuleSet`
+        or the family's multi-class default (`ConceptSet`; `DecisionList`
         for `AQR`)."""
         return ConceptModel if self.target_class is not None else self._MULTICLASS_DEFAULT
 
@@ -1376,8 +1380,8 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         rest) as the fallback."""
         return self._fit_covering(data, label=positive, fallback=negative)
 
-    def _seed_covering_fit(self, data: BooleanDataRepresentation) -> FlatRuleSet:
-        """`model=FlatRuleSet`: one separate-and-conquer loop over *all*
+    def _seed_covering_fit(self, data: BooleanDataRepresentation) -> DecisionList:
+        """`model=DecisionList`: one separate-and-conquer loop over *all*
         classes at once. Repeatedly pick a uniformly random still-uncovered
         example, take its own label as the rule head, learn the best rule
         for it (seeded on that example, `SeedExample(strategy="index")`),
@@ -1411,11 +1415,11 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
 
         # each rule was consistent *within its covering scope* but can pick up
         # negatives earlier rules had already removed, so two classes' rules
-        # can overlap on a later example -- `combiner="list"` breaks that by
-        # learn order (the big, clean rules come first in a covering loop),
-        # the honest reading of a sequential-covering result.
+        # can overlap on a later example -- first match in learn order breaks
+        # that (the big, clean rules come first in a covering loop), the
+        # honest reading of a sequential-covering result: a decision list.
         rules = annotate_rules(rules, data)
-        model = FlatRuleSet(rules, default_prediction=MajorityClass(data), combiner="list")
+        model = DecisionList(rules, default_prediction=MajorityClass(data))
         return annotate_default_rule(model, data)
 
     def _covering_loop(self, data: BooleanDataRepresentation, target: Any) -> List[Rule]:
@@ -1488,11 +1492,22 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         sr.stats(data)
         return sr
 
-    @produces(FlatRuleSet)
-    def _fit_seed_covering(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
-        """`fit(data, model=FlatRuleSet)`: one AQ-style covering loop over
-        all classes at once (`_seed_covering_fit`)."""
+    @produces(DecisionList)
+    def _fit_seed_covering(self, data: BooleanDataRepresentation, **kw) -> DecisionList:
+        """`fit(data, model=DecisionList)`: one AQ-style covering loop over
+        all classes at once (`_seed_covering_fit`), rules in learn order,
+        first match wins."""
         return self._seed_covering_fit(data)
+
+    @produces(FlatRuleSet)
+    def _fit_seed_covering_set(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
+        """`fit(data, model=FlatRuleSet)`: the same rules as
+        `model=DecisionList`, as a rule set resolved by learn order
+        (`combiner="list"`, so it predicts identically) -- e.g. to compare
+        other combiners on the same rules via `predict(combiner=...)`."""
+        dl = self._seed_covering_fit(data)
+        model = FlatRuleSet(dl.rules, default_prediction=dl.default_prediction, combiner="list")
+        return annotate_default_rule(model, data)
 
 
 class CN2(SeCo):
@@ -1615,8 +1630,9 @@ class CN2(SeCo):
         example class distribution and predicting the largest total --
         `pyrulearn.combiners.MicroVoteCombiner`. Only this one producer is
         overridden: `model=ConceptModel` (one concept, nothing to
-        reconcile) and `model=FlatRuleSet` (AQ-style seed covering, not
-        CN2's own induction shape) keep the family's `"max"` default."""
+        reconcile) and the AQ-style seed covering (`model=DecisionList` /
+        `FlatRuleSet`, not CN2's own induction shape; resolved by learn
+        order) are unaffected."""
         model = super()._fit_one_vs_rest(data, **kw)
         model.combiner = MicroVoteCombiner()
         return model
@@ -1684,19 +1700,21 @@ class AQR(SeCo):
     default to `NoSplit`/`NoPostProcessing` -- AQR (in the 1989 paper)
     has neither a grow/prune split nor rule truncation.
 
-    **Multi-class:** `AQR`'s `fit(data)` default is `model=FlatRuleSet` --
+    **Multi-class:** `AQR`'s `fit(data)` default is `model=DecisionList` --
     one covering loop over all classes (`SeCo._seed_covering_fit`): pick a
     random uncovered example, take its label as the head, learn a
     consistent rule seeded on it, remove what it covers, repeat. That's
-    AQ's own multi-class covering; consistent per-class rules never
-    conflict, so the random seed order is immaterial. Pass
+    AQ's own multi-class covering. A rule is consistent only within its
+    own covering scope, so rules of different classes can still overlap
+    on examples an earlier rule had already removed; the list resolves
+    that by learn order, and prints in that order. Pass
     `model=ConceptSet` / `ConceptCascade` / `PairwiseModel` for a
     decomposition instead, or `model=ConceptModel, label=...` (or a
     `target_class`) for one binary problem. `random_state` seeds the
     example picks.
     """
 
-    _MULTICLASS_DEFAULT = FlatRuleSet
+    _MULTICLASS_DEFAULT = DecisionList
 
     def __init__(
         self,
