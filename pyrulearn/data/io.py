@@ -12,7 +12,7 @@ its Boolean feature matrix), in three ways:
    `DataSpec` doesn't know about.
 2. **Read with a given `DataSpec`** (pass `dataspec=` to `read_arff`/
    `read_csv`) -- binarize the file's raw values against the `DataSpec`'s
-   existing `FeatureSpec`s (via `pyrulearn.attributes.evaluate_feature`).
+   existing `FeatureSpec`s (via `pyrulearn.data.attributes.evaluate_feature`).
 3. **Read and infer the `DataSpec`** (`dataspec=None`, the default) --
    build one attribute per column (nominal/numeric) from the file's own
    declared types (ARFF) or a cardinality-based heuristic (CSV), then
@@ -35,7 +35,7 @@ already has thresholds) skips it entirely, even though scikit-learn
 itself is a hard dependency of `pyrulearn` overall (via
 `pyrulearn.interfaces.sklearn.RuleSetClassifier`).
 
-Missing raw values are handled per `pyrulearn.attributes.MissingStrategy`
+Missing raw values are handled per `pyrulearn.data.attributes.MissingStrategy`
 (see `binarize`) -- resolved from an explicit `missing_strategy=`
 argument, else the target `DataSpec`'s own `missing_strategy`, else
 `DataSpec.DEFAULT_MISSING_STRATEGY` (``NEVER_COVERS``). Set-valued,
@@ -54,7 +54,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from ..attributes import AttributeType, MissingStrategy, evaluate_feature
+from .attributes import AttributeType, MissingStrategy, evaluate_feature
 from .spec import DataSpec, DataSpecBuilder
 from .representation import BooleanDataRepresentation
 
@@ -208,13 +208,13 @@ def binarize(
     random_state: Optional[int] = None,
 ) -> np.ndarray:
     """Evaluate every entry of `dataspec.feature_specs` against `df`'s
-    raw values (via `pyrulearn.attributes.evaluate_feature`), in
+    raw values (via `pyrulearn.data.attributes.evaluate_feature`), in
     `feature_names` order, producing the Boolean matrix ready for
     `pyrulearn.data.BooleanDataRepresentation`.
 
     `missing_strategy` resolves (explicit argument > `dataspec`'s own
     `missing_strategy` > `DataSpec.DEFAULT_MISSING_STRATEGY`) to one of
-    `pyrulearn.attributes.MissingStrategy`, applied per source column
+    `pyrulearn.data.attributes.MissingStrategy`, applied per source column
     (an attribute's `missing_values`, if declared, are also recognized
     as missing alongside real `None`/NaN):
 

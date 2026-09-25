@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from pyrulearn.data import DataSpec, DataSpecBuilder
-from pyrulearn.attributes import (
+from pyrulearn.data.attributes import (
     Attribute, AttributeType, ExactlyOne, Implies, MutuallyExclusive, NominalGroup,
     NumericGroup, ThresholdChain, evaluate_feature, FeatureSpec,
 )

@@ -20,7 +20,7 @@ relational) its features derive from, via `feature_specs` -- and the
 **constraints** those attributes imply among their derived features
 (mutual exclusion for nominal equality tests, monotonic chains for
 numeric threshold tests, sibling exclusion + upward implication for
-hierarchy nodes; see `pyrulearn.attributes`). Building a DataSpec this
+hierarchy nodes; see `pyrulearn.data.attributes`). Building a DataSpec this
 way is what lets a `Rule` ask whether it's internally consistent, or what
 it implies beyond its explicit conditions -- see `DataSpec.propagate` and
 `Rule.is_consistent` / `Rule.implied_conditions`.
@@ -39,7 +39,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from ..attributes import (
+from .attributes import (
     Attribute,
     AttributeType,
     Constraint,

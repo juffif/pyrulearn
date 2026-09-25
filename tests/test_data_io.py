@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from pyrulearn.attributes import FeatureSpec, MissingStrategy, evaluate_feature
+from pyrulearn.data.attributes import FeatureSpec, MissingStrategy, evaluate_feature
 from pyrulearn.data import DataSpec, DataSpecBuilder
 from pyrulearn.data.io import binarize, build_dataspec, read_arff, read_csv, validate_dataspec, write_arff, write_csv
 from pyrulearn.rule import Rule
@@ -434,7 +434,7 @@ def test_write_csv_wrong_feature_names_length_raises():
 
 
 def test_build_dataspec_makes_two_valued_columns_binary():
-    from pyrulearn.attributes import AttributeType
+    from pyrulearn.data.attributes import AttributeType
     df = pd.DataFrame({
         "sex": ["m", "f", "m", "f"],
         "c": ["a", "b", "c", "a"],
@@ -461,7 +461,7 @@ female,?,p
 
 
 def test_read_arff_treats_question_mark_as_missing_and_uses_the_header_domain():
-    from pyrulearn.attributes import AttributeType
+    from pyrulearn.data.attributes import AttributeType
     rep = read_arff(io.StringIO(ARFF_WITH_MISSING), target="y")
     ds = rep.spec
     assert ds.attributes["sex"].type == AttributeType.BINARY

@@ -14,7 +14,7 @@ Quick tour
 >>> r.covers_data(rep)
 array([ True,  True, False])
 
-See also: ``pyrulearn.attributes`` (typed nominal/numeric/set/hierarchical/
+See also: ``pyrulearn.data.attributes`` (typed nominal/numeric/set/hierarchical/
 relational attributes and the constraints they imply),
 ``pyrulearn.data`` (``DataRepresentation``/
 ``BooleanDataRepresentation`` -- the actual data bound to a ``DataSpec``,

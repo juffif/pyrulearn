@@ -91,7 +91,7 @@ import subprocess
 import tempfile
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from ..attributes import AttributeType
+from ..data.attributes import AttributeType
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import RelabelingExternalLearner
 from ..models import FlatRuleSet, MajorityClass

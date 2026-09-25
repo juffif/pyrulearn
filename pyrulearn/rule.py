@@ -48,7 +48,7 @@ Beyond that bitmask core, `Rule` adds:
   resolution, so a rule's configured format is also what you see printed.
 - **constraint-aware consistency checks** (`is_consistent`,
   `implied_conditions`) when the `DataSpec` carries typed attributes (see
-  `pyrulearn.attributes`) -- e.g. whether a rule is self-contradictory
+  `pyrulearn.data.attributes`) -- e.g. whether a rule is self-contradictory
   (`color=red` and `color=blue`), or what it implies beyond its explicit
   conditions.
 
@@ -65,7 +65,7 @@ from typing import Any, FrozenSet, List, NamedTuple, Optional, Sequence, Tuple, 
 
 import numpy as np
 
-from .attributes import AttributeType, FeatureSpec, FeatureValues
+from .data.attributes import AttributeType, FeatureSpec, FeatureValues
 from .data import DataSpec
 from .data import BooleanDataRepresentation, DataRepresentation
 

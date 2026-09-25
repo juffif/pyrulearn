@@ -5,6 +5,14 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Changed (may break imports)
+
+- `pyrulearn.attributes` moved to `pyrulearn.data.attributes`, next to
+  `data.spec`, which builds a `DataSpec` from it: attribute types,
+  `FeatureSpec`, the feature constraints, `evaluate_feature` and
+  `MissingStrategy` describe the feature space, not rules. The old module
+  path no longer exists.
+
 ### Added
 
 - Binary attributes: `AttributeType.BINARY` and

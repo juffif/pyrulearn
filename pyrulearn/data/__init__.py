@@ -4,6 +4,10 @@ pyrulearn.data
 
 Everything about representing data, split by concern:
 
+- `pyrulearn.data.attributes` -- the building blocks of a feature space:
+  typed attributes (`AttributeType`, `Attribute`), the Boolean features
+  they derive (`FeatureSpec`, `evaluate_feature`), the constraints among
+  those features, and `MissingStrategy`.
 - `pyrulearn.data.spec` -- `DataSpec`, a pure feature-space specification
   (names, typed attributes, constraints, missing-value policy), no data.
 - `pyrulearn.data.representation` -- `DataRepresentation` (ABC) and its

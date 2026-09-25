@@ -4,7 +4,7 @@ side of the data-level negation toggle."""
 import numpy as np
 import pytest
 
-from pyrulearn.attributes import ExactlyOne, NominalGroup, ThresholdChain
+from pyrulearn.data.attributes import ExactlyOne, NominalGroup, ThresholdChain
 from pyrulearn.data import DataSpec, DataSpecBuilder
 
 

@@ -1,6 +1,6 @@
 """
-pyrulearn.attributes
-=======================
+pyrulearn.data.attributes
+=========================
 
 Typed attributes (boolean / nominal / numeric / set / hierarchical /
 relational) and the machinery to:

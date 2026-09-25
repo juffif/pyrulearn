@@ -183,7 +183,7 @@ def test_merge_relational_identical_ok_and_mismatch_raises():
 
 
 def test_merge_binary_attributes():
-    from pyrulearn.attributes import AttributeType
+    from pyrulearn.data.attributes import AttributeType
 
     def spec(kind, values):
         b = DataSpecBuilder()

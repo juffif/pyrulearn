@@ -100,7 +100,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .base import ObjectRuleImporter, register_importer
-from ..attributes import AttributeType
+from ..data.attributes import AttributeType
 from ..data import DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import DecomposingLearner, ExternalRuleLearner

@@ -105,9 +105,8 @@ details.
 
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
-| `attributes` | Typed attributes (boolean, binary, nominal, numeric, set, hierarchical, relational) and the derived Boolean features they generate (`color=red`, `age>=30`, ...). Also the **constraints** among those features (`ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`), which record what is impossible or already implied. Rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**; they also let a rule check its own consistency. Also `evaluate_feature` (raw value to bit) and `MissingStrategy`. |
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
@@ -328,13 +327,13 @@ if only one of them occurs.
 Not yet handled: set-valued/hierarchical/relational attributes (ARFF/CSV
 headers can't declare them, so they're never inferred, and relational
 features can't be evaluated from raw data at all -- see
-`pyrulearn.attributes.evaluate_feature`).
+`pyrulearn.data.attributes.evaluate_feature`).
 
 ### Missing values
 
 A missing raw value (`None`/NaN, or an attribute's declared
 `missing_values`, e.g. `("?",)` for the common ARFF/UCI convention) is
-handled per `pyrulearn.attributes.MissingStrategy`, resolved (explicit
+handled per `pyrulearn.data.attributes.MissingStrategy`, resolved (explicit
 `binarize`/`read_arff`/`read_csv` argument > the `DataSpec`'s own
 `missing_strategy` > `DataSpec.DEFAULT_MISSING_STRATEGY`) the same way
 `Rule.to_string`'s `fmt` resolves:
