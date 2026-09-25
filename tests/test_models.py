@@ -841,6 +841,23 @@ def test_repr_identifies_and_print_renders_every_model():
     assert str(fs) == fs.to_string()
 
 
+def test_pretty_prolog_puts_a_rules_stats_above_its_head():
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
+    dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
+    assert dl.to_string(pretty=True, show_resolution=False).splitlines() == [
+        "% (1/0)", "pos(X) :-", "    f0(X),", "    f1(X).",
+        "% (1/1)", "neg(X) :-", "    f1(X).",
+        "% default", "% (2/1)", "neg(X) :- true.",
+    ]
+    assert str(rules[0]) == "pos(X) :- f0(X), f1(X).  % (1/0)"          # not pretty by default
+    assert rules[0].to_string(pretty=True) == "% (1/0)\npos(X) :-\n    f0(X),\n    f1(X)."
+    # logic format: pretty changes nothing yet
+    assert dl.to_string(fmt="logic", pretty=True) == dl.to_string(fmt="logic")
+
+
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     r = Rule.from_pos_neg(pos=[0], target="a", n_features=2)
     sr = SingleRule(r)

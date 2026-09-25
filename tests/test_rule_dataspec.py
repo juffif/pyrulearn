@@ -84,6 +84,18 @@ def test_prolog_format_quotes_non_atom_targets():
     print("prolog format atom quoting: OK")
 
 
+def test_pretty_prolog_puts_each_condition_on_its_own_indented_line():
+    from pyrulearn.rule import WeightedRule
+    ds = DataSpec(["f0", "f1"])
+    rule = Rule([0, 1], target="pos", dataspec=ds)
+    assert rule.to_string("prolog", pretty=True) == "pos(X) :-\n    f0(X),\n    f1(X)."
+    assert rule.to_string("prolog") == "pos(X) :- f0(X), f1(X)."          # default unchanged
+    assert Rule([], target="pos", dataspec=ds).to_string("prolog", pretty=True) == "pos(X) :- true."
+    weighted = WeightedRule([0], target="pos", dataspec=ds, weight=0.8)
+    assert weighted.to_string("prolog", pretty=True) == "0.8::pos(X) :-\n    f0(X)."
+    assert rule.to_string("logic", pretty=True) == rule.to_string("logic")  # other formats: unaffected
+
+
 def test_prolog_format_gives_each_condition_its_own_variable():
     # two conditions that each introduce a fresh Prolog variable (>=/</
     # !=) must NOT reuse the same variable name -- "age(X, V), V < 30,

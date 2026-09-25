@@ -902,6 +902,7 @@ def _container_legend(labels: Sequence[Any], show_classes: Optional[bool]) -> Tu
 
 def _decorate(
     rule: Rule, text: str, coverage: Optional[dict], class_order: Tuple[Any, ...] = (),
+    above: bool = False,
 ) -> str:
     """Wrap one rule's already-rendered `text` with a trailing coverage
     comment from `coverage` (one entry of `_rule_coverage_dicts`'s
@@ -917,28 +918,31 @@ def _decorate(
       ``% (n_covered)``.
 
     No weight decoration here -- `WeightedRule.to_string` already
-    renders its own weight natively, in every format."""
+    renders its own weight natively, in every format.
+
+    `above=True` (pretty-printed Prolog) puts the comment on its own line
+    above the rule's head instead of after it."""
     if coverage is None:
         return text
     by_class = coverage.get("n_covered_by_class")
     if class_order and by_class is not None:
         counts = ", ".join(str(by_class.get(c, 0)) for c in class_order)
-        suffix = f"  % [{counts}]"
+        comment = f"% [{counts}]"
     elif by_class is not None and rule.target is not None:
         tp = by_class.get(rule.target, 0)
         fp = coverage["n_covered"] - tp
-        suffix = f"  % ({tp}/{fp})"
+        comment = f"% ({tp}/{fp})"
     else:
-        suffix = f"  % ({coverage['n_covered']})"
-    return f"{text}{suffix}"
+        comment = f"% ({coverage['n_covered']})"
+    return f"{comment}\n{text}" if above else f"{text}  {comment}"
 
 
-def _bare(rule: Rule, fmt: str, ascii: bool) -> str:
+def _bare(rule: Rule, fmt: str, ascii: bool, pretty: bool = False) -> str:
     """One member rule's text without any coverage comment -- a container
     decorates its rules itself, once (a `SingleRule`'s own `to_string`
     would otherwise add its stats a second time)."""
     base = rule.rule if isinstance(rule, SingleRule) else rule
-    return base.to_string(fmt=fmt, ascii=ascii)
+    return base.to_string(fmt=fmt, ascii=ascii, pretty=pretty)
 
 
 def _conflict_resolution(model: "RuleModel") -> Optional[str]:
@@ -1029,7 +1033,7 @@ class RuleSet(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True,
+        show_resolution: bool = True, pretty: bool = False,
     ) -> str:
         """Render every rule, grouped by target label -- one section per
         label, headed by ``% class: <target>``. For "logic" format, each
@@ -1063,6 +1067,10 @@ class RuleSet(RuleModel):
         rules of different classes is decided (its combiner's `describe()`,
         e.g. ``max Laplace``); `show_resolution=False` omits it.
 
+        `pretty=True` prints each rule's conditions on separate indented
+        lines (`Rule.to_string`'s `pretty`), with a rule's coverage comment
+        on its own line above its head (Prolog; other formats unaffected).
+
         A set resolved by list order (its own combiner ``"list"``, rules
         with more than one head) prints like a `DecisionList` instead --
         in list order, ungrouped -- since that order is what decides its
@@ -1071,10 +1079,11 @@ class RuleSet(RuleModel):
         if self._resolved_by_list_order():
             return RuleList.to_string(self, fmt=fmt, ascii=ascii, show_stats=show_stats,
                                       show_distribution=show_distribution, show_classes=show_classes,
-                                      show_resolution=show_resolution)
+                                      show_resolution=show_resolution, pretty=pretty)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
+        above = pretty and resolved == "prolog"
+        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order, above)  # noqa: E731
         sections = []
         for t in sorted({r.target for r in self.rules}, key=_sortkey):
             group = [r for r in self.rules if r.target == t]
@@ -1082,10 +1091,10 @@ class RuleSet(RuleModel):
             if resolved == "logic":
                 body = "\n".join(_dnf_lines(group, ascii=ascii, dec=dec))
             else:
-                body = "\n".join(dec(r, _bare(r, resolved, ascii)) for r in group)
+                body = "\n".join(dec(r, _bare(r, resolved, ascii, pretty)) for r in group)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
+            default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii, pretty))
             sections.append(f"% default\n{default_text}")
         rendered = "\n\n".join(sections)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
@@ -1148,7 +1157,7 @@ class RuleList(RuleModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True,
+        show_resolution: bool = True, pretty: bool = False,
     ) -> str:
         """Render this decision list in order -- no label-grouping, since
         order (not shared target) is what decision-list semantics
@@ -1172,7 +1181,8 @@ class RuleList(RuleModel):
         happens to consult them."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order)  # noqa: E731
+        above = pretty and resolved == "prolog"
+        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order, above)  # noqa: E731
         rules = self.rules
         if resolved == "logic":
             arrow_sym = "->" if ascii else "→"
@@ -1186,9 +1196,9 @@ class RuleList(RuleModel):
                 lines.append(f"else {default_text}")
             rendered = "\n".join(lines)
         else:
-            lines = [dec(r, _bare(r, resolved, ascii)) for r in rules]
+            lines = [dec(r, _bare(r, resolved, ascii, pretty)) for r in rules]
             if self.default_rule is not None:
-                default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii))
+                default_text = dec(self.default_rule, _bare(self.default_rule, resolved, ascii, pretty))
                 lines.append(f"% default\n{default_text}")
             rendered = "\n".join(lines)
         return _assemble(rendered, legend_classes, _conflict_resolution(self) if show_resolution else None)
@@ -1336,7 +1346,7 @@ class SingleRule(RuleSet):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True,
+        show_resolution: bool = True, pretty: bool = False,
     ) -> str:
         """Renders the wrapped `Rule` directly -- a lone rule needs no
         per-target grouping or DNF collapsing (see the class docstring
@@ -1350,11 +1360,12 @@ class SingleRule(RuleSet):
         `show_distribution=True`/`show_classes=True` can still force the
         vector/legend on."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-        text = self._rule.to_string(fmt=resolved, ascii=ascii)
+        text = self._rule.to_string(fmt=resolved, ascii=ascii, pretty=pretty)
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
         if id(self) not in coverage:
             return text
-        decorated = _decorate(self._rule, text, coverage.get(id(self)), class_order)
+        decorated = _decorate(self._rule, text, coverage.get(id(self)), class_order,
+                              above=pretty and resolved == "prolog")
         return f"{_class_legend(legend_classes)}\n\n{decorated}" if legend_classes else decorated
 
 
@@ -1850,7 +1861,7 @@ class EnsembleModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True,
+        show_resolution: bool = True, pretty: bool = False,
     ) -> str:
         """Render every member in turn, headed by ``% member <k>``
         (``(weight: ...)`` appended where `member_weights` is set --
@@ -1876,10 +1887,10 @@ class EnsembleModel(CompositeModel):
                 header += f"  (weight: {self.member_weights[k]:g})"
             body = member.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                     show_distribution=show_distribution, show_classes=show_classes,
-                                    show_resolution=show_resolution)
+                                    show_resolution=show_resolution, pretty=pretty)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)
+            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats, pretty=pretty)
             sections.append(f"% default\n{default_text}")
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
@@ -2126,7 +2137,7 @@ class PairwiseModel(CompositeModel):
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,
         show_distribution: Optional[bool] = None, show_classes: Optional[bool] = None,
-        show_resolution: bool = True,
+        show_resolution: bool = True, pretty: bool = False,
     ) -> str:
         """Render every pair's sub-model in turn, headed by ``% pair: a
         vs b`` (``(member weight: ...)`` appended for `"accuracy_vote"`
@@ -2160,10 +2171,10 @@ class PairwiseModel(CompositeModel):
                 header += f"  (member weight: {self.member_weights[k]:g})"
             body = sub.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats,
                                  show_distribution=show_distribution, show_classes=per_pair_show_classes,
-                                 show_resolution=show_resolution)
+                                 show_resolution=show_resolution, pretty=pretty)
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
-            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats)
+            default_text = self.default_rule.to_string(fmt=fmt, ascii=ascii, show_stats=show_stats, pretty=pretty)
             sections.append(f"% default\n{default_text}")
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)

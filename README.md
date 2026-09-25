@@ -488,6 +488,21 @@ family:
   `RuleList` output, or the pseudocode's own `else` line for `RuleList` +
   `fmt="logic"`.
 
+`pretty=True` prints each rule's conditions on separate lines, indented
+under the head, with its coverage comment on a line of its own above the
+head (Prolog format; the other formats are unaffected so far):
+
+```prolog
+% (57/21)
+good(X) :-
+    checking_status(X, no_checking),
+    duration(X, le_24).
+```
+
+`print(model)` shows the default rendering (`to_string()`); a model's
+`repr` is a short identification, e.g. `FlatRuleSet(3 rules)` or
+`SingleRule(2 conditions)`.
+
 A `WeightedRule` prints its weight as part of the rule: in front of it in
 the default Prolog format (`0.8::head :- body`), and appended in the other
 formats (`[0.8]` for `"logic"`, `% 0.8` otherwise). Every rule that carries

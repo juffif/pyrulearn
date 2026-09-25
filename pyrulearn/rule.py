@@ -137,6 +137,8 @@ class Rule:
     #: Class-wide fallback for `to_string`'s `fmt` when neither an
     #: explicit `fmt=` argument nor a rule's own `default_fmt` is given.
     DEFAULT_FORMAT: str = "prolog"
+    #: indentation of each condition line in `to_string(..., pretty=True)`
+    PRETTY_INDENT: str = "    "
 
     def __init__(
         self,
@@ -640,7 +642,7 @@ class Rule:
         lits = [self._literal_str(l, ascii=ascii) for l in self._display_conditions()]
         return and_sym.join(lits) if lits else "TRUE"
 
-    def to_string(self, fmt: Optional[str] = None, ascii: bool = False) -> str:
+    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False) -> str:
         """Render this rule in one of several formats.
 
         fmt
@@ -660,6 +662,16 @@ class Rule:
         Condition order follows `self.ordered`: if True, the order the
         rule was constructed with is used; if False (default), a
         canonical ascending-feature-index order is used instead.
+
+        `pretty=True` puts each condition on its own line, indented by
+        `PRETTY_INDENT` under the head (Prolog; the other formats are
+        unaffected for now)::
+
+            target(X) :-
+                f0(X),
+                \\+f1(X).
+
+        A rule without conditions stays on one line.
         """
         if fmt is None:
             fmt = self.default_fmt if self.default_fmt is not None else Rule.DEFAULT_FORMAT
@@ -686,6 +698,9 @@ class Rule:
                     body_lits.append(self._prolog_literal(l, f"V{var_count}"))
                 else:
                     body_lits.append(self._prolog_literal(l))
+            if pretty and body_lits:
+                sep = ",\n" + Rule.PRETTY_INDENT
+                return f"{head_pred}(X) :-\n{Rule.PRETTY_INDENT}{sep.join(body_lits)}."
             body = ", ".join(body_lits) if body_lits else "true"
             return f"{head_pred}(X) :- {body}."
 
@@ -812,8 +827,8 @@ class WeightedRule(Rule):
             weight=self.weight,
         )
 
-    def to_string(self, fmt: Optional[str] = None, ascii: bool = False) -> str:
-        base = super().to_string(fmt=fmt, ascii=ascii)
+    def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False) -> str:
+        base = super().to_string(fmt=fmt, ascii=ascii, pretty=pretty)
         resolved = fmt if fmt is not None else (self.default_fmt or Rule.DEFAULT_FORMAT)
         w = _fmt_weight(self.weight)
         if resolved == "prolog":
