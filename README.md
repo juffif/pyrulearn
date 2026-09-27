@@ -104,7 +104,7 @@ random forest — and returns its own, much smaller model.
 | **J48** (Weka's C4.5) | `weka.WekaJ48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
 | **LORD** (reference implementation) | `lord.JavaLord`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
 | **CBA** | `pyarc.PArcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
-| **BOOMER** (binary) | `boomer.MlrlBoomer`, `BoomerImporter` | `mlrl-boomer` | Rapp et al. 2020 |
+| **BOOMER** (binary) | `boomer.MLRLBoomer`, `BoomerImporter` | `mlrl-boomer` | Rapp et al. 2020 |
 | **Optimal rule boosting** (reference) | `realkd.RKDRuleBoosting`, `RealkdImporter` | `realkd` | Boley et al. 2021 |
 
 Many of the ideas behind this library, such as the separate-and-conquer
@@ -1515,8 +1515,8 @@ the tool, so results tables show which implementation produced them: `SKL`
 (scikit-learn: `SKLDecisionTree`, `SKLRandomForest`), `Witt` (wittgenstein:
 `WittIREP`, `WittRIPPER`), `IMod` (imodels: `IModBayesianRuleList`,
 `IModBayesianRuleSet`, `IModRuleFit`, `IModSlipper`), `Weka` (`WekaJRip`,
-`WekaPART`, `WekaJ48`), `PArc` (pyarc: `PArcCBA`), `Mlrl` (mlrl-boomer:
-`MlrlBoomer`), `RKD` (realkd: `RKDRuleBoosting`); the reference LORD
+`WekaPART`, `WekaJ48`), `PArc` (pyarc: `PArcCBA`), `MLRL` (mlrl-boomer:
+`MLRLBoomer`), `RKD` (realkd: `RKDRuleBoosting`); the reference LORD
 implementation is `JavaLord`. Native learners have plain names (`CN2`,
 `Slipper`, `Boomer`). Every learner's `display_name` gives the name for a
 table -- `"IMod:Slipper"`, `"CN2"`. The importers keep their names
@@ -2046,7 +2046,7 @@ needs neither.
 
 ### BOOMER and realkd: boosted rule ensembles
 
-`pyrulearn.interfaces.boomer.MlrlBoomer` fits BOOMER (Rapp et al. 2020;
+`pyrulearn.interfaces.boomer.MLRLBoomer` fits BOOMER (Rapp et al. 2020;
 the `mlrl-boomer` package), gradient-boosted multi-output rules, for binary
 classification, and `BoomerImporter` reads a fitted
 `mlrl.boosting.BoomerClassifier` with its own rule visitor into a
@@ -2056,7 +2056,7 @@ feature / the feature. A rule with a positive score votes for the positive
 class, one with a negative score for the other class with the absolute
 score. BOOMER's single-output case -- logistic loss with L2-regularized
 Newton steps -- is natively `learners.boosting.Boomer`, `ENDER` with
-BOOMER's defaults; on binary data it predicts like `MlrlBoomer` and runs
+BOOMER's defaults; on binary data it predicts like `MLRLBoomer` and runs
 about ten times faster, though BOOMER's feature sampling gives it
 somewhat different rules. BOOMER's multi-label learning isn't supported
 yet (see *Not yet implemented*).
@@ -2072,11 +2072,11 @@ with or without an intercept (see `tests/test_realkd_import.py`) -- and runs
 several times faster.
 
 ```python
-from pyrulearn.interfaces.boomer import MlrlBoomer
+from pyrulearn.interfaces.boomer import MLRLBoomer
 from pyrulearn.interfaces.realkd import RKDRuleBoosting
 from pyrulearn.learners.boosting import OptimalRuleBoosting
 
-boomer = MlrlBoomer(max_rules=50, random_state=0).fit(train_rep)
+boomer = MLRLBoomer(max_rules=50, random_state=0).fit(train_rep)
 native_boomer = Boomer(n_rules=50).fit(train_rep)      # from pyrulearn.learners.boosting
 reference = RKDRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)
 native = OptimalRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)   # the same model
@@ -2222,7 +2222,7 @@ against it).
 - **Multi-label classification, preference learning and label ranking.**
   Learning tasks beyond a single class per example: several labels per
   example (multi-label; e.g. BOOMER's full multi-output rules, of which
-  `Boomer` and `MlrlBoomer` cover only the single-label case), and
+  `Boomer` and `MLRLBoomer` cover only the single-label case), and
   predicting preferences or rankings over labels (preference learning,
   label ranking; the rules' per-class score vectors could feed a
   label-ranking combiner). Each needs its own data representation (label

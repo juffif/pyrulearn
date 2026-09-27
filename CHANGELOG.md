@@ -5,6 +5,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Changed (may break imports)
+
+- `MlrlBoomer` is renamed `MLRLBoomer` (tool prefix `MLRL`); the old name
+  still works, with a `DeprecationWarning`.
+
 ### Added
 
 - `pyrulearn.data.catalog`: a catalog of 100 benchmark datasets on OpenML
