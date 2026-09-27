@@ -94,7 +94,18 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   response on all rows, shrunk; optional holdout early stopping; a
   `LinearRuleModel`. Defaults are the paper's CS-Log setting.
 - `references.bib`: entries for RuleFit, SLIPPER, confidence-rated
-  boosting, LRI, CPAR, MLRules and ENDER.
+  boosting, LRI, CPAR, MLRules, ENDER, BOOMER and optimal rule boosting.
+- `ENDER(l2_regularization=...)`: an L2 penalty on the Newton steps, as in
+  BOOMER.
+- `OptimalRuleBoosting` (`pyrulearn.learners.boosting`): rule boosting with
+  rules that maximize the XGBoost-style gain, found by branch-and-bound
+  (Boley et al. 2021) or greedily; reproduces `realkd` exactly.
+- `RealkdImporter` / `RealkdRuleBoosting` (`pyrulearn.interfaces.realkd`):
+  `realkd`'s rule boosting, the reference implementation of optimal rule
+  boosting, as a `LinearRuleModel`.
+- `BoomerImporter` / `MlrlBoomer` (`pyrulearn.interfaces.boomer`): BOOMER
+  (`mlrl-boomer`) for binary classification, as a `LinearRuleModel`
+  reproducing its decision function. New extras `boomer` and `realkd`.
 - `CPAR` (`pyrulearn.learners.cpar`): Classification based on Predictive
   Association Rules (Yin & Han 2003) -- FOIL-gain rule growing on
   weighted examples with rule copying at nearly-as-good conditions,

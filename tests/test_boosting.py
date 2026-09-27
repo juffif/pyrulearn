@@ -210,3 +210,61 @@ def test_invalid_method_and_loss_combinations_are_refused():
     with pytest.raises(ValueError):
         ENDER(beta=0.0)
 
+
+
+def test_ender_l2_regularization_shrinks_the_weights():
+    data = _data()
+    plain = ENDER(n_rules=20, method="newton", subsample=0.5, random_state=0).fit(data)
+    reg = ENDER(n_rules=20, method="newton", subsample=0.5, l2_regularization=50.0, random_state=0).fit(data)
+    assert np.mean([r.weight for r in reg.rules]) < np.mean([r.weight for r in plain.rules])
+    with pytest.raises(ValueError):
+        ENDER(l2_regularization=-1.0)
+
+
+# ------------------------------------------------------- optimal rule boosting
+
+from itertools import combinations  # noqa: E402
+
+from pyrulearn.learners.boosting import OptimalRuleBoosting  # noqa: E402
+
+
+def test_branch_and_bound_finds_the_best_conjunction():
+    data = _data(n=200)
+    X = data.X
+    y = np.where(data.y == "pos", 1.0, -1.0)
+    learner = OptimalRuleBoosting(reg=1.0)
+    g, h = learner._derivatives(y, np.zeros(len(y)))
+    body = learner._best_query(X, g, h)
+    best = learner._objective(g, h, np.all(X[:, list(body)], axis=1))
+    for size in (1, 2, 3):                                  # brute force over short conjunctions
+        for combo in combinations(range(X.shape[1]), size):
+            cov = np.all(X[:, list(combo)], axis=1)
+            if cov.any():
+                assert learner._objective(g, h, cov) <= best + 1e-9
+    greedy = OptimalRuleBoosting(search="greedy")._best_query(X, g, h)
+    assert learner._objective(g, h, np.all(X[:, list(greedy)], axis=1)) <= best + 1e-9
+
+
+def test_optimal_rule_boosting_model():
+    data = _data()
+    model = OptimalRuleBoosting(n_rules=5).fit(data)
+    assert isinstance(model, LinearRuleModel) and model.labels == ["neg", "pos"]
+    assert all(r.weight > 0 for r in model.rules)          # negative weights vote for "neg"
+    bodies = {(r.target, tuple(sorted(l.feature for l in r.conditions))) for r in model.rules}
+    assert ("pos", (0, 2)) in bodies and ("pos", (4, 6)) in bodies
+    test = _data(seed=1)
+    assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
+    with_offset = OptimalRuleBoosting(n_rules=3, offset=True).fit(data)
+    assert any(len(r.conditions) == 0 for r in with_offset.rules)
+    squared = OptimalRuleBoosting(n_rules=5, loss="squared").fit(data)
+    assert np.mean(np.asarray(squared.predict(test)) == test.y) > 0.85
+
+
+def test_optimal_rule_boosting_rejects_bad_input():
+    rng = np.random.default_rng(2)
+    raw = rng.random((60, 3)) < 0.5
+    three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
+    with pytest.raises(ValueError, match="binary"):
+        OptimalRuleBoosting().fit(three)
+    with pytest.raises(ValueError):
+        OptimalRuleBoosting(search="beam")

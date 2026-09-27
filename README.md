@@ -37,8 +37,10 @@ Requires Python ≥ 3.10, `numpy` and `scikit-learn` (the latter because
 | `wittgenstein` | `wittgenstein` | `pyrulearn.interfaces.wittgenstein` (IREP, RIPPER) |
 | `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets, RuleFit, Slipper) |
 | `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, which must be built separately (no Windows wheels) |
+| `boomer` | `mlrl-boomer` | `pyrulearn.interfaces.boomer` (BOOMER); pins scikit-learn to its supported range |
+| `realkd` | `realkd` | `pyrulearn.interfaces.realkd` (optimal rule boosting); on Python 3.14 install it with `--no-deps` plus a current `bitarray` and `sortedcontainers`, and build `sortednp` (no Windows wheel) |
 | `test` | `pytest` | running the test suite |
-| `all` | all of the above except `pyarc` | |
+| `all` | all of the above except `pyarc`, `boomer` and `realkd` | |
 
 For example `pip install "pyrulearn[data,plot] @ git+https://github.com/juffif/pyrulearn.git"`.
 For development, clone the repository and run `pip install -e ".[all]"`, then `pytest`.
@@ -65,6 +67,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
+| **Optimal rule boosting** | `boosting.OptimalRuleBoosting` | gradient boosting of rules that each maximize the XGBoost-style gain `(Σg)² / (λ + Σh)`, found exactly by branch-and-bound with the paper's prefix/suffix bound (or greedily); cross-checked rule-for-rule against `realkd` | Boley, Teshuva, Le Bodic & Webb 2021 |
 | **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`); a `LinearRuleModel` | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
@@ -98,6 +101,8 @@ random forest — and returns its own, much smaller model.
 | **J48** (Weka's C4.5) | `weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
 | **LORD** (reference implementation) | `lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
 | **CBA** | `pyarc.PyarcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
+| **BOOMER** (binary) | `boomer.MlrlBoomer`, `BoomerImporter` | `mlrl-boomer` | Rapp et al. 2020 |
+| **Optimal rule boosting** (reference) | `realkd.RealkdRuleBoosting`, `RealkdImporter` | `realkd` | Boley et al. 2021 |
 
 Many of the ideas behind this library, such as the separate-and-conquer
 algorithms and rule-evaluation heuristics, are described in Fürnkranz,
@@ -116,8 +121,8 @@ details.
 | `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
-| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `OptimalRuleBoosting`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -2022,6 +2027,39 @@ or `"m2"` classifier builder. `pyarc` needs Borgelt's `pyfim` C extension,
 which has no Windows wheels and must be built separately; importing the module
 needs neither.
 
+### BOOMER and realkd: boosted rule ensembles
+
+`pyrulearn.interfaces.boomer.MlrlBoomer` fits BOOMER (Rapp et al. 2020;
+the `mlrl-boomer` package), gradient-boosted multi-output rules, for binary
+classification, and `BoomerImporter` reads a fitted
+`mlrl.boosting.BoomerClassifier` with its own rule visitor into a
+`LinearRuleModel` whose scores equal BOOMER's `decision_function`. On a 0/1
+feature BOOMER's conditions `x <= t` / `x > t` are the feature's negation
+feature / the feature. A rule with a positive score votes for the positive
+class, one with a negative score for the other class with the absolute
+score. BOOMER's single-output case -- logistic loss with L2-regularized
+Newton steps -- is natively `ENDER(method="newton", l2_regularization=...)`.
+
+`pyrulearn.interfaces.realkd.RealkdRuleBoosting` fits Mario Boley's
+`realkd` rule boosting, the reference implementation of optimal rule
+boosting (Boley et al. 2021), and `RealkdImporter` reads its rule ensemble.
+`realkd` is given the data's positive features as columns `c0, c1, ...`;
+its propositions `c<=0` / `c>=1` become the negation feature / the
+feature. The native `learners.boosting.OptimalRuleBoosting` reproduces it
+exactly -- the same rules and weights with greedy or exhaustive search,
+with or without an intercept (see `tests/test_realkd_import.py`) -- and runs
+several times faster.
+
+```python
+from pyrulearn.interfaces.boomer import MlrlBoomer
+from pyrulearn.interfaces.realkd import RealkdRuleBoosting
+from pyrulearn.learners.boosting import OptimalRuleBoosting
+
+boomer = MlrlBoomer(max_rules=50, random_state=0).fit(train_rep)
+reference = RealkdRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)
+native = OptimalRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)   # the same model
+```
+
 ### Provenance of imported rules
 
 Either shape's `import_model`/`parse` should end by calling
@@ -2092,9 +2130,11 @@ against it).
     (`learners.cpar.CPAR`, `learners.boosting.Slipper`).
   - **Lightweight Rule Induction** is done (`learners.lri.LRI`), except
     for the paper's handling of missing values during the search.
-  - **Additive boosting of rules:** ENDER is done
-    (`learners.boosting.ENDER`); BOOMER (multi-label boosting of rules)
-    is not.
+  - **Additive boosting of rules:** ENDER and optimal rule boosting are
+    done natively (`learners.boosting`), BOOMER is interfaced for binary
+    classification; multi-label BOOMER would need multi-label data and
+    models, which pyrulearn doesn't have yet. Fully corrective orthogonal
+    gradient boosting (Yang & Boley 2024) is not done.
   - The **RuleFit-style distiller** (`learners.rulefit.RuleFit`, with
     `LinearRuleModel`) covers weights at the *opposite* end -- fitted after
     induction -- and is done; its own candidate generation (RuleFit's

@@ -16,7 +16,8 @@ Słowiński 2008/2010) is gradient boosting of rules for a pluggable
 default), `ExponentialLoss` (AdaBoost's) or `SigmoidLoss` -- and one of
 the paper's minimization techniques (constant-step, gradient descent,
 gradient boosting, simultaneous minimization) or MLRules' Newton
-criterion.
+criterion. `OptimalRuleBoosting` (Boley et al., SDM 2021) boosts rules
+that are optimal for the XGBoost-style gain, found by branch-and-bound.
 """
 
 from __future__ import annotations
@@ -375,6 +376,13 @@ class ENDER(NativeRuleLearner):
     number of classes; `ExponentialLoss` and `SigmoidLoss` two (as in the
     paper, which also covers regression -- not here).
 
+    `l2_regularization` (``lambda``, default 0) adds an L2 penalty on the
+    rule weights to the Newton steps -- ``-sum g / (sum h + lambda)`` for
+    the Newton-step weights (`LogisticLoss`, and the default rule) and
+    ``sum g / sqrt(sum h + lambda)`` for `method="newton"` -- as in
+    BOOMER (Rapp et al. 2020), whose single-output case is then
+    ``ENDER(method="newton", l2_regularization=...)``.
+
     `early_stopping` is MLRules': the rows left out of each subsample are
     a holdout set; a rule is acceptable if its error on the holdout rows
     it covers is below that of guessing among the classes (``1 - 1/K``),
@@ -395,6 +403,7 @@ class ENDER(NativeRuleLearner):
         loss: Union[str, BoostingLoss] = "logistic",
         method: str = "constant_step",
         beta: float = 0.2,
+        l2_regularization: float = 0.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = None,
@@ -409,6 +418,8 @@ class ENDER(NativeRuleLearner):
             raise ValueError(f"method must be one of {_METHODS}, got {method!r}")
         if beta <= 0:
             raise ValueError(f"beta must be positive, got {beta}")
+        if l2_regularization < 0:
+            raise ValueError(f"l2_regularization must be non-negative, got {l2_regularization}")
         loss = _LOSSES[loss]() if isinstance(loss, str) else loss
         if method == "simultaneous" and not isinstance(loss, ExponentialLoss):
             raise ValueError("method='simultaneous' needs the exponential loss")
@@ -420,6 +431,7 @@ class ENDER(NativeRuleLearner):
         self.loss = loss
         self.method = method
         self.beta = beta
+        self.l2_regularization = l2_regularization
         self.early_stopping = early_stopping
         self.max_length = max_length
         self.random_state = random_state
@@ -463,7 +475,7 @@ class ENDER(NativeRuleLearner):
                 continue
             body, k = found
             cov = np.all(X[:, list(body)], axis=1)
-            alpha = self.loss.response(float(G[cov, k].sum()), float(H[cov, k].sum()), self.beta)
+            alpha = self._response(float(G[cov, k].sum()), float(H[cov, k].sum()))
             if not alpha > 0:
                 continue
             F[cov, k] += self.shrinkage * alpha
@@ -481,6 +493,12 @@ class ENDER(NativeRuleLearner):
                  for (body, k), a in total.items() if a != 0]
         return LinearRuleModel(annotate_rules(rules, data), classes=classes)
 
+    def _response(self, g: float, h: float) -> float:
+        """The loss's rule weight; Newton steps get the L2 penalty."""
+        if self.loss.iterative_response:
+            h = h + self.l2_regularization
+        return self.loss.response(g, h, self.beta)
+
     # -- the default rule ------------------------------------------------------
 
     def _default_rule(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> Tuple[int, float]:
@@ -496,7 +514,7 @@ class ENDER(NativeRuleLearner):
                 Fk = F.copy()
                 Fk[:, k] += alpha
                 G, H = self.loss.derivatives(Fk, Y, d)
-                step = self.loss.response(float(G[:, k].sum()), float(H[:, k].sum()), self.beta)
+                step = self._response(float(G[:, k].sum()), float(H[:, k].sum()))
                 alpha = alpha + step if self.loss.iterative_response else step
                 if abs(step) < 1e-10:
                     break
@@ -529,7 +547,7 @@ class ENDER(NativeRuleLearner):
         if self.method == "gradient_boosting":
             return (G * s, (d[:, None] * s) * np.ones_like(G))
         if self.method == "newton":
-            return (G * s, H * s)
+            return (G * s, H * s)                  # lambda is added in _impurity
         return (G * s,)                            # gradient
 
     def _impurity(self, sums: Tuple[np.ndarray, ...]) -> np.ndarray:
@@ -538,8 +556,9 @@ class ENDER(NativeRuleLearner):
                 return sums[0]
             if self.method == "simultaneous":
                 return -np.sqrt(sums[0]) + np.sqrt(sums[1])
-            # gradient_boosting / newton: g / sqrt(weight or h)
-            return np.where(sums[1] > 0, sums[0] / np.sqrt(sums[1]), 0.0)
+            # gradient_boosting / newton: g / sqrt(weight or h [+ lambda])
+            denom = sums[1] + self.l2_regularization if self.method == "newton" else sums[1]
+            return np.where(denom > 0, sums[0] / np.sqrt(denom), 0.0)
 
     def _grow(self, X: np.ndarray, Xf: np.ndarray,
               terms: Tuple[np.ndarray, ...]) -> Optional[Tuple[Tuple[int, ...], int]]:
@@ -569,3 +588,197 @@ class ENDER(NativeRuleLearner):
             return False
         error = float(w[y_idx[holdout_cov] != k].sum() / w.sum())
         return error < 1.0 - 1.0 / K
+
+
+# ================================================== optimal rule boosting ===
+
+class OptimalRuleBoosting(NativeRuleLearner):
+    """Rule boosting with (optionally) optimal rules (Boley, Teshuva, Le
+    Bodic & Webb, "Better short than greedy: Interpretable models through
+    optimal rule boosting", SDM 2021; the `realkd` package).
+
+    Binary classification with labels ``y = +1`` for the positive class
+    (the second in sorted order) and ``-1`` for the other. The model is a
+    sum of rules ``w * q(x)``; each round adds the rule whose query ``q``
+    maximizes the XGBoost-style gain of the current scores
+
+        obj(q) = (sum_{i in q} g_i)**2 / (lambda + sum_{i in q} h_i)
+
+    (``g``/``h``: first/second derivatives of the loss; `reg` is
+    ``lambda``), with the weight ``w = -sum g / (lambda + sum h)``.
+
+    `search="exhaustive"` (default) finds the optimal query by
+    branch-and-bound over conjunctions of the data's features (and their
+    negation features). The bound is the paper's: among the subsets of a
+    query's covered examples, the objective is maximal at a prefix or a
+    suffix of them sorted by ``g/h``. Refinements that don't change the
+    covered set are skipped, and the query found is simplified by
+    dropping conditions that don't change what it covers.
+    `search="greedy"` adds the best condition until the objective stops
+    improving. `max_length` caps the query length.
+
+    `loss` is ``"logistic"`` (``log(1 + exp(-y s))``, default) or
+    ``"squared"`` (``(y - s)**2``) -- the losses of `realkd`, with its
+    derivatives, so that the two agree. `offset=True` makes the first rule
+    the empty query (an intercept). The result is a `LinearRuleModel`: a
+    rule with a negative weight votes for the negative class with its
+    absolute weight (the same decision), repeated queries are merged, and
+    the positive class wins where the weights for it sum higher.
+    """
+
+    def __init__(
+        self,
+        n_rules: int = 10,
+        loss: str = "logistic",
+        reg: float = 1.0,
+        search: str = "exhaustive",
+        max_length: Optional[int] = None,
+        offset: bool = False,
+    ):
+        if n_rules < 1:
+            raise ValueError(f"n_rules must be at least 1, got {n_rules}")
+        if loss not in ("logistic", "squared"):
+            raise ValueError(f"loss must be 'logistic' or 'squared', got {loss!r}")
+        if search not in ("exhaustive", "greedy"):
+            raise ValueError(f"search must be 'exhaustive' or 'greedy', got {search!r}")
+        if reg < 0:
+            raise ValueError(f"reg must be non-negative, got {reg}")
+        self.n_rules = n_rules
+        self.loss = loss
+        self.reg = reg
+        self.search = search
+        self.max_length = max_length
+        self.offset = offset
+
+    def _default_model(self, data: Any) -> type:
+        return LinearRuleModel
+
+    def _derivatives(self, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        if self.loss == "squared":
+            return 2.0 * (s - y), np.full_like(s, 2.0)
+        sig = 1.0 / (1.0 + np.exp(y * s))                       # sigmoid(-y s)
+        return -y * sig, sig * (1.0 - sig)
+
+    @produces(LinearRuleModel)
+    def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
+        if data.y is None:
+            raise ValueError("OptimalRuleBoosting needs data.y")
+        labels = np.unique(np.asarray(data.y))
+        if len(labels) != 2:
+            raise ValueError(f"OptimalRuleBoosting needs a binary target, got {len(labels)} classes")
+        classes = [c.item() if isinstance(c, np.generic) else c for c in labels]
+        y = np.where(np.asarray(data.y) == labels[1], 1.0, -1.0)
+        X = np.asarray(data.X, dtype=bool)
+        d = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
+        s = np.zeros(len(y))
+        learned: Dict[Tuple[int, ...], float] = {}
+        for m in range(self.n_rules):
+            g, h = self._derivatives(y, s)
+            g, h = g * d, h * d
+            if self.offset and m == 0:
+                body: Tuple[int, ...] = ()
+            else:
+                body = self._best_query(X, g, h)
+                if body is None:
+                    break
+            cov = np.all(X[:, list(body)], axis=1) if body else np.ones(len(y), dtype=bool)
+            w = -float(g[cov].sum()) / (self.reg + float(h[cov].sum()))
+            s = s + w * cov
+            learned[body] = learned.get(body, 0.0) + w
+        rules = []
+        for body, w in learned.items():
+            if w == 0:
+                continue
+            target = classes[1] if w > 0 else classes[0]
+            rules.append(WeightedRule(list(body), target=target, dataspec=data.spec, weight=abs(w)))
+        return LinearRuleModel(annotate_rules(rules, data), classes=classes)
+
+    # -- the search -----------------------------------------------------------
+
+    def _objective(self, g: np.ndarray, h: np.ndarray, cov: np.ndarray) -> float:
+        return float(g[cov].sum()) ** 2 / (self.reg + float(h[cov].sum()))
+
+    def _best_query(self, X: np.ndarray, g: np.ndarray, h: np.ndarray) -> Optional[Tuple[int, ...]]:
+        body = self._greedy(X, g, h) if self.search == "greedy" else self._branch_and_bound(X, g, h)
+        if not body:
+            return None
+        return self._simplify(X, body)
+
+    def _greedy(self, X, g, h) -> Tuple[int, ...]:
+        cov = np.ones(X.shape[0], dtype=bool)
+        body: List[int] = []
+        current = -math.inf
+        Xf = X.astype(float)
+        while self.max_length is None or len(body) < self.max_length:
+            gs = (g * cov) @ Xf
+            hs = (h * cov) @ Xf
+            obj = gs ** 2 / (self.reg + hs)
+            obj[(cov[:, None] & X).sum(axis=0) == 0] = -math.inf     # empty extensions
+            if body:
+                obj[body] = -math.inf
+            f = int(np.argmax(obj))
+            if not obj[f] > current:
+                break
+            current = float(obj[f])
+            body.append(f)
+            cov = cov & X[:, f]
+        return tuple(body)
+
+    def _branch_and_bound(self, X, g, h) -> Tuple[int, ...]:
+        import heapq
+
+        n, n_features = X.shape
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(h > 0, g / h, np.sign(g) * np.inf)
+        order = np.argsort(-ratio, kind="stable")                  # examples by g/h, descending
+        rank = np.empty(n, dtype=np.int64)
+        rank[order] = np.arange(n)
+
+        def bound(cov: np.ndarray) -> float:
+            idx = np.flatnonzero(cov)
+            if idx.size == 0:
+                return -math.inf
+            idx = idx[np.argsort(rank[idx])]
+            gq, hq = g[idx], h[idx]
+            pre = np.cumsum(gq) ** 2 / (np.cumsum(hq) + self.reg)
+            suf = np.cumsum(gq[::-1]) ** 2 / (np.cumsum(hq[::-1]) + self.reg)
+            return float(max(pre.max(), suf.max()))
+
+        best_body: Tuple[int, ...] = ()
+        best_value = -math.inf
+        root = np.ones(n, dtype=bool)
+        heap = [(-bound(root), 0, (), root)]
+        counter = 1
+        while heap:
+            neg_bound, _, body, cov = heapq.heappop(heap)
+            if -neg_bound <= best_value:
+                break                                            # best-bound-first: nothing left can win
+            if self.max_length is not None and len(body) >= self.max_length:
+                continue
+            start = body[-1] + 1 if body else 0
+            n_cov = int(cov.sum())
+            for f in range(start, n_features):
+                child = cov & X[:, f]
+                n_child = int(child.sum())
+                if n_child == 0 or n_child == n_cov:
+                    continue                                     # empty, or covers the same rows
+                value = self._objective(g, h, child)
+                child_body = body + (f,)
+                if value > best_value:
+                    best_value, best_body = value, child_body
+                b = bound(child)
+                if b > best_value:
+                    heapq.heappush(heap, (-b, counter, child_body, child))
+                    counter += 1
+        return best_body
+
+    @staticmethod
+    def _simplify(X: np.ndarray, body: Tuple[int, ...]) -> Tuple[int, ...]:
+        """Drop conditions whose removal doesn't change the covered rows."""
+        cov = np.all(X[:, list(body)], axis=1)
+        kept = list(body)
+        for f in list(body):
+            rest = [x for x in kept if x != f]
+            if rest and np.array_equal(np.all(X[:, rest], axis=1), cov):
+                kept = rest
+        return tuple(sorted(kept))
