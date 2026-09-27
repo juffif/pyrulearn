@@ -34,6 +34,25 @@ Things learned from the RuleFit demo:
 - A shallow forest (depth <= 3) was as good a pool as the fully grown
   one, with far fewer and shorter rules.
 
+## Covering strategies: removal vs. weighted reweighting schemes
+
+A demo comparing how the covering loop treats covered examples: removal
+covering (classic separate-and-conquer) against the weighted covering
+variants, each a reweighting scheme plus its stopping criterion.
+
+- **Schemes:** removal; multiplicative (gamma, CN2-SD) and additive
+  (1/(k+1), CN2-SD); CPAR's decay; AdaBoost-style reweighting (Slipper);
+  Lightweight Rule Induction's cumulative-error weights (1 + e^3); later
+  gradient-based weights (ENDER).
+- **Across heuristics:** at least Laplace and WRAcc, since the
+  heuristic and the reweighting interact (CN2-SD is WRAcc + weighted
+  covering; Laplace + weighted covering gives many overlapping rules).
+- **Measures:** accuracy, number and length of rules, overlap (how often
+  a positive is covered), fit time; for rule sets without weights also
+  the effect of the combiner (max vs. vote).
+- The branches with the machinery: `weighted-covering` (row weights,
+  `CoveringStrategy`), and whatever follows it (Slipper, LRI).
+
 ## For every demo
 
 - The generated report describes its own experiment (data, protocol,
