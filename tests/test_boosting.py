@@ -90,3 +90,83 @@ def test_slipper_rejects_bad_arguments():
     one_class = BooleanDataRepresentation(neg_spec(["a"]), neg_X(np.ones((3, 1), bool)), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
         Slipper().fit(one_class)
+
+
+# ------------------------------------------------------------------- ENDER
+
+from pyrulearn.learners.boosting import ENDER, ExponentialLoss, LogisticLoss  # noqa: E402
+
+
+@pytest.mark.parametrize("loss", [LogisticLoss(), ExponentialLoss()])
+def test_loss_derivatives_match_finite_differences(loss):
+    rng = np.random.default_rng(0)
+    n, K = 20, 2
+    F = rng.normal(size=(n, K))
+    Y = np.eye(K)[rng.integers(0, K, n)]
+    d = rng.random(n) + 0.5
+    G, H = loss.derivatives(F, Y, d)
+    eps = 1e-5
+    for k in range(K):
+        for i in (0, 7, 13):
+            step = np.zeros_like(F)
+            step[i, k] = eps
+            g_num = (loss.value(F + step, Y, d) - loss.value(F - step, Y, d)) / (2 * eps)
+            h_num = (loss.value(F + step, Y, d) - 2 * loss.value(F, Y, d) + loss.value(F - step, Y, d)) / eps ** 2
+            assert G[i, k] == pytest.approx(g_num, rel=1e-4, abs=1e-6)
+            assert H[i, k] == pytest.approx(h_num, rel=1e-3, abs=1e-4)
+
+
+def test_ender_learns_positive_class_votes_that_find_the_concept():
+    data = _data()
+    model = ENDER(n_rules=100, random_state=0).fit(data)
+    assert isinstance(model, LinearRuleModel)
+    assert all(r.weight > 0 for r in model.rules)                 # every rule votes for its class
+    assert sum(len(r.conditions) == 0 for r in model.rules) == 1  # one default rule
+    bodies = {(r.target, tuple(sorted(l.feature for l in r.conditions))) for r in model.rules}
+    assert ("pos", (0, 2)) in bodies and ("pos", (4, 6)) in bodies
+    assert len(bodies) == len(model.rules)                        # repeated rules merged
+    test = _data(seed=1)
+    assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
+    scores = model.scores(test)
+    np.testing.assert_array_equal(np.asarray(model.predict(test)) == "pos", scores[:, 1] > scores[:, 0])
+
+
+@pytest.mark.parametrize("kw", [dict(method="gradient"), dict(loss="exponential"), dict(shrinkage=1.0)])
+def test_ender_variants(kw):
+    data = _data()
+    model = ENDER(n_rules=40, random_state=0, **kw).fit(data)
+    test = _data(seed=1)
+    assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
+
+
+def test_ender_multiclass_and_loss_restrictions():
+    rng = np.random.default_rng(2)
+    raw = rng.random((400, 4)) < 0.5
+    y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
+    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    model = ENDER(n_rules=60, random_state=0).fit(data)
+    assert model.labels == ["a", "b", "c"]
+    assert np.mean(np.asarray(model.predict(data)) == y) > 0.95
+    with pytest.raises(ValueError, match="two classes only"):
+        ENDER(loss="exponential").fit(data)
+    with pytest.raises(ValueError):
+        ENDER(method="exact")
+
+
+def test_ender_early_stopping_ends_on_noise():
+    rng = np.random.default_rng(3)
+    raw = rng.random((400, 6)) < 0.5
+    noise = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw),
+                                      rng.choice(["x", "y"], 400))
+    full = ENDER(n_rules=200, random_state=0).fit(noise)
+    stopped = ENDER(n_rules=200, early_stopping=True, random_state=0).fit(noise)
+    assert len(stopped.rules) < len(full.rules) / 2
+
+
+def test_ender_is_reproducible_and_uses_data_weights():
+    data = _data()
+    a = ENDER(n_rules=30, random_state=5).fit(data)
+    b = ENDER(n_rules=30, random_state=5).fit(data)
+    assert [r.to_string() for r in a.rules] == [r.to_string() for r in b.rules]
+    w = ENDER(n_rules=30, random_state=5).fit(data.with_weights(np.where(data.y == "pos", 4.0, 1.0)))
+    assert [r.to_string() for r in w.rules] != [r.to_string() for r in a.rules]

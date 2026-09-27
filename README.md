@@ -65,6 +65,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
+| **ENDER** / MLRules | `boosting.ENDER` | gradient boosting of rules: each rule, grown greedily on a subsample to minimize a loss's gradient or Newton criterion, votes for one class with a shrunk Newton-step weight; pluggable loss (`LogisticLoss`, the multinomial log-likelihood of MLRules, default; `ExponentialLoss`); optional holdout early stopping; a `LinearRuleModel` | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
@@ -116,7 +117,7 @@ details.
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -1322,6 +1323,33 @@ With two classes it boosts the less frequent one (or `target_class`);
 with more, one run per class, all in one model, the highest sum winning.
 The data's row weights are the initial boosting weights.
 
+### Boosting: ENDER
+
+`pyrulearn.learners.boosting.ENDER` (Dembczyński, Kotłowski & Słowiński;
+MLRules, ICML 2008, and ENDER, DMKD 2010) keeps a score per class and
+adds rules that each vote for one class with a positive weight; the class
+with the highest total wins. It starts from a default rule for the class
+the loss favours. Each round draws a random half of the rows (without
+replacement) and grows a rule on it greedily, choosing conditions and
+class to minimize `sum g` (`method="gradient"`) or `sum g / sqrt(sum h)`
+(`method="newton"`, the default) over the covered rows, where `g` and `h`
+are the loss's first and second derivatives; it stops when no condition
+lowers that, and keeps the rule only if it is negative. The rule's weight
+is the Newton step `-sum g / sum h` on *all* rows, shrunk by `shrinkage`
+(0.1). The loss is a pluggable `BoostingLoss`: `LogisticLoss` (the
+multinomial log-likelihood, i.e. MLRules; any number of classes) or
+`ExponentialLoss` (AdaBoost's, two classes). `early_stopping=True` uses the
+rows left out of each subsample as a holdout: a rule is acceptable if its
+error on the holdout rows it covers is below guessing (`1 - 1/K`), and
+growth stops once 8 of the last 10 rules weren't. The result is a
+`LinearRuleModel`; repeated rules are merged by summing their weights.
+
+```python
+from pyrulearn.learners.boosting import ENDER
+
+model = ENDER(n_rules=500, shrinkage=0.1, subsample=0.5, loss="logistic").fit(train_rep)
+```
+
 ### Lightweight Rule Induction
 
 `pyrulearn.learners.lri.LRI` (Weiss & Indurkhya 2000) learns, for every
@@ -2042,9 +2070,9 @@ against it).
     (`learners.cpar.CPAR`, `learners.boosting.Slipper`).
   - **Lightweight Rule Induction** is done (`learners.lri.LRI`), except
     for the paper's handling of missing values during the search.
-  - **Additive boosting of rules** (the ENDER family, BOOMER) needs the
-    same machinery as Slipper, but with gradient-based reweighting and
-    rule weights from a Newton step.
+  - **Additive boosting of rules:** ENDER is done
+    (`learners.boosting.ENDER`); BOOMER (multi-label boosting of rules)
+    is not.
   - The **RuleFit-style distiller** (`learners.rulefit.RuleFit`, with
     `LinearRuleModel`) covers weights at the *opposite* end -- fitted after
     induction -- and is done; its own candidate generation (RuleFit's

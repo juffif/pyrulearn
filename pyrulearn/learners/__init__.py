@@ -21,7 +21,7 @@ group-by-shared-implementation convention as `pyrulearn.interfaces`:
 pool, and the `CBA` and `CMAR` classifiers built on it),
 `pyrulearn.learners.ids` (`IDS`), `pyrulearn.learners.rulefit`
 (`RuleFit`, a sparse linear model over a rule pool),
-`pyrulearn.learners.boosting` (`Slipper`), `pyrulearn.learners.lri`
+`pyrulearn.learners.boosting` (`Slipper`, `ENDER`), `pyrulearn.learners.lri`
 (`LRI`), `pyrulearn.learners.cpar` (`CPAR`), and
 `pyrulearn.learners.multiclass` (`OneVsRest`/`OrderedOneVsRest`/
 `Pairwise` -- thin sugar over `DecomposingLearner`). External-tool
