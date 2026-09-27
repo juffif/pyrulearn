@@ -329,6 +329,39 @@ class HeuristicVoteCombiner(HeuristicCombiner):
         return f"vote weighted by {self._heuristic()!r}"
 
 
+class TopKMeanCombiner(HeuristicCombiner):
+    """For each class, the mean heuristic score of its best `k` covering
+    rules (all of them if it has fewer); the class with the highest mean
+    wins -- CPAR's prediction (Yin & Han 2003, ``k = 5``, scored by the
+    rules' expected accuracy ``(nc + 1) / (n + K)``, i.e.
+    `GeneralizedMEstimate(m=K, cost=1/K)` for ``K`` classes). Between
+    `HeuristicMaxCombiner` (``k = 1``) and a mean over all covering
+    rules: a class isn't decided by one lucky rule, nor penalized for
+    having many weak ones. Ties go to the shared tie-break (module
+    docstring).
+    """
+
+    def __init__(self, heuristic: Optional["RuleHeuristic"] = None, k: int = 5):
+        super().__init__(heuristic)
+        if k < 1:
+            raise ValueError(f"k must be at least 1, got {k}")
+        self.k = k
+
+    def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
+        trivial = _trivial_target(rules, covering)
+        if trivial is not None:
+            return trivial
+        per_class: Dict[Any, List[float]] = {}
+        for i in covering:
+            per_class.setdefault(rules[i].target, []).append(self._score(rules[i]))
+        means = {c: sum(sorted(s, reverse=True)[:self.k]) / min(len(s), self.k)
+                 for c, s in per_class.items()}
+        return _break_tie(_argmax_classes(means), rules, covering)
+
+    def describe(self) -> str:
+        return f"mean {self._heuristic()!r} of each class's best {self.k} rules"
+
+
 # -- distribution-based ---------------------------------------------------
 
 def _combine_class_scores(

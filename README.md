@@ -70,6 +70,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
+| **CPAR** | `cpar.CPAR` | FOIL-gain rule growing on weighted examples that also follows every nearly-as-good condition (several rules per search), covered positives decayed instead of removed; predicts by the mean expected accuracy of each class's best `k` covering rules (`TopKMeanCombiner`) | Yin & Han 2003 |
 | **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
 | **RuleFit** (distiller) | `rulefit.RuleFit` | a sparse (L1 / elastic-net) logistic regression over a rule pool's coverage, multinomial for multiclass; returns a `LinearRuleModel`. Only RuleFit's fitting step: candidates come from the pool, not from a tree ensemble | Friedman & Popescu 2008 |
 | **Multiclass decomposition** | `multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
@@ -115,7 +116,7 @@ details.
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`), `learners.lri` (`LRI`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -670,11 +671,14 @@ combiner can use:
 - `HeuristicCombiner` -- scores a `RuleHeuristic` against each rule's own
   measured stats (`SingleRule.stats()`'s `ConfusionMatrix`, rotated to the
   rule's own target), computed fresh at combine time, not baked into the
-  model beforehand. Both take a `heuristic=` (default `Laplace()`):
+  model beforehand. All take a `heuristic=` (default `Laplace()`):
   - `"max"` -- `HeuristicMaxCombiner`: the classic ensemble "max rule",
     which picks the single covering rule with the highest heuristic score.
   - `HeuristicVoteCombiner`: majority vote across every covering rule, each
     vote weighted by that rule's heuristic score.
+  - `TopKMeanCombiner(heuristic, k=5)`: for each class, the mean score of
+    its best `k` covering rules (all, if fewer); the highest mean wins
+    (CPAR's prediction). `k=1` is the max rule.
 - `DistributionCombiner` -- for rules scored by a full per-class breakdown
   rather than one scalar: each rule's own measured stats
   (`ConfusionMatrix.predicted_as(rule.target)`, the true-label distribution
@@ -1342,6 +1346,28 @@ here.
 from pyrulearn.learners.lri import LRI
 
 model = LRI(n_rules=50, max_terms=4, max_length=5).fit(train_rep)
+```
+
+### CPAR
+
+`pyrulearn.learners.cpar.CPAR` (Yin & Han 2003) grows rules for each
+class FOIL-style on weighted examples: starting from the empty rule, it
+adds the condition with the highest weighted FOIL gain until none gains
+at least `min_gain` (0.7). Every other condition whose gain is within
+`gain_similarity` (0.99) of the best starts a copy of the rule that is
+grown on as well, so one search can yield several rules. After each rule
+the positives it covers are multiplied by `decay` (2/3,
+`MultiplicativeReweighting`), until the positives' total weight is below
+5% of the start (`PositiveWeightBelow`). The model is a `ConceptSet`
+predicted by `TopKMeanCombiner`: the class whose best `k` (5) covering
+rules have the highest mean expected accuracy `(nc + 1) / (n + K)`
+(`GeneralizedMEstimate(m=K, cost=1/K)` for `K` classes). The combiner is
+usable with any rule set: `TopKMeanCombiner(heuristic, k)`.
+
+```python
+from pyrulearn.learners.cpar import CPAR
+
+model = CPAR(k=5).fit(train_rep)
 ```
 
 ### Multiclass classification
@@ -2012,12 +2038,8 @@ against it).
   `RemovalCovering`, `WeightedCovering`; row weights on every
   representation, see *Row weights* and *Weighted covering*). What builds
   on it is not:
-  - **CPAR** (Yin & Han, 2003): its decay (`MultiplicativeReweighting(2/3)`)
-    and stop (`PositiveWeightBelow(0.05)`) exist; missing are its
-    FOIL-gain-based multi-literal search and a `TopKMeanCombiner`
-    (average Laplace accuracy of the top-k rules per class) for
-    prediction. (Slipper, the other motivating case, is done:
-    `learners.boosting.Slipper`.)
+  - **CPAR** and **Slipper**, the motivating cases, are done
+    (`learners.cpar.CPAR`, `learners.boosting.Slipper`).
   - **Lightweight Rule Induction** is done (`learners.lri.LRI`), except
     for the paper's handling of missing values during the search.
   - **Additive boosting of rules** (the ENDER family, BOOMER) needs the
