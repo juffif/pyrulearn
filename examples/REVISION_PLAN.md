@@ -53,6 +53,28 @@ variants, each a reweighting scheme plus its stopping criterion.
 - The branches with the machinery: `weighted-covering` (row weights,
   `CoveringStrategy`), and whatever follows it (Slipper, LRI).
 
+## Numeric attributes: intrinsic handling vs. our discretization
+
+Compare learners that handle numeric attributes themselves (thresholds
+chosen during learning: Weka's JRip and J48, also on the raw data) with
+the same or similar learners on data discretized by `build_dataspec`
+beforehand, at several discretization levels (`max_intervals`, e.g. 2,
+4, 6, 10, 20).
+
+- **Learners:** JRip and J48 on raw data vs. on our binarized data;
+  the native learners (Pypper, CN2, Slipper, LRI, ...) on the binarized
+  data at each level.
+- **Discretizers:** the current `build_dataspec` binning at each level;
+  later FUSINTER (Zighed, Rabaséda & Rakotomalala 1998), a supervised
+  discretization, once implemented.
+- **Datasets:** ones with many numeric attributes (the catalog's
+  numeric-heavy selection: diabetes, sonar, ionosphere,
+  banknote-authentication, ...).
+- **Measures:** accuracy, number and length of rules, fit time, and the
+  number of binary features each discretization produces.
+- `demo_ripper_comparison.py` already runs JRip on both the raw data
+  (`jrip_native`) and our binarization -- a starting point.
+
 ## For every demo
 
 - The generated report describes its own experiment (data, protocol,
