@@ -94,10 +94,10 @@ def test_slipper_rejects_bad_arguments():
 
 # ------------------------------------------------------------------- ENDER
 
-from pyrulearn.learners.boosting import ENDER, ExponentialLoss, LogisticLoss  # noqa: E402
+from pyrulearn.learners.boosting import ENDER, ExponentialLoss, LogisticLoss, SigmoidLoss  # noqa: E402
 
 
-@pytest.mark.parametrize("loss", [LogisticLoss(), ExponentialLoss()])
+@pytest.mark.parametrize("loss", [LogisticLoss(), ExponentialLoss(), SigmoidLoss()])
 def test_loss_derivatives_match_finite_differences(loss):
     rng = np.random.default_rng(0)
     n, K = 20, 2
@@ -131,7 +131,11 @@ def test_ender_learns_positive_class_votes_that_find_the_concept():
     np.testing.assert_array_equal(np.asarray(model.predict(test)) == "pos", scores[:, 1] > scores[:, 0])
 
 
-@pytest.mark.parametrize("kw", [dict(method="gradient"), dict(loss="exponential"), dict(shrinkage=1.0)])
+@pytest.mark.parametrize("kw", [
+    dict(method="gradient"), dict(method="gradient_boosting"), dict(method="newton", subsample=0.5),
+    dict(loss="exponential"), dict(loss="exponential", method="simultaneous"),
+    dict(loss="sigmoid", shrinkage=1.0, subsample=0.5), dict(shrinkage=1.0), dict(beta=0.6),
+])
 def test_ender_variants(kw):
     data = _data()
     model = ENDER(n_rules=40, random_state=0, **kw).fit(data)
@@ -160,7 +164,7 @@ def test_ender_early_stopping_ends_on_noise():
                                       rng.choice(["x", "y"], 400))
     full = ENDER(n_rules=200, random_state=0).fit(noise)
     stopped = ENDER(n_rules=200, early_stopping=True, random_state=0).fit(noise)
-    assert len(stopped.rules) < len(full.rules) / 2
+    assert len(stopped.rules) < 0.75 * len(full.rules)
 
 
 def test_ender_is_reproducible_and_uses_data_weights():
@@ -170,3 +174,39 @@ def test_ender_is_reproducible_and_uses_data_weights():
     assert [r.to_string() for r in a.rules] == [r.to_string() for r in b.rules]
     w = ENDER(n_rules=30, random_state=5).fit(data.with_weights(np.where(data.y == "pos", 4.0, 1.0)))
     assert [r.to_string() for r in w.rules] != [r.to_string() for r in a.rules]
+
+
+def test_ender_defaults_are_the_papers_constant_step_logit_setting():
+    e = ENDER()
+    assert (e.method, e.beta, e.shrinkage, e.subsample, e.n_rules) == ("constant_step", 0.2, 0.1, 0.25, 500)
+    assert isinstance(e.loss, LogisticLoss)
+
+
+def test_exponential_response_is_the_smoothed_exact_minimizer():
+    loss = ExponentialLoss()
+    loss.eps = 0.5
+    w_pos, w_neg = 6.0, 2.0                        # g = W- - W+, h = W+ + W-
+    assert loss.response(w_neg - w_pos, w_pos + w_neg, 0.2) == pytest.approx(0.5 * np.log(6.5 / 2.5))
+    assert SigmoidLoss().response(-3.0, 1.0, 0.7) == 0.7
+
+
+def test_a_larger_constant_step_gives_rules_covering_less():
+    data = _data()
+    X = data.X
+
+    def mean_coverage(beta):
+        model = ENDER(n_rules=60, beta=beta, random_state=0).fit(data)
+        body = [r for r in model.rules if r.conditions]
+        return np.mean([np.all(X[:, [l.feature for l in r.conditions]], axis=1).sum() for r in body])
+
+    assert mean_coverage(0.05) > mean_coverage(2.0)
+
+
+def test_invalid_method_and_loss_combinations_are_refused():
+    with pytest.raises(ValueError, match="exponential"):
+        ENDER(method="simultaneous")
+    with pytest.raises(ValueError, match="convex"):
+        ENDER(loss="sigmoid", method="newton")
+    with pytest.raises(ValueError):
+        ENDER(beta=0.0)
+

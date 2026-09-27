@@ -83,12 +83,18 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `Slipper` (`pyrulearn.learners.boosting`): SLIPPER (Cohen & Singer
   1999), confidence-rated boosting of rules, as a `LinearRuleModel`; and
   its rule-growing heuristic `SlipperZ` (`sqrt(tp) - sqrt(fp)`).
-- `ENDER` (`pyrulearn.learners.boosting`): gradient boosting of rules
-  (Dembczyński, Kotłowski & Słowiński; MLRules 2008, ENDER 2010) -- rules
-  voting for one class, grown on subsamples by the gradient or Newton
-  criterion of a pluggable `BoostingLoss` (`LogisticLoss`, the default,
-  multiclass; `ExponentialLoss`), weighted by a shrunk Newton step;
-  optional holdout early stopping; a `LinearRuleModel`.
+- `ENDER` (`pyrulearn.learners.boosting`): boosting of rules by forward
+  stagewise loss minimization (Dembczyński, Kotłowski & Słowiński; ENDER
+  2010, MLRules 2008) -- rules voting for one class, grown on subsamples
+  to minimize an impurity derived from a pluggable `BoostingLoss`
+  (`LogisticLoss`, the default, multiclass; `ExponentialLoss`;
+  `SigmoidLoss`) by one of the paper's techniques (constant-step, the
+  default, with `beta`; gradient descent; gradient boosting; simultaneous
+  minimization) or MLRules' Newton criterion, weighted by the loss's
+  response on all rows, shrunk; optional holdout early stopping; a
+  `LinearRuleModel`. Defaults are the paper's CS-Log setting.
+- `references.bib`: entries for RuleFit, SLIPPER, confidence-rated
+  boosting, LRI, CPAR, MLRules and ENDER.
 - `CPAR` (`pyrulearn.learners.cpar`): Classification based on Predictive
   Association Rules (Yin & Han 2003) -- FOIL-gain rule growing on
   weighted examples with rule copying at nearly-as-good conditions,

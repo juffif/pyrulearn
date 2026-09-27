@@ -12,8 +12,11 @@ weighted covering framework uses (`pyrulearn.learners.seco.
 WeightedCovering`), and grows its rules with the SeCo building blocks
 (`HillClimbing`, `GrowPruneSplit`). `ENDER` (Dembczyński, Kotłowski &
 Słowiński 2008/2010) is gradient boosting of rules for a pluggable
-`BoostingLoss`: `LogisticLoss` (the multinomial log-likelihood -- the
-MLRules variant, the default) or `ExponentialLoss` (AdaBoost's).
+`BoostingLoss` -- `LogisticLoss` (the multinomial log-likelihood, the
+default), `ExponentialLoss` (AdaBoost's) or `SigmoidLoss` -- and one of
+the paper's minimization techniques (constant-step, gradient descent,
+gradient boosting, simultaneous minimization) or MLRules' Newton
+criterion.
 """
 
 from __future__ import annotations
@@ -202,21 +205,38 @@ class BoostingLoss(ABC):
     """A loss for `ENDER`. The model keeps one score per class and example,
     ``F`` (``n x K``); a rule votes for one class ``k`` by adding its
     weight ``alpha`` to that class's scores on the rows it covers.
-    `derivatives` returns, per example and class, the first and second
-    derivative of the loss with respect to such a vote (at ``alpha = 0``),
-    already multiplied by the examples' weights ``d``; `value` is the total
-    loss. ``Y`` is the one-hot class matrix."""
+
+    - `values` -- the per-example loss (times the example weights ``d``);
+      `value` its total;
+    - `derivatives` -- per example and class, the first and second
+      derivative of the loss with respect to such a vote at ``alpha = 0``,
+      times ``d``;
+    - `response` -- a rule's weight from the sums of those derivatives
+      over the rows it covers (default: the Newton step ``-g / h``).
+
+    ``Y`` is the one-hot class matrix."""
 
     #: whether the loss handles more than two classes
     multiclass: bool = True
+    #: whether its second derivative is usable for Newton steps (convex)
+    convex: bool = True
+    #: whether `response` is a Newton step, improvable by iterating
+    #: (the default rule is fitted by iterating it)
+    iterative_response: bool = True
+
+    @abstractmethod
+    def values(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def value(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> float:
+        return float(self.values(F, Y, d).sum())
 
     @abstractmethod
     def derivatives(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
 
-    @abstractmethod
-    def value(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> float:
-        raise NotImplementedError
+    def response(self, g: float, h: float, beta: float) -> float:
+        return -g / h if h > 0 else 0.0
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
@@ -231,74 +251,138 @@ class LogisticLoss(BoostingLoss):
     """The multinomial negative log-likelihood, ``log sum_k exp(F_k) -
     F_y`` (MLRules; for two classes the logit loss). A vote for class
     ``k``: first derivative ``p_k - [y = k]``, second ``p_k (1 - p_k)``,
-    with ``p`` the softmax of the scores."""
+    with ``p`` the softmax of the scores. The rule weight is a Newton
+    step (the paper's Eq. 15)."""
+
+    def values(self, F, Y, d):
+        m = F.max(axis=1)
+        lse = m + np.log(np.exp(F - m[:, None]).sum(axis=1))
+        return d * (lse - (F * Y).sum(axis=1))
 
     def derivatives(self, F, Y, d):
         P = _softmax(F)
         return d[:, None] * (P - Y), d[:, None] * P * (1.0 - P)
 
-    def value(self, F, Y, d):
-        m = F.max(axis=1)
-        lse = m + np.log(np.exp(F - m[:, None]).sum(axis=1))
-        return float(np.sum(d * (lse - (F * Y).sum(axis=1))))
+
+def _binary_margin(F: np.ndarray, Y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """``y`` (``+1`` for the second class) and ``f = F_1 - F_0``."""
+    return np.where(Y[:, 1] > 0, 1.0, -1.0), F[:, 1] - F[:, 0]
 
 
 class ExponentialLoss(BoostingLoss):
     """AdaBoost's exponential loss ``exp(-y f)`` for two classes, with
     ``f = F_1 - F_0`` and ``y = +1`` for the second class, ``-1`` for the
-    first. A vote for the second class raises ``f``, one for the first
-    lowers it; the second derivative is ``exp(-y f)`` either way."""
+    first. A vote for a class moves ``f`` towards it; with ``w = exp(-y
+    f)``, the first derivative is ``-w`` on that class's examples and
+    ``+w`` on the others, the second ``w``. The rule weight is the exact
+    minimizer ``1/2 ln((W+ + eps) / (W- + eps))`` (the paper's Eq. 14; ``W+``
+    / ``W-`` the weights of the covered examples of the voted / the other
+    class), smoothed as in Slipper (`eps`: half an example's average
+    weight) so that a pure rule doesn't get an infinite weight."""
 
     multiclass = False
+    iterative_response = False
+
+    def __init__(self):
+        self.eps = 0.5
+
+    def values(self, F, Y, d):
+        y, f = _binary_margin(F, Y)
+        return d * np.exp(-y * f)
 
     def derivatives(self, F, Y, d):
-        y = np.where(Y[:, 1] > 0, 1.0, -1.0)
-        w = d * np.exp(-y * (F[:, 1] - F[:, 0]))
+        y, f = _binary_margin(F, Y)
+        w = d * np.exp(-y * f)
+        self.eps = 0.5 * float(w.mean())
         return np.stack([y * w, -y * w], axis=1), np.stack([w, w], axis=1)
 
-    def value(self, F, Y, d):
-        y = np.where(Y[:, 1] > 0, 1.0, -1.0)
-        return float(np.sum(d * np.exp(-y * (F[:, 1] - F[:, 0]))))
+    def response(self, g, h, beta):
+        w_pos, w_neg = (h - g) / 2.0, (h + g) / 2.0            # g = W- - W+, h = W+ + W-
+        return 0.5 * math.log((max(w_pos, 0.0) + self.eps) / (max(w_neg, 0.0) + self.eps))
 
 
-_LOSSES = {"logistic": LogisticLoss, "exponential": ExponentialLoss}
+class SigmoidLoss(BoostingLoss):
+    """The sigmoid loss ``1 / (1 + exp(y f))`` for two classes (``f`` as in
+    `ExponentialLoss`): a smooth approximation of the 0-1 loss, bounded,
+    and so less sensitive to outliers, but not convex -- so no Newton
+    steps: a rule's weight is the constant step ``beta`` (the paper's
+    choice), and the Newton criterion is refused."""
+
+    multiclass = False
+    convex = False
+    iterative_response = False
+
+    def values(self, F, Y, d):
+        y, f = _binary_margin(F, Y)
+        return d / (1.0 + np.exp(y * f))
+
+    def derivatives(self, F, Y, d):
+        y, f = _binary_margin(F, Y)
+        L = 1.0 / (1.0 + np.exp(y * f))
+        slope = d * L * (1.0 - L)                                # -dL/d(y f)
+        curvature = d * L * (1.0 - L) * (1.0 - 2.0 * L)
+        return np.stack([y * slope, -y * slope], axis=1), np.stack([curvature, curvature], axis=1)
+
+    def response(self, g, h, beta):
+        return beta
+
+
+_LOSSES = {"logistic": LogisticLoss, "exponential": ExponentialLoss, "sigmoid": SigmoidLoss}
+_METHODS = ("constant_step", "gradient", "gradient_boosting", "simultaneous", "newton")
 
 
 class ENDER(NativeRuleLearner):
     """ENDER: boosting of decision rules by forward stagewise minimization
-    of a loss (Dembczyński, Kotłowski & Słowiński, DMKD 2010), here as in
-    its MLRules instance (ICML 2008), with a pluggable `BoostingLoss`.
+    of a loss (Dembczyński, Kotłowski & Słowiński, DMKD 2010; its MLRules
+    instance, ICML 2008), with a pluggable `BoostingLoss`.
 
     The model keeps a score per class; each rule votes for one class with
     a positive weight, and the class with the highest total wins. It
-    starts from a default rule (covering everything) for the class the
-    loss favours, with the weight of a Newton step. Then, for `n_rules`
-    rounds:
+    starts from a default rule (covering everything) for one class, with
+    the weight minimizing the loss. Then, for `n_rules` rounds:
 
     1. Draw a subsample (`subsample` of the rows, without replacement).
-    2. Grow a rule on it: starting from the empty rule (criterion 0),
-       add the condition, and choose the class, minimizing ``sum g``
-       (`method="gradient"`) or ``sum g / sqrt(sum h)``
-       (`method="newton"`) over the covered rows, where ``g``/``h`` are
-       the first/second derivatives of the loss for a vote for that
-       class; stop when no condition lowers the criterion. A rule is kept
-       only if its criterion is negative (a descent direction).
-    3. Give it the Newton step ``alpha = -sum g / sum h`` computed on
-       *all* rows (which also regularizes it), shrink it by `shrinkage`
-       (``nu``), and add it to the scores.
+    2. Grow a rule on it: starting from the empty rule (impurity 0), add
+       the condition, and choose the class, that minimize the impurity
+       ``L(rule)`` of `method`, until no condition lowers it; the rule is
+       kept only if its impurity is negative. With ``g``/``h`` the loss's
+       first/second derivatives for a vote for the class, summed over the
+       covered rows:
 
-    With `early_stopping`, the rows left out of each subsample are a
-    holdout set: a rule is acceptable if its error on the holdout rows it
-    covers is below that of guessing among the classes (``1 - 1/K``), and
-    the loop stops once 8 of the last 10 rules weren't acceptable (the
-    paper's binomial-test choice).
+       - ``"constant_step"`` (CS, the default) -- the change of the loss
+         if the covered rows' score for the class rose by `beta`: works
+         for any loss, and `beta` trades off coverage against purity
+         (larger: smaller, purer rules);
+       - ``"gradient"`` (GD) -- ``g``: the most general rules (``beta ->
+         0`` of constant-step);
+       - ``"gradient_boosting"`` (GB) -- ``g / sqrt(covered weight)``;
+       - ``"simultaneous"`` (SM, `ExponentialLoss` only) -- the loss with
+         the rule's exact weight: ``-sqrt(W+) + sqrt(W-)``, ``W+``/``W-``
+         the weights of the covered examples of the voted/other class;
+       - ``"newton"`` -- ``g / sqrt(h)``, MLRules' criterion (convex
+         losses).
+    3. Give it the loss's weight (`BoostingLoss.response`: a Newton step
+       for `LogisticLoss`, the exact minimizer for `ExponentialLoss`,
+       `beta` for `SigmoidLoss`) computed on *all* rows -- which also
+       regularizes it -- shrink it by `shrinkage` (``nu``), and add it to
+       the scores.
+
+    Defaults are the paper's constant-step logit setting (CS-Log: ``beta
+    = 0.2``, ``nu = 0.1``, subsample 0.25, 500 rules), among its best and
+    usable for any number of classes; its best-ranked, CS-Exp, is
+    ``ENDER(loss="exponential")`` with the same settings. MLRules is
+    ``ENDER(method="newton", subsample=0.5)``. `LogisticLoss` handles any
+    number of classes; `ExponentialLoss` and `SigmoidLoss` two (as in the
+    paper, which also covers regression -- not here).
+
+    `early_stopping` is MLRules': the rows left out of each subsample are
+    a holdout set; a rule is acceptable if its error on the holdout rows
+    it covers is below that of guessing among the classes (``1 - 1/K``),
+    and growth stops once 8 of the last 10 rules weren't.
 
     The result is a `LinearRuleModel`; a rule found in several rounds
     appears once, its weights summed, and the default rule is the
-    intercept of its class. Defaults are the paper's (``M = 500``, ``nu =
-    0.1``, subsample 0.5, Newton). `loss="logistic"` (default,
-    `LogisticLoss`) handles any number of classes, `"exponential"`
-    (`ExponentialLoss`) two. Numeric attributes come already binarized
+    intercept of its class. Numeric attributes come already binarized
     (`pyrulearn.data.io.build_dataspec`) instead of being thresholded
     during the search; the data's row weights weight the loss.
     """
@@ -307,9 +391,10 @@ class ENDER(NativeRuleLearner):
         self,
         n_rules: int = 500,
         shrinkage: float = 0.1,
-        subsample: float = 0.5,
+        subsample: float = 0.25,
         loss: Union[str, BoostingLoss] = "logistic",
-        method: str = "newton",
+        method: str = "constant_step",
+        beta: float = 0.2,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = None,
@@ -320,13 +405,21 @@ class ENDER(NativeRuleLearner):
             raise ValueError(f"shrinkage must be in (0, 1], got {shrinkage}")
         if not 0.0 < subsample <= 1.0:
             raise ValueError(f"subsample must be in (0, 1], got {subsample}")
-        if method not in ("newton", "gradient"):
-            raise ValueError(f"method must be 'newton' or 'gradient', got {method!r}")
+        if method not in _METHODS:
+            raise ValueError(f"method must be one of {_METHODS}, got {method!r}")
+        if beta <= 0:
+            raise ValueError(f"beta must be positive, got {beta}")
+        loss = _LOSSES[loss]() if isinstance(loss, str) else loss
+        if method == "simultaneous" and not isinstance(loss, ExponentialLoss):
+            raise ValueError("method='simultaneous' needs the exponential loss")
+        if method == "newton" and not loss.convex:
+            raise ValueError(f"method='newton' needs a convex loss, not {loss!r}")
         self.n_rules = n_rules
         self.shrinkage = shrinkage
         self.subsample = subsample
-        self.loss = _LOSSES[loss]() if isinstance(loss, str) else loss
+        self.loss = loss
         self.method = method
+        self.beta = beta
         self.early_stopping = early_stopping
         self.max_length = max_length
         self.random_state = random_state
@@ -352,15 +445,12 @@ class ENDER(NativeRuleLearner):
         X = np.asarray(data.X, dtype=bool)
         Xf = X.astype(float)
         d = np.ones(n) if data.weights is None else data.weights.astype(float)
-        F = np.zeros((n, K))
         rng = np.random.default_rng(self.random_state)
 
-        learned: List[Tuple[Tuple[int, ...], int, float]] = []
-        G, H = self.loss.derivatives(F, Y, d)
-        k0 = int(np.argmin(self._criterion(G.sum(axis=0), H.sum(axis=0))))
-        alpha0 = self._newton(G[:, k0].sum(), H[:, k0].sum())
+        F = np.zeros((n, K))
+        k0, alpha0 = self._default_rule(F, Y, d)
         F[:, k0] += alpha0                                  # the default rule, not shrunk
-        learned.append(((), k0, alpha0))
+        learned: List[Tuple[Tuple[int, ...], int, float]] = [((), k0, alpha0)]
 
         size = max(1, int(round(self.subsample * n)))
         verdicts: List[bool] = []
@@ -368,13 +458,13 @@ class ENDER(NativeRuleLearner):
             G, H = self.loss.derivatives(F, Y, d)
             in_sample = np.zeros(n, dtype=bool)
             in_sample[rng.choice(n, size=size, replace=False)] = True
-            found = self._grow(X, Xf, G * in_sample[:, None], H * in_sample[:, None])
+            found = self._grow(X, Xf, self._impurity_terms(F, Y, d, G, H, in_sample))
             if found is None:
                 continue
             body, k = found
             cov = np.all(X[:, list(body)], axis=1)
-            alpha = self._newton(G[cov, k].sum(), H[cov, k].sum())
-            if alpha <= 0:
+            alpha = self.loss.response(float(G[cov, k].sum()), float(H[cov, k].sum()), self.beta)
+            if not alpha > 0:
                 continue
             F[cov, k] += self.shrinkage * alpha
             learned.append((body, k, self.shrinkage * alpha))
@@ -391,29 +481,76 @@ class ENDER(NativeRuleLearner):
                  for (body, k), a in total.items() if a != 0]
         return LinearRuleModel(annotate_rules(rules, data), classes=classes)
 
-    # -- helpers ---------------------------------------------------------------
+    # -- the default rule ------------------------------------------------------
 
-    def _criterion(self, g: np.ndarray, h: np.ndarray) -> np.ndarray:
-        if self.method == "gradient":
-            return g
+    def _default_rule(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> Tuple[int, float]:
+        """The class and weight of the rule covering everything that
+        minimize the loss (the paper's Eq. 5): the weight by iterated
+        Newton steps for a convex loss with Newton responses, else by the
+        loss's own response (exact for the exponential loss, `beta` for
+        the sigmoid)."""
+        best: Tuple[float, int, float] = (math.inf, 0, 0.0)
+        for k in range(F.shape[1]):
+            alpha = 0.0
+            for _ in range(25 if self.loss.iterative_response else 1):
+                Fk = F.copy()
+                Fk[:, k] += alpha
+                G, H = self.loss.derivatives(Fk, Y, d)
+                step = self.loss.response(float(G[:, k].sum()), float(H[:, k].sum()), self.beta)
+                alpha = alpha + step if self.loss.iterative_response else step
+                if abs(step) < 1e-10:
+                    break
+            if alpha <= 0:
+                continue
+            Fk = F.copy()
+            Fk[:, k] += alpha
+            value = self.loss.value(Fk, Y, d)
+            if value < best[0]:
+                best = (value, k, alpha)
+        return best[1], best[2]
+
+    # -- growing a rule ----------------------------------------------------------
+
+    def _impurity_terms(self, F, Y, d, G, H, in_sample):
+        """Per-row quantities whose sums over the covered rows give the
+        impurity of `method` (see `_impurity`), restricted to the subsample."""
+        s = in_sample[:, None]
+        if self.method == "constant_step":
+            base = self.loss.values(F, Y, d)
+            D = np.empty_like(F)
+            for k in range(F.shape[1]):
+                Fk = F.copy()
+                Fk[:, k] += self.beta
+                D[:, k] = self.loss.values(Fk, Y, d) - base
+            return (D * s,)
+        if self.method == "simultaneous":         # exponential: W+ / W- per class
+            w = H * s                              # both columns carry w
+            return (w * Y, w * (1.0 - Y))
+        if self.method == "gradient_boosting":
+            return (G * s, (d[:, None] * s) * np.ones_like(G))
+        if self.method == "newton":
+            return (G * s, H * s)
+        return (G * s,)                            # gradient
+
+    def _impurity(self, sums: Tuple[np.ndarray, ...]) -> np.ndarray:
         with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(h > 0, g / np.sqrt(h), 0.0)
+            if self.method in ("constant_step", "gradient"):
+                return sums[0]
+            if self.method == "simultaneous":
+                return -np.sqrt(sums[0]) + np.sqrt(sums[1])
+            # gradient_boosting / newton: g / sqrt(weight or h)
+            return np.where(sums[1] > 0, sums[0] / np.sqrt(sums[1]), 0.0)
 
-    @staticmethod
-    def _newton(g: float, h: float) -> float:
-        return -g / h if h > 0 else 0.0
-
-    def _grow(self, X: np.ndarray, Xf: np.ndarray, G: np.ndarray,
-              H: np.ndarray) -> Optional[Tuple[Tuple[int, ...], int]]:
-        """The rule (body, class) minimizing the criterion on the rows where
-        `G`/`H` are non-zero, grown greedily from the empty rule; `None`
-        if no condition makes the criterion negative."""
+    def _grow(self, X: np.ndarray, Xf: np.ndarray,
+              terms: Tuple[np.ndarray, ...]) -> Optional[Tuple[Tuple[int, ...], int]]:
+        """The rule (body, class) minimizing the impurity, grown greedily
+        from the empty rule; `None` if no condition makes it negative."""
         cov = np.ones(X.shape[0], dtype=bool)
         body: List[int] = []
         best_k, current = -1, 0.0
         while self.max_length is None or len(body) < self.max_length:
             c = cov[:, None]
-            crit = self._criterion((G * c).T @ Xf, (H * c).T @ Xf)      # K x n_features
+            crit = self._impurity(tuple((t * c).T @ Xf for t in terms))     # K x n_features
             if body:
                 crit[:, body] = np.inf
             k, f = np.unravel_index(int(np.argmin(crit)), crit.shape)

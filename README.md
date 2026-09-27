@@ -65,7 +65,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
-| **ENDER** / MLRules | `boosting.ENDER` | gradient boosting of rules: each rule, grown greedily on a subsample to minimize a loss's gradient or Newton criterion, votes for one class with a shrunk Newton-step weight; pluggable loss (`LogisticLoss`, the multinomial log-likelihood of MLRules, default; `ExponentialLoss`); optional holdout early stopping; a `LinearRuleModel` | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
+| **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`); a `LinearRuleModel` | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
@@ -1325,29 +1325,51 @@ The data's row weights are the initial boosting weights.
 
 ### Boosting: ENDER
 
-`pyrulearn.learners.boosting.ENDER` (Dembczyński, Kotłowski & Słowiński;
-MLRules, ICML 2008, and ENDER, DMKD 2010) keeps a score per class and
-adds rules that each vote for one class with a positive weight; the class
-with the highest total wins. It starts from a default rule for the class
-the loss favours. Each round draws a random half of the rows (without
-replacement) and grows a rule on it greedily, choosing conditions and
-class to minimize `sum g` (`method="gradient"`) or `sum g / sqrt(sum h)`
-(`method="newton"`, the default) over the covered rows, where `g` and `h`
-are the loss's first and second derivatives; it stops when no condition
-lowers that, and keeps the rule only if it is negative. The rule's weight
-is the Newton step `-sum g / sum h` on *all* rows, shrunk by `shrinkage`
-(0.1). The loss is a pluggable `BoostingLoss`: `LogisticLoss` (the
-multinomial log-likelihood, i.e. MLRules; any number of classes) or
-`ExponentialLoss` (AdaBoost's, two classes). `early_stopping=True` uses the
-rows left out of each subsample as a holdout: a rule is acceptable if its
-error on the holdout rows it covers is below guessing (`1 - 1/K`), and
-growth stops once 8 of the last 10 rules weren't. The result is a
-`LinearRuleModel`; repeated rules are merged by summing their weights.
+`pyrulearn.learners.boosting.ENDER` (Dembczyński, Kotłowski & Słowiński,
+DMKD 2010; and its MLRules instance, ICML 2008) keeps a score per class
+and adds rules that each vote for one class with a positive weight; the
+class with the highest total wins. It starts from a default rule for one
+class, with the weight minimizing the loss. Each round draws a subsample
+of the rows (without replacement) and grows a rule on it greedily,
+choosing conditions and class to minimize an impurity derived from the
+loss, until no condition lowers it; the rule is kept only if the impurity
+is negative. The rule's weight is computed on *all* rows and shrunk by
+`shrinkage` -- together with the subsampling the paper's alternative to
+pruning.
+
+- **Losses** (a pluggable `BoostingLoss`): `LogisticLoss` (the
+  multinomial log-likelihood; any number of classes; weight: Newton
+  step), `ExponentialLoss` (AdaBoost's, two classes; weight: the exact
+  minimizer, smoothed as in Slipper), `SigmoidLoss` (a bounded, non-convex
+  approximation of the 0-1 loss, two classes; weight: the constant step).
+- **Impurities** (`method`), with `g`/`h` the loss's first/second
+  derivatives for a vote for the class, summed over the covered rows:
+  `"constant_step"` (the change of the loss for a step of `beta`; any
+  loss; `beta` controls coverage -- larger, smaller and purer rules),
+  `"gradient"` (`g`; the most general rules), `"gradient_boosting"` (`g /
+  sqrt(covered weight)`), `"simultaneous"` (exponential loss: `-sqrt(W+)
+  + sqrt(W-)`, the loss with the rule's exact weight), `"newton"` (`g /
+  sqrt(h)`, MLRules').
+- **Defaults** are the paper's constant-step logit setting (`beta = 0.2`,
+  `shrinkage = 0.1`, `subsample = 0.25`, 500 rules), among its best and
+  usable with any number of classes. Its best-ranked setting, CS-Exp, is
+  `ENDER(loss="exponential")`; SM-Exp adds `method="simultaneous"`;
+  CS-Sigm is `ENDER(loss="sigmoid", shrinkage=0.2, subsample=0.5)`; MLRules
+  is `ENDER(method="newton", subsample=0.5)`.
+- `early_stopping=True` (MLRules') uses the rows left out of each
+  subsample as a holdout: a rule is acceptable if its error on the
+  holdout rows it covers is below guessing (`1 - 1/K`), and growth stops
+  once 8 of the last 10 rules weren't.
+
+The result is a `LinearRuleModel`; repeated rules are merged by summing
+their weights. The paper also covers regression (squared-error loss),
+which pyrulearn doesn't.
 
 ```python
 from pyrulearn.learners.boosting import ENDER
 
-model = ENDER(n_rules=500, shrinkage=0.1, subsample=0.5, loss="logistic").fit(train_rep)
+model = ENDER().fit(train_rep)                                   # CS-Log
+few = ENDER(n_rules=3, shrinkage=1.0, subsample=1.0, loss="exponential", beta=0.6).fit(train_rep)
 ```
 
 ### Lightweight Rule Induction
