@@ -35,7 +35,7 @@ Requires Python ≥ 3.10, `numpy` and `scikit-learn` (the latter because
 | `data` | `pandas`, `scipy` | `pyrulearn.data.io` (reading ARFF/CSV; `scipy` for ARFF and sparse representations) |
 | `plot` | `matplotlib`, `networkx` | coverage-space and refinement-graph plotting in `pyrulearn.evaluation` |
 | `wittgenstein` | `wittgenstein` | `pyrulearn.interfaces.wittgenstein` (IREP, RIPPER) |
-| `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets, RuleFit) |
+| `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets, RuleFit, Slipper) |
 | `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, which must be built separately (no Windows wheels) |
 | `test` | `pytest` | running the test suite |
 | `all` | all of the above except `pyarc` | |
@@ -89,6 +89,7 @@ random forest — and returns its own, much smaller model.
 | **Bayesian Rule Lists** | `imodels.BayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
 | **Bayesian Rule Sets** | `imodels.BayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
 | **RuleFit** | `imodels.ImodelsRuleFit`, `RuleFitImporter` | `imodels` | Friedman & Popescu 2008 |
+| **"SLIPPER"** (AdaBoost over imodels' rule learner) | `imodels.ImodelsSlipper`, `SlipperImporter` | `imodels` | Cohen & Singer 1999 (loosely) |
 | **JRip** (Weka's RIPPER) | `weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
 | **PART** | `weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
 | **J48** (Weka's C4.5) | `weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
@@ -112,7 +113,7 @@ details.
 | `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) and `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
-| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
+| `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
 | `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
@@ -1623,7 +1624,7 @@ still get a correct conversion, the same two as for
   rules = importer.import_model(model, ds, feature_names=["age", "color"])
   ```
 
-### imodels: Bayesian rule lists, rule sets and RuleFit
+### imodels: Bayesian rule lists, rule sets, RuleFit and Slipper
 
 `BayesianRuleListImporter` (`pyrulearn.interfaces.imodels`, an
 optional dependency on `imodels`) extracts Letham et al.'s Bayesian
@@ -1742,6 +1743,26 @@ from pyrulearn.learners.rulefit import RuleFit
 imported = ImodelsRuleFit(random_state=0).fit(train_rep)         # a LinearRuleModel
 native = RuleFit(rules=rulefit_candidates(train_rep, random_state=0), cv=5).fit(train_rep)
 ```
+
+`SlipperImporter` reads an `imodels.SlipperClassifier` as a
+`LinearRuleModel`, reproducing its predictions exactly, and
+`ImodelsSlipper` is the learner. Despite its name, imodels' Slipper is
+scikit-learn's AdaBoost (SAMME) over imodels' own rule learner, not Cohen
+& Singer's confidence-rated boosting (that is the native
+`learners.boosting.Slipper`): each rule votes with its AdaBoost weight α
+for the positive class where it fires and for the negative class where it
+doesn't, which is a linear model with the rules' α as weights and the
+intercept −Σα/2. Reading imodels' source turned up several problems:
+its rules are never pruned (the pruning step compares a rule's objective
+with itself), its "default rule" is a random conjunction of conditions
+like `x > min(x)` (on 0/1 features an arbitrary ordinary rule), the
+boosting weights are indexed with row positions of the growing subset,
+and AdaBoost typically stops after one to three rules. **With labels
+other than 0/1, its `predict` always returns the first class**:
+`BoostedRulesClassifier.fit` restores the original labels in `classes_`,
+which scikit-learn's AdaBoost compares its rules' 0/1 predictions with.
+`ImodelsSlipper` fits on 0/1 labels to avoid that, and the import
+reproduces the intended model.
 
 ### weka: JRip, PART and J48
 

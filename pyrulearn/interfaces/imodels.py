@@ -7,10 +7,11 @@ pyrulearn.interfaces.imodels
 (Letham et al.'s Bayesian Rule Lists) and `BayesianRuleSetImporter` for
 `imodels.BayesianRuleSetClassifier` (the "BOA"/Wang et al. Bayesian
 Or-of-And algorithm), and `RuleFitImporter` for
-`imodels.RuleFitClassifier` (Friedman & Popescu's RuleFit, see its own
-section at the end); `imodels`' other rule models
-(`BoostedRulesClassifier`, ...) belong in this same module when added,
-per this package's group-by-shared-implementation convention.
+`imodels.RuleFitClassifier` (Friedman & Popescu's RuleFit), and
+`SlipperImporter` for `imodels.SlipperClassifier` (see their sections at
+the end); `imodels`' other rule models (`BoostedRulesClassifier`, ...)
+belong in this same module when added, per this package's
+group-by-shared-implementation convention.
 
 **The first importer producing a `DecisionList`, not a `FlatRuleSet`.** A
 Bayesian Rule List is genuinely an ordered decision list -- its own
@@ -680,3 +681,132 @@ def rulefit_candidates(data: DataRepresentation, n_estimators: int = 100, tree_s
         rules.append(Rule(list(body), target=head.item() if isinstance(head, np.generic) else head,
                           dataspec=spec))
     return FlatRuleSet(annotate_rules(rules, data))
+
+
+# ================================================================ Slipper ===
+
+def _slipper_body(conditions, dataspec: DataSpec):
+    """A pyrulearn body (feature indices) from one imodels Slipper rule --
+    a list of ``{"feature", "operator", "pivot"}`` conditions on 0/1
+    columns (feature and pivot sometimes strings) -- or `None` if no 0/1
+    row satisfies it."""
+    by_col: Dict[int, list] = {}
+    for c in conditions:
+        by_col.setdefault(int(c["feature"]), []).append((c["operator"], float(c["pivot"])))
+    body = []
+    for col, terms in by_col.items():
+        allowed = _boolean_values(terms)
+        if not allowed:
+            return None
+        if allowed == {1}:
+            body.append(col)
+        elif allowed == {0}:
+            body.append(dataspec.negation_of(col))
+    return body
+
+
+class SlipperImporter(ObjectRuleImporter):
+    """Extracts a `pyrulearn.models.LinearRuleModel` from a fitted
+    `imodels.SlipperClassifier`, reproducing its predictions.
+
+    Despite the name, imodels' `SlipperClassifier` is scikit-learn's
+    AdaBoost (SAMME) over imodels' own rule learner, not Cohen & Singer's
+    confidence-rated boosting (that is the native
+    `pyrulearn.learners.boosting.Slipper`): each round's rule votes, with
+    AdaBoost's weight ``alpha``, for ``classes_[1]`` where it covers a row
+    and for ``classes_[0]`` where it doesn't. So ``classes_[1]`` wins
+    where the covering rules' alphas sum to more than half of all alphas:
+    each rule is imported with its ``alpha`` as the weight, plus the
+    intercept ``-sum(alpha) / 2``. Rules that no 0/1 row can satisfy are
+    dropped; repeated rules are merged by summing their weights.
+
+    Worth knowing when comparing (confirmed by reading imodels' source):
+    its rules are never pruned (the pruning step compares a rule's
+    objective with itself), its "default rule" is a random conjunction of
+    conditions such as ``x > min(x)`` -- on 0/1 features an ordinary,
+    arbitrary rule -- and while growing, the boosting weights of all rows
+    are indexed with row positions of the growing subset. Its AdaBoost
+    also tends to stop after a few rounds: once a round re-learns a rule
+    whose weighted error is 0.5, scikit-learn ends the boosting.
+
+    **A bug in imodels' `predict` with non-0/1 labels:**
+    `BoostedRulesClassifier.fit` restores `classes_` to the original
+    labels, but scikit-learn's AdaBoost `decision_function` compares each
+    rule's 0/1 prediction with `classes_` -- with e.g. string labels
+    nothing ever matches, and `predict` returns the first class for every
+    row. The import reproduces the intended model (what `predict` returns
+    for 0/1 labels). `ImodelsSlipper` sidesteps the bug by fitting on 0/1
+    labels and keeping the real ones in ``model.label_names_``, which the
+    importer uses when present.
+    """
+
+    SOURCE = "imodels.SlipperClassifier"
+
+    def import_model(self, model, dataspec: DataSpec,
+                     data: Optional[DataRepresentation] = None) -> LinearRuleModel:
+        n_cols = getattr(model, "n_features_in_", None)
+        if n_cols is not None and n_cols != dataspec.n_features:
+            raise ValueError(f"dataspec has {dataspec.n_features} features but the model was trained on {n_cols}")
+        if any(dataspec.negation_of(j) is None for j in range(dataspec.n_features)):
+            raise ValueError("SlipperImporter needs a DataSpec with negation features")
+        labels = list(getattr(model, "label_names_", model.classes_))
+        neg_class, pos_class = labels[0], labels[1]
+        weights: Dict[tuple, float] = {}
+        total = 0.0
+        for est, alpha in zip(model.estimators_, model.estimator_weights_):
+            alpha = float(alpha)
+            total += alpha
+            body = _slipper_body(est.rule, dataspec)
+            if body is None:
+                continue
+            key = tuple(sorted(set(body)))
+            weights[key] = weights.get(key, 0.0) + alpha
+        intercept = -total / 2.0 + weights.pop((), 0.0)
+        rules: List[WeightedRule] = [WeightedRule([], target=pos_class, dataspec=dataspec, weight=intercept)]
+        rules += [WeightedRule(list(b), target=pos_class, dataspec=dataspec, weight=w)
+                  for b, w in weights.items() if w != 0]
+        rules = self._stamp_rule_provenance(rules, n_rules=len(rules))
+        rules = self._stamp_rule_stats(rules, data)
+        classes = [c.item() if isinstance(c, np.generic) else c for c in labels]
+        return self._stamp_provenance(LinearRuleModel(rules, classes=classes), n_rules=len(rules))
+
+
+register_importer("slipper", SlipperImporter)
+
+
+class ImodelsSlipper(ExternalRuleLearner):
+    """`imodels.SlipperClassifier` (AdaBoost over imodels' rule learner,
+    see `SlipperImporter`). `fit(data)` -> `LinearRuleModel`, binary
+    targets only. `**params` are its constructor args (`n_estimators=`,
+    `random_state=`). Named apart from the native
+    `pyrulearn.learners.boosting.Slipper`."""
+
+    IMPORTER = SlipperImporter
+    NATIVE_MODEL = LinearRuleModel
+
+    def __init__(self, **params):
+        self.params = params
+
+    def fit_external(self, X, y, feature_names=None):
+        from imodels import SlipperClassifier
+
+        if y is None:
+            raise ValueError("ImodelsSlipper needs labels (y) to fit")
+        X = np.asarray(X)
+        if not np.all((X == 0) | (X == 1)):
+            raise ValueError("ImodelsSlipper needs already-Boolean (0/1) input")
+        labels, y01 = np.unique(np.asarray(y), return_inverse=True)
+        if len(labels) != 2:
+            raise ValueError(f"ImodelsSlipper needs a binary target, got {len(labels)} classes")
+        model = SlipperClassifier(**self.params)
+        # fit on 0/1 labels: with others imodels' predict always returns the first class
+        try:
+            model.fit(X.astype(float), y01, feature_names=list(feature_names) if feature_names else None)
+        except ValueError as e:
+            if "worse than random" in str(e):
+                raise ValueError("imodels' SlipperClassifier failed: its first rule is worse than chance, "
+                                 "so scikit-learn's AdaBoost can't start (a limitation of imodels' rule "
+                                 "learner, see SlipperImporter)") from e
+            raise
+        model.label_names_ = labels
+        return model

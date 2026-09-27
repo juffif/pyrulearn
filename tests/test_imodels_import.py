@@ -13,7 +13,9 @@ from pyrulearn.interfaces.imodels import (  # noqa: E402
     BayesianRuleSet,
     BayesianRuleSetImporter,
     ImodelsRuleFit,
+    ImodelsSlipper,
     RuleFitImporter,
+    SlipperImporter,
 )
 from pyrulearn.rule import Literal  # noqa: E402
 
@@ -421,4 +423,33 @@ def test_rulefit_candidates_is_a_pool_for_the_native_distiller():
         assert st.tp >= st.fp
     model = RuleFit(rules=pool, random_state=0).fit(data)
     assert np.mean(np.asarray(model.predict(data)) == data.y) > 0.8
+
+
+# ------------------------------------------------------------------ Slipper
+
+def test_slipper_import_reproduces_imodels_predictions_on_01_labels():
+    from pyrulearn.models import LinearRuleModel
+    data = _rulefit_data()
+    y01 = (data.y == "good").astype(int)
+    for seed in range(3):
+        ext = imodels.SlipperClassifier(n_estimators=10, random_state=seed).fit(data.X.astype(float), y01)
+        model = SlipperImporter().import_model(ext, data.spec, data=data.relabel(y01))
+        assert isinstance(model, LinearRuleModel)
+        np.testing.assert_array_equal(model.predict(data.relabel(y01)), ext.predict(data.X.astype(float)))
+        # intercept: minus half of all AdaBoost weights
+        assert model.rules[0].weight == pytest.approx(-ext.estimator_weights_[:len(ext.estimators_)].sum() / 2)
+
+
+def test_imodels_slipper_predicts_the_first_class_for_string_labels_but_the_learner_works():
+    data = _rulefit_data()
+    ext = imodels.SlipperClassifier(n_estimators=5, random_state=0).fit(data.X.astype(float), data.y)
+    assert set(ext.predict(data.X.astype(float))) == {"bad"}         # the imodels bug
+    learner = ImodelsSlipper(n_estimators=5, random_state=0)
+    model = learner.fit(data)
+    fitted = learner.fit_external(data.X, data.y, data.spec.feature_names)
+    expected = fitted.label_names_[fitted.predict(data.X.astype(float)).astype(int)]
+    np.testing.assert_array_equal(model.predict(data), expected)
+    assert model.labels == ["bad", "good"]
+    assert np.mean(np.asarray(model.predict(data)) == data.y) > 0.7
+    assert all(r.provenance.source == "imodels.SlipperClassifier" for r in model.rules)
 

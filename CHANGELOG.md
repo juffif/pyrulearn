@@ -83,6 +83,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `Slipper` (`pyrulearn.learners.boosting`): SLIPPER (Cohen & Singer
   1999), confidence-rated boosting of rules, as a `LinearRuleModel`; and
   its rule-growing heuristic `SlipperZ` (`sqrt(tp) - sqrt(fp)`).
+- `SlipperImporter` and `ImodelsSlipper` (`pyrulearn.interfaces.imodels`):
+  `imodels.SlipperClassifier` (in fact scikit-learn's AdaBoost over
+  imodels' rule learner) as an exact `LinearRuleModel`. With labels other
+  than 0/1, imodels' own `predict` always returns the first class (a bug);
+  `ImodelsSlipper` fits on 0/1 labels to avoid it.
 - `RuleFit` (`pyrulearn.learners.rulefit`), a RuleFit-style rule
   distiller: a sparse (L1, or elastic-net with `l1_ratio`) logistic
   regression over the coverage of a rule pool (`rules=`, or mined like
