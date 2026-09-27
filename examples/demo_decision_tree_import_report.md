@@ -1,6 +1,6 @@
 # Decision-tree -> rule-set import demo
 
-Generated 2026-09-24 22:13:17. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
+Generated 2026-09-27 16:31:31. N_FOLDS=5, MAX_INTERVALS=6, MAX_DEPTH=5 (covtype: 8).
 
 Only fold 1 of each dataset is shown in full detail (tree + every rule in all four `to_string` formats); all folds contribute to the summary statistics.
 
@@ -163,7 +163,7 @@ conditions: adoption-of-the-budget-resolution = ?, physician-fee-freeze ≠ y, e
 | 4 | 0.954 | 0.954 | 1.000 | 20 | 11 |
 | 5 | 0.897 | 0.897 | 1.000 | 18 | 11 |
 
-**Summary** (0.2s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
+**Summary** (0.1s): tree accuracy 0.938 +/- 0.026, rule-set accuracy 0.938 +/- 0.026, tree/rule-set agreement 1.0000, mean rules/fold 18.4, mean attributes used/fold 10.6 of 16 available.
 
 ---
 
@@ -342,7 +342,7 @@ conditions: tumor-size ≠ 10-14, deg-malig ≠ 3, breast-quad = right_low
 | 4 | 0.702 | 0.702 | 1.000 | 19 | 8 |
 | 5 | 0.702 | 0.702 | 1.000 | 19 | 7 |
 
-**Summary** (0.2s): tree accuracy 0.717 +/- 0.014, rule-set accuracy 0.717 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.8 of 9 available.
+**Summary** (0.1s): tree accuracy 0.717 +/- 0.014, rule-set accuracy 0.717 +/- 0.014, tree/rule-set agreement 1.0000, mean rules/fold 19.0, mean attributes used/fold 7.8 of 9 available.
 
 ---
 
@@ -844,7 +844,7 @@ conditions: odor ≠ n, stalk-root ≠ c, stalk-surface-below-ring = y
 | 4 | 0.999 | 0.999 | 1.000 | 12 | 8 |
 | 5 | 0.999 | 0.999 | 1.000 | 12 | 8 |
 
-**Summary** (0.9s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.8 of 21 available.
+**Summary** (0.8s): tree accuracy 0.998 +/- 0.002, rule-set accuracy 0.998 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 12.0, mean attributes used/fold 7.8 of 21 available.
 
 ---
 
@@ -1145,7 +1145,7 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 | 4 | 0.736 | 0.736 | 1.000 | 238 | 34 |
 | 5 | 0.738 | 0.738 | 1.000 | 237 | 34 |
 
-**Summary** (370.4s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
+**Summary** (278.9s): tree accuracy 0.737 +/- 0.002, rule-set accuracy 0.737 +/- 0.002, tree/rule-set agreement 1.0000, mean rules/fold 236.2, mean attributes used/fold 34.8 of 54 available.
 
 ---
 
@@ -1155,10 +1155,10 @@ conditions: Elevation >= 2510.5, Elevation >= 2942.5, Elevation < 3047.5, Horizo
 
 | dataset | n | categ. | numeric | tree acc | rule acc | agree | rules/fold | attrs used/fold | time(s) |
 |---|---|---|---|---|---|---|---|---|---|
-| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.2 |
-| breast-cancer | 286 | 9 | 0 | 0.717±0.014 | 0.717±0.014 | 1.000 | 19.0 | 7.8 | 0.2 |
+| vote | 435 | 16 | 0 | 0.938±0.026 | 0.938±0.026 | 1.000 | 18.4 | 10.6 | 0.1 |
+| breast-cancer | 286 | 9 | 0 | 0.717±0.014 | 0.717±0.014 | 1.000 | 19.0 | 7.8 | 0.1 |
 | kr-vs-kp | 3196 | 36 | 0 | 0.941±0.011 | 0.941±0.011 | 1.000 | 11.4 | 9.4 | 0.3 |
 | hypothyroid | 3772 | 21 | 6 | 0.992±0.003 | 0.992±0.003 | 1.000 | 13.8 | 7.8 | 1.0 |
 | soybean | 683 | 35 | 0 | 0.652±0.037 | 0.652±0.037 | 1.000 | 14.0 | 10.6 | 0.5 |
-| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.8 | 0.9 |
-| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 370.4 |
+| mushroom | 8124 | 21 | 0 | 0.998±0.002 | 0.998±0.002 | 1.000 | 12.0 | 7.8 | 0.8 |
+| covtype | 581012 | 0 | 54 | 0.737±0.002 | 0.737±0.002 | 1.000 | 236.2 | 34.8 | 278.9 |
