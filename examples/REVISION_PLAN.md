@@ -2,6 +2,42 @@
 
 Notes for the demo overhaul on this branch.
 
+## Overall plan (agreed 2026-09-27, to be done later)
+
+1. **Shared experiment infrastructure first**, replacing the loading,
+   splitting and measuring code each demo now copies: datasets through the
+   catalog (`Catalog.default().select(...)`); stratified CV with
+   binarization per fold; a time limit per fit and failures recorded
+   instead of aborting; measures for every model type (accuracy, number of
+   rules and conditions -- also for linear models and ensembles -- fit
+   time); result tables with `display_name` columns and mean ranks;
+   caching of finished folds; the report skeleton with its Setup section
+   from `DESCRIPTION`; a quick mode (few datasets) and a full mode.
+2. **The comparisons**, each with its own report:
+   - (a) native vs. external: each native algorithm against its external
+     counterpart (Pypper vs. WekaJRip/WittRIPPER, Slipper vs. IModSlipper,
+     RuleFit vs. IModRuleFit, CBA vs. PArcCBA, Boomer vs. MLRLBoomer,
+     OptimalRuleBoosting vs. RKDRuleBoosting, PyLORD vs. JavaLord) --
+     replaces the ripper, seco-learners and workflow demos;
+   - (b) rule pools x distillers (below) -- replaces the RuleFit and
+     random-forest-combiner demos;
+   - (c) covering strategies and reweighting schemes (below);
+   - (d) rule ensembles: Slipper, LRI, CPAR, the ENDER variants, Boomer,
+     optimal rule boosting, as accuracy against number of rules;
+   - (e) numeric attributes: intrinsic handling vs. discretization (below);
+   - (f) multiclass decompositions (refresh of the pairwise demo).
+3. **Tour demos** (overview, representations, heuristics/isometrics,
+   decision-tree import) stay as short illustrations, updated to the new
+   API and names.
+
+Suggested order: infrastructure, (a), (d), (b), (c), (e), (f), tour demos.
+
+Open questions: infrastructure in `examples/` or as a library module
+(e.g. `pyrulearn.experiments`; leaning towards the library); statistics
+(mean ranks only, or Friedman tests with critical-difference diagrams);
+the default catalog selection for full runs and a fixed small set for
+quick mode; the order.
+
 ## Rule pools and distillers: one systematic comparison
 
 Merge the RuleFit comparison (`demo_rulefit_comparison.py`, on branch
