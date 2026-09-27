@@ -10,7 +10,9 @@ from pyrulearn.data import (
 from pyrulearn.evaluation import RuleStats
 from pyrulearn.heuristics import WRAcc
 from pyrulearn.learners.seco import (
-    AQR, CN2, RemovalCovering, WeightedCovering, rule_set_description_length,
+    AQR, CN2, AdaBoostReweighting, AdditiveReweighting, CoveredAtLeast, LRIReweighting,
+    MultiplicativeReweighting, PositiveWeightBelow, RemovalCovering, Rounds, WeightedCovering,
+    rule_set_description_length,
 )
 from pyrulearn.models import DecisionList
 from pyrulearn.rule import Rule
@@ -142,26 +144,91 @@ def test_description_length_with_integer_weights_equals_duplicated_rows():
 
 # ------------------------------------------------------------ covering strategies
 
-def test_weighted_covering_updates():
+def _state(covering, pos):
+    return covering.start(None, pos)
+
+
+def test_removal_covering_removes_everything_covered():
     pos = np.array([True, True, True, False])
     covered = np.array([True, False, True, True])
-    mult = WeightedCovering(gamma=0.5, max_covered=2)
-    s = mult.update(mult.start(None, pos), covered, pos)
-    np.testing.assert_allclose(s, [0.5, 1.0, 0.5, 1.0])           # negatives keep weight 1
-    add = WeightedCovering(scheme="additive", max_covered=2)
-    s2 = add.update(add.update(add.start(None, pos), covered, pos), covered, pos)
-    np.testing.assert_allclose(s2, [1 / 3, 1.0, 1 / 3, 1.0])
-    assert not mult.exhausted(s, pos)
-    s = mult.update(s, np.ones(4, bool), pos)
-    assert not mult.exhausted(s, pos)                             # the second positive: once so far
-    s = mult.update(s, np.ones(4, bool), pos)
-    assert mult.exhausted(s, pos)                                 # every positive covered twice
     removal = RemovalCovering()
-    r = removal.update(removal.start(None, pos), covered, pos)
-    np.testing.assert_array_equal(r, [False, True, False, False])
-    assert removal.exhausted(removal.update(r, np.ones(4, bool), pos), pos)
+    st = _state(removal, pos)
+    assert removal.update(st, covered) is None
+    np.testing.assert_array_equal(st.scope, [False, True, False, False])
+    removal.update(st, np.ones(4, bool))
+    assert removal.exhausted(st)
+
+
+def test_multiplicative_and_additive_reweighting_touch_only_positives():
+    pos = np.array([True, True, True, False])
+    covered = np.array([True, False, True, True])
+    mult = WeightedCovering(MultiplicativeReweighting(0.5), CoveredAtLeast(2))
+    st = _state(mult, pos)
+    mult.update(st, covered)
+    np.testing.assert_allclose(st.scope, [0.5, 1.0, 0.5, 1.0])      # negatives keep weight 1
+    add = WeightedCovering(AdditiveReweighting(), CoveredAtLeast(2))
+    st2 = _state(add, pos)
+    add.update(st2, covered)
+    add.update(st2, covered)
+    np.testing.assert_allclose(st2.scope, [1 / 3, 1.0, 1 / 3, 1.0])
+    assert not mult.exhausted(st)
+    mult.update(st, np.ones(4, bool))
+    assert not mult.exhausted(st)                                   # the second positive: once so far
+    mult.update(st, np.ones(4, bool))
+    assert mult.exhausted(st)                                       # every positive covered twice
     with pytest.raises(ValueError):
-        WeightedCovering(gamma=1.0)
+        MultiplicativeReweighting(1.0)
+
+
+def test_adaboost_reweighting_confidence_and_update():
+    pos = np.array([True, True, True, False, False])
+    covered = np.array([True, True, False, True, False])
+    cov = WeightedCovering(AdaBoostReweighting(eps=0.5), Rounds(5))
+    st = _state(cov, pos)
+    c = cov.update(st, covered)
+    assert c == pytest.approx(0.5 * np.log((2 + 0.5) / (1 + 0.5)))
+    expected = np.array([np.exp(-c), np.exp(-c), 1, np.exp(c), 1])
+    np.testing.assert_allclose(st.scope, expected * 5 / expected.sum())   # total kept
+    assert AdaBoostReweighting.assigns_rule_weights
+
+
+def test_lri_reweighting_counts_errors_of_both_kinds():
+    pos = np.array([True, True, False, False])
+    covered = np.array([True, False, True, False])                  # errs on rows 1 (FN) and 2 (FP)
+    cov = WeightedCovering(LRIReweighting(), Rounds(10))
+    st = _state(cov, pos)
+    cov.update(st, covered)
+    cov.update(st, covered)
+    np.testing.assert_allclose(st.scope, [1, 1 + 8, 1 + 8, 1])      # 1 + e**3 with e = 2
+    np.testing.assert_array_equal(st.errors, [0, 2, 2, 0])
+
+
+def test_stop_criteria():
+    pos = np.array([True, True, False])
+    st = _state(WeightedCovering(), pos)
+    assert not CoveredAtLeast(1).done(st) and not PositiveWeightBelow(0.5).done(st) and not Rounds(1).done(st)
+    st.record(np.array([True, True, False]))
+    st.scope = np.array([0.2, 0.2, 1.0])
+    assert CoveredAtLeast(1).done(st) and PositiveWeightBelow(0.5).done(st) and Rounds(1).done(st)
+    capped = WeightedCovering(stop=CoveredAtLeast(99), max_rounds=1)
+    assert capped.exhausted(st)                                     # the safety net
+
+
+def test_seco_refuses_a_reweighting_that_fits_rule_weights():
+    spec, X, y = _data()
+    with pytest.raises(ValueError, match="rule weights"):
+        CN2(target_class="pos", covering=WeightedCovering(AdaBoostReweighting(), Rounds(3))).fit(
+            BooleanDataRepresentation(spec, X, y))
+
+
+def test_a_rule_found_again_counts_as_a_round_but_appears_once():
+    spec, X, y = _data()
+    data = BooleanDataRepresentation(spec, X, y)
+    # a gentle decay keeps the strongest rule best for several rounds
+    model = CN2(target_class="pos", heuristic=WRAcc(),
+                covering=WeightedCovering(MultiplicativeReweighting(0.9), Rounds(8))).fit(data)
+    texts = _rules_text(model)
+    assert len(texts) == len(set(texts)) < 8
 
 
 @pytest.mark.parametrize("cls", [NListRepresentation, SparseDataRepresentation])

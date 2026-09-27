@@ -669,6 +669,18 @@ class CoverageDifference(RuleHeuristic):
         return stats.tp - stats.fp
 
 
+class SlipperZ(RuleHeuristic):
+    """h = sqrt(tp) - sqrt(fp): Slipper's rule-growing objective (Cohen &
+    Singer 1999, their Z-tilde). With `tp`/`fp` the boosting weights of the
+    covered positives/negatives, maximizing it minimizes the boosting
+    loss bound ``Z`` a rule with its optimal confidence
+    ``1/2 ln(tp/fp)`` achieves. Rewards coverage more than precision
+    does: a rule covering more positives beats a slightly purer one."""
+
+    def score(self, stats: RuleStats) -> float:
+        return math.sqrt(max(stats.tp, 0)) - math.sqrt(max(stats.fp, 0))
+
+
 class Support(RuleHeuristic):
     """h = (tp+fp) / (n_pos+n_neg) -- fraction of all examples covered,
     regardless of class. Isometrics: parallel anti-diagonal lines

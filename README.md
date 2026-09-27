@@ -64,6 +64,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **PFOIL** | `seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
+| **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
@@ -1232,30 +1233,88 @@ round-trip at all.
 `SeCo`'s `covering=` sets how the covering loop's scope changes after
 each accepted rule. `RemovalCovering` (the default) is classic
 separate-and-conquer: everything the rule covers leaves the scope.
-`WeightedCovering` (Gamberger & Lavrač 2002; Lavrač et al. 2004)
-keeps covered examples with a lower weight instead: a positive covered
-by `k` rules weighs `gamma ** k` (`scheme="multiplicative"`) or `1 / (k
-+ 1)` (`"additive"`); negatives keep weight 1. Later rules may then
-overlap earlier ones, but are steered towards the positives covered least
-so far. The loop ends once every positive has been covered `max_covered`
-times; a rule found again isn't added twice, but reweights its positives
-once more. `CN2`, `AQR`, `PFoil` and `PFossil` accept `covering=`; the
-all-classes seed covering behind `model=DecisionList` requires removal,
-since first-match semantics assumes it.
+`WeightedCovering(reweighting, stop)` (Gamberger & Lavrač 2002;
+Lavrač et al. 2004) keeps covered examples in scope with new weights
+instead. Later rules may then overlap earlier ones, and are steered
+towards the examples the weights emphasize. Weighted covering
+algorithms differ in two pluggable components:
+
+- the **reweighting scheme** (a `Reweighting`, like a heuristic):
+
+  | scheme | new weights | used by |
+  |---|---|---|
+  | `MultiplicativeReweighting(gamma)` | a positive covered by `k` rules: `gamma ** k`; negatives 1 | CN2-SD; CPAR's decay (`gamma = 2/3`) |
+  | `AdditiveReweighting()` | a positive covered by `k` rules: `1 / (k + 1)`; negatives 1 | CN2-SD |
+  | `AdaBoostReweighting()` | covered examples `* exp(-y C)`, `C` the rule's confidence; rescaled | Slipper |
+  | `LRIReweighting(power=3)` | `1 + e ** 3`, `e` the rules that erred on the example (either class) | Lightweight Rule Induction |
+
+- the **stop criterion** (`CoveringStop`; several may be given, any ends
+  the loop): `CoveredAtLeast(k)` (every positive covered `k` times,
+  CN2-SD, the default with `k = 5`), `PositiveWeightBelow(fraction)` (the
+  positives' total weight below a fraction of the start, CPAR), or
+  `Rounds(n)`. `max_rounds` (default 100) is a safety net on top.
+
+The loop keeps its state in a `CoveringState`: the current scope, how
+often each example was covered, how many rules erred on it, and the
+round. A rule found again counts as a round and reweights as usual, but
+appears only once in the resulting rule set, since a copy adds nothing
+to an unweighted set. `CN2`, `AQR`, `PFoil` and `PFossil` accept
+`covering=`; the all-classes seed covering behind `model=DecisionList`
+requires removal, since first-match semantics assumes it. A reweighting
+that fits a weight for each rule (`AdaBoostReweighting`) belongs to a
+boosting learner (`Slipper`, below), whose model can hold the weights;
+`SeCo`, which builds unweighted rule sets, refuses it.
 
 CN2-SD is CN2 with `WRAcc` and weighted covering:
 
 ```python
 from pyrulearn.heuristics import WRAcc
-from pyrulearn.learners.seco import CN2, WeightedCovering
+from pyrulearn.learners.seco import CN2, CoveredAtLeast, MultiplicativeReweighting, WeightedCovering
 
-model = CN2(heuristic=WRAcc(), covering=WeightedCovering(gamma=0.5)).fit(train_rep)
+model = CN2(heuristic=WRAcc(),
+            covering=WeightedCovering(MultiplicativeReweighting(0.5), CoveredAtLeast(5))).fit(train_rep)
 ```
 
 The scope the building blocks receive as `example_mask` is then a weight
 vector instead of a boolean mask; it multiplies with the data's own row
 weights. Seed picking and the grow/prune split use the rows with a
 positive weight, and everything that counts uses the weights.
+
+### Boosting: Slipper
+
+`pyrulearn.learners.boosting.Slipper` (Cohen & Singer 1999) boosts
+rules for one class against the rest. Each round it grows a rule on two
+thirds of the examples, greedily maximizing `SlipperZ` (`sqrt(W+) -
+sqrt(W-)` over the boosting weights), prunes it on the other third to
+the prefix with the lowest boosting loss, takes it or the default rule
+(whichever reaches the lower loss), gives it the confidence `C = 1/2
+ln((W+ + eps) / (W- + eps))`, and reweights the examples it covers
+(`AdaBoostReweighting`). After `n_rounds` rounds the model predicts the
+class where the covering rules' confidences sum to more than zero. It is
+a `LinearRuleModel`: a rule taken in several rounds appears once with its
+confidences summed, and the default rules sum into the intercept.
+
+```python
+from pyrulearn.learners.boosting import Slipper
+
+model = Slipper(n_rounds=20, random_state=0).fit(train_rep)
+print(model.to_string(show_stats=False, weight_format="6.2f"))
+```
+
+```prolog
+% conflict resolution: sum of rule weights per class, highest wins
+
+% class: pos
+ -1.09::pos(X) :- true.
+  1.23::pos(X) :- f2(X), f3(X).
+  1.25::pos(X) :- f0(X), f1(X).
+  0.63::pos(X) :- \+f1(X), f2(X), f3(X).
+...
+```
+
+With two classes it boosts the less frequent one (or `target_class`);
+with more, one run per class, all in one model, the highest sum winning.
+The data's row weights are the initial boosting weights.
 
 ### Multiclass classification
 
@@ -1905,15 +1964,21 @@ against it).
   `RemovalCovering`, `WeightedCovering`; row weights on every
   representation, see *Row weights* and *Weighted covering*). What builds
   on it is not:
-  - **CPAR** (Yin & Han, 2003) and `imodels`' **`SlipperClassifier`**
-    (Cohen & Singer, 1999) both need it *during induction* -- CPAR via a
-    fixed per-round decay, Slipper via boosting-style reweighting -- and
-    CPAR additionally needs a new `TopKMeanCombiner` (average Laplace
-    accuracy of the top-k rules per class) for prediction.
+  - **CPAR** (Yin & Han, 2003): its decay (`MultiplicativeReweighting(2/3)`)
+    and stop (`PositiveWeightBelow(0.05)`) exist; missing are its
+    FOIL-gain-based multi-literal search and a `TopKMeanCombiner`
+    (average Laplace accuracy of the top-k rules per class) for
+    prediction. (Slipper, the other motivating case, is done:
+    `learners.boosting.Slipper`.)
+  - **Lightweight Rule Induction** (Weiss & Indurkhya 2000): its
+    reweighting (`LRIReweighting`) exists; missing are its DNF rules (a
+    `ConceptModel` per rule, grown by an inner removal loop with the
+    error `FP + k * FN`, `k` doubled while no condition adds a true
+    positive) and the model (an unweighted vote of the DNF rules, an
+    `EnsembleModel` of `ConceptModel`s).
   - **Additive boosting of rules** (the ENDER family, BOOMER) needs the
-    same example-reweighting machinery, but driven by gradient/residual
-    updates after each added rule, with additive rather than list/set
-    prediction.
+    same machinery as Slipper, but with gradient-based reweighting and
+    rule weights from a Newton step.
   - The **RuleFit-style distiller** (`learners.rulefit.RuleFit`, with
     `LinearRuleModel`) covers weights at the *opposite* end -- fitted after
     induction -- and is done; its own candidate generation (RuleFit's

@@ -20,7 +20,8 @@ group-by-shared-implementation convention as `pyrulearn.interfaces`:
 `RuleDistiller` mixin shared by the classifiers that consume a rule
 pool, and the `CBA` and `CMAR` classifiers built on it),
 `pyrulearn.learners.ids` (`IDS`), `pyrulearn.learners.rulefit`
-(`RuleFit`, a sparse linear model over a rule pool), and
+(`RuleFit`, a sparse linear model over a rule pool),
+`pyrulearn.learners.boosting` (`Slipper`), and
 `pyrulearn.learners.multiclass` (`OneVsRest`/`OrderedOneVsRest`/
 `Pairwise` -- thin sugar over `DecomposingLearner`). External-tool
 learners (sklearn/wittgenstein/imodels/Weka/LORD) live next to their
