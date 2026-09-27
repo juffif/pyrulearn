@@ -254,6 +254,71 @@ def test_heuristic_vote_combiner_flips_a_noisy_majority():
     print("HeuristicVoteCombiner(Precision()), scored from measured stats, flips a noisy majority: OK")
 
 
+# -- ties: never by rule position ------------------------------------------
+
+def _tie_rules(specs, totals):
+    """One row covered by every rule: each spec is (target, covered_counts)."""
+    from pyrulearn.models import SingleRule
+    ds = DataSpec(["a", "b", "c", "d", "e"])
+    rules = [SingleRule(Rule([i], target=t, dataspec=ds)).set_stats_from_counts(covered, totals)
+             for i, (t, covered) in enumerate(specs)]
+    row = BooleanDataRepresentation(ds, np.ones((1, 5), dtype=bool))
+    return rules, row
+
+
+def _predict_every_order(rules, row, combiner):
+    """The prediction for every rule order -- all must agree."""
+    from itertools import permutations
+    return {FlatRuleSet(list(p), combiner=combiner).predict(row)[0] for p in permutations(rules)}
+
+
+def test_max_ties_vote_among_the_tied_top_rules():
+    totals = {"good": 300, "bad": 700}          # bad more frequent: must not matter here
+    rules, row = _tie_rules([
+        ("good", {"good": 8, "bad": 2}),          # Laplace 0.75
+        ("good", {"good": 8, "bad": 2}),          # Laplace 0.75
+        ("bad", {"bad": 8, "good": 2}),           # Laplace 0.75
+        ("bad", {"bad": 1, "good": 4}),           # lower score -- doesn't vote
+    ], totals)
+    assert _predict_every_order(rules, row, "max") == {"good"}   # 2 tied good vs 1 tied bad
+
+
+def test_remaining_ties_go_to_training_frequency_then_label_order():
+    level = [("good", {"good": 8, "bad": 2}), ("bad", {"bad": 8, "good": 2})]
+    for combiner in ("max", "vote", HeuristicVoteCombiner(Laplace())):
+        rules, row = _tie_rules(level, {"good": 700, "bad": 300})
+        assert _predict_every_order(rules, row, combiner) == {"good"}, combiner   # more frequent
+        rules, row = _tie_rules(level, {"good": 300, "bad": 700})
+        assert _predict_every_order(rules, row, combiner) == {"bad"}, combiner
+        rules, row = _tie_rules(level, {"good": 500, "bad": 500})
+        assert _predict_every_order(rules, row, combiner) == {"bad"}, combiner    # sorts first
+
+
+def test_distribution_combiner_ties_use_the_same_fallback():
+    # micro vote: summed counts good 5, bad 5 -> level
+    level = [("good", {"good": 3, "bad": 3}), ("bad", {"good": 2, "bad": 2})]
+    rules, row = _tie_rules(level, {"good": 700, "bad": 300})
+    assert _predict_every_order(rules, row, "micro_vote") == {"good"}
+    rules, row = _tie_rules(level, {"good": 300, "bad": 700})
+    assert _predict_every_order(rules, row, "micro_vote") == {"bad"}
+
+
+def test_every_combiner_describes_itself():
+    from pyrulearn.combiners import _COMBINER_SHORTCUTS
+    from pyrulearn.heuristics import FBeta
+    assert {k: c.describe() for k, c in _COMBINER_SHORTCUTS.items()} == {
+        "list": "first matching rule",
+        "max": "max Laplace",
+        "vote": "vote (one vote per covering rule)",
+        "micro_vote": "sum of covered class counts",
+        "macro_vote": "sum of covered class proportions",
+        "micro_max": "max covered class count",
+        "macro_max": "max covered class proportion",
+    }
+    assert HeuristicMaxCombiner(FBeta(beta=2.0)).describe() == "max FBeta(beta=2.0)"
+    assert HeuristicVoteCombiner(Precision()).describe() == "vote weighted by Precision"
+
+
 if __name__ == "__main__":
     test_combiner_shortcuts_and_instances_are_interchangeable()
     test_heuristic_max_combiner_scores_from_measured_stats()
@@ -265,4 +330,8 @@ if __name__ == "__main__":
     test_combiner_bases_are_abstract()
     test_count_vote_combiner_is_the_vote_shortcut()
     test_heuristic_vote_combiner_flips_a_noisy_majority()
+    test_max_ties_vote_among_the_tied_top_rules()
+    test_remaining_ties_go_to_training_frequency_then_label_order()
+    test_distribution_combiner_ties_use_the_same_fallback()
+    test_every_combiner_describes_itself()
     print("\nAll tests passed.")

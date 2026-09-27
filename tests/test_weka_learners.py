@@ -1,4 +1,4 @@
-"""`JRip` / `PART` / `J48` as `fit()` learners (the subprocess round-trip),
+"""`WekaJRip` / `WekaPART` / `WekaJ48` as `fit()` learners (the subprocess round-trip),
 plus the `placeholder_features=True` importer mode they rely on.
 
 The end-to-end fit tests need a real `weka.jar` -- set `$WEKA_JAR` (and,
@@ -13,11 +13,11 @@ import pytest
 
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.interfaces.weka import (
-    J48,
+    WekaJ48,
     J48Importer,
-    JRip,
+    WekaJRip,
     JRipImporter,
-    PART,
+    WekaPART,
     PARTImporter,
 )
 from pyrulearn.models import (
@@ -104,7 +104,7 @@ def test_placeholder_features_requires_a_dataspec():
 
 
 @pytest.mark.parametrize("cls, native", [
-    (JRip, DecisionList), (PART, DecisionList), (J48, DisjointRuleSet),
+    (WekaJRip, DecisionList), (WekaPART, DecisionList), (WekaJ48, DisjointRuleSet),
 ])
 def test_weka_learner_capability_set(cls, native):
     caps = cls().produces()
@@ -119,9 +119,9 @@ def test_only_jrip_has_a_single_rule_producer():
     # a pick among many. PART's rounds build a whole partial tree and pick
     # its best leaf for whichever class wins, not a chosen target -- no
     # such computation exists. J48 (a tree) has no covering process at all.
-    assert SingleRule in JRip().produces()
-    assert SingleRule not in PART().produces()
-    assert SingleRule not in J48().produces()
+    assert SingleRule in WekaJRip().produces()
+    assert SingleRule not in WekaPART().produces()
+    assert SingleRule not in WekaJ48().produces()
 
 
 def test_weka_learner_without_a_jar_raises_a_clear_error(monkeypatch):
@@ -129,7 +129,7 @@ def test_weka_learner_without_a_jar_raises_a_clear_error(monkeypatch):
     rep = BooleanDataRepresentation(_DS, neg_X(np.zeros((4, 3), dtype=bool)),
                                     np.array(["a", "b", "a", "b"]))
     with pytest.raises(RuntimeError, match="WEKA_JAR"):
-        JRip().fit(rep)
+        WekaJRip().fit(rep)
 
 
 def _synth_rep(n=200, seed=0):
@@ -142,7 +142,7 @@ def _synth_rep(n=200, seed=0):
 
 @pytest.mark.skipif(not _HAS_WEKA, reason="$WEKA_JAR not set")
 @pytest.mark.parametrize("cls, native", [
-    (JRip, DecisionList), (PART, DecisionList), (J48, DisjointRuleSet),
+    (WekaJRip, DecisionList), (WekaPART, DecisionList), (WekaJ48, DisjointRuleSet),
 ])
 def test_weka_learner_fits_end_to_end(cls, native):
     rep, y = _synth_rep()
@@ -155,7 +155,7 @@ def test_weka_learner_fits_end_to_end(cls, native):
 @pytest.mark.skipif(not _HAS_WEKA, reason="$WEKA_JAR not set")
 def test_weka_learner_decomposition_path_end_to_end():
     rep, _ = _synth_rep()
-    cs = JRip().fit(rep, model=ConceptSet)
+    cs = WekaJRip().fit(rep, model=ConceptSet)
     assert type(cs) is ConceptSet and len(cs.concepts) == 2
 
 
@@ -170,9 +170,9 @@ def test_jrip_single_rule_is_the_first_rule_of_that_labels_own_segment():
     ds = neg_spec([f"x{i}" for i in range(4)])
     rep = BooleanDataRepresentation(ds, neg_X(raw), y)
 
-    full = JRip().fit(rep)
+    full = WekaJRip().fit(rep)
     for label in ("pos", "q", "neg"):
-        sr = JRip().fit(rep, model=SingleRule, label=label)
+        sr = WekaJRip().fit(rep, model=SingleRule, label=label)
         assert type(sr) is SingleRule
         assert sr.target == label
         first_in_full = next((r for r in full.rules if r.target == label), None)
@@ -182,4 +182,4 @@ def test_jrip_single_rule_is_the_first_rule_of_that_labels_own_segment():
             assert sr.pos == first_in_full.pos  # exactly the first rule of that segment
 
     with pytest.raises(ValueError, match="label"):
-        JRip().fit(rep, model=SingleRule)
+        WekaJRip().fit(rep, model=SingleRule)

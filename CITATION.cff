@@ -2,16 +2,18 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "pyrulearn"
 type: software
-version: 0.1.3
+version: 0.2.0
 license: GPL-3.0-or-later
 repository-code: "https://github.com/juffif/pyrulearn"
 abstract: >-
   pyrulearn is a Python library for representing, learning, combining and
   analyzing propositional rule models over Boolean data: native rule learners
   (separate-and-conquer families such as CN2, PFOIL, FOSSIL and Pypper, a RIPPER re-implementation,
-  locally optimal rules, and the associative classifiers CBA, CMAR and IDS)
-  and interfaces to external ones (scikit-learn, wittgenstein, imodels, Weka,
-  LORD, pyarc).
+  with removal or weighted covering; locally optimal rules; the associative
+  classifiers CBA, CMAR, CPAR and IDS; the rule ensembles SLIPPER, LRI, ENDER,
+  BOOMER and optimal rule boosting; and RuleFit) and interfaces to external
+  ones (scikit-learn, wittgenstein, imodels, Weka, LORD, pyarc, mlrl-boomer,
+  realkd).
 keywords:
   - rule learning
   - interpretable machine learning

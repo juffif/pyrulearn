@@ -8,10 +8,14 @@ from pyrulearn.models import RuleList, RuleSet
 imodels = pytest.importorskip("imodels")
 
 from pyrulearn.interfaces.imodels import (  # noqa: E402
-    BayesianRuleList,
+    IModBayesianRuleList,
     BayesianRuleListImporter,
-    BayesianRuleSet,
+    IModBayesianRuleSet,
     BayesianRuleSetImporter,
+    IModRuleFit,
+    IModSlipper,
+    RuleFitImporter,
+    SlipperImporter,
 )
 from pyrulearn.rule import Literal  # noqa: E402
 
@@ -45,7 +49,7 @@ def test_imports_as_rulelist_and_matches_model_predictions():
     # order (each implicitly conditioned on every earlier one not
     # firing), so first-match-wins is the actual semantics
     rep = _binary_data()
-    learner = BayesianRuleList(random_state=0)
+    learner = IModBayesianRuleList(random_state=0)
     rules = learner.fit(rep)
 
     assert isinstance(rules, RuleList)
@@ -60,7 +64,7 @@ def test_imports_as_rulelist_and_matches_model_predictions():
     model_preds = np.asarray(model.predict(np.asarray(rep.X).astype(int)))
     rule_preds = np.asarray(rules.predict(rep))
     assert np.array_equal(model_preds, rule_preds)
-    print("BayesianRuleList imports as RuleList and matches model predictions exactly: OK")
+    print("IModBayesianRuleList imports as RuleList and matches model predictions exactly: OK")
 
 
 def test_rule_targets_follow_probability_not_position():
@@ -70,7 +74,7 @@ def test_rule_targets_follow_probability_not_position():
     # itself -- cross-checked here against the raw fitted model's own
     # theta array directly).
     rep = _binary_data()
-    learner = BayesianRuleList(random_state=0)
+    learner = IModBayesianRuleList(random_state=0)
     model = learner.fit_external(rep.X, rep.y, feature_names=rep.spec.feature_names)
     rules = learner.fit(rep)
 
@@ -90,7 +94,7 @@ def test_only_positive_literals():
     # BRL builds antecedents from FP-growth itemsets (sets of *present*
     # items), so an imported rule never contains a negated literal
     rep = _binary_data()
-    rules = BayesianRuleList(random_state=0).fit(rep)
+    rules = IModBayesianRuleList(random_state=0).fit(rep)
     for r in rules.rules:
         # every condition is a plain positive literal -- there are no
         # negative literals in the data any more, and BRL's
@@ -102,7 +106,7 @@ def test_only_positive_literals():
 
 def test_provenance_tagged_on_rules_and_default():
     rep = _binary_data()
-    rules = BayesianRuleList(random_state=0).fit(rep)
+    rules = IModBayesianRuleList(random_state=0).fit(rep)
     for r in list(rules.rules) + [rules.default_rule]:
         assert r.provenance.source == "imodels.BayesianRuleListClassifier"
         assert r.provenance.learner == "BayesianRuleListImporter"
@@ -111,7 +115,7 @@ def test_provenance_tagged_on_rules_and_default():
 
 def test_raises_on_feature_count_mismatch():
     rep = _binary_data(d=5)
-    model = BayesianRuleList(random_state=0).fit_external(
+    model = IModBayesianRuleList(random_state=0).fit_external(
         rep.X, rep.y, feature_names=rep.spec.feature_names
     )
     wrong_ds = DataSpec(["only", "three", "features"])
@@ -142,7 +146,7 @@ def test_nominal_attributes_via_build_dataspec_one_hot():
     assert {"cat=red", "cat=green", "cat=blue"} <= set(ds.feature_names)
     rep = BooleanDataRepresentation(ds, binarize(ds, df), y)
 
-    rules = BayesianRuleList(random_state=0).fit(rep)
+    rules = IModBayesianRuleList(random_state=0).fit(rep)
     assert isinstance(rules, RuleList)
     # rules reference the one-hot features by their real DataSpec names
     # (pretty-printed as "cat = red" / "cat ≠ red", not the raw feature
@@ -162,18 +166,18 @@ def test_multiclass_target_raises():
     rep = BooleanDataRepresentation(ds, X, y)
 
     try:
-        BayesianRuleList(random_state=0).fit(rep)
+        IModBayesianRuleList(random_state=0).fit(rep)
         assert False, "expected ValueError for 3-class y"
     except ValueError as e:
         assert "binary" in str(e).lower()
-    print("BayesianRuleList surfaces imodels' own binary-only error: OK")
+    print("IModBayesianRuleList surfaces imodels' own binary-only error: OK")
 
 
 def test_imports_as_ruleset_and_matches_model_predictions():
     # BRS is an unordered OR-of-AND pattern set (not a list): any single
     # rule firing predicts classes_[1], no rule firing predicts classes_[0]
     rep = _binary_data()
-    learner = BayesianRuleSet(**_FAST_BRS)
+    learner = IModBayesianRuleSet(**_FAST_BRS)
     rules = learner.fit(rep)
 
     assert isinstance(rules, RuleSet)
@@ -188,13 +192,13 @@ def test_imports_as_ruleset_and_matches_model_predictions():
     model_preds = np.where(raw_preds == 1, model.classes_[1], model.classes_[0])
     rule_preds = np.asarray(rules.predict(rep))
     assert np.array_equal(model_preds, rule_preds)
-    print("BayesianRuleSet imports as RuleSet and matches model predictions exactly: OK")
+    print("IModBayesianRuleSet imports as RuleSet and matches model predictions exactly: OK")
 
 
 def test_all_rules_target_positive_class_default_targets_negative():
     rep = _binary_data()
-    rules = BayesianRuleSet(**_FAST_BRS).fit(rep)
-    model = BayesianRuleSet(**_FAST_BRS).fit_external(rep.X, rep.y, feature_names=rep.spec.feature_names)
+    rules = IModBayesianRuleSet(**_FAST_BRS).fit(rep)
+    model = IModBayesianRuleSet(**_FAST_BRS).fit_external(rep.X, rep.y, feature_names=rep.spec.feature_names)
     neg_class, pos_class = model.classes_[0], model.classes_[1]
 
     assert all(r.target == pos_class for r in rules.rules)
@@ -230,7 +234,7 @@ def test_negative_literals_parsed_correctly():
 
 def test_brs_provenance_tagged_on_rules_and_default():
     rep = _binary_data()
-    rules = BayesianRuleSet(**_FAST_BRS).fit(rep)
+    rules = IModBayesianRuleSet(**_FAST_BRS).fit(rep)
     for r in list(rules.rules) + [rules.default_rule]:
         assert r.provenance.source == "imodels.BayesianRuleSetClassifier"
         assert r.provenance.learner == "BayesianRuleSetImporter"
@@ -239,7 +243,7 @@ def test_brs_provenance_tagged_on_rules_and_default():
 
 def test_brs_raises_on_feature_count_mismatch():
     rep = _binary_data(d=5)
-    model = BayesianRuleSet(**_FAST_BRS).fit_external(rep.X, rep.y, feature_names=rep.spec.feature_names)
+    model = IModBayesianRuleSet(**_FAST_BRS).fit_external(rep.X, rep.y, feature_names=rep.spec.feature_names)
     wrong_ds = DataSpec(["only", "three", "features"])
     try:
         BayesianRuleSetImporter().import_model(model, wrong_ds)
@@ -251,16 +255,16 @@ def test_brs_raises_on_feature_count_mismatch():
 
 def test_brs_fit_external_rejects_non_boolean_input():
     # imodels itself doesn't raise cleanly for this (an opaque downstream
-    # AssertionError), so BayesianRuleSet.fit_external checks it directly
+    # AssertionError), so IModBayesianRuleSet.fit_external checks it directly
     rng = np.random.default_rng(2)
     X = rng.random((100, 4))
     y = np.where(X[:, 0] > 0.5, "pos", "neg")
     try:
-        BayesianRuleSet(**_FAST_BRS).fit_external(X, y, feature_names=["f0", "f1", "f2", "f3"])
+        IModBayesianRuleSet(**_FAST_BRS).fit_external(X, y, feature_names=["f0", "f1", "f2", "f3"])
         assert False, "expected ValueError"
     except ValueError as e:
         assert "boolean" in str(e).lower()
-    print("BayesianRuleSet.fit_external rejects non-Boolean input with a clear error: OK")
+    print("IModBayesianRuleSet.fit_external rejects non-Boolean input with a clear error: OK")
 
 
 def test_brs_fit_external_rejects_multiclass_target():
@@ -270,11 +274,11 @@ def test_brs_fit_external_rejects_multiclass_target():
     X = rng.integers(0, 2, size=(150, 4))
     y = rng.choice(["a", "b", "c"], size=150)
     try:
-        BayesianRuleSet(**_FAST_BRS).fit_external(X, y, feature_names=["f0", "f1", "f2", "f3"])
+        IModBayesianRuleSet(**_FAST_BRS).fit_external(X, y, feature_names=["f0", "f1", "f2", "f3"])
         assert False, "expected ValueError"
     except ValueError as e:
         assert "binary" in str(e).lower()
-    print("BayesianRuleSet.fit_external rejects multi-class targets with a clear error: OK")
+    print("IModBayesianRuleSet.fit_external rejects multi-class targets with a clear error: OK")
 
 
 def test_brs_nominal_attributes_via_build_dataspec_one_hot():
@@ -303,7 +307,7 @@ def test_brs_nominal_attributes_via_build_dataspec_one_hot():
     # Empirically this isn't just a per-random_state coin flip: how often it
     # triggers for a given dataset also depends on things fixed once per
     # Python *process* (e.g. attr_names' dict/set iteration order, subject to
-    # hash randomization) and not reset by BayesianRuleSet's own seeding, so
+    # hash randomization) and not reset by IModBayesianRuleSet's own seeding, so
     # a bounded retry over random_state sometimes still can't escape it
     # within an unlucky process. Retry a generous number of times regardless
     # (cheap, and clears the vast majority of runs); if every attempt hits
@@ -314,7 +318,7 @@ def test_brs_nominal_attributes_via_build_dataspec_one_hot():
     last_err = None
     for candidate_rs in range(10):
         try:
-            rules = BayesianRuleSet(**{**_FAST_BRS, "random_state": candidate_rs}).fit(rep)
+            rules = IModBayesianRuleSet(**{**_FAST_BRS, "random_state": candidate_rs}).fit(rep)
             break
         except ValueError as e:
             if "list.remove" not in str(e):
@@ -349,3 +353,103 @@ if __name__ == "__main__":
     test_brs_fit_external_rejects_multiclass_target()
     test_brs_nominal_attributes_via_build_dataspec_one_hot()
     print("\nAll tests passed.")
+
+
+# ------------------------------------------------------------------ RuleFit
+
+def _rulefit_data():
+    rng = np.random.default_rng(0)
+    raw = rng.random((600, 6)) < 0.5
+    y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & (rng.random(600) < 0.5), "good", "bad")
+    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+
+
+@pytest.mark.parametrize("imodels_threshold", [True, False])
+def test_rulefit_import_reproduces_the_models_scores_exactly(imodels_threshold):
+    from pyrulearn.models import LinearRuleModel
+    data = _rulefit_data()
+    learner = IModRuleFit(imodels_threshold=imodels_threshold, random_state=0)
+    model = learner.fit(data)
+    assert isinstance(model, LinearRuleModel)
+    ext = learner.fit_external(data.X, data.y, data.spec.feature_names)
+    X = data.X.astype(float)
+    f = ext._predict_continuous_output(X)
+    offset = 0.5 if imodels_threshold else 0.0
+    scores = model.scores(data)
+    np.testing.assert_allclose(scores[:, 1] - scores[:, 0], f - offset, atol=1e-9)
+    if imodels_threshold:   # imodels' own predict: f > 0.5
+        np.testing.assert_array_equal(model.predict(data), ext.predict(X))
+    else:                   # the logistic decision: f > 0
+        np.testing.assert_array_equal(model.predict(data), np.where(f > 0, "good", "bad"))
+
+
+def test_rulefit_offset_rule_is_visible_and_rules_bind_to_negation_features():
+    data = _rulefit_data()
+    model = IModRuleFit(random_state=0).fit(data)
+    text = model.to_string(fmt="prolog", show_stats=False)
+    assert text.splitlines()[0] == "% conflict resolution: sum of rule weights per class, highest wins"
+    assert "0.5::bad(X) :- true." in text
+    assert all(r.target == "good" for r in model.rules if r.conditions)
+    assert r"\+f" in text                 # "<= 0.5" terms land on negation features
+    assert all(r.provenance.source == "imodels.RuleFitClassifier" for r in model.rules)
+    assert all(r.stats() is not None for r in model.rules)
+
+
+def test_rulefit_linear_term_on_a_trimmed_feature_folds_into_the_intercept():
+    # a feature True in 1% of the rows is winsorized to a constant 0
+    from pyrulearn.interfaces.imodels import _rulefit_linear_map
+    rng = np.random.default_rng(0)
+    X = (rng.random((400, 3)) < [0.5, 0.5, 0.01]).astype(float)
+    y = np.where(X[:, 0] == 1, "a", "b")
+    ext = imodels.RuleFitClassifier(random_state=0).fit(X, y)
+    assert _rulefit_linear_map(ext, 2) == (0.0, 0.0)
+    assert _rulefit_linear_map(ext, 0) == (0.0, 1.0)
+
+
+def test_rulefit_fit_external_rejects_non_boolean_input():
+    with pytest.raises(ValueError, match="0/1"):
+        IModRuleFit().fit_external(np.array([[0.3, 1.0], [1.0, 0.0]]), ["a", "b"])
+
+
+def test_rulefit_candidates_is_a_pool_for_the_native_distiller():
+    from pyrulearn.interfaces.imodels import rulefit_candidates
+    from pyrulearn.learners.rulefit import RuleFit
+    data = _rulefit_data()
+    pool = rulefit_candidates(data, random_state=0)
+    bodies = [tuple(sorted(l.feature for l in r.conditions)) for r in pool.rules]
+    assert len(bodies) == len(set(bodies)) > 10          # distinct, non-empty
+    for r in pool.rules:                                 # head = covered majority
+        st = r.stats().confusion.rule_stats(r.target)
+        assert st.tp >= st.fp
+    model = RuleFit(rules=pool, random_state=0).fit(data)
+    assert np.mean(np.asarray(model.predict(data)) == data.y) > 0.8
+
+
+# ------------------------------------------------------------------ Slipper
+
+def test_slipper_import_reproduces_imodels_predictions_on_01_labels():
+    from pyrulearn.models import LinearRuleModel
+    data = _rulefit_data()
+    y01 = (data.y == "good").astype(int)
+    for seed in range(3):
+        ext = imodels.SlipperClassifier(n_estimators=10, random_state=seed).fit(data.X.astype(float), y01)
+        model = SlipperImporter().import_model(ext, data.spec, data=data.relabel(y01))
+        assert isinstance(model, LinearRuleModel)
+        np.testing.assert_array_equal(model.predict(data.relabel(y01)), ext.predict(data.X.astype(float)))
+        # intercept: minus half of all AdaBoost weights
+        assert model.rules[0].weight == pytest.approx(-ext.estimator_weights_[:len(ext.estimators_)].sum() / 2)
+
+
+def test_imodels_slipper_predicts_the_first_class_for_string_labels_but_the_learner_works():
+    data = _rulefit_data()
+    ext = imodels.SlipperClassifier(n_estimators=5, random_state=0).fit(data.X.astype(float), data.y)
+    assert set(ext.predict(data.X.astype(float))) == {"bad"}         # the imodels bug
+    learner = IModSlipper(n_estimators=5, random_state=0)
+    model = learner.fit(data)
+    fitted = learner.fit_external(data.X, data.y, data.spec.feature_names)
+    expected = fitted.label_names_[fitted.predict(data.X.astype(float)).astype(int)]
+    np.testing.assert_array_equal(model.predict(data), expected)
+    assert model.labels == ["bad", "good"]
+    assert np.mean(np.asarray(model.predict(data)) == data.y) > 0.7
+    assert all(r.provenance.source == "imodels.SlipperClassifier" for r in model.rules)
+

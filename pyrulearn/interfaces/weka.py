@@ -207,7 +207,7 @@ captured stdout directly.
 `DataRepresentation`'s already-Boolean matrix to a temporary ARFF (safe
 `f0..fN` placeholder attribute names), invokes ``java -cp <weka.jar>``
 as a subprocess, and returns the printed model text for `parse` --
-so `JRip` / `PART` / `J48` are full `pyrulearn.learners` learners with a
+so `WekaJRip` / `WekaPART` / `WekaJ48` are full `pyrulearn.learners` learners with a
 uniform `fit(data, model=...)`, not import-only adapters. The
 text-parsing path stays standard-library only; `run_weka` (and the
 learner classes) additionally use `subprocess` and, lazily,
@@ -847,7 +847,7 @@ class _WekaRuleLearner(RelabelingExternalLearner):
         return self.IMPORTER(dataspec=data.spec, placeholder_features=True).parse(text, data=data)
 
 
-class JRip(_WekaRuleLearner):
+class WekaJRip(_WekaRuleLearner):
     """`weka.classifiers.rules.JRip` (Weka's RIPPER). `fit(data)` ->
     `pyrulearn.models.DecisionList` (JRip is an ordered, multi-class
     decision list with a trailing default). `fit(data, model=SingleRule,
@@ -885,15 +885,15 @@ class JRip(_WekaRuleLearner):
         for r in decision_list.rules:
             if r.target == label:
                 sr = models.SingleRule(r.rule, default_prediction=models.MajorityClass(data))
-                sr.stats(data)
+                sr.set_stats(data)
                 return sr
         empty = Rule([], target=label, dataspec=data.spec)
         sr = models.SingleRule(empty, default_prediction=models.MajorityClass(data))
-        sr.stats(data)
+        sr.set_stats(data)
         return sr
 
 
-class PART(_WekaRuleLearner):
+class WekaPART(_WekaRuleLearner):
     """`weka.classifiers.rules.PART` (Frank & Witten's partial-C4.5 rule
     learner). `fit(data)` -> `pyrulearn.models.DecisionList`."""
 
@@ -902,7 +902,7 @@ class PART(_WekaRuleLearner):
     NATIVE_MODEL = models.DecisionList
 
 
-class J48(_WekaRuleLearner):
+class WekaJ48(_WekaRuleLearner):
     """`weka.classifiers.trees.J48` (Weka's C4.5). `fit(data)` ->
     `pyrulearn.models.DisjointRuleSet` (one rule per leaf; a tree's leaves
     partition the space)."""
@@ -910,3 +910,12 @@ class J48(_WekaRuleLearner):
     WEKA_CLASS = "weka.classifiers.trees.J48"
     IMPORTER = J48Importer
     NATIVE_MODEL = models.DisjointRuleSet
+
+# -- naming ------------------------------------------------------------------
+
+_WekaRuleLearner.TOOL = "Weka"
+
+from .base import deprecated_aliases  # noqa: E402
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'JRip': 'WekaJRip', 'PART': 'WekaPART', 'J48': 'WekaJ48'})

@@ -674,7 +674,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         if data.y is None:
             raise ValueError("IDS.fit needs data.y")
         rules = self._build(data)
-        model = FlatRuleSet(annotate_rules(rules, data), default_prediction=MajorityClass(data),
+        model = FlatRuleSet(annotate_rules(rules, data, copy=True), default_prediction=MajorityClass(data),
                             combiner=HeuristicMaxCombiner(FBeta()))
         return annotate_default_rule(model, data)
 
@@ -687,5 +687,5 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
             raise ValueError("model=ConceptModel needs label= (or target_class set)")
         rules = self._build(data, only_class=target)
         default = fallback if fallback is not None else MajorityClass(data)
-        model = ConceptModel(annotate_rules(rules, data), label=target, default_prediction=default)
+        model = ConceptModel(annotate_rules(rules, data, copy=True), label=target, default_prediction=default)
         return annotate_default_rule(model, data)

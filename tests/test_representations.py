@@ -169,14 +169,10 @@ def test_ruleclassifier_coverage_methods_match_boolean(rep_cls):
         assert cb.is_exhaustive(brep) == cx.is_exhaustive(rep)
         assert np.array_equal(cb.coverage_space(brep, "pos"), cx.coverage_space(rep, "pos"))
 
-        cb.annotate(brep)
-        cx.annotate(rep)
-        sb, sx = cb.stats(), cx.stats()
+        sb, sx = cb.evaluate(brep), cx.evaluate(rep)
         assert sb.confusion.labels == sx.confusion.labels and \
             np.array_equal(sb.confusion.counts, sx.confusion.counts)
-        cb.default_rule.stats(brep)
-        cx.default_rule.stats(rep)
-        db, dx = cb.default_rule.stats(), cx.default_rule.stats()
+        db, dx = cb.default_rule.evaluate(brep), cx.default_rule.evaluate(rep)
         assert db.confusion.labels == dx.confusion.labels and \
             np.array_equal(db.confusion.counts, dx.confusion.counts)
     print(f"RuleModel coverage methods: {rep_cls.__name__} == Boolean: OK")

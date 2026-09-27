@@ -242,9 +242,9 @@ def test_random_forest_import_model_with_data_gives_every_leaf_measured_stats():
 
 
 def test_tree_learners_on_the_fit_switcher():
-    # DecisionTree / RandomForest route through fit(data, model=...) like
+    # SKLDecisionTree / SKLRandomForest route through fit(data, model=...) like
     # any other learner (the external-wrapper switcher).
-    from pyrulearn.interfaces.sklearn import DecisionTree, RandomForest
+    from pyrulearn.interfaces.sklearn import SKLDecisionTree, SKLRandomForest
     from pyrulearn.models import ConceptSet, DisjointRuleSet, EnsembleModel, FlatRuleSet
 
     rng = np.random.default_rng(0)
@@ -253,14 +253,14 @@ def test_tree_learners_on_the_fit_switcher():
     ds = neg_spec([f"f{i}" for i in range(5)])
     rep = BooleanDataRepresentation(ds, neg_X(X), y)
 
-    dt = DecisionTree(max_depth=4, random_state=0)
+    dt = SKLDecisionTree(max_depth=4, random_state=0)
     assert dt.produces() >= {DisjointRuleSet, ConceptSet}
     m = dt.fit(rep)
     assert type(m) is DisjointRuleSet
     assert type(dt.fit(rep, model=ConceptSet)) is ConceptSet
     assert set(m.predict(rep)) <= {"a", "b", "c"}
 
-    rf = RandomForest(n_estimators=6, max_depth=3, random_state=0)
+    rf = SKLRandomForest(n_estimators=6, max_depth=3, random_state=0)
     assert rf.produces() == {EnsembleModel, FlatRuleSet}
     ens = rf.fit(rep)
     assert type(ens) is EnsembleModel and len(ens.members) == 6
@@ -276,13 +276,13 @@ def test_tree_learners_on_the_fit_switcher():
         assert len(indices) == 1          # one tree per member
         assert indices.isdisjoint(seen_indices)
         seen_indices |= indices
-    print("DecisionTree/RandomForest on the fit switcher: OK")
+    print("SKLDecisionTree/SKLRandomForest on the fit switcher: OK")
 
 
 def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
     from sklearn.tree import DecisionTreeClassifier
     from pyrulearn.evaluation import RuleStats
-    from pyrulearn.interfaces.sklearn import DecisionTree, SklearnTreeImporter
+    from pyrulearn.interfaces.sklearn import SKLDecisionTree, SklearnTreeImporter
 
     rng = np.random.default_rng(0)
     X = rng.integers(0, 2, size=(150, 4)).astype(bool)
@@ -294,7 +294,7 @@ def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
     bare = SklearnTreeImporter().import_model(clf, ds)  # no data= -- standalone call
     assert all(r.stats() is None for r in bare.rules)
 
-    fitted = DecisionTree(max_depth=3, random_state=0).fit(rep)  # fit() round trip -> data=rep passed through
+    fitted = SKLDecisionTree(max_depth=3, random_state=0).fit(rep)  # fit() round trip -> data=rep passed through
     for r in fitted.rules:
         expected = RuleStats.from_rule(r.rule, rep, r.target)
         got = r.stats().confusion.rule_stats(r.target)

@@ -47,8 +47,9 @@ specific submodule you need for that.
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Sequence, Type, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Type, Union
 
 from ..data import DataSpec
 from ..models import FlatRuleSet, RuleModel
@@ -92,10 +93,10 @@ class RuleImporter(ABC):
             out.append(sr)
         return out
 
-    def _stamp_rule_stats(self, rules: Sequence[Rule], data: Optional[Any] = None, split: str = "data") -> list:
+    def _stamp_rule_stats(self, rules: Sequence[Rule], data: Optional[Any] = None) -> list:
         """Wrap each of `rules` as a `SingleRule` (as `_stamp_rule_provenance`
-        does) and, if `data` is given, populate its measured `stats(data,
-        split)` against it -- the exact rows a `fit()` round trip wrote
+        does) and, if `data` is given, set its frozen training stats
+        against it (`SingleRule.set_stats`) -- the exact rows a `fit()` round trip wrote
         out for the external tool and is now reading these rules back
         against. `data` is only ever given by that round trip
         (`ExternalRuleLearner._fit_native`, via each learner's `_import`);
@@ -113,7 +114,7 @@ class RuleImporter(ABC):
         guessing"). See `pyrulearn.models.annotate_rules`.
         """
         from ..models import annotate_rules
-        return annotate_rules(rules, data, split)
+        return annotate_rules(rules, data)
 
     def _stamp_provenance(self, model: Any, **params: Any) -> Any:
         """Set `model.provenance` (see `pyrulearn.models.Provenance`) to
@@ -269,3 +270,20 @@ class PatternStringImporter(StringRuleImporter):
 
 
 register_importer("pattern_string", PatternStringImporter)
+
+
+def deprecated_aliases(namespace: Dict[str, Any], renames: Dict[str, str]) -> Callable[[str], Any]:
+    """A module-level `__getattr__` (PEP 562) serving the pre-0.2.0 names of
+    a module's learners: ``renames`` maps an old name to the new one, which
+    is returned with a `DeprecationWarning`. The old names will be removed
+    in a later release."""
+
+    def __getattr__(name: str) -> Any:
+        if name in renames:
+            new = renames[name]
+            warnings.warn(f"{name} was renamed to {new} in pyrulearn 0.2.0; the old name will be removed",
+                          DeprecationWarning, stacklevel=2)
+            return namespace[new]
+        raise AttributeError(f"module {namespace['__name__']!r} has no attribute {name!r}")
+
+    return __getattr__

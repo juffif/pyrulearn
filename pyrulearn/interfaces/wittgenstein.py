@@ -16,7 +16,7 @@ classes, but -- also confirmed directly, not assumed -- given an
 *explicit* `pos_class` it silently proceeds on a `y` with any number of
 classes, treating everything that isn't `pos_class` as one undifferentiated
 "negative" with no warning at all; there is no internal one-vs-rest
-cascade for more classes. `IREP`/`RIPPERk.fit_external` (below) refuse
+cascade for more classes. `WittIREP`/`WittRIPPER.fit_external` (below) refuse
 this outright (`_check_binary_target`) rather than let it happen
 unnoticed. The fitted model's own `.predict()` returns plain booleans
 ("matched `pos_class`" or not) -- it does *not* retain what the actual
@@ -33,7 +33,7 @@ needed for the `RuleSet` these become. What *is* needed is a fallback
 for whatever isn't covered: `IREPImporter`/`RIPPERImporter`, used
 directly on an already-fitted model, leave `default_prediction` as
 `None` (there being no reliable place to recover the fallback label from
-the model alone); `IREP`/`RIPPERk` (the `ExternalRuleLearner` wrappers, below)
+the model alone); `WittIREP`/`WittRIPPER` (the `ExternalRuleLearner` wrappers, below)
 compute it from `data.y` at fit time and wire it up
 automatically -- see their docstrings for exactly when that's possible.
 
@@ -57,7 +57,7 @@ docstring):
   ds = build_dataspec(df, target="label", arff_types={...}).build()
   X = binarize(ds, df)
   rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
-  rules = RIPPERk(pos_class="pos").fit(rep)
+  rules = WittRIPPER(pos_class="pos").fit(rep)
   ```
 
 - **Workflow 2** -- fit directly on raw columns and let
@@ -99,7 +99,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..data.attributes import AttributeType
 from ..data import DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
@@ -265,7 +265,7 @@ class IREPImporter(ObjectRuleImporter):
     one `Rule` per rule in `model.ruleset_`, all predicting
     `model.pos_class`. See the module docstring for the two ways to
     handle numeric/nominal attributes, and why `default_prediction` is
-    left `None` here either way (use `IREP`, below, for that).
+    left `None` here either way (use `WittIREP`, below, for that).
     """
 
     SOURCE = "wittgenstein.IREP"
@@ -327,7 +327,7 @@ register_importer("ripper", RIPPERImporter)
 
 
 def _check_binary_target(y: np.ndarray, learner_name: str) -> None:
-    """`IREP`/`RIPPERk` fit silently on more-than-two-class `y` --
+    """`WittIREP`/`WittRIPPER` fit silently on more-than-two-class `y` --
     confirmed directly against the library: given an explicit
     `pos_class`, wittgenstein just treats everything else as negative,
     discarding the distinction between the other classes with no
@@ -348,7 +348,7 @@ def _check_binary_target(y: np.ndarray, learner_name: str) -> None:
 
 
 def _resolve_default_target(y: np.ndarray, pos_class: Any, neg_class: Optional[Any]) -> Optional[Any]:
-    """The label `IREP`/`RIPPERk`'s `default_prediction` should be for
+    """The label `WittIREP`/`WittRIPPER`'s `default_prediction` should be for
     examples no learned rule covers. `neg_class`, if given, wins
     outright. Otherwise: exactly one other label besides `pos_class`
     present in `y` (the ordinary binary case) is used automatically;
@@ -365,7 +365,7 @@ def _resolve_default_target(y: np.ndarray, pos_class: Any, neg_class: Optional[A
 
 
 class _WittgensteinLearner(DecomposingLearner, ExternalRuleLearner):
-    """Shared plumbing for `IREP` / `RIPPERk`.
+    """Shared plumbing for `WittIREP` / `WittRIPPER`.
 
     `fit(data)` -> a `pyrulearn.models.ConceptModel` for `pos_class`
     (`neg_class` -- or the sole other label -- as the fallback);
@@ -414,7 +414,7 @@ class _WittgensteinLearner(DecomposingLearner, ExternalRuleLearner):
         return lc._fit_native(data.relabel(np.where(y == positive, positive, "rest")))
 
 
-class IREP(_WittgensteinLearner):
+class WittIREP(_WittgensteinLearner):
     """`wittgenstein.IREP`. `**params` are its constructor args
     (`prune_size=`, `random_state=`, ...). See `_WittgensteinLearner`."""
 
@@ -422,10 +422,17 @@ class IREP(_WittgensteinLearner):
     _LIB_CLS = "IREP"
 
 
-class RIPPERk(_WittgensteinLearner):
+class WittRIPPER(_WittgensteinLearner):
     """`wittgenstein.RIPPER` (IREP\\* + `k` optimization passes -- hence
     the "k"). `**params` are its constructor args (`k=`, `prune_size=`,
     ...). See `_WittgensteinLearner`."""
 
     IMPORTER = RIPPERImporter
     _LIB_CLS = "RIPPER"
+
+# -- naming ------------------------------------------------------------------
+
+_WittgensteinLearner.TOOL = "Witt"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'IREP': 'WittIREP', 'RIPPERk': 'WittRIPPER'})

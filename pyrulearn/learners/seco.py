@@ -81,6 +81,16 @@ examples are still uncovered") does so via a boolean `example_mask` over
 `BooleanDataRepresentation`. This is already how `RuleStats.from_rule`
 and `Rule.specialize` work; the pieces built here just thread that mask
 through rather than reintroducing a splitting approach.
+
+The `example_mask` may also be a non-negative *weight vector* -- a
+weighted covering scope (`WeightedCovering`) -- and the data may carry
+row weights of its own (`pyrulearn.data.DataRepresentation.weights`).
+Everything that counts examples then sums their effective weights
+(`DataRepresentation.scope`); everything that only needs to know which
+rows are in scope (seed picking, the grow/prune split) takes the rows
+with a positive weight. How the scope evolves from one rule to the next
+is `SeCo`'s `covering` strategy: `RemovalCovering` (the default, the
+classic "separate") or `WeightedCovering`.
 """
 
 from __future__ import annotations
@@ -821,7 +831,8 @@ class SeedExample(SearchSpaceInit):
         if self.strategy == "index":
             return int(self.index)
         positive = data.y == target_class
-        in_scope = positive if example_mask is None else (positive & example_mask)
+        support = data.scope(example_mask)[0]
+        in_scope = positive if support is None else (positive & support)
         candidates = np.flatnonzero(in_scope)
         if candidates.size == 0:
             raise ValueError("SeedExample: no uncovered positive example to seed on")
@@ -884,6 +895,9 @@ class GrowPruneSplit(SingleRulePreparation):
     then no split at all (search on every in-scope example, no pruning
     set -- same as `NoSplit`) if even that isn't possible (too few
     in-scope examples to split at all).
+
+    A weighted scope (`WeightedCovering`) is split by rows (those with a
+    positive weight), and both halves keep their rows' weights.
     """
 
     def __init__(self, prune_fraction: float = 0.33, random_state: Optional[int] = None):
@@ -897,7 +911,8 @@ class GrowPruneSplit(SingleRulePreparation):
         from sklearn.model_selection import train_test_split
 
         n = data.n_samples
-        in_scope = np.arange(n) if example_mask is None else np.flatnonzero(example_mask)
+        support = data.scope(example_mask)[0]
+        in_scope = np.arange(n) if support is None else np.flatnonzero(support)
         if len(in_scope) < 2:
             return example_mask, None  # too few examples to split at all
 
@@ -918,6 +933,9 @@ class GrowPruneSplit(SingleRulePreparation):
         grow_mask[grow_idx] = True
         prune_mask = np.zeros(n, dtype=bool)
         prune_mask[prune_idx] = True
+        if example_mask is not None and np.asarray(example_mask).dtype != bool:   # keep the weights
+            w = np.asarray(example_mask, dtype=float)
+            return w * grow_mask, w * prune_mask
         return grow_mask, prune_mask
 
 
@@ -1135,17 +1153,17 @@ def rule_set_description_length(
     """Total MDL of `rules` as a theory for the binary problem
     ``target_class`` vs. the rest (within `example_mask` if given): the
     sum of each rule's `_rule_theory_bits` plus the `_exception_bits` for
-    the union of their coverage."""
+    the union of their coverage. With row weights (the data's, or a
+    weighted `example_mask`) the example counts are sums of weights."""
     n_possible = data.spec.n_features
     theory = sum(_rule_theory_bits(r.length(), n_possible) for r in rules)
-    y = np.asarray(data.y)
-    scope = np.ones(data.n_samples, dtype=bool) if example_mask is None else np.asarray(example_mask, dtype=bool)
-    covered = _combined_cover(rules, data) & scope
-    pos = (y == target_class) & scope
-    n_covered = int(covered.sum())
-    n_fp = int((covered & ~pos).sum())
-    n_uncovered = int((scope & ~covered).sum())
-    n_fn = int((scope & ~covered & pos).sum())
+    w = data.scope_weights(example_mask)
+    covered = _combined_cover(rules, data)
+    pos = np.asarray(data.y) == target_class
+    n_covered = float(w[covered].sum())
+    n_fp = float(w[covered & ~pos].sum())
+    n_uncovered = float(w[~covered].sum())
+    n_fn = float(w[~covered & pos].sum())
     return theory + _exception_bits(n_covered, n_fp, n_uncovered, n_fn)
 
 
@@ -1189,9 +1207,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
     ) -> List[Rule]:
         if not rules:
             return rules
-        y = np.asarray(data.y)
-        scope = np.ones(data.n_samples, dtype=bool) if example_mask is None else np.asarray(example_mask, dtype=bool)
-        n_feat = data.spec.n_features
+        scope = example_mask
 
         for p in range(self.passes):
             rs = None if self.random_state is None else self.random_state + p
@@ -1237,10 +1253,12 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
             return grown
 
         # prune trailing conditions to minimize the whole set's error on the pruning split
-        def err(rule: Rule) -> int:
-            covered = _combined_cover(context + [rule], data) & prune_mask
-            pos = (np.asarray(data.y) == target_class) & prune_mask
-            return int((covered & ~pos).sum()) + int((~covered & pos).sum())
+        w = data.scope_weights(prune_mask)
+        pos = np.asarray(data.y) == target_class
+
+        def err(rule: Rule) -> float:
+            covered = _combined_cover(context + [rule], data)
+            return float(w[covered & ~pos].sum()) + float(w[~covered & pos].sum())
 
         best, best_err = grown, err(grown)
         for k in range(grown.length() - 1, 0, -1):
@@ -1252,7 +1270,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
 
     def _dl_prune(
         self, rules: List[Rule], data: BooleanDataRepresentation, target_class: Any,
-        scope: np.ndarray,
+        scope: Optional[np.ndarray],
     ) -> List[Rule]:
         kept = list(rules)
         for r in reversed(list(kept)):  # RIPPER: consider the last-added rules first
@@ -1261,6 +1279,295 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
                rule_set_description_length(kept, data, target_class, scope):
                 kept = without
         return kept
+
+
+# -- covering strategies -----------------------------------------------------------
+
+class CoveringState:
+    """What one covering loop (one target class) keeps between rules:
+
+    - `scope` -- what the next rule is learned on, passed to every
+      building block as `example_mask`: a boolean mask (removal) or a
+      weight vector (weighted covering);
+    - `positive` -- the target-class rows;
+    - `times_covered` -- per row, how many accepted rules cover it;
+    - `errors` -- per row, how many accepted rules err on it (cover a
+      negative, or leave a positive uncovered);
+    - `round` -- the number of rules accepted so far;
+    - `extra` -- anything else a `Reweighting` wants to keep.
+    """
+
+    def __init__(self, scope: np.ndarray, positive: np.ndarray):
+        self.scope = scope
+        self.positive = positive
+        self.times_covered = np.zeros(len(positive), dtype=np.int64)
+        self.errors = np.zeros(len(positive), dtype=np.int64)
+        self.round = 0
+        self.initial_positive_weight = float(np.sum(np.asarray(scope, dtype=float)[positive]))
+        self.extra: Dict[str, Any] = {}
+
+    def record(self, covered: np.ndarray) -> None:
+        """Book an accepted rule covering the rows `covered`."""
+        self.times_covered += covered
+        self.errors += covered != self.positive
+        self.round += 1
+
+
+class CoveringStrategy(ABC):
+    """How `SeCo`'s covering loop changes the scope -- which examples, with
+    which weights, the next rule is learned on -- after each accepted
+    rule, and when the loop is done. Works on a `CoveringState`."""
+
+    @abstractmethod
+    def start(self, data: Any, positive: np.ndarray) -> CoveringState:
+        """The state before the first rule (`positive`: the target-class rows)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self, state: CoveringState, covered: np.ndarray) -> Optional[float]:
+        """Book an accepted rule covering the rows `covered` and set the
+        next scope. Returns the rule's weight if the strategy assigns one
+        (boosting), else `None`."""
+        raise NotImplementedError
+
+    def exhausted(self, state: CoveringState) -> bool:
+        """Whether the loop is done: no positive example left in scope."""
+        return not np.any(state.positive & (state.scope > 0))
+
+    def drop(self, state: CoveringState, row: int) -> None:
+        """Take `row` out of the scope entirely -- a seed example no
+        acceptable rule could be found for (see `SeCo._covering_loop`)."""
+        state.scope = state.scope.copy()
+        state.scope[row] = 0
+
+
+class RemovalCovering(CoveringStrategy):
+    """The classic separate-and-conquer policy (the default): every
+    example an accepted rule covers -- both classes -- leaves the scope.
+    The scope is a boolean mask."""
+
+    def start(self, data: Any, positive: np.ndarray) -> CoveringState:
+        return CoveringState(np.ones(len(positive), dtype=bool), positive)
+
+    def update(self, state: CoveringState, covered: np.ndarray) -> Optional[float]:
+        state.record(covered)
+        state.scope = state.scope & ~covered
+        return None
+
+
+# -- reweighting schemes ---------------------------------------------------------
+
+class Reweighting(ABC):
+    """How weighted covering reweights the examples after each accepted
+    rule -- the part in which weighted-covering algorithms differ, a
+    pluggable component like a `RuleHeuristic`. `weights` returns the
+    next scope's weights from a `CoveringState` that has already booked
+    the new rule (`times_covered`, `errors`, `round` updated). A scheme
+    that also fits a weight for each rule (boosting) sets
+    `assigns_rule_weights` and returns it from `rule_weight`, which is
+    called first, on the state before the new rule is booked.
+    """
+
+    #: whether `rule_weight` returns a fitted weight for each rule
+    assigns_rule_weights: bool = False
+
+    def rule_weight(self, state: CoveringState, covered: np.ndarray) -> Optional[float]:
+        return None
+
+    @abstractmethod
+    def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{type(self).__name__}({params})"
+
+
+class MultiplicativeReweighting(Reweighting):
+    """A positive covered by `k` rules weighs ``gamma ** k``; negatives
+    keep weight 1 -- CN2-SD's multiplicative scheme (Lavrač et al. 2004),
+    and CPAR's weight decay (Yin & Han 2003, ``gamma = 2/3``)."""
+
+    def __init__(self, gamma: float = 0.5):
+        if not 0.0 < gamma < 1.0:
+            raise ValueError(f"gamma must be in (0, 1), got {gamma}")
+        self.gamma = gamma
+
+    def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
+        return np.where(state.positive, self.gamma ** state.times_covered, 1.0)
+
+
+class AdditiveReweighting(Reweighting):
+    """A positive covered by `k` rules weighs ``1 / (k + 1)``; negatives
+    keep weight 1 -- CN2-SD's additive scheme (Lavrač et al. 2004)."""
+
+    def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
+        return np.where(state.positive, 1.0 / (state.times_covered + 1.0), 1.0)
+
+
+class AdaBoostReweighting(Reweighting):
+    """Confidence-rated boosting (Schapire & Singer 1999), as in Slipper
+    (Cohen & Singer 1999): a rule covering positives of weight ``W+`` and
+    negatives of weight ``W-`` gets the weight (confidence)
+
+        C = 1/2 * ln((W+ + eps) / (W- + eps))
+
+    and every example it covers is multiplied by ``exp(-y * C)`` (``y =
+    +1`` for positives, ``-1`` for negatives): positives covered by a
+    confident rule lose weight, negatives it wrongly covers gain some. The
+    weights are then rescaled to their previous total. `eps`, the
+    smoothing, defaults to half a row's average weight (Slipper's
+    ``1 / (2n)`` for weights summing to 1)."""
+
+    assigns_rule_weights = True
+
+    def __init__(self, eps: Optional[float] = None):
+        self.eps = eps
+
+    def confidence(self, w: np.ndarray, covered: np.ndarray, positive: np.ndarray) -> float:
+        eps = self.eps if self.eps is not None else 0.5 * float(w.sum()) / len(w)
+        w_pos = float(w[covered & positive].sum())
+        w_neg = float(w[covered & ~positive].sum())
+        return 0.5 * math.log((w_pos + eps) / (w_neg + eps))
+
+    def rule_weight(self, state: CoveringState, covered: np.ndarray) -> Optional[float]:
+        c = self.confidence(np.asarray(state.scope, dtype=float), covered, state.positive)
+        state.extra["confidence"] = c
+        return c
+
+    def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
+        w = np.asarray(state.scope, dtype=float)
+        y = np.where(state.positive, 1.0, -1.0)
+        new = w * np.exp(-y * state.extra["confidence"] * covered)
+        return new * (w.sum() / new.sum())
+
+
+class LRIReweighting(Reweighting):
+    """Lightweight Rule Induction (Weiss & Indurkhya 2000): every example
+    weighs ``1 + e ** power`` (``power = 3``), where ``e`` is the number
+    of accepted rules that err on it -- cover it though it's negative, or
+    leave it uncovered though it's positive. Both classes are reweighted,
+    and an example that keeps being misclassified quickly dominates (4
+    errors: weight 65). As in the paper, once some ``e`` exceeds
+    `max_errors` (32), all of them are halved (integer division), which
+    keeps the weights bounded; ``None`` never halves. The halved counts
+    are kept in ``state.extra["lri_errors"]``; `CoveringState.errors`
+    keeps the plain counts."""
+
+    def __init__(self, power: float = 3.0, max_errors: Optional[int] = 32):
+        self.power = power
+        self.max_errors = max_errors
+
+    def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
+        e = state.extra.get("lri_errors")
+        if e is None:
+            e = np.zeros(len(state.positive), dtype=np.int64)
+        e = e + (covered != state.positive)
+        if self.max_errors is not None and e.max() > self.max_errors:
+            e //= 2
+        state.extra["lri_errors"] = e
+        return 1.0 + e.astype(float) ** self.power
+
+
+# -- stopping weighted covering ---------------------------------------------------
+
+class CoveringStop(ABC):
+    """When a weighted covering loop is done (weighted covering never runs
+    out of examples by itself). Removal covering needs none."""
+
+    @abstractmethod
+    def done(self, state: CoveringState) -> bool:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{type(self).__name__}({params})"
+
+
+class CoveredAtLeast(CoveringStop):
+    """Done once every positive example is covered by at least `k`
+    accepted rules (CN2-SD)."""
+
+    def __init__(self, k: int = 5):
+        if k < 1:
+            raise ValueError(f"k must be at least 1, got {k}")
+        self.k = k
+
+    def done(self, state: CoveringState) -> bool:
+        return bool(np.all(state.times_covered[state.positive] >= self.k))
+
+
+class PositiveWeightBelow(CoveringStop):
+    """Done once the positives' total weight has fallen below `fraction`
+    of what it was at the start (CPAR, ``fraction = 0.05``)."""
+
+    def __init__(self, fraction: float = 0.05):
+        self.fraction = fraction
+
+    def done(self, state: CoveringState) -> bool:
+        w = float(np.sum(np.asarray(state.scope, dtype=float)[state.positive]))
+        return w < self.fraction * state.initial_positive_weight
+
+
+class Rounds(CoveringStop):
+    """Done after `n` accepted rules (Slipper, LRI)."""
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def done(self, state: CoveringState) -> bool:
+        return state.round >= self.n
+
+
+class WeightedCovering(CoveringStrategy):
+    """Weighted covering: covered examples stay in scope, reweighted by a
+    `Reweighting` scheme (default `MultiplicativeReweighting(0.5)`,
+    CN2-SD's), until `stop` (a `CoveringStop` or a sequence of them, any
+    of which ends the loop; default `CoveredAtLeast(5)`). Later rules may
+    then overlap earlier ones. `max_rounds` (default 100) is a safety net
+    on top: weighting alone doesn't guarantee that every stop criterion is
+    ever met. The weights multiply with the data's own row weights, if
+    any.
+
+    The loop keeps a rule that is found again (it still counts as a
+    round and reweights); an unweighted rule set built from the loop
+    drops such duplicates, which add nothing to it. Meant for unordered
+    rule sets (`ConceptModel`/`ConceptSet`): a decision list's
+    first-match semantics assumes removal.
+    """
+
+    def __init__(self, reweighting: Optional[Reweighting] = None,
+                 stop: Union[CoveringStop, Sequence[CoveringStop], None] = None,
+                 max_rounds: Optional[int] = 100):
+        self.reweighting = reweighting if reweighting is not None else MultiplicativeReweighting(0.5)
+        if stop is None:
+            stop = CoveredAtLeast(5)
+        self.stop = [stop] if isinstance(stop, CoveringStop) else list(stop)
+        self.max_rounds = max_rounds
+
+    def start(self, data: Any, positive: np.ndarray) -> CoveringState:
+        return CoveringState(np.ones(len(positive), dtype=float), positive)
+
+    def update(self, state: CoveringState, covered: np.ndarray) -> Optional[float]:
+        weight = self.reweighting.rule_weight(state, covered)
+        state.record(covered)
+        dropped = state.scope == 0            # seeds dropped by `drop` stay out
+        state.scope = np.where(dropped, 0.0, self.reweighting.weights(state, covered))
+        return weight
+
+    def exhausted(self, state: CoveringState) -> bool:
+        if super().exhausted(state):
+            return True
+        if self.max_rounds is not None and state.round >= self.max_rounds:
+            return True
+        return any(s.done(state) for s in self.stop)
+
+    def __repr__(self) -> str:
+        return f"WeightedCovering(reweighting={self.reweighting!r}, stop={self.stop!r}, max_rounds={self.max_rounds!r})"
+
+
+def _resolve_covering(covering: Optional[CoveringStrategy]) -> CoveringStrategy:
+    return RemovalCovering() if covering is None else covering
 
 
 class SeCo(DecomposingLearner, NativeRuleLearner):
@@ -1346,6 +1653,17 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     default `sort_rules`/`covered_by` use for inspection; pass
     `combiner=HeuristicMaxCombiner(SomeHeuristic())` for a different one.
 
+    `covering` (a `CoveringStrategy`, default `RemovalCovering`) is how
+    the scope changes after each accepted rule: removing everything the
+    rule covers (the description above), or `WeightedCovering` --
+    reweighting the examples by a `Reweighting` scheme instead, so rules
+    may overlap (CN2-SD, CPAR), until its `CoveringStop` criteria. Only
+    the binary covering loop uses it; the all-classes seed covering
+    (`model=DecisionList`) always removes. `SeCo` builds unweighted rule
+    sets, so a reweighting that fits rule weights (boosting,
+    `AdaBoostReweighting`) belongs to a boosting learner such as
+    `pyrulearn.learners.boosting.Slipper`, and is refused here.
+
     `optimization` (a `RuleSetOptimizer`, default `None`) runs once the
     covering loop is done, reworking the whole class's rules before they
     become a `FlatRuleSet` -- RIPPER's optimization phase. Only in the
@@ -1367,6 +1685,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
         optimization: Optional[RuleSetOptimizer] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         self.single_rule_learner = single_rule_learner
         self.target_class = target_class
@@ -1374,6 +1693,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         self.max_rules = max_rules
         self.optimization = optimization
         self.random_state = random_state
+        self.covering = covering
 
     def _default_model(self, data: BooleanDataRepresentation) -> type:
         """`fit(data)` with no `model=`: one concept (`target_class` set)
@@ -1399,6 +1719,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         paired with a consistency-filtered learner (`AQR`): consistent
         per-class rules never conflict, so the arbitrary seed order
         doesn't matter."""
+        if not isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering):
+            raise ValueError("the all-classes seed covering (model=DecisionList) needs RemovalCovering: "
+                             "a decision list's first-match semantics assumes covered examples are removed")
         rng = np.random.default_rng(self.random_state)
         remaining = np.ones(data.n_samples, dtype=bool)
         rules: List[Rule] = []
@@ -1445,9 +1768,19 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         seed would otherwise end the whole class.) Dropping a positive
         can't affect later rules' consistency, which only negatives
         decide. A learner searching all rules at once stops at its first
-        failure, since no other search would find anything else."""
+        failure, since no other search would find anything else.
+
+        The covering scope (`state.scope`, a boolean mask or a weight
+        vector) is maintained by `self.covering` (`CoveringStrategy`). A
+        rule found again under weighted covering still counts as a round
+        and reweights, but appears only once in the result."""
         positive = data.y == target
-        remaining = np.ones(data.n_samples, dtype=bool)
+        covering = _resolve_covering(getattr(self, "covering", None))
+        reweighting = getattr(covering, "reweighting", None)
+        if reweighting is not None and reweighting.assigns_rule_weights:
+            raise ValueError(f"{type(reweighting).__name__} fits rule weights, which SeCo's unweighted "
+                             "rule sets can't hold -- use a boosting learner (e.g. Slipper)")
+        state = covering.start(data, positive)
         rules: List[Rule] = []
         space_init = getattr(self.single_rule_learner, "space_init", None)
         seeded = isinstance(space_init, SeedExample) and space_init.strategy != "index"
@@ -1455,8 +1788,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         while True:
             if self.max_rules is not None and len(rules) >= self.max_rules:
                 break
-            if not np.any(positive & remaining):
-                break  # every positive example is covered (or dropped as a failed seed)
+            if covering.exhausted(state):
+                break  # every positive covered (or dropped as a failed seed), or a stop criterion
+            remaining = state.scope
 
             if seeded:
                 seed = space_init.pick_seed(data, target, remaining)
@@ -1477,13 +1811,14 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
                 # nothing acceptable found (no rule, one covering nothing
                 # new, or one `stop_covering` rejects)
                 if seeded:
-                    remaining[seed] = False
+                    covering.drop(state, seed)
                     continue
                 break
 
             rules.append(rule)
-            remaining = remaining & ~rule.covers_data_packed(data)
+            covering.update(state, rule.covers_data_packed(data))
 
+        rules = list(dict.fromkeys(rules))   # a rule found again (weighted covering) counts once
         if self.optimization is not None:
             rules = self.optimization.optimize(
                 rules, data, target, self.single_rule_learner, example_mask=None,
@@ -1521,7 +1856,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         if rule is None:
             rule = Rule([], target=target, dataspec=data.spec)
         sr = SingleRule(rule, default_prediction=MajorityClass(data))
-        sr.stats(data)
+        sr.set_stats(data)
         return sr
 
     @produces(DecisionList)
@@ -1626,6 +1961,7 @@ class CN2(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
             raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
@@ -1651,6 +1987,7 @@ class CN2(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
     @produces(ConceptSet)
@@ -1764,6 +2101,7 @@ class AQR(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         stop_covering: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         heuristic = heuristic if heuristic is not None else LEF(
             CoveredPositives(), CoveredNegatives(), MinimalLength()
@@ -1787,6 +2125,7 @@ class AQR(SeCo):
             stop_covering=stop_covering,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 
@@ -1841,6 +2180,7 @@ class PFoil(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         heuristic = heuristic if heuristic is not None else FoilGain()
         search = search if search is not None else GainAscentHillClimbing()
@@ -1860,6 +2200,7 @@ class PFoil(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 
@@ -1937,6 +2278,7 @@ class PFossil(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
             raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
@@ -1963,6 +2305,7 @@ class PFossil(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 

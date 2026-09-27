@@ -40,6 +40,7 @@ construction rather than by convention.
 
 from __future__ import annotations
 
+import copy
 import functools
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple
@@ -67,11 +68,71 @@ class DataRepresentation(ABC):
     - `features_of(row)` -- the feature indices that are True in one row,
       needed to seed a search from an example (`pyrulearn.learners.seco.
       SeedExample`).
+
+    **Row weights.** `weights` (``None``: every row counts 1) are
+    non-negative per-row weights that belong to the data -- e.g. how
+    often a row was observed, or its importance -- given to the
+    constructor or set with `with_weights`. Every count the learners
+    make is then a sum of weights: the searches' `cover_counts`,
+    `pyrulearn.evaluation.RuleStats.from_rule`, and a model's
+    `evaluate`, and so the training stats rules store and print. The
+    `example_mask` a search is restricted to may itself be a weight
+    vector instead of a boolean mask (weighted covering, see
+    `pyrulearn.learners.seco.WeightedCovering`); the two multiply
+    (`scope`). Without weights the counts stay plain integers.
     """
 
     def __init__(self, spec: DataSpec):
         self.spec = spec
         self.y: Optional[np.ndarray] = None
+        self.weights: Optional[np.ndarray] = None
+
+    # -- row weights -------------------------------------------------------
+
+    def _set_weights(self, weights: Optional[Any]) -> None:
+        if weights is None:
+            self.weights = None
+            return
+        w = np.asarray(weights, dtype=float)
+        if w.shape != (self.n_samples,):
+            raise ValueError(f"weights must have shape ({self.n_samples},), got {w.shape}")
+        if not np.all(np.isfinite(w)) or np.any(w < 0):
+            raise ValueError("weights must be finite and non-negative")
+        self.weights = w
+
+    def with_weights(self, weights: Optional[Any]) -> "DataRepresentation":
+        """The same data with row weights `weights` (``None`` removes
+        them) -- a shallow copy sharing this representation's storage and
+        index, so it costs no rebuild."""
+        new = copy.copy(self)
+        new._set_weights(weights)
+        return new
+
+    def scope(self, example_mask: Optional[np.ndarray] = None) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """``(support, weights)`` of a search restricted to `example_mask`
+        -- a boolean mask, a non-negative weight vector, or ``None`` (all
+        rows) -- on this data. `weights` is the effective per-row weight
+        (this data's `weights` times `example_mask`), or ``None`` when
+        every row in scope counts exactly 1 (no data weights, and no mask
+        or a boolean one); `support` is the boolean mask of the rows in
+        scope (weight > 0), or ``None`` for every row. Representations
+        count with `weights` if given and plain row counts otherwise."""
+        mask = None if example_mask is None else np.asarray(example_mask)
+        if self.weights is None and (mask is None or mask.dtype == bool):
+            return mask, None
+        w = np.ones(self.n_samples) if self.weights is None else self.weights
+        if mask is not None:
+            w = w * mask.astype(float)
+        return w > 0, w
+
+    def scope_weights(self, example_mask: Optional[np.ndarray] = None) -> np.ndarray:
+        """The effective per-row weight of a search restricted to
+        `example_mask`, always as a float array (1 per in-scope row
+        without weights) -- for callers that just want weighted sums."""
+        support, w = self.scope(example_mask)
+        if w is not None:
+            return w
+        return np.ones(self.n_samples) if support is None else support.astype(float)
 
     @property
     @abstractmethod
@@ -180,7 +241,7 @@ class DataRepresentation(ABC):
         cols = self.X[:, source]
         if is_complement is not None:
             cols = np.where(is_complement, ~cols, cols)
-        return type(self)(new_spec, cols, self.y)
+        return type(self)(new_spec, cols, self.y, weights=self.weights)
 
     # -- row subsetting ---------------------------------------------------
 
@@ -193,14 +254,15 @@ class DataRepresentation(ABC):
         full data. Used to train one stage of a class-ordered
         decomposition on just the classes not yet peeled off."""
         y = None if self.y is None else self.y[mask]
-        return type(self)(self.spec, self.X[mask], y)
+        w = None if self.weights is None else self.weights[mask]
+        return type(self)(self.spec, self.X[mask], y, weights=w)
 
     def relabel(self, new_y: Any) -> "DataRepresentation":
         """Same rows and feature space, a different `y` -- e.g.
         ``data.relabel(np.where(data.y == "a", "a", "rest"))`` for a
         one-vs-rest sub-problem given to a learner that can't fold the
         rest in itself (external binary learners)."""
-        return type(self)(self.spec, self.X, np.asarray(new_y))
+        return type(self)(self.spec, self.X, np.asarray(new_y), weights=self.weights)
 
 
 class BooleanDataRepresentation(DataRepresentation):
@@ -214,7 +276,8 @@ class BooleanDataRepresentation(DataRepresentation):
     incremental search fast path.
     """
 
-    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None):
+    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
+                 weights: Optional[np.ndarray] = None):
         super().__init__(spec)
         try:
             from scipy.sparse import issparse
@@ -233,6 +296,7 @@ class BooleanDataRepresentation(DataRepresentation):
         self._n_samples: int = X.shape[0]
         self.y: Optional[np.ndarray] = None if y is None else np.asarray(y)
         self._packed: np.ndarray = np.packbits(X, axis=1)
+        self._set_weights(weights)
 
     @functools.cached_property
     def X(self) -> np.ndarray:
@@ -278,23 +342,25 @@ class BooleanDataRepresentation(DataRepresentation):
     # them as false negatives/negatives without it (see `cover_counts`).
 
     def initial_cover(self, example_mask: Optional[np.ndarray] = None):
-        if example_mask is None:
-            return np.ones(self._n_samples, dtype=bool), None
-        mask = np.array(example_mask, dtype=bool, copy=True)
-        return mask, mask
+        support, w = self.scope(example_mask)
+        if support is None:
+            return np.ones(self._n_samples, dtype=bool), None, None
+        return support.copy(), support, w
 
     def refine_cover(self, handle, feature: int):
-        cov, scope = handle
+        cov, scope, w = handle
         # `X` materializes here on first use -- a one-time O(n*k) unpack,
         # paid back many times over versus `coverage`'s O(n*k/8) *every*
         # call regardless of how short the rule being grown is.
-        return cov & self.X[:, feature], scope
+        return cov & self.X[:, feature], scope, w
 
     def cover_counts(self, handle, positive_class: Any) -> Tuple[int, int, int, int]:
         if self.y is None:
             raise ValueError("cover_counts needs labels (self.y)")
-        cov, scope = handle
+        cov, scope, w = handle
         pos_mask = self.y == positive_class
+        if w is not None:
+            return _weighted_counts(w, cov, pos_mask)
         in_scope = np.ones(self._n_samples, dtype=bool) if scope is None else scope
         tp = int(np.sum(cov & pos_mask))
         fp = int(np.sum(cov & ~pos_mask))
@@ -303,8 +369,7 @@ class BooleanDataRepresentation(DataRepresentation):
         return tp, fp, fn, tn
 
     def cover_rows(self, handle) -> np.ndarray:
-        cov, _ = handle
-        return cov
+        return handle[0]
 
     @classmethod
     def from_dataframe(
@@ -364,6 +429,14 @@ class BooleanDataRepresentation(DataRepresentation):
         return f"BooleanDataRepresentation(spec={self.spec!r}, n_samples={self.n_samples})"
 
 
+def _weighted_counts(w: np.ndarray, cov: np.ndarray, pos_mask: np.ndarray) -> Tuple[float, float, float, float]:
+    """``(tp, fp, fn, tn)`` as sums of the weights `w` (zero outside the
+    scope) -- `cov` the covered rows, `pos_mask` the positive ones."""
+    pw, nw = w * pos_mask, w * ~pos_mask
+    tp, fp = float(pw[cov].sum()), float(nw[cov].sum())
+    return tp, fp, float(pw.sum()) - tp, float(nw.sum()) - fp
+
+
 class _PPCNode:
     """A node of the PPC- (pre/post-code) prefix tree -- an FP-tree-like
     trie over each row's set of True features, ordered most-frequent
@@ -397,10 +470,11 @@ class _NListMaskContext:
     never wrong to reuse), since the mask itself never changes within
     one search."""
 
-    __slots__ = ("mask", "_node_counts", "_scope_totals")
+    __slots__ = ("mask", "weights", "_node_counts", "_scope_totals")
 
-    def __init__(self, mask: Optional[np.ndarray]):
+    def __init__(self, mask: Optional[np.ndarray], weights: Optional[np.ndarray] = None):
         self.mask = mask
+        self.weights = weights          # effective row weights (zero outside the mask), or None
         self._node_counts: dict = {}
         self._scope_totals: Optional[np.ndarray] = None
 
@@ -411,7 +485,10 @@ class _NListMaskContext:
         if self.mask is None:
             return rep._class_totals
         if self._scope_totals is None:
-            self._scope_totals = np.bincount(rep._y_idx[self.mask], minlength=rep._n_classes)
+            if self.weights is not None:
+                self._scope_totals = np.bincount(rep._y_idx, weights=self.weights, minlength=rep._n_classes)
+            else:
+                self._scope_totals = np.bincount(rep._y_idx[self.mask], minlength=rep._n_classes)
         return self._scope_totals
 
     def node_counts(self, rep: "NListRepresentation", item: int) -> np.ndarray:
@@ -424,11 +501,14 @@ class _NListMaskContext:
         cached = self._node_counts.get(item)
         if cached is None:
             m = rep._path_words[item].shape[0]
-            counts = np.zeros((m, rep._n_classes), dtype=np.int64)
+            weighted = self.weights is not None
+            counts = np.zeros((m, rep._n_classes), dtype=float if weighted else np.int64)
             row_idx, entry_node = rep._row_idx[item], rep._entry_node[item]
             if row_idx.size:
                 in_mask = self.mask[row_idx]
-                np.add.at(counts, (entry_node[in_mask], rep._y_idx[row_idx[in_mask]]), 1)
+                rows = row_idx[in_mask]
+                np.add.at(counts, (entry_node[in_mask], rep._y_idx[rows]),
+                          self.weights[rows] if weighted else 1)
             cached = counts
             self._node_counts[item] = cached
         return cached
@@ -497,7 +577,8 @@ class NListRepresentation(DataRepresentation):
     `from_dataframe`, mirroring `BooleanDataRepresentation`.
     """
 
-    def __init__(self, spec: DataSpec, X: np.ndarray, y: Optional[np.ndarray] = None):
+    def __init__(self, spec: DataSpec, X: np.ndarray, y: Optional[np.ndarray] = None,
+                 weights: Optional[np.ndarray] = None):
         super().__init__(spec)
         X = np.asarray(X)
         if X.dtype != bool:
@@ -510,6 +591,7 @@ class NListRepresentation(DataRepresentation):
         self._n_samples: int = X.shape[0]
         self.y: Optional[np.ndarray] = None if y is None else np.asarray(y)
         self._build(X)
+        self._set_weights(weights)
 
     # -- construction ---------------------------------------------------
 
@@ -736,8 +818,9 @@ class NListRepresentation(DataRepresentation):
     #   search only pays the mask/count derivation once.
 
     def initial_cover(self, example_mask: Optional[np.ndarray] = None):
-        mask = None if example_mask is None else np.array(example_mask, dtype=bool, copy=True)
-        return None, None, np.zeros(self._word_count, dtype=np.uint64), _NListMaskContext(mask)
+        support, w = self.scope(example_mask)
+        mask = None if support is None else np.array(support, dtype=bool, copy=True)
+        return None, None, np.zeros(self._word_count, dtype=np.uint64), _NListMaskContext(mask, w)
 
     def refine_cover(self, handle, feature: int):
         anchor_item, active, mask_words, ctx = handle
@@ -758,17 +841,18 @@ class NListRepresentation(DataRepresentation):
         if self.y is None:
             raise ValueError("cover_counts needs labels (self.y)")
         anchor_item, active, _, ctx = handle
+        num = int if ctx.weights is None else float
         pos_idx = self._class_index[positive_class]
         scope_totals = ctx.scope_totals(self)
-        n_pos = int(scope_totals[pos_idx])
-        n_neg = int(scope_totals.sum()) - n_pos
+        n_pos = num(scope_totals[pos_idx])
+        n_neg = num(scope_totals.sum()) - n_pos
 
         if anchor_item is None:
             tp, fp = n_pos, n_neg  # the empty rule covers everything in scope
         else:
             active_counts = ctx.node_counts(self, anchor_item)[active].sum(axis=0)
-            tp = int(active_counts[pos_idx])
-            fp = int(active_counts.sum()) - tp
+            tp = num(active_counts[pos_idx])
+            fp = num(active_counts.sum()) - tp
         return tp, fp, n_pos - tp, n_neg - fp
 
     def cover_rows(self, handle) -> np.ndarray:
@@ -802,8 +886,9 @@ class NListRepresentation(DataRepresentation):
     @classmethod
     def from_boolean(cls, data: "BooleanDataRepresentation") -> "NListRepresentation":
         """Build the N-list index for an existing
-        `BooleanDataRepresentation`, reusing its `DataSpec` and labels."""
-        return cls(data.spec, data.X, data.y)
+        `BooleanDataRepresentation`, reusing its `DataSpec`, labels and
+        row weights."""
+        return cls(data.spec, data.X, data.y, weights=data.weights)
 
     @classmethod
     def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "NListRepresentation":
@@ -1025,7 +1110,8 @@ class SparseDataRepresentation(DataRepresentation):
     already-negated representation, before reaching for `Sparse`.
     """
 
-    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None):
+    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
+                 weights: Optional[np.ndarray] = None):
         super().__init__(spec)
         from scipy import sparse
 
@@ -1047,6 +1133,7 @@ class SparseDataRepresentation(DataRepresentation):
         self._csr = csr
         self._csc = csr.tocsc()
         self._csc.sort_indices()
+        self._set_weights(weights)
 
     @property
     def n_samples(self) -> int:
@@ -1091,21 +1178,27 @@ class SparseDataRepresentation(DataRepresentation):
     # answer "how many masked rows are there in total").
 
     def initial_cover(self, example_mask: Optional[np.ndarray] = None):
-        if example_mask is None:
-            return np.arange(self._n_samples, dtype=np.int64), None
-        mask = np.array(example_mask, dtype=bool, copy=True)
-        return np.flatnonzero(mask).astype(np.int64), mask
+        support, w = self.scope(example_mask)
+        if support is None:
+            return np.arange(self._n_samples, dtype=np.int64), None, None
+        return np.flatnonzero(support).astype(np.int64), support, w
 
     def refine_cover(self, handle, feature: int):
-        rows, mask = handle
+        rows, mask, w = handle
         indptr, indices = self._csc.indptr, self._csc.indices
         col = indices[indptr[feature]:indptr[feature + 1]]
-        return np.intersect1d(rows, col, assume_unique=True), mask
+        return np.intersect1d(rows, col, assume_unique=True), mask, w
 
     def cover_counts(self, handle, positive_class: Any) -> Tuple[int, int, int, int]:
         if self.y is None:
             raise ValueError("cover_counts needs labels (self.y)")
-        rows, mask = handle
+        rows, mask, w = handle
+        if w is not None:
+            pos = self.y == positive_class
+            tp = float(w[rows][pos[rows]].sum())
+            fp = float(w[rows].sum()) - tp
+            n_pos = float(w[pos].sum())
+            return tp, fp, n_pos - tp, float(w.sum()) - n_pos - fp
         tp = int(np.sum(self.y[rows] == positive_class))
         fp = int(rows.size) - tp
         y_scope = self.y if mask is None else self.y[mask]
@@ -1114,7 +1207,7 @@ class SparseDataRepresentation(DataRepresentation):
         return tp, fp, n_pos - tp, n_neg - fp
 
     def cover_rows(self, handle) -> np.ndarray:
-        rows, _ = handle
+        rows = handle[0]
         out = np.zeros(self._n_samples, dtype=bool)
         out[rows] = True
         return out
@@ -1124,7 +1217,7 @@ class SparseDataRepresentation(DataRepresentation):
 
         if is_complement is None:
             new = self._csc[:, source]
-            return SparseDataRepresentation(new_spec, new, self.y)
+            return SparseDataRepresentation(new_spec, new, self.y, weights=self.weights)
         cols = []
         for j, s in enumerate(np.asarray(source)):
             col = self._csc[:, int(s)]
@@ -1134,7 +1227,7 @@ class SparseDataRepresentation(DataRepresentation):
                 cols.append(sparse.csc_matrix(dense))
             else:
                 cols.append(col)
-        return SparseDataRepresentation(new_spec, sparse.hstack(cols, format="csc"), self.y)
+        return SparseDataRepresentation(new_spec, sparse.hstack(cols, format="csc"), self.y, weights=self.weights)
 
     @classmethod
     def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "SparseDataRepresentation":
@@ -1144,7 +1237,7 @@ class SparseDataRepresentation(DataRepresentation):
 
     @classmethod
     def from_boolean(cls, data: "BooleanDataRepresentation") -> "SparseDataRepresentation":
-        return cls(data.spec, data.X, data.y)
+        return cls(data.spec, data.X, data.y, weights=data.weights)
 
     @classmethod
     def from_dataframe(

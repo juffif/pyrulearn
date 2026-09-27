@@ -8,10 +8,10 @@ from pyrulearn.data.io import binarize, build_dataspec
 wittgenstein = pytest.importorskip("wittgenstein")
 
 from pyrulearn.interfaces.wittgenstein import (  # noqa: E402
-    IREP,
+    WittIREP,
     IREPImporter,
     RIPPERImporter,
-    RIPPERk,
+    WittRIPPER,
     _parse_numeric_cond_value,
 )
 
@@ -32,8 +32,8 @@ def _binary_data(n=300, d=5, seed=0):
 
 
 @pytest.mark.parametrize("learner_cls,importer_cls,wclass", [
-    (IREP, IREPImporter, wittgenstein.IREP),
-    (RIPPERk, RIPPERImporter, wittgenstein.RIPPER),
+    (WittIREP, IREPImporter, wittgenstein.IREP),
+    (WittRIPPER, RIPPERImporter, wittgenstein.RIPPER),
 ])
 def test_learner_matches_importer_and_wittgenstein_predict(learner_cls, importer_cls, wclass):
     rep = _binary_data()
@@ -48,8 +48,10 @@ def test_learner_matches_importer_and_wittgenstein_predict(learner_cls, importer
     imported = importer_cls().import_model(wmodel, rep.spec)
 
     # same random_state -> identical rules (compare by logic-string
-    # rendering, since Rule equality ignores provenance)
-    assert sorted(r.to_string("logic") for r in learned) == sorted(r.to_string("logic") for r in imported)
+    # rendering, since Rule equality ignores provenance; show_stats=False,
+    # since the learner's rules carry training stats and the bare import doesn't)
+    assert (sorted(r.to_string("logic", show_stats=False) for r in learned)
+            == sorted(r.to_string("logic", show_stats=False) for r in imported))
 
     # the imported model itself has no default_rule (see module
     # docstring); the learner-produced one does, since it can see
@@ -68,7 +70,7 @@ def test_learner_matches_importer_and_wittgenstein_predict(learner_cls, importer
 def test_fit_raises_on_more_than_two_classes_even_with_neg_class():
     # wittgenstein itself silently collapses every non-pos_class label
     # into "negative" given an explicit pos_class (confirmed directly
-    # against the library) -- IREP/RIPPERk must refuse this outright
+    # against the library) -- IREP/WittRIPPER must refuse this outright
     # rather than let it happen unnoticed, regardless of neg_class.
     rng = np.random.default_rng(1)
     X = rng.integers(0, 2, size=(200, 4)).astype(bool)
@@ -76,7 +78,7 @@ def test_fit_raises_on_more_than_two_classes_even_with_neg_class():
     ds = DataSpec([f"f{i}" for i in range(4)])
     rep = BooleanDataRepresentation(ds, X, y)
 
-    for learner in (RIPPERk(pos_class="a", random_state=0), IREP(pos_class="a")):
+    for learner in (WittRIPPER(pos_class="a", random_state=0), WittIREP(pos_class="a")):
         try:
             learner.fit(rep)
             assert False, f"expected ValueError for {type(learner).__name__} on 3-class y"
@@ -84,11 +86,11 @@ def test_fit_raises_on_more_than_two_classes_even_with_neg_class():
             assert "binary" in str(e)
 
     try:
-        RIPPERk(pos_class="a", neg_class="NOT_A", random_state=0).fit(rep)
+        WittRIPPER(pos_class="a", neg_class="NOT_A", random_state=0).fit(rep)
         assert False, "neg_class= should not bypass the multi-class guard"
     except ValueError:
         pass
-    print("IREP/RIPPERk raise on >2 classes even with neg_class given: OK")
+    print("IREP/WittRIPPER raise on >2 classes even with neg_class given: OK")
 
 
 def test_missing_labels_raises():
@@ -98,11 +100,11 @@ def test_missing_labels_raises():
     rep = BooleanDataRepresentation(ds, X, None)
 
     try:
-        IREP(pos_class="pos").fit(rep)
+        WittIREP(pos_class="pos").fit(rep)
         assert False, "expected ValueError for missing labels"
     except ValueError:
         pass
-    print("IREP/RIPPERk raise without labels: OK")
+    print("IREP/WittRIPPER raise without labels: OK")
 
 
 def test_numeric_and_nominal_attributes_via_build_dataspec():
@@ -126,7 +128,7 @@ def test_numeric_and_nominal_attributes_via_build_dataspec():
     X = binarize(ds, df)
     rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
 
-    rules = RIPPERk(pos_class="pos", random_state=0).fit(rep)
+    rules = WittRIPPER(pos_class="pos", random_state=0).fit(rep)
     assert len(rules.rules) > 0
     # every literal binds to a real, typed DataSpec feature -- not an
     # opaque bit -- so it renders with its actual attribute/threshold,
@@ -153,8 +155,8 @@ def test_parse_numeric_cond_value():
 
 
 @pytest.mark.parametrize("learner_cls,importer_cls", [
-    (RIPPERk, RIPPERImporter),
-    (IREP, IREPImporter),
+    (WittRIPPER, RIPPERImporter),
+    (WittIREP, IREPImporter),
 ])
 def test_infer_dataspec_parses_wittgensteins_own_bins_workflow_2(learner_cls, importer_cls):
     # workflow 2 for wittgenstein: fit directly on raw numeric+nominal
@@ -172,7 +174,7 @@ def test_infer_dataspec_parses_wittgensteins_own_bins_workflow_2(learner_cls, im
     y = np.where(np.where(noise, ~y_clean, y_clean), "pos", "neg")
     names = ["num_feat", "cat_feat"]
 
-    kwargs = {"k": 2, "random_state": 0} if learner_cls is RIPPERk else {}
+    kwargs = {"k": 2, "random_state": 0} if learner_cls is WittRIPPER else {}
     learner = learner_cls(pos_class="pos", **kwargs)
     model = learner.fit_external(df.to_numpy(), y, feature_names=names)
 
@@ -209,7 +211,7 @@ def test_imported_rules_match_wittgenstein_exactly_at_bin_boundaries():
     y = np.where(x > 5.0, "pos", "neg")
     names = ["f0"]
 
-    model = RIPPERk(pos_class="pos", random_state=0).fit_external(
+    model = WittRIPPER(pos_class="pos", random_state=0).fit_external(
         x.reshape(-1, 1), y, feature_names=names
     )
     bins = model.bin_transformer_.bins_.get("f0", [])
@@ -242,7 +244,7 @@ def test_import_model_without_feature_names_still_raises_on_nonboolean():
     y = np.where(df["num_feat"] > 0, "pos", "neg")
     names = ["num_feat"]
 
-    model = RIPPERk(pos_class="pos", random_state=0).fit_external(df.to_numpy(), y, feature_names=names)
+    model = WittRIPPER(pos_class="pos", random_state=0).fit_external(df.to_numpy(), y, feature_names=names)
     ds = DataSpec(names)  # plain Boolean dataspec, wrong shape for this model's real Conds
     try:
         RIPPERImporter().import_model(model, ds)
@@ -254,15 +256,15 @@ def test_import_model_without_feature_names_still_raises_on_nonboolean():
 
 if __name__ == "__main__":
     for learner_cls, importer_cls, wclass in [
-        (IREP, IREPImporter, wittgenstein.IREP),
-        (RIPPERk, RIPPERImporter, wittgenstein.RIPPER),
+        (WittIREP, IREPImporter, wittgenstein.IREP),
+        (WittRIPPER, RIPPERImporter, wittgenstein.RIPPER),
     ]:
         test_learner_matches_importer_and_wittgenstein_predict(learner_cls, importer_cls, wclass)
     test_fit_raises_on_more_than_two_classes_even_with_neg_class()
     test_missing_labels_raises()
     test_numeric_and_nominal_attributes_via_build_dataspec()
     test_parse_numeric_cond_value()
-    for learner_cls, importer_cls in [(RIPPERk, RIPPERImporter), (IREP, IREPImporter)]:
+    for learner_cls, importer_cls in [(WittRIPPER, RIPPERImporter), (WittIREP, IREPImporter)]:
         test_infer_dataspec_parses_wittgensteins_own_bins_workflow_2(learner_cls, importer_cls)
     test_imported_rules_match_wittgenstein_exactly_at_bin_boundaries()
     test_import_model_without_feature_names_still_raises_on_nonboolean()

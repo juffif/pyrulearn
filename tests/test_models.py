@@ -7,7 +7,7 @@ from pyrulearn.rule import Rule, WeightedRule
 from pyrulearn.models import (
     CompositeModel, ConceptCascade, ConceptModel, ConceptSet, DecisionList,
     DeepModel, DefaultPrediction, DisjointRuleSet, EnsembleModel, FlatRuleSet, MajorityClass,
-    PairwiseModel, Provenance, RuleList, RuleModel, RuleSet, SingleRule,
+    PairwiseModel, Provenance, RuleList, RuleModel, RuleSet, SingleRule, WeightedVote,
     can_convert, conceptcascade_to_decision_list, conceptset_to_flatruleset, convert,
     ensemblemodel_to_flatruleset,
     flatruleset_to_conceptset, flatruleset_to_decision_list,
@@ -165,11 +165,10 @@ def test_concept_cascade_unique_mask_credits_the_whole_first_concept():
 
 # ------------------------------------------------------------------------ stats ---
 
-def test_stats_is_none_until_annotated_then_returns_a_model_stats():
+def test_evaluate_returns_a_model_stats_and_stores_nothing():
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS), Rule([1], target="a", dataspec=DS)],
                      default_prediction="a")
-    assert rs.stats() is None
-    st = rs.stats(DATA)
+    st = rs.evaluate(DATA)
     assert type(st).__name__ == "ModelStats"
     assert st.n_rows == 5
     assert st.n_rules == 2
@@ -177,13 +176,16 @@ def test_stats_is_none_until_annotated_then_returns_a_model_stats():
     assert st.confusion is not None
     assert st.confusion.labels == ["a", "b"]
     assert 0.0 <= st.confusion.accuracy <= 1.0
-    assert rs.stats(split="data") is st   # cached, same object back
+    # a pure measurement: nothing is stored on the model or its rules
+    assert not hasattr(rs, "stats")
+    assert all(r.stats() is None for r in rs.rules)
+    assert rs.evaluate(DATA) is not st
 
 
 def test_stats_confusion_is_none_without_labels():
     rep_no_y = BooleanDataRepresentation(DS, X)  # no labels available to score a confusion matrix against
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS)], default_prediction="a")
-    st = rs.stats(rep_no_y)
+    st = rs.evaluate(rep_no_y)
     assert st.confusion is None
     assert st.n_rules == 1
 
@@ -202,7 +204,9 @@ def test_ensemble_model_votes_over_members():
     m2 = SingleRule(Rule([1], target="b", dataspec=DS), default_prediction=None)   # q -> b
     m3 = SingleRule(Rule([], target="a", dataspec=DS), default_prediction=None)    # TRUE -> a
     ens = EnsembleModel([m1, m2, m3], default_prediction="b")
-    assert list(ens.predict(DATA)) == ["a", "b", "a", "a", "a"]   # row1: tie -> earlier member (m2) -> b
+    # row1: a (m3) vs b (m2) tie -- never decided by member order; no stats
+    # to read training frequencies from, so the label that sorts first: a
+    assert list(ens.predict(DATA)) == ["a", "a", "a", "a", "a"]
     assert isinstance(ens, CompositeModel) and len(ens.rules) == 3
     with pytest.raises(TypeError):
         ens.add(Rule([0], target="a"))
@@ -391,7 +395,7 @@ def test_default_rule_is_a_single_rule_with_its_own_stats_and_provenance():
     assert type(dr) is SingleRule
     assert dr.target == "b" and dr.conditions == ()
     assert dr.stats() is None                   # nothing measured yet
-    dr.stats(DATA)                               # fall-through stats land here, like any other leaf
+    dr.set_stats(DATA)                           # fall-through stats land here, like any other leaf
     assert fs.default_rule is dr and fs.default_rule.stats() is not None
     assert fs.default_rule.provenance is None   # settable, just like any other RuleModel
 
@@ -497,21 +501,6 @@ def test_annotate_default_rule_is_a_noop_when_there_is_no_default_rule():
     assert result is fs
 
 
-def test_stats_multiple_splits_coexist():
-    X_train = np.array([[1, 0], [1, 1], [0, 0]], dtype=bool)
-    X_test = np.array([[1, 0], [0, 0]], dtype=bool)
-    ds = DataSpec(["a", "b"])
-    train_rep = BooleanDataRepresentation(ds, X_train)
-    test_rep = BooleanDataRepresentation(ds, X_test)
-    r = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
-    fs = FlatRuleSet([r])
-
-    fs.annotate(train_rep, split="train")
-    fs.annotate(test_rep, split="test")
-    assert fs.stats(split="train").n_rows == 3
-    assert fs.stats(split="test").n_rows == 2  # annotating "test" didn't clobber "train"
-
-
 # ------------------------------------------------------- default_prediction ---
 
 def test_predict_default_prediction_bare_label_and_none():
@@ -538,7 +527,7 @@ def test_default_rule_reassignment_discards_materialized_rule_and_stats():
     assert dr is not None and dr.target == "fallback" and len(dr.conditions) == 0
     assert fs.default_rule is dr  # cached: same object each access
 
-    fs.default_rule.stats(DATA)
+    fs.default_rule.set_stats(DATA)
     assert fs.default_rule.stats() is not None
 
     # reassigning the policy discards the materialized rule (and its stats)
@@ -787,11 +776,12 @@ def test_decision_list_to_string_sequential_and_if_elif_else():
 
     logic = dl.to_string(fmt="logic")
     lines = logic.splitlines()
-    assert lines[0].startswith("if  ") and lines[0].endswith("→ A")
-    assert lines[1].startswith("elif") and lines[1].endswith("→ B")
-    assert lines[2] == "else → C"
+    assert lines[0] == "% conflict resolution: first matching rule" and lines[1] == ""
+    assert lines[2].startswith("if  ") and lines[2].endswith("→ A")
+    assert lines[3].startswith("elif") and lines[3].endswith("→ B")
+    assert lines[4] == "else → C"
 
-    prolog = dl.to_string(fmt="prolog")
+    prolog = dl.to_string(fmt="prolog", show_resolution=False)
     plines = prolog.splitlines()
     # uppercase-leading targets aren't valid bare Prolog atoms (that's a
     # variable, not a predicate name) -- quoted, same as a Rule printed alone
@@ -821,6 +811,77 @@ def test_list_resolved_rule_set_prints_in_its_deciding_order():
     assert "% class: Z" in one_head.to_string(fmt="prolog")
 
 
+def test_conflict_resolution_line_only_where_rules_can_conflict():
+    ds = DataSpec(["a", "b"])
+    ra = Rule.from_pos_neg(pos=[0], target="A", dataspec=ds)
+    rb = Rule.from_pos_neg(pos=[1], target="B", dataspec=ds)
+    ra2 = Rule.from_pos_neg(pos=[1], target="A", dataspec=ds)
+    head = "% conflict resolution: "
+    assert FlatRuleSet([ra, rb]).to_string(fmt="prolog").startswith(head + "max Laplace\n")
+    assert FlatRuleSet([ra, rb], combiner="vote").to_string(fmt="prolog").startswith(
+        head + "vote (one vote per covering rule)\n")
+    assert DecisionList([ra, rb]).to_string(fmt="prolog").startswith(head + "first matching rule\n")
+    # nothing to resolve: one head only, disjoint rules, a lone rule
+    for model in (FlatRuleSet([ra, ra2]), ConceptModel([ra, ra2], label="A"),
+                  DisjointRuleSet([ra, rb]), SingleRule(ra)):
+        assert head not in model.to_string(fmt="prolog"), type(model).__name__
+    assert head not in FlatRuleSet([ra, rb]).to_string(fmt="prolog", show_resolution=False)
+
+
+def test_repr_identifies_and_print_renders_every_model():
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    sr = annotate_rules([Rule([0, 1], target="pos", dataspec=ds)], data)[0]
+    assert repr(sr) == "SingleRule(2 conditions)"
+    assert repr(SingleRule(Rule([0], target="pos", dataspec=ds))) == "SingleRule(1 condition)"
+    assert str(sr) == sr.to_string() == "pos(X) :- f0(X), f1(X).  % (0/1)"  # covers row 1: neg
+    fs = FlatRuleSet([sr, Rule([1], target="neg", dataspec=ds)])
+    assert repr(fs) == "FlatRuleSet(2 rules)"
+    assert str(fs) == fs.to_string()
+
+
+def test_pretty_prolog_puts_a_rules_stats_above_its_head():
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
+    dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
+    assert dl.to_string(pretty=True, show_resolution=False).splitlines() == [
+        "% (1/0)", "pos(X) :-", "    f0(X),", "    f1(X).",
+        "% (1/1)", "neg(X) :-", "    f1(X).",
+        "% default", "% (2/1)", "neg(X) :- true.",
+    ]
+    assert str(rules[0]) == "pos(X) :- f0(X), f1(X).  % (1/0)"          # not pretty by default
+    assert rules[0].to_string(pretty=True) == "% (1/0)\npos(X) :-\n    f0(X),\n    f1(X)."
+    # logic format: pretty changes nothing yet
+    assert dl.to_string(fmt="logic", pretty=True) == dl.to_string(fmt="logic")
+
+
+def test_headless_formats_name_the_class_inside_models():
+    # "conditions"/"pattern" render only a rule's body; inside a model the
+    # class must still be visible
+    ds = DataSpec(["f0", "f1"])
+    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+                                     np.array(["pos", "neg", "neg"]))
+    rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
+    dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
+    assert dl.to_string(fmt="conditions", show_resolution=False).splitlines() == [
+        "pos: f0, f1  % (1/0)", "neg: f1  % (1/1)", "% default: neg  % (2/1)"]
+    assert dl.to_string(fmt="pattern", show_resolution=False).splitlines() == [
+        "pos: 1 1  % (1/0)", "neg: 0 1  % (1/1)", "% default: neg  % (2/1)"]
+    # a rule set already has class headers; only its default names the class
+    fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="neg"), data)
+    text = fs.to_string(fmt="conditions")
+    assert "% class: pos\nf0, f1  % (1/0)" in text and text.endswith("% default: neg  % (2/1)")
+    # labels are padded to the longest class name, so the bodies line up
+    mixed = DecisionList([Rule([0], target="yes", dataspec=ds), Rule([1], target="n", dataspec=ds)])
+    assert mixed.to_string(fmt="pattern", show_resolution=False).splitlines() == ["yes: 1 0", "n:   0 1"]
+    # headed formats are unchanged, and a lone rule stays a bare body
+    assert "% default\nneg(X) :- true.  % (2/1)" in dl.to_string()
+    assert rules[0].rule.to_string("conditions") == "f0, f1"
+
+
 def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     r = Rule.from_pos_neg(pos=[0], target="a", n_features=2)
     sr = SingleRule(r)
@@ -828,39 +889,88 @@ def test_single_rule_to_string_delegates_to_the_wrapped_rule():
     assert sr.to_string(fmt="prolog") == r.to_string(fmt="prolog")
 
 
-def test_to_string_coverage_decoration_needs_no_prior_annotation():
+def test_to_string_prints_only_the_rules_own_frozen_stats():
     ds = DataSpec(["age_gt_30", "smoker", "high_bp"])
     r1 = Rule.from_pos_neg(pos=[0, 1], target="high_risk", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[2], target="high_risk", dataspec=ds)
+
+    # rules without stats print bare; there is no data= to measure against
     fs = FlatRuleSet([r1, r2])
+    assert "% (" not in fs.to_string(fmt="prolog")
+    with pytest.raises(TypeError):
+        fs.to_string(fmt="prolog", data=None)
 
-    # undecorated by default -- identical to the plain rendering
-    assert fs.to_string(fmt="prolog") == fs.to_string(fmt="prolog", data=None)
+    train = BooleanDataRepresentation(ds, np.array([[1, 1, 0], [0, 0, 1]], dtype=bool),
+                                      np.array(["high_risk", "low_risk"]))
+    fs = FlatRuleSet(annotate_rules([r1, r2], train))
+    before = fs.to_string(fmt="prolog")
+    assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (1/0)" in before
+    assert "high_risk(X) :- high_bp(X).  % (0/1)" in before
 
-    X = np.array([[1, 1, 0], [0, 0, 1]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X)
-    prolog = fs.to_string(fmt="prolog", data=data_rep)
-    assert "  % (1)" in prolog  # no labels -> plain "(n_covered)"
+    # evaluating on other data stores nothing, so it never changes what's
+    # printed (nor what's predicted)
+    test = BooleanDataRepresentation(ds, np.array([[1, 1, 1]] * 3, dtype=bool), np.array(["high_risk"] * 3))
+    fs.evaluate(test)
+    for r in fs.rules:
+        r.evaluate(test)
+    assert fs.to_string(fmt="prolog") == before
+    # show_stats=False: the bare rules
+    assert "% (" not in fs.to_string(fmt="prolog", show_stats=False)
+
+
+def test_training_stats_are_frozen_and_only_replaced_deliberately():
+    ds = DataSpec(["a"])
+    train = BooleanDataRepresentation(ds, np.array([[1], [1], [0]], dtype=bool), np.array(["x", "y", "y"]))
+    other = BooleanDataRepresentation(ds, np.array([[1], [0]], dtype=bool), np.array(["x", "x"]))
+    sr = annotate_rules([Rule([0], target="x", dataspec=ds)], train)[0]
+    assert sr.to_string("prolog").endswith("% (1/1)")
+
+    for overwrite in (lambda: sr.set_stats(other), lambda: annotate_rules([sr], other),
+                      lambda: sr.set_stats_from_counts({"x": 1}, {"x": 2})):
+        with pytest.raises(ValueError, match="frozen"):
+            overwrite()
+    assert sr.to_string("prolog").endswith("% (1/1)")  # untouched
+
+    sr.reset_stats(other)                               # deliberate replacement
+    assert sr.to_string("prolog").endswith("% (1/0)")
+    annotate_rules([sr], train, reset=True)
+    assert sr.to_string("prolog").endswith("% (1/1)")
+    # copy=True annotates fresh SingleRules and leaves the given ones alone
+    (fresh,) = annotate_rules([sr], other, copy=True)
+    assert fresh is not sr and fresh.rule is sr.rule
+    assert fresh.to_string("prolog").endswith("% (1/0)") and sr.to_string("prolog").endswith("% (1/1)")
+
+
+def test_remap_and_filter_keep_the_frozen_stats():
+    ds = DataSpec(["a", "b"])
+    train = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+                                      np.array(["x", "y", "y"]))
+    rules = annotate_rules([Rule([0], target="x", dataspec=ds), Rule([1], target="y", dataspec=ds)], train)
+    fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="y"), train)
+    before = fs.to_string(fmt="prolog")
+    wider = DataSpec(["b", "a", "c"])                    # different order, extra feature
+    remapped = fs.remap(wider)
+    assert remapped.to_string(fmt="prolog") == before
+    assert remapped.default_rule.stats() is not None
+    assert "x(X) :- a(X).  % (1/1)" in fs.filter("x").to_string(fmt="prolog")
 
 
 def test_to_string_coverage_correctness_counts():
     # row0: covered by r1 only, label matches target (correct)
     # row1: covered by r2 only, label does NOT match target (wrong)
-    # row2: covered by both r1 and r2 (not unique to either), label matches target
+    # row2: covered by both r1 and r2, label matches target
     ds = DataSpec(["age_gt_30", "smoker", "high_bp"])
     r1 = Rule.from_pos_neg(pos=[0, 1], target="high_risk", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[2], target="high_risk", dataspec=ds)
-    fs = FlatRuleSet([r1, r2])
-
     X = np.array([
         [1, 1, 0],  # row0: age_gt_30 & smoker -> covered by r1 only
         [0, 0, 1],  # row1: high_bp -> covered by r2 only
         [1, 1, 1],  # row2: all three -> covered by both
     ], dtype=bool)
     y = np.array(["high_risk", "low_risk", "high_risk"])
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    fs = FlatRuleSet(annotate_rules([r1, r2], BooleanDataRepresentation(ds, X, y)))
 
-    prolog = fs.to_string(fmt="prolog", data=data_rep)
+    prolog = fs.to_string(fmt="prolog")
     # r1: covers rows 0,2, both high_risk (its own target) -> tp=2, fp=0
     assert "high_risk(X) :- age_gt_30(X), smoker(X).  % (2/0)" in prolog
     # r2: covers rows 1,2 -- row1 is low_risk (wrong), row2 is high_risk -> tp=1, fp=1
@@ -868,27 +978,28 @@ def test_to_string_coverage_correctness_counts():
 
 
 def _three_class_dog_rule():
-    # one rule, covering 16 training rows: 1 bird, 1 cat, 14 dog
+    # one rule, trained on 19 rows; it covers 16: 1 bird, 1 cat, 14 dog
     ds = DataSpec(["barks"])
     X = np.array([[1]] * 16 + [[0]] * 3, dtype=bool)
     y = np.array(["bird"] + ["cat"] + ["dog"] * 14 + ["bird", "cat", "dog"])
+    data = BooleanDataRepresentation(ds, X, y)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    return FlatRuleSet([rule]), BooleanDataRepresentation(ds, X, y)
+    return FlatRuleSet(annotate_rules([rule], data)), data
 
 
 def test_to_string_prints_the_full_distribution_only_for_a_distributioncombiner():
-    fs, data_rep = _three_class_dog_rule()
+    fs, _ = _three_class_dog_rule()
 
     # a DistributionCombiner and >2 classes -> the full per-class breakdown,
     # with a printed-once legend giving its order (sorted: bird, cat, dog)
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # "max" (the default) -- no distribution, no legend, plain (tp/fp)
     fs.combiner = "max"
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
     print("to_string shows the full class distribution + legend only for a "
@@ -902,10 +1013,9 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
     X = np.array([[1]] * 5 + [[0]] * 5, dtype=bool)
     y = np.array(["dog"] * 5 + ["cat"] * 5)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    fs = FlatRuleSet([rule], combiner="micro_vote")
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    fs = FlatRuleSet(annotate_rules([rule], BooleanDataRepresentation(ds, X, y)), combiner="micro_vote")
 
-    text = fs.to_string(fmt="prolog", data=data_rep)
+    text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (5/0)" in text
     print("Binary problems skip the distribution bracket/legend even under a "
@@ -915,41 +1025,40 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
 def test_to_string_singlerule_default_never_prints_the_distribution():
     # SingleRule.resolution is Exclusive, never a Combine -- by default there's
     # only one rule, so no distribution-scored disagreement to make visible
-    _, data_rep = _three_class_dog_rule()
-    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
-    sr = SingleRule(rule)
-    text = sr.to_string(fmt="prolog", data=data_rep)
+    _, data = _three_class_dog_rule()
+    sr = annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=data.spec)], data)[0]
+    text = sr.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert text == "dog(X) :- barks(X).  % (14/2)"
     print("A standalone SingleRule defaults to plain (tp/fp), never a distribution: OK")
 
 
 def test_to_string_show_distribution_forces_the_choice_either_way():
-    fs, data_rep = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
+    fs, data = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
 
     # show_distribution=True forces the vector even though "max" never needs it
-    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=True)
+    text = fs.to_string(fmt="prolog", show_distribution=True)
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # show_distribution=False suppresses it even under a genuine DistributionCombiner
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep, show_distribution=False)
+    text = fs.to_string(fmt="prolog", show_distribution=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
 
     # forcing it on works even where the model structurally never has a
     # DistributionCombiner at all: a lone SingleRule, and a binary problem
-    rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=data_rep.spec)
-    sr_text = SingleRule(rule).to_string(fmt="prolog", data=data_rep, show_distribution=True)
-    assert sr_text == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]"
+    sr = annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=data.spec)], data)[0]
+    assert (sr.to_string(fmt="prolog", show_distribution=True)
+            == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]")
 
     ds2 = DataSpec(["barks"])
     binary_data = BooleanDataRepresentation(
         ds2, np.array([[1]] * 5 + [[0]] * 5, dtype=bool), np.array(["dog"] * 5 + ["cat"] * 5))
-    binary_rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)
-    binary_fs = FlatRuleSet([binary_rule])  # default "max"
-    text = binary_fs.to_string(fmt="prolog", data=binary_data, show_distribution=True)
+    binary_fs = FlatRuleSet(annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)],
+                                           binary_data))  # default "max"
+    text = binary_fs.to_string(fmt="prolog", show_distribution=True)
     assert "% classes: [cat, dog]" in text
     assert "dog(X) :- barks(X).  % [0, 5]" in text  # cat=0, dog=5, class order [cat, dog]
     print("show_distribution=True/False forces the vector on or off regardless of "
@@ -957,49 +1066,57 @@ def test_to_string_show_distribution_forces_the_choice_either_way():
 
 
 def test_to_string_show_classes_is_independent_of_show_distribution():
-    fs, data_rep = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
+    fs, _ = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
 
     # show_classes=True prints the legend even though no rule shows a distribution
-    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=True)
+    text = fs.to_string(fmt="prolog", show_classes=True)
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % (14/2)" in text  # still plain (tp/fp) -- show_distribution untouched
 
     # show_classes=False suppresses the legend even while a distribution IS shown
     fs.combiner = "micro_vote"
-    text = fs.to_string(fmt="prolog", data=data_rep, show_classes=False)
+    text = fs.to_string(fmt="prolog", show_classes=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text  # the vector itself is untouched
     print("show_classes independently forces the legend on or off, regardless of "
           "whether any rule is actually showing a distribution vector: OK")
 
 
-def _three_class_pairwise_fixture():
-    # cat/dog/bird, 3 pairs, each sub-model's rule only ever explicitly
-    # predicts ONE of its own two classes -- the other only ever surfaces as
-    # that sub-model's own default_prediction
+def _three_class_fixture_data():
     ds = DataSpec(["a", "b"])
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0], [1, 0], [0, 1]], dtype=bool)
     y = np.array(["cat", "cat", "dog", "dog", "bird", "bird"])
-    data = BooleanDataRepresentation(ds, X, y)
-    cat_dog = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
-                           label="cat", default_prediction="dog")
-    cat_bird = ConceptModel([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)],
-                            label="cat", default_prediction="bird")
-    dog_bird = ConceptModel([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)],
-                            label="dog", default_prediction="bird")
-    return cat_dog, cat_bird, dog_bird, data
+    return BooleanDataRepresentation(ds, X, y)
+
+
+def _three_class_pairwise_fixture():
+    # cat/dog/bird, 3 pairs, each sub-model's rule only ever explicitly
+    # predicts ONE of its own two classes -- the other only ever surfaces as
+    # that sub-model's own default_prediction. Each sub-model's rules are
+    # annotated on its own pair's rows, as a pairwise fit does.
+    data = _three_class_fixture_data()
+    ds = data.spec
+
+    def concept(pair, feature, label, default):
+        rows = data.select_rows(np.isin(data.y, list(pair)))
+        return ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[feature], target=label, dataspec=ds)], rows),
+                            label=label, default_prediction=default)
+
+    return (concept(("cat", "dog"), 0, "cat", "dog"), concept(("cat", "bird"), 0, "cat", "bird"),
+            concept(("dog", "bird"), 1, "dog", "bird"), data)
 
 
 def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
-    cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    cat_dog, cat_bird, dog_bird, _ = _three_class_pairwise_fixture()
     pw = PairwiseModel(
         [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)],
         combiner="accuracy_vote", member_weights=[0.9, 0.75, 0.6], default_prediction="cat",
     )
-    text = pw.to_string(fmt="prolog", data=data)
+    text = pw.to_string(fmt="prolog")
 
-    # top-level legend: every class this model spans
-    assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
+    # conflict resolution, then the top-level legend: every class this model spans
+    assert text.splitlines()[0] == "% conflict resolution: pairwise vote weighted by each pair's training accuracy"
+    assert text.splitlines()[1] == "% classes: [bird, cat, dog]"
     # each pair's own header names it and, for accuracy_vote, its member weight
     assert "% pair: cat vs dog  (member weight: 0.9)" in text
     assert "% pair: cat vs bird  (member weight: 0.75)" in text
@@ -1009,40 +1126,113 @@ def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
     assert "% classes: [cat, dog]" in text
     assert "% classes: [bird, cat]" in text
     assert "% classes: [bird, dog]" in text
-    # data handed to each sub-model is narrowed to that pair's own rows:
-    # cat_dog's rule (a=1 -> cat) sees only the 2 cat + 2 dog rows -> tp=2, fp=0
+    # each sub-model prints the stats it was trained with, on its own pair's
+    # rows: cat_dog's rule (a=1 -> cat) over the 2 cat + 2 dog rows -> 2/0
     assert "cat(X) :- a(X).  % (2/0)" in text
-    # cat_bird's *same* rule, but narrowed to cat+bird rows instead -- the
-    # one bird row with a=1 is now a false positive -- tp=2, fp=1
+    # cat_bird's *same* rule, over cat+bird rows -- the one bird row with
+    # a=1 is a false positive there -- 2/1
     assert "cat(X) :- a(X).  % (2/1)" in text
     print("PairwiseModel.to_string forces each pair's own two-class legend and "
           "shows accuracy_vote's per-pair member weight: OK")
 
 
-def test_pairwisemodel_to_string_show_classes_false_suppresses_everything():
+def test_pairwise_weighted_vote_heuristic_is_configurable_and_printed():
+    from pyrulearn.heuristics import Precision
     cat_dog, cat_bird, dog_bird, data = _three_class_pairwise_fixture()
+    members = [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)]
+    head = "% conflict resolution: "
+    assert PairwiseModel(members).to_string(fmt="prolog").startswith(head + "pairwise vote\n")
+    lap = PairwiseModel(members, combiner="weighted_vote")
+    assert lap.to_string(fmt="prolog").startswith(
+        head + "pairwise vote weighted by Laplace of each pair's deciding rule\n")
+    prec = PairwiseModel(members, combiner=WeightedVote(heuristic=Precision()))
+    assert prec.to_string(fmt="prolog").startswith(
+        head + "pairwise vote weighted by Precision of each pair's deciding rule\n")
+    # the weight is that heuristic on the deciding rule's frozen stats
+    rule = cat_bird.rules[0]                        # (2/1) on its pair's rows
+    assert prec.combiner.rule_weight(rule) == pytest.approx(2 / 3)
+    assert lap.combiner.rule_weight(rule) == pytest.approx(3 / 5)
+    assert WeightedVote().rule_weight(SingleRule(Rule([0], target="cat", dataspec=data.spec))) == 0.5
+    assert head not in lap.to_string(fmt="prolog", show_resolution=False)
+
+
+def test_pairwise_ties_use_training_frequencies_from_stats_when_no_priors_are_given():
+    ds = DataSpec(["a"])
+    # a 2-class model whose only pair abstains-free vote is a tie: one
+    # member per direction, each voting for its own positive class
+    y = ["yes"] * 3 + ["no"]
+    train = BooleanDataRepresentation(ds, np.array([[1]] * 4, dtype=bool), np.array(y))
+    yes = ConceptModel(annotate_rules([Rule([0], target="yes", dataspec=ds)], train), label="yes")
+    no = ConceptModel(annotate_rules([Rule([0], target="no", dataspec=ds)], train), label="no")
+    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    # no label_priors recorded: read from the rules' stats -> "yes" (3 of 4)
+    for members in ([("yes", "no", yes), ("no", "yes", no)], [("no", "yes", no), ("yes", "no", yes)]):
+        assert PairwiseModel(members).predict(row)[0] == "yes"
+
+
+def test_pairwisemodel_to_string_show_classes_false_suppresses_everything():
+    cat_dog, cat_bird, dog_bird, _ = _three_class_pairwise_fixture()
     pw = PairwiseModel([("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)])
-    text = pw.to_string(fmt="prolog", data=data, show_classes=False)
+    text = pw.to_string(fmt="prolog", show_classes=False)
     assert "% classes:" not in text
     print("PairwiseModel.to_string's show_classes=False suppresses the top-level "
           "and every per-pair legend: OK")
 
 
 def test_ensemblemodel_to_string_shows_member_weights_and_top_level_legend():
-    cat_dog, _, dog_bird, data = _three_class_pairwise_fixture()
-    ens = EnsembleModel([cat_dog, dog_bird], member_weights=[0.7, 0.3])
-    text = ens.to_string(fmt="prolog", data=data)
+    # members trained on the full data -- unlike pairwise sub-models
+    data = _three_class_fixture_data()
+    ds = data.spec
+    cat = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)], data),
+                       label="cat", default_prediction="dog")
+    dog = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)], data),
+                       label="dog", default_prediction="bird")
+    ens = EnsembleModel([cat, dog], member_weights=[0.7, 0.3])
+    text = ens.to_string(fmt="prolog")
     # .labels is rule heads + the ensemble's OWN default (unset here) --
     # "bird" never appears as either, only as a *sub-model's own* default,
     # so it's genuinely outside this model's declared label set
     assert "% classes: [cat, dog]" in text
     assert "% member 0  (weight: 0.7)" in text
     assert "% member 1  (weight: 0.3)" in text
-    # members see the *full*, unfiltered data -- cat_dog's rule (a=1 -> cat)
-    # over all 6 rows also covers the a=1 bird row as a false positive
+    # cat's rule (a=1 -> cat) over all 6 training rows also covers the a=1
+    # bird row as a false positive
     assert "cat(X) :- a(X).  % (2/1)" in text
-    print("EnsembleModel.to_string shows each member's own weight, unfiltered "
-          "data, and a top-level classes legend: OK")
+    print("EnsembleModel.to_string shows each member's own weight, its stored "
+          "stats, and a top-level classes legend: OK")
+
+
+def test_ensemble_vote_ties_never_depend_on_member_order():
+    ds = DataSpec(["a"])
+
+    def members(y):
+        train = BooleanDataRepresentation(ds, np.array([[1]] * len(y), dtype=bool), np.array(y))
+        good = ConceptModel(annotate_rules([Rule([0], target="good", dataspec=ds)], train), label="good")
+        bad = ConceptModel(annotate_rules([Rule([0], target="bad", dataspec=ds)], train), label="bad")
+        return good, bad
+
+    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    for y, expected in ((["good"] * 3 + ["bad"], "good"),     # good more frequent
+                        (["good"] + ["bad"] * 3, "bad"),       # bad more frequent
+                        (["good", "bad"], "bad")):             # level -> the label sorting first
+        good, bad = members(y)
+        for order in ([good, bad], [bad, good]):
+            assert EnsembleModel(order).predict(row)[0] == expected, (y, order)
+    # an unequal weighted vote isn't a tie
+    good, bad = members(["good", "bad"])
+    assert EnsembleModel([good, bad], member_weights=[0.6, 0.4]).predict(row)[0] == "good"
+
+
+def test_ensemble_prints_its_conflict_resolution():
+    data = _three_class_fixture_data()
+    ds = data.spec
+    cat = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[0], target="cat", dataspec=ds)], data), label="cat")
+    dog = ConceptModel(annotate_rules([Rule.from_pos_neg(pos=[1], target="dog", dataspec=ds)], data), label="dog")
+    head = "% conflict resolution: "
+    assert EnsembleModel([cat, dog]).to_string(fmt="prolog").startswith(head + "vote of members\n")
+    assert EnsembleModel([cat, dog], member_weights=[0.7, 0.3]).to_string(fmt="prolog").startswith(
+        head + "weighted vote of members\n")
+    assert head not in EnsembleModel([cat, dog]).to_string(fmt="prolog", show_resolution=False)
 
 
 # ------------------------------------------------------------------ covered_by ---

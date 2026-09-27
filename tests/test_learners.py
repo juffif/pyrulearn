@@ -8,7 +8,7 @@ from pyrulearn.models import (
     ConceptCascade, ConceptModel, ConceptSet, DecisionList, FlatRuleSet,
     PairwiseModel, RuleModel, SingleRule,
 )
-from pyrulearn.interfaces.sklearn import DecisionTree
+from pyrulearn.interfaces.sklearn import SKLDecisionTree
 
 # 3 cleanly separable classes: class k <-> feature k
 _ds = DataSpec(["f0", "f1", "f2"])
@@ -100,9 +100,9 @@ def test_external_learner_provenance_carries_the_source_library():
     ds = neg_spec(["f0", "f1", "f2"])
     rep = BooleanDataRepresentation(ds, neg_X(_X), _y)
 
-    dt = DecisionTree(max_depth=2, random_state=0)
+    dt = SKLDecisionTree(max_depth=2, random_state=0)
     m = dt.fit(rep)
-    assert m.provenance.learner == "DecisionTree"
+    assert m.provenance.learner == "SKLDecisionTree"
     assert m.provenance.source == "sklearn.tree.DecisionTreeClassifier"
     assert m.provenance.params["max_depth"] == 2
 
@@ -113,3 +113,26 @@ if __name__ == "__main__":
             fn()
             print(f"{name}: OK")
     print("\nAll learner tests passed.")
+
+
+def test_external_learners_are_prefixed_and_old_names_still_work():
+    import warnings
+
+    from pyrulearn.interfaces import imodels, lord, sklearn, weka, wittgenstein
+    from pyrulearn.learners.boosting import Slipper
+    from pyrulearn.learners.seco import CN2
+
+    assert sklearn.SKLDecisionTree().display_name == "SKL:DecisionTree"
+    assert wittgenstein.WittRIPPER(pos_class="a").display_name == "Witt:RIPPER"
+    assert imodels.IModSlipper().display_name == "IMod:Slipper"
+    assert weka.WekaJ48().display_name == "Weka:J48"
+    assert lord.JavaLord().display_name == "JavaLord"
+    assert CN2().display_name == "CN2" and Slipper().display_name == "Slipper"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert weka.JRip is weka.WekaJRip
+        assert wittgenstein.RIPPERk is wittgenstein.WittRIPPER
+        assert sklearn.DecisionTree is sklearn.SKLDecisionTree
+    assert len(caught) == 3 and all(issubclass(w.category, DeprecationWarning) for w in caught)
+    with pytest.raises(AttributeError):
+        weka.NoSuchLearner

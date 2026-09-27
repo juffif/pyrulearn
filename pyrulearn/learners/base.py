@@ -40,7 +40,7 @@ from ..data import DataRepresentation
 from ..interfaces.base import ObjectRuleImporter
 from ..models import (
     ConceptCascade, ConceptModel, ConceptSet, MajorityClass, PairwiseModel,
-    Provenance, RuleModel, can_convert, convert,
+    Provenance, RuleModel, annotate_default_rule, can_convert, convert,
 )
 
 
@@ -56,7 +56,26 @@ def produces(*model_types: type) -> Callable:
 
 class RuleLearner(ABC):
     """Base for anything that turns a `DataRepresentation` into a
-    `pyrulearn.models.RuleModel`."""
+    `pyrulearn.models.RuleModel`.
+
+    Naming: native learners have plain names (`CN2`, `Slipper`); a learner
+    that runs an external tool is named with a short prefix for the tool
+    (`TOOL`: ``SKL``, ``Witt``, ``IMod``, ``Weka``, ``PArc``, ``Mlrl``,
+    ``RKD``; e.g. `IModSlipper`), so tables show at a glance which
+    results come from which implementation. `display_name` is the name
+    for such tables: ``"CN2"``, ``"IMod:Slipper"``."""
+
+    #: short prefix of the external tool a learner runs ("" for native learners)
+    TOOL: str = ""
+
+    @property
+    def display_name(self) -> str:
+        """``"<TOOL>:<algorithm>"`` for an external learner (``"IMod:Slipper"``),
+        the class name for a native one (``"CN2"``)."""
+        name = type(self).__name__
+        if self.TOOL and name.startswith(self.TOOL) and len(name) > len(self.TOOL):
+            return f"{self.TOOL}:{name[len(self.TOOL):]}"
+        return name
 
     # -- producer registry -------------------------------------------
 
@@ -92,7 +111,7 @@ class RuleLearner(ABC):
         package's `__init__(self, **params): self.params = params`
         convention for external-library wrappers) is flattened into the
         result rather than nested one level down, so e.g.
-        `DecisionTree(max_depth=2)`'s provenance reads `{"max_depth": 2}`,
+        `SKLDecisionTree(max_depth=2)`'s provenance reads `{"max_depth": 2}`,
         not `{"params": {"max_depth": 2}}`. Override if a learner stores
         something else."""
         attrs = {k: v for k, v in vars(self).items() if not k.startswith("_")}
@@ -291,7 +310,7 @@ class DecomposingLearner:
         y = np.asarray(data.y)
         concepts = [ConceptModel(list(self._fit_binary(data, c).rules), label=c)
                     for c in np.unique(y)]
-        return ConceptSet(concepts, default_prediction=MajorityClass(data))
+        return annotate_default_rule(ConceptSet(concepts, default_prediction=MajorityClass(data)), data)
 
     @produces(ConceptCascade)
     def _fit_ordered(self, data: DataRepresentation, *,
@@ -304,7 +323,7 @@ class DecomposingLearner:
             stage = data if in_scope.all() else data.select_rows(in_scope)
             concepts.append(ConceptModel(list(self._fit_binary(stage, c).rules), label=c))
             in_scope = in_scope & (y != c)
-        return ConceptCascade(concepts, default_prediction=labels[-1])
+        return annotate_default_rule(ConceptCascade(concepts, default_prediction=labels[-1]), data)
 
     @produces(PairwiseModel)
     def _fit_pairwise(self, data: DataRepresentation, *,
@@ -325,8 +344,9 @@ class DecomposingLearner:
                     members.append((pos, neg, sub))
                     mweights.append(float(np.mean(
                         np.asarray(sub.predict(stage)) == np.asarray(stage.y))))
-        return PairwiseModel(members, default_prediction=MajorityClass(data),
-                             label_priors=cnt, member_weights=mweights)
+        model = PairwiseModel(members, default_prediction=MajorityClass(data),
+                              label_priors=cnt, member_weights=mweights)
+        return annotate_default_rule(model, data)
 
 
 class RelabelingExternalLearner(DecomposingLearner, ExternalRuleLearner):

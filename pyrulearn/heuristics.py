@@ -149,6 +149,50 @@ class RuleHeuristic(ABC):
     def score(self, stats: RuleStats) -> Score:
         raise NotImplementedError
 
+    def __repr__(self) -> str:
+        """The class name plus every constructor argument that differs
+        from its default -- ``Laplace``, ``MEstimate(m=5)``,
+        ``LEF(CoveredPositives, MinimalLength)`` -- what a printed model's
+        conflict-resolution line names."""
+        import inspect
+        name = type(self).__name__
+        try:
+            params = inspect.signature(type(self).__init__).parameters
+        except (TypeError, ValueError):
+            return name
+        parts = []
+        for pname, param in params.items():
+            if pname == "self" or not hasattr(self, pname):
+                continue
+            value = getattr(self, pname)
+            if param.kind is param.VAR_POSITIONAL:
+                parts.extend(repr(v) for v in value)
+            elif param.default is param.empty or value != param.default:
+                parts.append(f"{pname}={value!r}")
+        return f"{name}({', '.join(parts)})" if parts else name
+
+    def __repr__(self) -> str:
+        """The class name plus every constructor argument that differs
+        from its default -- ``Laplace``, ``MEstimate(m=5)``,
+        ``LEF(CoveredPositives, MinimalLength)`` -- what a printed model's
+        conflict-resolution line names."""
+        import inspect
+        name = type(self).__name__
+        try:
+            params = inspect.signature(type(self).__init__).parameters
+        except (TypeError, ValueError):
+            return name
+        parts = []
+        for pname, param in params.items():
+            if pname == "self" or not hasattr(self, pname):
+                continue
+            value = getattr(self, pname)
+            if param.kind is param.VAR_POSITIONAL:
+                parts.extend(repr(v) for v in value)
+            elif param.default is param.empty or value != param.default:
+                parts.append(f"{pname}={value!r}")
+        return f"{name}({', '.join(parts)})" if parts else name
+
     def score_rule(self, rule: Rule, data: DataRepresentation, positive_class: Optional[Any] = None) -> Score:
         """Convenience: `RuleStats.from_rule(...)` then `score(...)` in
         one call, so a `RuleHeuristic` can be used directly as a
@@ -623,6 +667,18 @@ class CoverageDifference(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return stats.tp - stats.fp
+
+
+class SlipperZ(RuleHeuristic):
+    """h = sqrt(tp) - sqrt(fp): Slipper's rule-growing objective (Cohen &
+    Singer 1999, their Z-tilde). With `tp`/`fp` the boosting weights of the
+    covered positives/negatives, maximizing it minimizes the boosting
+    loss bound ``Z`` a rule with its optimal confidence
+    ``1/2 ln(tp/fp)`` achieves. Rewards coverage more than precision
+    does: a rule covering more positives beats a slightly purer one."""
+
+    def score(self, stats: RuleStats) -> float:
+        return math.sqrt(max(stats.tp, 0)) - math.sqrt(max(stats.fp, 0))
 
 
 class Support(RuleHeuristic):

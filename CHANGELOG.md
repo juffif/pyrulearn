@@ -19,6 +19,190 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   names, dropped leakage columns, category codes, missing-value markers).
   `tools/build_catalog.py` maintains the catalog file.
 
+## 0.2.0 (2026-09-27)
+
+A feature release, with breaking changes. Rule statistics are redesigned: a
+rule's training statistics are frozen when set, weights are reserved for
+explicitly fitted or user-set values, and printed models state how they
+resolve conflicts. External learners are renamed with a short prefix for
+their tool (the old names still work, with a warning). New: row weights on
+all data representations and a pluggable weighted covering framework;
+the rule ensembles SLIPPER, LRI, CPAR, ENDER (with MLRules), BOOMER and
+optimal rule boosting; a RuleFit-style distiller with `LinearRuleModel`; and
+interfaces to imodels' RuleFit and Slipper, mlrl-boomer and realkd.
+
+### Changed (may break imports: external learners renamed)
+
+- Learners that run an external tool now carry a short prefix for the
+  tool: `SKLDecisionTree`, `SKLRandomForest`, `WittIREP`, `WittRIPPER`
+  (was `RIPPERk`), `IModBayesianRuleList`, `IModBayesianRuleSet`,
+  `IModRuleFit`, `IModSlipper`, `WekaJRip`, `WekaPART`, `WekaJ48`,
+  `PArcCBA`, `RKDRuleBoosting`, and `JavaLord` for the reference LORD
+  implementation (was `LordJar`); native learners keep plain names. The old
+  names still work, with a `DeprecationWarning`. Importers keep their
+  names. `RuleLearner.display_name` gives the name for results tables
+  (`"IMod:Slipper"`, `"CN2"`); a learner's `TOOL` holds its prefix.
+
+### Changed (may break code: statistics redesigned)
+
+- Only rules store measurements: a rule's training statistics,
+  `rule.stats()`, set once where it is produced (`fit`, an importer's
+  `data=`, `annotate_rules`, or the new `SingleRule.set_stats(data)`).
+  They are frozen: they are part of the model (combiners score from them,
+  printing shows them), so setting them again raises instead of silently
+  changing what the model predicts. `SingleRule.reset_stats(data)`,
+  `annotate_rules(..., reset=True)` and `set_stats_from_counts(..., reset=True)`
+  replace them deliberately. `annotate_rules(..., copy=True)` annotates
+  fresh copies instead; the distillers (`CBA`, `IDS`) now use it, so they
+  no longer re-annotate the shared rule pool's rules in place.
+- New `RuleModel.evaluate(data)` measures any model (or rule) on any data
+  and returns a `ModelStats` without storing it. It replaces
+  `RuleModel.annotate`, `stats(data)` and the `split=` names, which are
+  gone: containers no longer store snapshots of their own performance
+  (nothing read them), and `RuleSetClassifier.fit` no longer computes an
+  unused one.
+- `to_string` no longer takes `data=`: it prints each rule's own stored
+  statistics (`(tp/fp)`, or the class distribution for distribution
+  combiners), which are exactly the numbers the model uses, and does so by
+  default whenever rules carry statistics. `show_stats=False` prints the
+  bare rules.
+- `remap` (and `filter`, and model conversions) keep the rules' statistics,
+  the default rule's included; `remap` used to drop them.
+
+### Changed (may change results or printouts)
+
+- Printed models whose rules predict more than one class now start with a
+  `% conflict resolution: ...` line naming how conflicts are decided (e.g.
+  `max Laplace`, `sum of covered class counts`, `first matching rule`),
+  from the new `RuleCombiner.describe()`; `to_string(show_resolution=False)`
+  omits it. Rule heuristics got a readable `repr` (`Laplace`,
+  `MEstimate(m=5)`) for it.
+- `print(model)` now shows the full rendering (`to_string()`) for every
+  model, rules included; the short `repr` identifies it --
+  `FlatRuleSet(3 rules)`, and for a rule `SingleRule(2 conditions)`
+  instead of `SingleRule(1 rules)`.
+- The default rule of a decomposed model (`ConceptSet`, `ConceptCascade`,
+  `PairwiseModel`, as built by one-vs-rest, ordered or pairwise fitting)
+  now carries training statistics like every other default rule: its
+  coverage of the entire training data, i.e. the class distribution.
+- Pairwise voting: `WeightedVote(heuristic=...)` makes the deciding rule's
+  weight configurable (default `Laplace`, as before), and a printed
+  `PairwiseModel` names its combination (`% conflict resolution: pairwise
+  vote weighted by Laplace of each pair's deciding rule`). Vote ties go to
+  the tied labels' duel, then training frequency (the recorded priors,
+  else read from the rules' stats), then label order.
+- Ties no longer depend on rule position. `max` first lets the tied
+  top-scoring rules vote; any remaining tie, for every combiner, goes to
+  the class more frequent in the training data, then to the one that
+  sorts first. (Before, `max`, `vote` and the distribution combiners fell
+  back on rule or class insertion order.) Only `"list"` is order-based.
+  `EnsembleModel` vote ties follow the same convention instead of member
+  order, and an ensemble prints `% conflict resolution: (weighted) vote of
+  members`.
+
+### Added
+
+- Row weights on every data representation: `weights=` in the
+  constructors and `with_weights(w)` (a copy sharing the storage). Every
+  count becomes a sum of weights -- the searches, `RuleStats`, Pypper's
+  description length, `evaluate` and the rules' stored and printed
+  training stats. Integer weights give exactly the results of duplicated
+  rows; without weights nothing changes. `RuleStats` counts may now be
+  floats. Mined rule pools (`CARMiner`) don't use weights yet.
+- Weighted covering: `SeCo(covering=...)` with `RemovalCovering` (the
+  default, as before) or `WeightedCovering(reweighting, stop)`, which
+  reweights covered examples instead of removing them. Reweighting
+  schemes: `MultiplicativeReweighting` (CN2-SD, CPAR's decay),
+  `AdditiveReweighting` (CN2-SD), `AdaBoostReweighting` (Slipper) and
+  `LRIReweighting` (Lightweight Rule Induction). Stop criteria:
+  `CoveredAtLeast`, `PositiveWeightBelow`, `Rounds`. The loop's state is
+  a `CoveringState`. Also accepted by `CN2`, `AQR`, `PFoil` and `PFossil`.
+  A search scope (`example_mask`) may now be a weight vector.
+- `Slipper` (`pyrulearn.learners.boosting`): SLIPPER (Cohen & Singer
+  1999), confidence-rated boosting of rules, as a `LinearRuleModel`; and
+  its rule-growing heuristic `SlipperZ` (`sqrt(tp) - sqrt(fp)`).
+- `ENDER` (`pyrulearn.learners.boosting`): boosting of rules by forward
+  stagewise loss minimization (Dembczyński, Kotłowski & Słowiński; ENDER
+  2010, MLRules 2008) -- rules voting for one class, grown on subsamples
+  to minimize an impurity derived from a pluggable `BoostingLoss`
+  (`LogisticLoss`, the default, multiclass; `ExponentialLoss`;
+  `SigmoidLoss`) by one of the paper's techniques (constant-step, the
+  default, with `beta`; gradient descent; gradient boosting; simultaneous
+  minimization) or MLRules' Newton criterion, weighted by the loss's
+  response on all rows, shrunk; optional holdout early stopping; a
+  `LinearRuleModel`. Defaults are the paper's CS-Log setting.
+- `references.bib`: entries for RuleFit, SLIPPER, confidence-rated
+  boosting, LRI, CPAR, MLRules, ENDER, BOOMER and optimal rule boosting.
+- `ENDER(l2_regularization=...)`: an L2 penalty on the Newton steps, as in
+  BOOMER; and `Boomer` (`pyrulearn.learners.boosting`), ENDER with BOOMER's
+  defaults -- single-label BOOMER, predicting like `mlrl-boomer` on binary
+  data. Multi-label learning, with preference learning and label ranking,
+  is now listed under *Not yet implemented*.
+- `OptimalRuleBoosting` (`pyrulearn.learners.boosting`): rule boosting with
+  rules that maximize the XGBoost-style gain, found by branch-and-bound
+  (Boley et al. 2021) or greedily; reproduces `realkd` exactly.
+- `RealkdImporter` / `RealkdRuleBoosting` (`pyrulearn.interfaces.realkd`):
+  `realkd`'s rule boosting, the reference implementation of optimal rule
+  boosting, as a `LinearRuleModel`.
+- `BoomerImporter` / `MlrlBoomer` (`pyrulearn.interfaces.boomer`): BOOMER
+  (`mlrl-boomer`) for binary classification, as a `LinearRuleModel`
+  reproducing its decision function. New extras `boomer` and `realkd`.
+- `CPAR` (`pyrulearn.learners.cpar`): Classification based on Predictive
+  Association Rules (Yin & Han 2003) -- FOIL-gain rule growing on
+  weighted examples with rule copying at nearly-as-good conditions,
+  weight decay of covered positives, prediction by the best `k` rules
+  per class.
+- `TopKMeanCombiner` (`pyrulearn.combiners`): the class whose best `k`
+  covering rules have the highest mean heuristic score wins (CPAR's
+  prediction).
+- `LRI` (`pyrulearn.learners.lri`): Lightweight Rule Induction (Weiss &
+  Indurkhya 2000) -- per class the same number of unweighted DNF rules
+  (`ConceptModel`s), grown without pruning on cases reweighted by the
+  rules' cumulative errors, voted in an `EnsembleModel`.
+  `LRIReweighting` halves the error counts once one exceeds 32, as in
+  the paper.
+- `SlipperImporter` and `ImodelsSlipper` (`pyrulearn.interfaces.imodels`):
+  `imodels.SlipperClassifier` (in fact scikit-learn's AdaBoost over
+  imodels' rule learner) as an exact `LinearRuleModel`. With labels other
+  than 0/1, imodels' own `predict` always returns the first class (a bug);
+  `ImodelsSlipper` fits on 0/1 labels to avoid it.
+- `RuleFit` (`pyrulearn.learners.rulefit`), a RuleFit-style rule
+  distiller: a sparse (L1, or elastic-net with `l1_ratio`) logistic
+  regression over the coverage of a rule pool (`rules=`, or mined like
+  CBA's), multinomial for more than two classes. `C` sets the sparsity,
+  `cv=` chooses it by cross-validation, and `include_features=True` adds
+  the single features as candidates. Binary pure-L1 fits use the fast
+  `liblinear` solver, everything else `saga` (`solver=` overrides).
+  Needs scikit-learn.
+- `LinearRuleModel`, the model `RuleFit` returns: rules with signed
+  weights, an empty-body rule per class as its intercept, and the class
+  with the highest summed weight wins (`WeightedSum` resolution, printed
+  as `% conflict resolution: sum of rule weights per class, highest
+  wins`). `scores(data)` gives the per-class sums.
+- `RuleFitImporter` and `ImodelsRuleFit` (`pyrulearn.interfaces.imodels`):
+  `imodels.RuleFitClassifier` imported exactly as a `LinearRuleModel`.
+  imodels predicts the positive class only where the logistic output is
+  above 0.5 instead of 0 (a bug in its `predict_proba`); the import
+  reproduces that by default, as a visible `0.5::<negative class>(X) :-
+  true.` rule, and `imodels_threshold=False` gives the logistic decision.
+- `rulefit_candidates(data)` (`pyrulearn.interfaces.imodels`): RuleFit's
+  tree-based candidate rules as a pool, e.g. for
+  `RuleFit(rules=rulefit_candidates(data))`.
+- `examples/demo_rulefit_comparison.py`: imodels' RuleFit vs. the native
+  one, swapping the candidate step and the fitting step separately.
+- `to_string(weight_format=...)` (rules and every model): a Python format
+  spec for rule weights, e.g. `"6.2f"` to line them up.
+- `to_string(pretty=True)` (rules and every model): each condition on its
+  own line, indented under the head, and the coverage comment on its own
+  line above the head. Prolog format only so far.
+### Fixed
+
+- In the `"conditions"` and `"pattern"` formats, models now show the class
+  a rule predicts where it was missing: decision lists prefix each rule
+  with it (`z: ¬f0, ¬f1`), and every model's default section names it
+  (`% default: x`). Before, a decision list printed in these formats
+  didn't say which class any rule predicted.
+
 ## 0.1.3 (2026-09-25)
 
 A bug-fix release: binary attributes and missing values handled

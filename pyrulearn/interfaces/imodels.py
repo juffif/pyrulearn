@@ -6,14 +6,12 @@ pyrulearn.interfaces.imodels
 `BayesianRuleListImporter` for `imodels.BayesianRuleListClassifier`
 (Letham et al.'s Bayesian Rule Lists) and `BayesianRuleSetImporter` for
 `imodels.BayesianRuleSetClassifier` (the "BOA"/Wang et al. Bayesian
-Or-of-And algorithm) so far; `imodels`' other rule models
-(`GreedyRuleListClassifier`, `BoostedRulesClassifier`, ...) belong in
-this same module when added, per this package's
-group-by-shared-implementation convention. (`RuleFitClassifier` is
-deliberately not planned here: its candidate rules come from a
-`GradientBoostingRegressor` detour -- even for classification, it fits
-that regressor directly against `y` -- rather than anything this
-module's two Bayesian models share.)
+Or-of-And algorithm), and `RuleFitImporter` for
+`imodels.RuleFitClassifier` (Friedman & Popescu's RuleFit), and
+`SlipperImporter` for `imodels.SlipperClassifier` (see their sections at
+the end); `imodels`' other rule models (`BoostedRulesClassifier`, ...)
+belong in this same module when added, per this package's
+group-by-shared-implementation convention.
 
 **The first importer producing a `DecisionList`, not a `FlatRuleSet`.** A
 Bayesian Rule List is genuinely an ordered decision list -- its own
@@ -93,14 +91,14 @@ correspondingly less legible):
   the way BRL's does -- it fails downstream with `AssertionError: Only
   0 potential rules found, change hyperparams to allow for more`, since
   its `1 - X` negation and support-based rule screening only make sense
-  for already-0/1 columns. `BayesianRuleSet.fit_external` checks this
+  for already-0/1 columns. `IModBayesianRuleSet.fit_external` checks this
   itself before calling into `imodels`, raising a clearer error, since
   the library doesn't.
 - **Binary targets only, but not enforced either.** A >2-class `y`
   isn't rejected up front -- it fails deep inside simulated annealing
   with an opaque `ValueError: math domain error` (a `log` of a
   quantity that only makes sense for a 0/1 target). Same fix:
-  `BayesianRuleSet.fit_external` checks `y` has exactly two classes
+  `IModBayesianRuleSet.fit_external` checks `y` has exactly two classes
   itself and raises a clear message before that can happen.
 - **Items can be feature-present or feature-absent tests**, unlike BRL:
   each entry of `model.rules_` is a list of item names, each either a
@@ -148,10 +146,47 @@ this module can fully work around):
   sample` in `imodels/rule_set/brs.py`), which `random_state` never
   seeds. So a given `random_state` alone is *not* reproducible -- the
   same call can hit the bug above or not depending on unrelated earlier
-  code's use of the global `random` module. `BayesianRuleSet.
+  code's use of the global `random` module. `IModBayesianRuleSet.
   fit_external` seeds `random.seed(random_state)` itself before calling
   in, to actually make results (and whether this run hits the "clean"
   bug) reproducible.
+
+`RuleFitImporter` (for `imodels.RuleFitClassifier`) produces a
+`pyrulearn.models.LinearRuleModel`, the same model type the native
+`pyrulearn.learners.rulefit.RuleFit` returns, so the two compare
+directly. RuleFit generates candidate rules from the paths of a
+gradient-boosted tree ensemble (fit as a *regressor* on the 0/1 label,
+even for classification), adds the input features as "linear terms",
+and fits an L1-regularized logistic regression over both (`liblinear`,
+its `C` picked from a grid as the least regularization keeping at most
+`max_rules` terms, by cross-validated accuracy with `cv=True`). Binary
+targets only (`fit` raises for more). The conversion is exact on 0/1
+input, confirmed against the model's own `predict`:
+
+- **Tree-path rules** are ``X_3 > 0.5 and X_1 <= 0.5``-style
+  conjunctions. On a Boolean column, ``> t`` (0 <= t < 1) is "feature
+  True" and ``<= t`` is "feature False", which imports as a positive
+  literal on the paired **negation feature** (`DataSpec.negation_of`),
+  as for BRS; a spec without negation features is rebuilt with them the
+  same way.
+- **Linear terms** go through imodels' winsorizing/scaling
+  (`lin_standardise`, `lin_trim_quantile`) before the fit. On a Boolean
+  column that is an affine map ``a + b * x``: `a` folds into the
+  intercept and ``b * coef`` becomes the weight of a length-1 rule on the
+  feature -- e.g. a feature True in fewer than `lin_trim_quantile` of the
+  rows is trimmed to a constant 0, so its term disappears.
+- A tree-path rule and a linear term with the same body are merged, by
+  summing their weights.
+- **A bug in imodels: the decision threshold.** The regression is
+  logistic, so its output `f` is a log-odds and the positive class
+  should win where ``f > 0``. But `RuleFitClassifier.predict_proba`
+  takes the softmax of ``[1 - f, f]``, i.e. ``sigmoid(2f - 1)``, and
+  `predict` returns the positive class only where ``f > 0.5``.
+  `RuleFitImporter(imodels_threshold=True)` (the default) reproduces
+  `predict` exactly, and makes the offset visible in the model: a rule
+  ``0.5::<negative class>(X) :- true.`` beside the intercept.
+  `imodels_threshold=False` imports the logistic model as fitted
+  (``f > 0``).
 
 This module requires the `imodels` package (an optional dependency --
 only importing this specific module pulls it in, per
@@ -164,12 +199,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..data import DataSpec, DataSpecBuilder
-from ..learners import RelabelingExternalLearner
-from ..models import ConceptModel, DecisionList, FlatRuleSet
+from ..learners import ExternalRuleLearner, RelabelingExternalLearner
+from ..models import ConceptModel, DecisionList, FlatRuleSet, LinearRuleModel
 from ..data import DataRepresentation
-from ..rule import Rule
+from ..rule import Rule, WeightedRule
 
 
 def _placeholder_to_column(model) -> Dict[str, int]:
@@ -275,7 +310,7 @@ class BayesianRuleListImporter(ObjectRuleImporter):
 register_importer("bayesian_rule_list", BayesianRuleListImporter)
 
 
-class BayesianRuleList(RelabelingExternalLearner):
+class IModBayesianRuleList(RelabelingExternalLearner):
     """`imodels.BayesianRuleListClassifier`. `fit(data)` ->
     `pyrulearn.models.DecisionList` (BRL is a 2-class decision list).
     `**params` are its constructor args (`minsupport=`, `maxcardinality=`,
@@ -293,7 +328,7 @@ class BayesianRuleList(RelabelingExternalLearner):
         from imodels import BayesianRuleListClassifier
 
         if y is None:
-            raise ValueError("BayesianRuleList needs labels (y) to fit")
+            raise ValueError("IModBayesianRuleList needs labels (y) to fit")
         model = BayesianRuleListClassifier(**self.params)
         # X must be 0/1 ints, not bools: BRL's own fit does
         # `X_df[col].replace({1: col, 0: ''})` on a DataFrame built from
@@ -314,7 +349,14 @@ def _brs_dataspec(model, dataspec: DataSpec) -> DataSpec:
     plain Boolean dataspec with one ``add_boolean`` per model column
     (negation on) is built so the ``"_neg"`` items resolve.
     """
-    names = list(model.feature_names_)
+    return _negation_enabled_dataspec(list(model.feature_names_), dataspec)
+
+
+def _negation_enabled_dataspec(names: Sequence[str], dataspec: DataSpec) -> DataSpec:
+    """`dataspec` if every feature in `names` has a paired negation
+    feature, else a plain Boolean spec over `names` with negation on (see
+    `_brs_dataspec`)."""
+    names = list(names)
     missing = [n for n in names if n not in dataspec.feature_names]
     if missing:
         raise ValueError(
@@ -370,7 +412,7 @@ class BayesianRuleSetImporter(ObjectRuleImporter):
     a `default_prediction` of `model.classes_[0]` for examples no rule
     covers. See the module docstring for the Boolean-
     input/binary-target requirements this importer doesn't itself
-    enforce (that's `BayesianRuleSet.fit_external`'s job) and why
+    enforce (that's `IModBayesianRuleSet.fit_external`'s job) and why
     imported rules carry no per-rule weight/posterior.
     """
 
@@ -404,7 +446,7 @@ class BayesianRuleSetImporter(ObjectRuleImporter):
 register_importer("bayesian_rule_set", BayesianRuleSetImporter)
 
 
-class BayesianRuleSet(RelabelingExternalLearner):
+class IModBayesianRuleSet(RelabelingExternalLearner):
     """`imodels.BayesianRuleSetClassifier`. `fit(data)` ->
     `pyrulearn.models.FlatRuleSet`. `**params` are its constructor args
     (`n_rules=`, `supp=`, `maxlen=`, `discretization_method=`,
@@ -423,18 +465,18 @@ class BayesianRuleSet(RelabelingExternalLearner):
         from imodels import BayesianRuleSetClassifier
 
         if y is None:
-            raise ValueError("BayesianRuleSet needs labels (y) to fit")
+            raise ValueError("IModBayesianRuleSet needs labels (y) to fit")
         y = np.asarray(y)
         classes = np.unique(y)
         if len(classes) != 2:
             raise ValueError(
-                f"BayesianRuleSet only supports binary targets, got {len(classes)} classes: "
+                f"IModBayesianRuleSet only supports binary targets, got {len(classes)} classes: "
                 f"{list(classes)}"
             )
         X = np.asarray(X)
         if not np.all((X == 0) | (X == 1)):
             raise ValueError(
-                "BayesianRuleSet needs already-Boolean (0/1) input -- binarize categorical/"
+                "IModBayesianRuleSet needs already-Boolean (0/1) input -- binarize categorical/"
                 "numeric attributes first, e.g. via pyrulearn.data.io.build_dataspec/binarize"
             )
         # BayesianRuleSetClassifier.fit mixes np.random (seeded from its own
@@ -450,3 +492,331 @@ class BayesianRuleSet(RelabelingExternalLearner):
         model = BayesianRuleSetClassifier(**self.params)
         model.fit(X.astype(int), y, feature_names=list(feature_names) if feature_names else None)
         return model
+
+
+# ================================================================ RuleFit ===
+
+_OPS = {">": np.greater, ">=": np.greater_equal, "<": np.less, "<=": np.less_equal,
+        "==": np.equal}
+
+
+def _boolean_values(terms) -> set:
+    """The values in {0, 1} a Boolean column may take to satisfy every
+    ``(op, threshold)`` test in `terms`."""
+    return {v for v in (0, 1) if all(_OPS[op](v, float(t)) for op, t in terms)}
+
+
+def _rulefit_body(agg_dict, cols: Dict[str, int], idx: Sequence[int], dataspec: DataSpec):
+    """A pyrulearn body (feature indices) from an `imodels.util.rule.Rule`'s
+    `agg_dict` (``{(placeholder, op): threshold}``) on 0/1 columns, or
+    `None` if no 0/1 row can satisfy it. A "False" test becomes the
+    column's negation feature; a column both values satisfy drops out."""
+    by_col: Dict[int, list] = {}
+    for (placeholder, op), t in agg_dict.items():
+        by_col.setdefault(cols[placeholder], []).append((op, t))
+    body = []
+    for c, terms in by_col.items():
+        allowed = _boolean_values(terms)
+        if not allowed:
+            return None
+        if allowed == {1}:
+            body.append(idx[c])
+        elif allowed == {0}:
+            body.append(dataspec.negation_of(idx[c]))
+    return body
+
+
+def _rulefit_linear_map(model, j: int):
+    """``(a, b)`` with imodels' transformed linear term for column `j`
+    equal to ``a + b * x`` on a 0/1 column `x`."""
+    x = np.array([[0.0] * model.n_features_, [1.0] * model.n_features_])
+    v = model.friedscale.scale(x)[:, j] if model.lin_standardise else x[:, j]
+    return float(v[0]), float(v[1] - v[0])
+
+
+class RuleFitImporter(ObjectRuleImporter):
+    """Extracts a `pyrulearn.models.LinearRuleModel` from a fitted
+    `imodels.RuleFitClassifier` -- one `WeightedRule` per kept tree-path
+    rule and linear term (each with its coefficient as the weight, on
+    `classes_[1]`), plus the intercept as an empty-body rule. Assumes the
+    model was fit on 0/1 columns matching `dataspec`'s features. See the
+    module docstring for the conversion and `imodels_threshold`.
+    """
+
+    SOURCE = "imodels.RuleFitClassifier"
+
+    def __init__(self, imodels_threshold: bool = True):
+        self.imodels_threshold = imodels_threshold
+
+    def import_model(self, model, dataspec: DataSpec,
+                     data: Optional[DataRepresentation] = None) -> LinearRuleModel:
+        cols = _placeholder_to_column(model)
+        if len(cols) != dataspec.n_features:
+            raise ValueError(
+                f"dataspec has {dataspec.n_features} features but the model was trained on "
+                f"{len(cols)} -- they must describe the same Boolean feature space"
+            )
+        names = [str(n) for n in model.feature_names]
+        rebuilt = _negation_enabled_dataspec(names, dataspec)
+        stats_data = data if rebuilt is dataspec else None     # see BayesianRuleSetImporter
+        dataspec = rebuilt
+        idx = [dataspec.feature_index(n) for n in names]       # model column -> feature
+        neg_class, pos_class = model.classes_[0], model.classes_[1]
+
+        weights: Dict[tuple, float] = {}                       # body (feature tuple) -> weight
+        intercept = float(np.ravel(model.intercept)[0])
+
+        def add(body, w):
+            nonlocal intercept
+            if not body:
+                intercept += w
+            else:
+                key = tuple(sorted(set(body)))
+                weights[key] = weights.get(key, 0.0) + w
+
+        n_linear = len(model.coef) - len(model.rules_without_feature_names_)
+        for j in range(n_linear):                              # linear terms: a + b * x
+            if model.coef[j] != 0:
+                a, b = _rulefit_linear_map(model, j)
+                add((), a * model.coef[j])
+                add((idx[j],), b * model.coef[j])
+        for r in model.rules_without_feature_names_:          # tree-path rules
+            body = _rulefit_body(r.agg_dict, cols, idx, dataspec)
+            if body is not None:
+                add(body, float(r.args[0]))
+
+        rules: List[WeightedRule] = [WeightedRule([], target=pos_class, dataspec=dataspec, weight=intercept)]
+        if self.imodels_threshold:   # predict's f > 0.5, as a visible offset for the other class
+            rules.append(WeightedRule([], target=neg_class, dataspec=dataspec, weight=0.5))
+        for body in sorted((b for b, w in weights.items() if w != 0), key=lambda b: -abs(weights[b])):
+            rules.append(WeightedRule(list(body), target=pos_class, dataspec=dataspec, weight=weights[body]))
+        rules = self._stamp_rule_provenance(rules, n_rules=len(rules))
+        rules = self._stamp_rule_stats(rules, stats_data)
+        classes = [c.item() if isinstance(c, np.generic) else c for c in model.classes_]
+        return self._stamp_provenance(LinearRuleModel(rules, classes=classes), n_rules=len(rules))
+
+
+register_importer("rulefit", RuleFitImporter)
+
+
+class IModRuleFit(ExternalRuleLearner):
+    """`imodels.RuleFitClassifier`. `fit(data)` ->
+    `pyrulearn.models.LinearRuleModel` (binary targets only -- a linear
+    model doesn't decompose into the `ConceptModel`s the multiclass
+    switchers build). `**params` are its constructor args (`max_rules=`,
+    `n_estimators=`, `tree_size=`, `include_linear=`, `alpha=`, `cv=`,
+    `random_state=`); `imodels_threshold` is `RuleFitImporter`'s. Named
+    apart from the native `pyrulearn.learners.rulefit.RuleFit`.
+    """
+
+    IMPORTER = RuleFitImporter
+    NATIVE_MODEL = LinearRuleModel
+
+    def __init__(self, imodels_threshold: bool = True, **params):
+        self.imodels_threshold = imodels_threshold
+        self.params = params
+
+    def _import(self, data: DataRepresentation) -> Any:
+        fitted = self.fit_external(self.prepare(data), data.y, feature_names=data.spec.feature_names)
+        return RuleFitImporter(self.imodels_threshold).import_model(fitted, data.spec, data=data)
+
+    def fit_external(self, X, y, feature_names=None):
+        from imodels import RuleFitClassifier
+
+        if y is None:
+            raise ValueError("IModRuleFit needs labels (y) to fit")
+        X = np.asarray(X)
+        if not np.all((X == 0) | (X == 1)):
+            raise ValueError(
+                "IModRuleFit needs already-Boolean (0/1) input -- binarize categorical/"
+                "numeric attributes first, e.g. via pyrulearn.data.io.build_dataspec/binarize"
+            )
+        model = RuleFitClassifier(**self.params)
+        model.fit(X.astype(float), np.asarray(y), feature_names=list(feature_names) if feature_names else None)
+        return model
+
+
+def rulefit_candidates(data: DataRepresentation, n_estimators: int = 100, tree_size: int = 4,
+                       memory_par: float = 0.01, exp_rand_tree_size: bool = True,
+                       sample_fract: Any = "default", random_state: Optional[int] = None) -> FlatRuleSet:
+    """RuleFit's candidate generation on its own: the distinct rules from
+    the node paths of imodels' gradient-boosted tree ensemble
+    (`imodels.util.extract.extract_rulefit`, the step
+    `RuleFitClassifier.fit` runs before its regression; same parameters
+    and defaults), as a pool for a distiller -- e.g.
+    ``RuleFit(rules=rulefit_candidates(data))`` runs RuleFit's two steps
+    with pyrulearn's own fit. Binary targets only, like RuleFit (the
+    trees are regressors on the 0/1 label); `data` must be Boolean with
+    negation features. Each rule's head is the majority class of the
+    training rows it covers (`RuleFit` ignores heads; `CBA`/`IDS` use
+    them), and it carries its training stats.
+    """
+    from imodels.util.extract import extract_rulefit
+    from imodels.util.rule import Rule as ImodelsRule
+    from ..models import annotate_rules
+
+    y = np.asarray(data.y)
+    classes = np.unique(y)
+    if len(classes) != 2:
+        raise ValueError(f"rulefit_candidates needs a binary target, got {len(classes)} classes")
+    X = np.asarray(data.X).astype(float)
+    spec = data.spec
+    placeholders = [f"X_{i}" for i in range(spec.n_features)]
+    cols = {p: i for i, p in enumerate(placeholders)}
+    idx = list(range(spec.n_features))
+    strings = extract_rulefit(X, (y == classes[1]).astype(float), feature_names=placeholders,
+                              n_estimators=n_estimators, tree_size=tree_size, memory_par=memory_par,
+                              exp_rand_tree_size=exp_rand_tree_size, sample_fract=sample_fract,
+                              random_state=random_state)
+    bodies: Dict[tuple, None] = {}
+    for text in strings:
+        body = _rulefit_body(ImodelsRule(text).agg_dict, cols, idx, spec)
+        if body:
+            bodies.setdefault(tuple(sorted(set(body))), None)
+    rules = []
+    for body in bodies:
+        covered = np.all(np.asarray(data.X)[:, list(body)], axis=1)
+        n1 = int(np.sum(y[covered] == classes[1]))
+        head = classes[1] if 2 * n1 > int(covered.sum()) else classes[0]
+        rules.append(Rule(list(body), target=head.item() if isinstance(head, np.generic) else head,
+                          dataspec=spec))
+    return FlatRuleSet(annotate_rules(rules, data))
+
+
+# ================================================================ Slipper ===
+
+def _slipper_body(conditions, dataspec: DataSpec):
+    """A pyrulearn body (feature indices) from one imodels Slipper rule --
+    a list of ``{"feature", "operator", "pivot"}`` conditions on 0/1
+    columns (feature and pivot sometimes strings) -- or `None` if no 0/1
+    row satisfies it."""
+    by_col: Dict[int, list] = {}
+    for c in conditions:
+        by_col.setdefault(int(c["feature"]), []).append((c["operator"], float(c["pivot"])))
+    body = []
+    for col, terms in by_col.items():
+        allowed = _boolean_values(terms)
+        if not allowed:
+            return None
+        if allowed == {1}:
+            body.append(col)
+        elif allowed == {0}:
+            body.append(dataspec.negation_of(col))
+    return body
+
+
+class SlipperImporter(ObjectRuleImporter):
+    """Extracts a `pyrulearn.models.LinearRuleModel` from a fitted
+    `imodels.SlipperClassifier`, reproducing its predictions.
+
+    Despite the name, imodels' `SlipperClassifier` is scikit-learn's
+    AdaBoost (SAMME) over imodels' own rule learner, not Cohen & Singer's
+    confidence-rated boosting (that is the native
+    `pyrulearn.learners.boosting.Slipper`): each round's rule votes, with
+    AdaBoost's weight ``alpha``, for ``classes_[1]`` where it covers a row
+    and for ``classes_[0]`` where it doesn't. So ``classes_[1]`` wins
+    where the covering rules' alphas sum to more than half of all alphas:
+    each rule is imported with its ``alpha`` as the weight, plus the
+    intercept ``-sum(alpha) / 2``. Rules that no 0/1 row can satisfy are
+    dropped; repeated rules are merged by summing their weights.
+
+    Worth knowing when comparing (confirmed by reading imodels' source):
+    its rules are never pruned (the pruning step compares a rule's
+    objective with itself), its "default rule" is a random conjunction of
+    conditions such as ``x > min(x)`` -- on 0/1 features an ordinary,
+    arbitrary rule -- and while growing, the boosting weights of all rows
+    are indexed with row positions of the growing subset. Its AdaBoost
+    also tends to stop after a few rounds: once a round re-learns a rule
+    whose weighted error is 0.5, scikit-learn ends the boosting.
+
+    **A bug in imodels' `predict` with non-0/1 labels:**
+    `BoostedRulesClassifier.fit` restores `classes_` to the original
+    labels, but scikit-learn's AdaBoost `decision_function` compares each
+    rule's 0/1 prediction with `classes_` -- with e.g. string labels
+    nothing ever matches, and `predict` returns the first class for every
+    row. The import reproduces the intended model (what `predict` returns
+    for 0/1 labels). `IModSlipper` sidesteps the bug by fitting on 0/1
+    labels and keeping the real ones in ``model.label_names_``, which the
+    importer uses when present.
+    """
+
+    SOURCE = "imodels.SlipperClassifier"
+
+    def import_model(self, model, dataspec: DataSpec,
+                     data: Optional[DataRepresentation] = None) -> LinearRuleModel:
+        n_cols = getattr(model, "n_features_in_", None)
+        if n_cols is not None and n_cols != dataspec.n_features:
+            raise ValueError(f"dataspec has {dataspec.n_features} features but the model was trained on {n_cols}")
+        if any(dataspec.negation_of(j) is None for j in range(dataspec.n_features)):
+            raise ValueError("SlipperImporter needs a DataSpec with negation features")
+        labels = list(getattr(model, "label_names_", model.classes_))
+        neg_class, pos_class = labels[0], labels[1]
+        weights: Dict[tuple, float] = {}
+        total = 0.0
+        for est, alpha in zip(model.estimators_, model.estimator_weights_):
+            alpha = float(alpha)
+            total += alpha
+            body = _slipper_body(est.rule, dataspec)
+            if body is None:
+                continue
+            key = tuple(sorted(set(body)))
+            weights[key] = weights.get(key, 0.0) + alpha
+        intercept = -total / 2.0 + weights.pop((), 0.0)
+        rules: List[WeightedRule] = [WeightedRule([], target=pos_class, dataspec=dataspec, weight=intercept)]
+        rules += [WeightedRule(list(b), target=pos_class, dataspec=dataspec, weight=w)
+                  for b, w in weights.items() if w != 0]
+        rules = self._stamp_rule_provenance(rules, n_rules=len(rules))
+        rules = self._stamp_rule_stats(rules, data)
+        classes = [c.item() if isinstance(c, np.generic) else c for c in labels]
+        return self._stamp_provenance(LinearRuleModel(rules, classes=classes), n_rules=len(rules))
+
+
+register_importer("slipper", SlipperImporter)
+
+
+class IModSlipper(ExternalRuleLearner):
+    """`imodels.SlipperClassifier` (AdaBoost over imodels' rule learner,
+    see `SlipperImporter`). `fit(data)` -> `LinearRuleModel`, binary
+    targets only. `**params` are its constructor args (`n_estimators=`,
+    `random_state=`). Named apart from the native
+    `pyrulearn.learners.boosting.Slipper`."""
+
+    IMPORTER = SlipperImporter
+    NATIVE_MODEL = LinearRuleModel
+
+    def __init__(self, **params):
+        self.params = params
+
+    def fit_external(self, X, y, feature_names=None):
+        from imodels import SlipperClassifier
+
+        if y is None:
+            raise ValueError("IModSlipper needs labels (y) to fit")
+        X = np.asarray(X)
+        if not np.all((X == 0) | (X == 1)):
+            raise ValueError("IModSlipper needs already-Boolean (0/1) input")
+        labels, y01 = np.unique(np.asarray(y), return_inverse=True)
+        if len(labels) != 2:
+            raise ValueError(f"IModSlipper needs a binary target, got {len(labels)} classes")
+        model = SlipperClassifier(**self.params)
+        # fit on 0/1 labels: with others imodels' predict always returns the first class
+        try:
+            model.fit(X.astype(float), y01, feature_names=list(feature_names) if feature_names else None)
+        except ValueError as e:
+            if "worse than random" in str(e):
+                raise ValueError("imodels' SlipperClassifier failed: its first rule is worse than chance, "
+                                 "so scikit-learn's AdaBoost can't start (a limitation of imodels' rule "
+                                 "learner, see SlipperImporter)") from e
+            raise
+        model.label_names_ = labels
+        return model
+
+# -- naming ------------------------------------------------------------------
+
+IModBayesianRuleList.TOOL = "IMod"
+IModBayesianRuleSet.TOOL = "IMod"
+IModRuleFit.TOOL = "IMod"
+IModSlipper.TOOL = "IMod"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'BayesianRuleList': 'IModBayesianRuleList', 'BayesianRuleSet': 'IModBayesianRuleSet', 'ImodelsRuleFit': 'IModRuleFit', 'ImodelsSlipper': 'IModSlipper'})

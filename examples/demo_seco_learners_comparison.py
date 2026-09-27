@@ -231,7 +231,7 @@ def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arf
                         timeout=FIT_TIMEOUT_SECONDS)
         fit_time = time.time() - t0
         # dataspec=ds1, placeholder_features=True -- bind each f{i} condition
-        # to ds1's own feature i *by position* (same trick LordJar._import
+        # to ds1's own feature i *by position* (same trick JavaLord._import
         # uses), instead of letting parse() infer its own throwaway dataspec
         # from the rule text. An inferred dataspec numbers features in
         # first-seen-in-text order, which doesn't line up with ds1's/

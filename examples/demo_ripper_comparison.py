@@ -14,7 +14,7 @@ Four RIPPER runs, three of them on the *same* binarized feature set:
                     included as the "what JRip does left to its own
                     devices" reference point.
 - **wittgenstein** -- the `wittgenstein` package's `RIPPER`, via
-                    `pyrulearn.interfaces.wittgenstein.RIPPERk`
+                    `pyrulearn.interfaces.wittgenstein.WittRIPPER`
                     (`pos_class`-restricted, so multi-class is a manual
                     one-vs-rest here -- one fit per class, rules pooled).
 - **pypper**     -- pyrulearn's own `pyrulearn.learners.seco.Pypper` (a RIPPER
@@ -51,7 +51,7 @@ from pyrulearn.models import FlatRuleSet
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 from pyrulearn.interfaces.weka import JRipImporter
-from pyrulearn.interfaces.wittgenstein import RIPPERk
+from pyrulearn.interfaces.wittgenstein import WittRIPPER
 from pyrulearn.learners.seco import Pypper
 
 WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
@@ -155,14 +155,14 @@ def fit_wittgenstein(c: Ctx):
     classes = list(np.unique(c.tr_y))
     if len(classes) == 2:
         minority = min(classes, key=lambda k: int((c.tr_y == k).sum()))
-        return RIPPERk(pos_class=minority, random_state=RANDOM_STATE).fit(c.train_rep)
+        return WittRIPPER(pos_class=minority, random_state=RANDOM_STATE).fit(c.train_rep)
     # manual one-vs-rest: one RIPPER fit per class (y relabelled to c vs "rest"),
     # rules pooled into a voting FlatRuleSet
     pooled = []
     for k in classes:
         yb = np.where(c.tr_y == k, k, "rest")
         rep_k = BooleanDataRepresentation(c.ds, c.train_rep.X, yb)
-        pooled.extend(RIPPERk(pos_class=k, random_state=RANDOM_STATE).fit(rep_k).rules)
+        pooled.extend(WittRIPPER(pos_class=k, random_state=RANDOM_STATE).fit(rep_k).rules)
     majority = max(classes, key=lambda k: int((c.tr_y == k).sum()))
     return FlatRuleSet(pooled, default_prediction=majority, combiner="vote")
 
