@@ -129,14 +129,33 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
         from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
         solver = self._solver(n_classes)
         extra = {"intercept_scaling": 100.0} if solver == "liblinear" else {}
+        penalty = self._penalty()
         if self.cv is not None:
             if "use_legacy_attributes" in inspect.signature(LogisticRegressionCV).parameters:
                 extra["use_legacy_attributes"] = False   # scikit-learn >= 1.8's simplified attributes
-            return LogisticRegressionCV(Cs=self.Cs, cv=self.cv, l1_ratios=[self.l1_ratio], solver=solver,
-                                        scoring=self.scoring, max_iter=self.max_iter,
-                                        random_state=self.random_state, **extra)
-        return LogisticRegression(C=self.C, l1_ratio=self.l1_ratio, solver=solver,
-                                  max_iter=self.max_iter, random_state=self.random_state, **extra)
+            if penalty != "l1":
+                extra["l1_ratios"] = [self.l1_ratio]
+            return LogisticRegressionCV(Cs=self.Cs, cv=self.cv, solver=solver, scoring=self.scoring,
+                                        max_iter=self.max_iter, random_state=self.random_state,
+                                        **self._penalty_kwargs(penalty), **extra)
+        if penalty != "l1":
+            extra["l1_ratio"] = self.l1_ratio
+        return LogisticRegression(C=self.C, solver=solver, max_iter=self.max_iter,
+                                  random_state=self.random_state, **self._penalty_kwargs(penalty), **extra)
+
+    def _penalty(self) -> Optional[str]:
+        """The penalty as scikit-learn before 1.8 names it: ``"l1"`` for the
+        pure lasso, ``"elasticnet"`` otherwise -- ``None`` from 1.8 on, where
+        `penalty` is deprecated and `l1_ratio` alone decides (``1.0``: lasso)."""
+        import sklearn
+        major, minor = (int(x) for x in sklearn.__version__.split(".")[:2])
+        if (major, minor) >= (1, 8):
+            return None
+        return "l1" if self.l1_ratio == 1.0 else "elasticnet"
+
+    @staticmethod
+    def _penalty_kwargs(penalty: Optional[str]) -> Dict[str, Any]:
+        return {} if penalty is None else {"penalty": penalty}
 
     @produces(LinearRuleModel)
     def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
