@@ -28,7 +28,10 @@ floats).
 
 The single-output case of BOOMER (logistic loss, L2-regularized Newton
 steps) is ENDER's Newton method with L2 regularization -- natively
-`pyrulearn.learners.boosting.ENDER(method="newton", l2_regularization=...)`.
+`pyrulearn.learners.boosting.Boomer`, which predicts like `MlrlBoomer` on
+binary data. BOOMER's multi-label learning (several outputs at once) is
+not supported: pyrulearn has no multi-label data or models yet (on the
+to-do list with preference learning and label ranking, see the README).
 This module requires `mlrl-boomer` only when used (it pins
 scikit-learn to its supported range).
 """
@@ -146,7 +149,9 @@ class MlrlBoomer(ExternalRuleLearner):
     """BOOMER (`mlrl.boosting.BoomerClassifier`) for binary classification.
     `fit(data)` -> `LinearRuleModel` (see `BoomerImporter`). `**params` are
     its constructor arguments (`max_rules=`, `shrinkage=`, `loss=`,
-    `l2_regularization_weight=`, `random_state=`, ...)."""
+    `l2_regularization_weight=`, `random_state=`, ...). Multi-label
+    BOOMER isn't supported (see the module docstring); the native
+    single-label version is `pyrulearn.learners.boosting.Boomer`."""
 
     IMPORTER = BoomerImporter
     NATIVE_MODEL = LinearRuleModel

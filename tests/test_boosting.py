@@ -268,3 +268,14 @@ def test_optimal_rule_boosting_rejects_bad_input():
         OptimalRuleBoosting().fit(three)
     with pytest.raises(ValueError):
         OptimalRuleBoosting(search="beam")
+
+
+def test_boomer_is_ender_with_boomers_defaults():
+    from pyrulearn.learners.boosting import Boomer
+    b = Boomer()
+    assert (b.n_rules, b.shrinkage, b.l2_regularization, b.subsample, b.method) == (1000, 0.3, 1.0, 1.0, "newton")
+    assert isinstance(b.loss, LogisticLoss)
+    data = _data()
+    model = Boomer(n_rules=50).fit(data)
+    test = _data(seed=1)
+    assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85

@@ -96,7 +96,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `references.bib`: entries for RuleFit, SLIPPER, confidence-rated
   boosting, LRI, CPAR, MLRules, ENDER, BOOMER and optimal rule boosting.
 - `ENDER(l2_regularization=...)`: an L2 penalty on the Newton steps, as in
-  BOOMER.
+  BOOMER; and `Boomer` (`pyrulearn.learners.boosting`), ENDER with BOOMER's
+  defaults -- single-label BOOMER, predicting like `mlrl-boomer` on binary
+  data. Multi-label learning, with preference learning and label ranking,
+  is now listed under *Not yet implemented*.
 - `OptimalRuleBoosting` (`pyrulearn.learners.boosting`): rule boosting with
   rules that maximize the XGBoost-style gain, found by branch-and-bound
   (Boley et al. 2021) or greedily; reproduces `realkd` exactly.

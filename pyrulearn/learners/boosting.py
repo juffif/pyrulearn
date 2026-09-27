@@ -16,7 +16,8 @@ Słowiński 2008/2010) is gradient boosting of rules for a pluggable
 default), `ExponentialLoss` (AdaBoost's) or `SigmoidLoss` -- and one of
 the paper's minimization techniques (constant-step, gradient descent,
 gradient boosting, simultaneous minimization) or MLRules' Newton
-criterion. `OptimalRuleBoosting` (Boley et al., SDM 2021) boosts rules
+criterion; `Boomer` is its BOOMER configuration (Rapp et al. 2020,
+single-label). `OptimalRuleBoosting` (Boley et al., SDM 2021) boosts rules
 that are optimal for the XGBoost-style gain, found by branch-and-bound.
 """
 
@@ -588,6 +589,45 @@ class ENDER(NativeRuleLearner):
             return False
         error = float(w[y_idx[holdout_cov] != k].sum() / w.sum())
         return error < 1.0 - 1.0 / K
+
+
+class Boomer(ENDER):
+    """BOOMER (Rapp, Loza Mencía, Fürnkranz, Nguyen & Hüllermeier, ECML PKDD
+    2020) for single-label classification: gradient-boosted rules with the
+    logistic loss and L2-regularized Newton steps -- `ENDER` with
+    ``method="newton"``, ``loss="logistic"`` and BOOMER's defaults: up to
+    1000 rules, shrinkage 0.3, L2 weight 1.0, no subsampling. Each rule
+    maximizes ``(sum g)**2 / (sum h + lambda)`` (as ``sum g / sqrt(sum h
+    + lambda)``) and gets the weight ``-sum g / (sum h + lambda)``, shrunk.
+
+    This is BOOMER's single-output case. BOOMER itself learns rules for
+    several outputs (labels) at once -- multi-label classification, with
+    rule heads predicting one or several labels and decomposable or
+    non-decomposable losses -- which needs multi-label data and models
+    that pyrulearn doesn't have yet (on the to-do list, see the README).
+    With more than two classes, `Boomer` uses the multinomial logistic
+    loss (each rule voting for one class), where BOOMER would treat the
+    classes as labels. The original is interfaced as
+    `pyrulearn.interfaces.boomer.MlrlBoomer` (binary classification),
+    whose rule induction differs in details (e.g. its feature sampling),
+    so the two don't produce identical models.
+    """
+
+    def __init__(
+        self,
+        n_rules: int = 1000,
+        shrinkage: float = 0.3,
+        l2_regularization: float = 1.0,
+        subsample: float = 1.0,
+        early_stopping: bool = False,
+        max_length: Optional[int] = None,
+        random_state: Optional[int] = None,
+    ):
+        super().__init__(
+            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
+            l2_regularization=l2_regularization, early_stopping=early_stopping, max_length=max_length,
+            random_state=random_state,
+        )
 
 
 # ================================================== optimal rule boosting ===

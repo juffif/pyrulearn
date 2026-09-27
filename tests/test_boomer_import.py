@@ -38,3 +38,12 @@ def test_boomer_is_binary_only_here():
     three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
         MlrlBoomer(max_rules=5).fit(three)
+
+
+def test_native_boomer_predicts_like_mlrl_boomer():
+    from pyrulearn.learners.boosting import Boomer
+    data, test = _data(), _data(seed=1)
+    native = Boomer(n_rules=50, random_state=0).fit(data)
+    original = MlrlBoomer(max_rules=50, random_state=0).fit(data)
+    agree = np.mean(np.asarray(native.predict(test)) == np.asarray(original.predict(test)))
+    assert agree > 0.95
