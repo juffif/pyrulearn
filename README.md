@@ -65,6 +65,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
+| **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
@@ -114,7 +115,7 @@ details.
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation) and `interfaces.pyarc` (CBA). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`), `learners.lri` (`LRI`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -1317,6 +1318,32 @@ With two classes it boosts the less frequent one (or `target_class`);
 with more, one run per class, all in one model, the highest sum winning.
 The data's row weights are the initial boosting weights.
 
+### Lightweight Rule Induction
+
+`pyrulearn.learners.lri.LRI` (Weiss & Indurkhya 2000) learns, for every
+class, `n_rules` unweighted DNF rules, and predicts the class with the
+most satisfied rules. A DNF rule is a `ConceptModel` -- up to `max_terms`
+terms with the same head, firing where any term does -- and the model an
+`EnsembleModel` voting over them all. Per class, each rule is grown on
+the whole (reweighted) data: a term by greedily adding the condition with
+the lowest weighted `FP + k·FN` among those keeping a true positive (`k`
+doubled while the cheapest condition would drop them all), up to
+`max_length` conditions or until it covers no negative; then the next
+term on the cases no earlier term covers, until `max_terms` or no
+positive is left. After each rule, cases are reweighted by `1 + e**3`,
+`e` the number of rules so far that err on them (`LRIReweighting`). No
+pruning, no default rule, and a rule found again is kept, adding votes.
+After `freeze_features_after` rules only the features used so far remain
+candidates. The paper's Table 2 grows a term "until FN = 0", which can't
+be meant (FN only grows as conditions are added); terms stop at FP = 0
+here.
+
+```python
+from pyrulearn.learners.lri import LRI
+
+model = LRI(n_rules=50, max_terms=4, max_length=5).fit(train_rep)
+```
+
 ### Multiclass classification
 
 Multiclass support is one `fit(data, model=...)` switcher
@@ -1991,12 +2018,8 @@ against it).
     (average Laplace accuracy of the top-k rules per class) for
     prediction. (Slipper, the other motivating case, is done:
     `learners.boosting.Slipper`.)
-  - **Lightweight Rule Induction** (Weiss & Indurkhya 2000): its
-    reweighting (`LRIReweighting`) exists; missing are its DNF rules (a
-    `ConceptModel` per rule, grown by an inner removal loop with the
-    error `FP + k * FN`, `k` doubled while no condition adds a true
-    positive) and the model (an unweighted vote of the DNF rules, an
-    `EnsembleModel` of `ConceptModel`s).
+  - **Lightweight Rule Induction** is done (`learners.lri.LRI`), except
+    for the paper's handling of missing values during the search.
   - **Additive boosting of rules** (the ENDER family, BOOMER) needs the
     same machinery as Slipper, but with gradient-based reweighting and
     rule weights from a Newton step.

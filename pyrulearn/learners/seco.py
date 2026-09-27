@@ -1448,13 +1448,25 @@ class LRIReweighting(Reweighting):
     of accepted rules that err on it -- cover it though it's negative, or
     leave it uncovered though it's positive. Both classes are reweighted,
     and an example that keeps being misclassified quickly dominates (4
-    errors: weight 65)."""
+    errors: weight 65). As in the paper, once some ``e`` exceeds
+    `max_errors` (32), all of them are halved (integer division), which
+    keeps the weights bounded; ``None`` never halves. The halved counts
+    are kept in ``state.extra["lri_errors"]``; `CoveringState.errors`
+    keeps the plain counts."""
 
-    def __init__(self, power: float = 3.0):
+    def __init__(self, power: float = 3.0, max_errors: Optional[int] = 32):
         self.power = power
+        self.max_errors = max_errors
 
     def weights(self, state: CoveringState, covered: np.ndarray) -> np.ndarray:
-        return 1.0 + state.errors.astype(float) ** self.power
+        e = state.extra.get("lri_errors")
+        if e is None:
+            e = np.zeros(len(state.positive), dtype=np.int64)
+        e = e + (covered != state.positive)
+        if self.max_errors is not None and e.max() > self.max_errors:
+            e //= 2
+        state.extra["lri_errors"] = e
+        return 1.0 + e.astype(float) ** self.power
 
 
 # -- stopping weighted covering ---------------------------------------------------

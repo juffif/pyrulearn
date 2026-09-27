@@ -83,6 +83,12 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `Slipper` (`pyrulearn.learners.boosting`): SLIPPER (Cohen & Singer
   1999), confidence-rated boosting of rules, as a `LinearRuleModel`; and
   its rule-growing heuristic `SlipperZ` (`sqrt(tp) - sqrt(fp)`).
+- `LRI` (`pyrulearn.learners.lri`): Lightweight Rule Induction (Weiss &
+  Indurkhya 2000) -- per class the same number of unweighted DNF rules
+  (`ConceptModel`s), grown without pruning on cases reweighted by the
+  rules' cumulative errors, voted in an `EnsembleModel`.
+  `LRIReweighting` halves the error counts once one exceeds 32, as in
+  the paper.
 - `SlipperImporter` and `ImodelsSlipper` (`pyrulearn.interfaces.imodels`):
   `imodels.SlipperClassifier` (in fact scikit-learn's AdaBoost over
   imodels' rule learner) as an exact `LinearRuleModel`. With labels other
