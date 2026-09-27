@@ -3,7 +3,17 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.2.0 (2026-09-27)
+
+A feature release, with breaking changes. Rule statistics are redesigned: a
+rule's training statistics are frozen when set, weights are reserved for
+explicitly fitted or user-set values, and printed models state how they
+resolve conflicts. External learners are renamed with a short prefix for
+their tool (the old names still work, with a warning). New: row weights on
+all data representations and a pluggable weighted covering framework;
+the rule ensembles SLIPPER, LRI, CPAR, ENDER (with MLRules), BOOMER and
+optimal rule boosting; a RuleFit-style distiller with `LinearRuleModel`; and
+interfaces to imodels' RuleFit and Slipper, mlrl-boomer and realkd.
 
 ### Changed (may break imports: external learners renamed)
 

@@ -10,11 +10,13 @@ data representation, pluggable rule-evaluation heuristics and combiners,
 [native implementations of a range of rule learners](#natively-implemented) (a
 configurable separate-and-conquer (SeCo) framework and the algorithms that
 are instantiations of it, such as CN2, AQR, PFOIL, FOSSIL and Pypper, a
-RIPPER re-implementation; plus locally optimal rules and the associative
-classifiers CBA, CMAR and IDS, and a RuleFit-style linear model), and
+RIPPER re-implementation, with removal or weighted covering; plus locally
+optimal rules, the associative classifiers CBA, CMAR, CPAR and IDS, the rule
+ensembles SLIPPER, LRI, ENDER, BOOMER and optimal rule boosting, and a
+RuleFit-style linear model), and
 [interfaces to external learners](#interfaced-external-implementations) (scikit-learn, wittgenstein,
-imodels, Weka, LORD, pyarc), so that native and external algorithms can be
-run and compared through one API.
+imodels, Weka, LORD, pyarc, mlrl-boomer, realkd), so that native and external
+algorithms can be run and compared through one API.
 
 > **Status: early development (alpha).** The APIs are still changing, and
 > some demos need revising. Changes between versions are listed in the
