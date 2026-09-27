@@ -3,17 +3,7 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## 0.2.1 (2026-09-27)
-
-A bug-fix release: `RuleFit` fitted dense models with scikit-learn before
-1.8 (so on Python 3.10), and the abstain pseudo-label printed as an object
-address. Also renames `MlrlBoomer` to `MLRLBoomer` (the old name still
-works, with a warning).
-
-### Changed (may break imports)
-
-- `MlrlBoomer` is renamed `MLRLBoomer` (tool prefix `MLRL`); the old name
-  still works, with a `DeprecationWarning`.
+## Unreleased
 
 ### Added
 
@@ -28,6 +18,18 @@ works, with a warning).
   caches the raw data with curated fixes applied (restored attribute
   names, dropped leakage columns, category codes, missing-value markers).
   `tools/build_catalog.py` maintains the catalog file.
+
+## 0.2.1 (2026-09-27)
+
+A bug-fix release: `RuleFit` fitted dense models with scikit-learn before
+1.8 (so on Python 3.10), and the abstain pseudo-label printed as an object
+address. Also renames `MlrlBoomer` to `MLRLBoomer` (the old name still
+works, with a warning).
+
+### Changed (may break imports)
+
+- `MlrlBoomer` is renamed `MLRLBoomer` (tool prefix `MLRL`); the old name
+  still works, with a `DeprecationWarning`.
 
 ### Fixed
 
