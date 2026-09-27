@@ -169,3 +169,7 @@ class MlrlBoomer(ExternalRuleLearner):
         model.fit(np.asarray(X, dtype=float), y01)
         model.label_names_ = labels
         return model
+
+# -- naming ------------------------------------------------------------------
+
+MlrlBoomer.TOOL = "Mlrl"

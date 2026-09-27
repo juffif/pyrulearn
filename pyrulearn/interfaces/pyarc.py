@@ -2,10 +2,10 @@
 pyrulearn.interfaces.pyarc
 ==============================
 
-`PyarcCBAImporter` (an `ObjectRuleImporter`) and `PyarcCBA` (its
+`PyarcCBAImporter` (an `ObjectRuleImporter`) and `PArcCBA` (its
 `ExternalRuleLearner`) for the *external* `pyarc` package's CBA -- the
 same algorithm `pyrulearn.learners.associative.CBA` implements natively. The two
-exist side by side on purpose: `PyarcCBA` is the reference to cross-check
+exist side by side on purpose: `PArcCBA` is the reference to cross-check
 the native one against (runtime and soundness; agreement on the same
 input has been verified rule for rule, see `memory`/README), and a fast
 drop-in when mining speed matters (`fim`, the C library `pyarc` mines
@@ -16,7 +16,7 @@ without Christian Borgelt's `fim` C extension (`pyfim`), which has no
 Windows wheels; on Windows it has to be built with a compiler (MinGW
 `g++` works, one missing `#include <time.h>` in `pyfim.c` needs adding
 first). Importing *this* module needs neither -- `pyarc` is imported
-lazily inside `PyarcCBA.fit_external` -- and `PyarcCBAImporter` only
+lazily inside `PArcCBA.fit_external` -- and `PyarcCBAImporter` only
 reads attributes of an already-fitted `pyarc.CBA`.
 
 **Input encoding.** Rows go to `pyarc` as transactions containing *only
@@ -34,7 +34,7 @@ so the constructor arguments mean the same thing in both:
 
 - `pyarc`'s `maxlen` counts the *class item* too (it is passed to
   `fim`'s `zmax`): `maxlen=L+1` mines antecedents of length <= `L`.
-  `PyarcCBA(max_len=L)` therefore passes `maxlen=L+1`, matching
+  `PArcCBA(max_len=L)` therefore passes `maxlen=L+1`, matching
   `CBA(max_len=L)`.
 - `pyarc` (like `fim` and CBA-RG) thresholds the support of the whole
   rule, body + head -- which `generate_cars` now does too.
@@ -50,7 +50,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..data import DataRepresentation, DataSpec
 from ..learners.base import ExternalRuleLearner
 from ..models import DecisionList
@@ -114,7 +114,7 @@ class PyarcCBAImporter(ObjectRuleImporter):
 register_importer("pyarc_cba", PyarcCBAImporter)
 
 
-class PyarcCBA(ExternalRuleLearner):
+class PArcCBA(ExternalRuleLearner):
     """`pyarc.CBA`, fitted on a `DataRepresentation` and read back as a
     `pyrulearn.models.DecisionList`.
 
@@ -146,15 +146,22 @@ class PyarcCBA(ExternalRuleLearner):
             from pyarc import CBA as _CBA
             from pyarc.data_structures import TransactionDB
         except ImportError as e:  # pyarc raises a bare Exception when fim is missing, see below
-            raise ImportError(f"PyarcCBA needs pandas and pyarc (which needs Borgelt's fim): {e}") from e
+            raise ImportError(f"PArcCBA needs pandas and pyarc (which needs Borgelt's fim): {e}") from e
         except Exception as e:
-            raise ImportError(f"PyarcCBA needs pyarc (which needs Borgelt's pyfim): {e}") from e
+            raise ImportError(f"PArcCBA needs pyarc (which needs Borgelt's pyfim): {e}") from e
 
         if y is None:
-            raise ValueError("PyarcCBA needs labels (y) to fit")
+            raise ValueError("PArcCBA needs labels (y) to fit")
         X = np.asarray(X, dtype=bool)
         frame = pd.DataFrame(np.where(X, 1.0, np.nan), columns=[f"f{i}" for i in range(X.shape[1])])
         frame["class"] = np.asarray(y).astype(str)
         transactions = TransactionDB.from_DataFrame(frame, target="class")
         return _CBA(support=self.min_support, confidence=self.min_confidence,
                     maxlen=self.max_len + 1, algorithm=self.algorithm).fit(transactions)
+
+# -- naming ------------------------------------------------------------------
+
+PArcCBA.TOOL = "PArc"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'PyarcCBA': 'PArcCBA'})

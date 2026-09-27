@@ -12,7 +12,7 @@ there is no live fitted object to inspect, only the text its
 `run.LordRun` main class writes to ``<output_dir>/fold_NN/eg_output.txt``.
 `run_lord` (also here) drives it as a subprocess and returns that text;
 `LORDImporter.parse` turns it into a `pyrulearn.models.FlatRuleSet`.
-`LordJar` (also here) packages the whole round-trip -- write CSV, run
+`JavaLord` (also here) packages the whole round-trip -- write CSV, run
 LORD, parse -- as a `pyrulearn.learners` learner with a uniform
 `fit(data, model=...)`, the subprocess-backed counterpart of the native
 `pyrulearn.learners.pylord.PyLORD`.
@@ -210,7 +210,7 @@ class LORDImporter(StringRuleImporter):
     (Boolean for ``{0,1}``-valued attributes, nominal otherwise). See the
     module docstring for the format and the boolean-input workflow.
 
-    `placeholder_features=True` (used by the `LordJar` learner's `fit()`
+    `placeholder_features=True` (used by the `JavaLord` learner's `fit()`
     round-trip) requires an explicit `dataspec` and binds each ``f{i}``
     condition to its column ``i`` by position instead of by name.
     """
@@ -225,7 +225,7 @@ class LORDImporter(StringRuleImporter):
         return _infer_dataspec(_parse_rules(source))
 
     def parse(self, source: str, data: Optional[Any] = None) -> FlatRuleSet:
-        """`data`, when given (only by the `LordJar` learner's `fit()`
+        """`data`, when given (only by the `JavaLord` learner's `fit()`
         round trip), is the exact `DataRepresentation` written out for
         LORD; each returned rule gets its own measured `stats` against
         it. `None` (a bare `parse` call on a captured `eg_output.txt`)
@@ -348,7 +348,7 @@ def run_lord(
 
 # =============================================== LORD as a fit() learner ======
 
-class LordJar(RelabelingExternalLearner):
+class JavaLord(RelabelingExternalLearner):
     """LORD (Huynh, Fürnkranz & Beck, 2023) driven as a subprocess against its
     committed Java build -- the reference-implementation counterpart of
     the native `pyrulearn.learners.pylord.PyLORD`.
@@ -403,3 +403,11 @@ class LordJar(RelabelingExternalLearner):
         if model.default_prediction is None:
             model.default_prediction = MajorityClass(data)
         return model
+
+# -- naming ------------------------------------------------------------------
+
+
+from .base import deprecated_aliases  # noqa: E402
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'LordJar': 'JavaLord'})

@@ -56,7 +56,26 @@ def produces(*model_types: type) -> Callable:
 
 class RuleLearner(ABC):
     """Base for anything that turns a `DataRepresentation` into a
-    `pyrulearn.models.RuleModel`."""
+    `pyrulearn.models.RuleModel`.
+
+    Naming: native learners have plain names (`CN2`, `Slipper`); a learner
+    that runs an external tool is named with a short prefix for the tool
+    (`TOOL`: ``SKL``, ``Witt``, ``IMod``, ``Weka``, ``PArc``, ``Mlrl``,
+    ``RKD``; e.g. `IModSlipper`), so tables show at a glance which
+    results come from which implementation. `display_name` is the name
+    for such tables: ``"CN2"``, ``"IMod:Slipper"``."""
+
+    #: short prefix of the external tool a learner runs ("" for native learners)
+    TOOL: str = ""
+
+    @property
+    def display_name(self) -> str:
+        """``"<TOOL>:<algorithm>"`` for an external learner (``"IMod:Slipper"``),
+        the class name for a native one (``"CN2"``)."""
+        name = type(self).__name__
+        if self.TOOL and name.startswith(self.TOOL) and len(name) > len(self.TOOL):
+            return f"{self.TOOL}:{name[len(self.TOOL):]}"
+        return name
 
     # -- producer registry -------------------------------------------
 
@@ -92,7 +111,7 @@ class RuleLearner(ABC):
         package's `__init__(self, **params): self.params = params`
         convention for external-library wrappers) is flattened into the
         result rather than nested one level down, so e.g.
-        `DecisionTree(max_depth=2)`'s provenance reads `{"max_depth": 2}`,
+        `SKLDecisionTree(max_depth=2)`'s provenance reads `{"max_depth": 2}`,
         not `{"params": {"max_depth": 2}}`. Override if a learner stores
         something else."""
         attrs = {k: v for k, v in vars(self).items() if not k.startswith("_")}

@@ -4,14 +4,14 @@ pyrulearn.interfaces.realkd
 
 `RealkdImporter` for the rule ensembles of Mario Boley's `realkd`
 package (`realkd.rules.RuleBoostingEstimator`, an
-`AdditiveRuleEnsemble`), and `RealkdRuleBoosting`, its learner -- the
+`AdditiveRuleEnsemble`), and `RKDRuleBoosting`, its learner -- the
 reference implementation of optimal rule boosting (Boley, Teshuva, Le
 Bodic & Webb, SDM 2021), which the native
 `pyrulearn.learners.boosting.OptimalRuleBoosting` re-implements.
 
 `realkd` fits binary targets coded ``+1``/``-1`` and describes rows by
 propositions it generates from a pandas DataFrame: on a 0/1 column ``c``
-those are ``c<=0`` and ``c>=1``. `RealkdRuleBoosting` therefore hands it
+those are ``c<=0`` and ``c>=1``. `RKDRuleBoosting` therefore hands it
 only the positive features of the data (columns named ``c0``, ``c1``,
 ... after their position), and the importer maps ``c>=1`` back to the
 feature and ``c<=0`` to its paired negation feature
@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..data import DataRepresentation, DataSpec
 from ..learners import ExternalRuleLearner
 from ..models import LinearRuleModel
@@ -117,7 +117,7 @@ class RealkdImporter(ObjectRuleImporter):
 register_importer("realkd", RealkdImporter)
 
 
-class RealkdRuleBoosting(ExternalRuleLearner):
+class RKDRuleBoosting(ExternalRuleLearner):
     """`realkd`'s rule boosting: `realkd.rules.RuleBoostingEstimator` with
     `n_rules` rules from `XGBRuleEstimator(loss, reg, search)` base
     learners (`search="exhaustive"`: optimal rule boosting; ``"greedy"``),
@@ -140,7 +140,7 @@ class RealkdRuleBoosting(ExternalRuleLearner):
     def _import(self, data: DataRepresentation) -> Any:
         labels = np.unique(np.asarray(data.y))
         if len(labels) != 2:
-            raise ValueError(f"RealkdRuleBoosting needs a binary target, got {len(labels)} classes")
+            raise ValueError(f"RKDRuleBoosting needs a binary target, got {len(labels)} classes")
         fitted = self.fit_external(self.prepare(data), data.y, feature_names=data.spec.feature_names)
         return RealkdImporter(labels=list(labels)).import_model(fitted, data.spec, data=data)
 
@@ -162,3 +162,10 @@ class RealkdRuleBoosting(ExternalRuleLearner):
         learners = [XGBRuleEstimator(loss=self.loss, reg=self.reg, query=Conjunction([])), base] \
             if self.offset else base
         return RuleBoostingEstimator(num_rules=self.n_rules, base_learner=learners).fit(X, target)
+
+# -- naming ------------------------------------------------------------------
+
+RKDRuleBoosting.TOOL = "RKD"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'RealkdRuleBoosting': 'RKDRuleBoosting'})

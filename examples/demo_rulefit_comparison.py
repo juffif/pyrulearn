@@ -26,7 +26,7 @@ from sklearn.model_selection import StratifiedKFold
 
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec
-from pyrulearn.interfaces.imodels import ImodelsRuleFit, RuleFitImporter, rulefit_candidates
+from pyrulearn.interfaces.imodels import IModRuleFit, RuleFitImporter, rulefit_candidates
 from pyrulearn.interfaces.sklearn import from_random_forest
 from pyrulearn.learners.associative import CARMiner
 from pyrulearn.learners.rulefit import RuleFit
@@ -73,7 +73,7 @@ features.
   nodes are candidates), the features as linear terms, and C chosen as
   the least regularization that keeps at most 30 terms, by
   cross-validated accuracy (liblinear). Imported exactly with
-  `ImodelsRuleFit`, predicting as imodels' own `predict` does, i.e. the
+  `IModRuleFit`, predicting as imodels' own `predict` does, i.e. the
   positive class where the logistic output f > 0.5.
 - *imodels, f > 0*: the same fitted models with the correct logistic
   threshold f > 0 (`imodels_threshold=False`).
@@ -172,7 +172,7 @@ def run_fold(train, test):
         out[name] = (acc, *(sizes or size(model)), seconds)
 
     t = time.perf_counter()
-    learner = ImodelsRuleFit(random_state=RANDOM_STATE)
+    learner = IModRuleFit(random_state=RANDOM_STATE)
     ext = learner.fit_external(train.X, train.y, feature_names=train.spec.feature_names)
     fit_s = time.perf_counter() - t
     record("imodels", RuleFitImporter(True).import_model(ext, train.spec, data=train), fit_s)

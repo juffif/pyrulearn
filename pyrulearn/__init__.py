@@ -46,7 +46,7 @@ and lookup registry),
 ``pyrulearn.learners`` (``RuleLearner``'s ``fit(data) ->
 RuleModel`` -- ``ExternalRuleLearner`` runs an external algorithm
 and converts its output via an existing ``ObjectRuleImporter``, e.g.
-``pyrulearn.interfaces.sklearn.RandomForest``; ``NativeRuleLearner``
+``pyrulearn.interfaces.sklearn.SKLRandomForest``; ``NativeRuleLearner``
 induces directly, no importer involved),
 ``pyrulearn.heuristics`` (``RuleHeuristic`` -- pluggable rule-evaluation
 heuristics scored from ``RuleStats``, e.g. ``Precision``/``Laplace``/

@@ -2,9 +2,9 @@
 "Binarized" vs. "Original" data preparation, comparison across twelve
 binary UCI/OpenML benchmarks, covering every rule learner imported into
 pyrulearn so far:
-sklearn's `DecisionTree`/`RandomForest`, wittgenstein's `RIPPERk`/`IREP`,
-`imodels`' `BayesianRuleList`/`BayesianRuleSet`, and Weka's
-`JRip`/`PART`/`J48` (via subprocess -- Weka isn't a Python library).
+sklearn's `SKLDecisionTree`/`SKLRandomForest`, wittgenstein's `WittRIPPER`/`WittIREP`,
+`imodels`' `IModBayesianRuleList`/`IModBayesianRuleSet`, and Weka's
+`WekaJRip`/`WekaPART`/`WekaJ48` (via subprocess -- Weka isn't a Python library).
 
 Datasets: `vote`, `breast-cancer`, `colic`, `credit-approval`, `credit-g`
 (the original five), plus `diabetes`, `sonar`, `ionosphere`,
@@ -18,7 +18,7 @@ excluded outright: RIPPER alone measured ~155s for one fit on its ~39k-
 row training fold, and this demo fits it (and now everything else) up to
 several times per fold -- multi-hour territory, not "starting to bite."
 Genuinely multi-class UCI sets (`soybean`, `anneal`, `cmc`,
-`hypothyroid`) stay out of scope too -- `RIPPERk`/`IREP` are
+`hypothyroid`) stay out of scope too -- `WittRIPPER`/`WittIREP` are
 fundamentally binary and refuse >2 classes outright (see
 `pyrulearn.interfaces.wittgenstein`); real multi-class support is a
 separate future project.
@@ -127,7 +127,7 @@ the Weka trio, around the whole subprocess -- JVM startup included, so
 these three carry a fixed per-call overhead the in-process Python
 algorithms don't; not a perfectly apples-to-apples comparison, called
 out again in the runtime table itself). Rule/condition counts are read
-directly off each fold's fitted rules -- `RandomForest`'s in particular
+directly off each fold's fitted rules -- `SKLRandomForest`'s in particular
 will dwarf everything else, since it's `n_estimators` trees' worth of
 leaves, not a single interpretable model; included for completeness,
 not as an apples-to-apples interpretability comparison either.
@@ -151,18 +151,18 @@ from pyrulearn.combiners import MacroVoteCombiner
 from pyrulearn.data import merge_dataspecs
 from pyrulearn.models import FlatRuleSet
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
-# BayesianRuleList/BayesianRuleSet are imported lazily, inside _fit_brl_binarized/_fit_brs
+# IModBayesianRuleList/IModBayesianRuleSet are imported lazily, inside _fit_brl_binarized/_fit_brs
 # below (not here) -- they run much longer than the rest of the models and pull in
 # imodels/mlxtend, so anything that only needs this module's lightweight pieces (e.g. the
 # overview-table helpers) doesn't pay that import cost.
 from pyrulearn.interfaces.sklearn import (
-    DecisionTree,
-    RandomForest,
+    SKLDecisionTree,
+    SKLRandomForest,
     RandomForestImporter,
     SklearnTreeImporter,
 )
 from pyrulearn.interfaces.weka import J48Importer, JRipImporter, PARTImporter
-from pyrulearn.interfaces.wittgenstein import IREP, IREPImporter, RIPPERImporter, RIPPERk
+from pyrulearn.interfaces.wittgenstein import WittIREP, IREPImporter, RIPPERImporter, WittRIPPER
 from pyrulearn.data import BooleanDataRepresentation
 
 N_FOLDS = 5
@@ -520,48 +520,48 @@ def _run_weka_safe(classifier_key: str, arff_path: str):
 
 
 def _fit_brs(rep: BooleanDataRepresentation):
-    """`BayesianRuleSet` with a bounded retry over `random_state` against
+    """`IModBayesianRuleSet` with a bounded retry over `random_state` against
     imodels' own "clean"-move bug -- same reasoning as
     tests/test_imodels_import.py's version of this."""
-    from pyrulearn.interfaces.imodels import BayesianRuleSet
+    from pyrulearn.interfaces.imodels import IModBayesianRuleSet
 
     last_err = None
     for rs in BRS_RANDOM_STATE_CANDIDATES:
         try:
-            return BayesianRuleSet(**{**BRS_PARAMS, "random_state": rs}).fit(rep)
+            return IModBayesianRuleSet(**{**BRS_PARAMS, "random_state": rs}).fit(rep)
         except ValueError as e:
             if "list.remove" not in str(e):
                 raise
             last_err = e
-    raise RuntimeError(f"BayesianRuleSet hit imodels' clean-move bug on every candidate random_state: {last_err}")
+    raise RuntimeError(f"IModBayesianRuleSet hit imodels' clean-move bug on every candidate random_state: {last_err}")
 
 
 # ---- module-level fit functions for TimeoutRunner (must be picklable by
 # reference, so no closures/lambdas -- see TimeoutRunner's docstring) ----
 
 def _fit_tree_binarized(rep):
-    return DecisionTree(max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(rep)
+    return SKLDecisionTree(max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(rep)
 
 
 def _fit_forest_binarized(rep):
     # the flat single-bag view (not the per-tree EnsembleModel default): its predict takes
     # a combiner=, so this is evaluated with MacroVoteCombiner exactly like the Original path
-    return RandomForest(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(
+    return SKLRandomForest(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=RANDOM_STATE).fit(
         rep, model=FlatRuleSet)
 
 
 def _fit_ripper_binarized(rep, pos_class):
-    return RIPPERk(pos_class=pos_class, k=RIPPER_K, random_state=RANDOM_STATE).fit(rep)
+    return WittRIPPER(pos_class=pos_class, k=RIPPER_K, random_state=RANDOM_STATE).fit(rep)
 
 
 def _fit_irep_binarized(rep, pos_class):
-    return IREP(pos_class=pos_class).fit(rep)
+    return WittIREP(pos_class=pos_class).fit(rep)
 
 
 def _fit_brl_binarized(rep):
-    from pyrulearn.interfaces.imodels import BayesianRuleList
+    from pyrulearn.interfaces.imodels import IModBayesianRuleList
 
-    return BayesianRuleList(random_state=RANDOM_STATE, **BRL_PARAMS).fit(rep)
+    return IModBayesianRuleList(random_state=RANDOM_STATE, **BRL_PARAMS).fit(rep)
 
 
 def _fit_tree_native(X, y, feature_names):
@@ -587,7 +587,7 @@ def _fit_forest_native(X, y, feature_names):
 
 
 def _fit_ripper_native(X, y, feature_names, pos_class):
-    model = RIPPERk(pos_class=pos_class, k=RIPPER_K, random_state=RANDOM_STATE).fit_external(
+    model = WittRIPPER(pos_class=pos_class, k=RIPPER_K, random_state=RANDOM_STATE).fit_external(
         X, y, feature_names=feature_names
     )
     importer = RIPPERImporter()
@@ -597,7 +597,7 @@ def _fit_ripper_native(X, y, feature_names, pos_class):
 
 
 def _fit_irep_native(X, y, feature_names, pos_class):
-    model = IREP(pos_class=pos_class).fit_external(X, y, feature_names=feature_names)
+    model = WittIREP(pos_class=pos_class).fit_external(X, y, feature_names=feature_names)
     importer = IREPImporter()
     ds = importer.infer_dataspec(model, feature_names=feature_names)
     rules = importer.import_model(model, ds, feature_names=feature_names)

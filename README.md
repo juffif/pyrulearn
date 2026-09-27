@@ -89,21 +89,21 @@ random forest — and returns its own, much smaller model.
 
 | Algorithm | Class(es) (in `pyrulearn.interfaces`) | Requires | Reference |
 |---|---|---|---|
-| **Decision tree** (CART) | `sklearn.DecisionTree`, `SklearnTreeImporter` | `scikit-learn` | Breiman et al. 1984 |
-| **Random forest** | `sklearn.RandomForest`, `RandomForestImporter` | `scikit-learn` | Breiman 2001 |
+| **Decision tree** (CART) | `sklearn.SKLDecisionTree`, `SklearnTreeImporter` | `scikit-learn` | Breiman et al. 1984 |
+| **Random forest** | `sklearn.SKLRandomForest`, `RandomForestImporter` | `scikit-learn` | Breiman 2001 |
 | **IREP** | `wittgenstein.IREP`, `IREPImporter` | `wittgenstein` | Fürnkranz & Widmer 1994 |
-| **RIPPER** | `wittgenstein.RIPPERk`, `RIPPERImporter` | `wittgenstein` | Cohen 1995 |
-| **Bayesian Rule Lists** | `imodels.BayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
-| **Bayesian Rule Sets** | `imodels.BayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
-| **RuleFit** | `imodels.ImodelsRuleFit`, `RuleFitImporter` | `imodels` | Friedman & Popescu 2008 |
-| **"SLIPPER"** (AdaBoost over imodels' rule learner) | `imodels.ImodelsSlipper`, `SlipperImporter` | `imodels` | Cohen & Singer 1999 (loosely) |
-| **JRip** (Weka's RIPPER) | `weka.JRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
-| **PART** | `weka.PART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
-| **J48** (Weka's C4.5) | `weka.J48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
-| **LORD** (reference implementation) | `lord.LordJar`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
-| **CBA** | `pyarc.PyarcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
+| **RIPPER** | `wittgenstein.WittRIPPER`, `RIPPERImporter` | `wittgenstein` | Cohen 1995 |
+| **Bayesian Rule Lists** | `imodels.IModBayesianRuleList`, `BayesianRuleListImporter` | `imodels` | Letham et al. 2015 |
+| **Bayesian Rule Sets** | `imodels.IModBayesianRuleSet`, `BayesianRuleSetImporter` | `imodels` | Wang et al. 2017 |
+| **RuleFit** | `imodels.IModRuleFit`, `RuleFitImporter` | `imodels` | Friedman & Popescu 2008 |
+| **"SLIPPER"** (AdaBoost over imodels' rule learner) | `imodels.IModSlipper`, `SlipperImporter` | `imodels` | Cohen & Singer 1999 (loosely) |
+| **JRip** (Weka's RIPPER) | `weka.WekaJRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
+| **PART** | `weka.WekaPART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
+| **J48** (Weka's C4.5) | `weka.WekaJ48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
+| **LORD** (reference implementation) | `lord.JavaLord`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
+| **CBA** | `pyarc.PArcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
 | **BOOMER** (binary) | `boomer.MlrlBoomer`, `BoomerImporter` | `mlrl-boomer` | Rapp et al. 2020 |
-| **Optimal rule boosting** (reference) | `realkd.RealkdRuleBoosting`, `RealkdImporter` | `realkd` | Boley et al. 2021 |
+| **Optimal rule boosting** (reference) | `realkd.RKDRuleBoosting`, `RealkdImporter` | `realkd` | Boley et al. 2021 |
 
 Many of the ideas behind this library, such as the separate-and-conquer
 algorithms and rule-evaluation heuristics, are described in Fürnkranz,
@@ -1168,8 +1168,8 @@ fitted model to an existing `ObjectRuleImporter` (declared via the
 deliberately *not* a second hierarchy parallel to `RuleImporter`: a
 learner reuses its importer's rule-extraction logic via composition
 rather than duplicating it, and lives in the *same file* as that
-importer -- `pyrulearn.interfaces.sklearn.DecisionTree`/
-`RandomForest` sit right next to `SklearnTreeImporter`/
+importer -- `pyrulearn.interfaces.sklearn.SKLDecisionTree`/
+`SKLRandomForest` sit right next to `SklearnTreeImporter`/
 `RandomForestImporter`. So adding support for one more external
 algorithm means adding one file (or, if its importer already exists,
 one small class in it) -- never two separately registered/maintained
@@ -1185,11 +1185,11 @@ only method most callers need. Concrete subclasses implement `fit_external`
 `data.X`).
 
 ```python
-from pyrulearn.interfaces.sklearn import DecisionTree, RandomForest
+from pyrulearn.interfaces.sklearn import SKLDecisionTree, SKLRandomForest
 
 learners = [
-    DecisionTree(max_depth=4, random_state=0),
-    RandomForest(n_estimators=10, max_depth=4, random_state=0),
+    SKLDecisionTree(max_depth=4, random_state=0),
+    SKLRandomForest(n_estimators=10, max_depth=4, random_state=0),
 ]
 for learner in learners:
     rules = learner.fit(train_rep)   # DisjointRuleSet or RuleSet, depending on the algorithm
@@ -1205,9 +1205,9 @@ fitted model (`ObjectRuleImporter.infer_dataspec`, see below), then
 found:
 
 ```python
-from pyrulearn.interfaces.sklearn import DecisionTree, SklearnTreeImporter
+from pyrulearn.interfaces.sklearn import SKLDecisionTree, SklearnTreeImporter
 
-learner = DecisionTree(max_depth=4, random_state=0)
+learner = SKLDecisionTree(max_depth=4, random_state=0)
 model = learner.fit_external(X_raw, y, feature_names=["age", "income", "score"])
 
 importer = SklearnTreeImporter()
@@ -1215,7 +1215,7 @@ ds = importer.infer_dataspec(model, feature_names=["age", "income", "score"])
 rules = importer.import_model(model, ds, feature_names=["age", "income", "score"])
 ```
 
-`pyrulearn.interfaces.wittgenstein.IREP`/`RIPPERk` are the same
+`pyrulearn.interfaces.wittgenstein.WittIREP`/`WittRIPPER` are the same
 idea, wrapping `wittgenstein.IREP`/`wittgenstein.RIPPER`. `pos_class` is
 required (pyrulearn never guesses which class is "positive"); `neg_class`
 is optional and, if omitted, auto-resolved from `data.y` when
@@ -1225,11 +1225,11 @@ doesn't support natively), `default_prediction` is left `None` unless
 `neg_class` is given explicitly:
 
 ```python
-from pyrulearn.interfaces.wittgenstein import IREP, RIPPERk
+from pyrulearn.interfaces.wittgenstein import WittIREP, WittRIPPER
 
 learners = [
-    IREP(pos_class="pos"),
-    RIPPERk(pos_class="pos", k=2, random_state=0),
+    WittIREP(pos_class="pos"),
+    WittRIPPER(pos_class="pos", k=2, random_state=0),
 ]
 for learner in learners:
     rules = learner.fit(train_rep)  # RuleSet, default_prediction wired up automatically
@@ -1431,8 +1431,8 @@ model = CPAR(k=5).fit(train_rep)
 Multiclass support is one `fit(data, model=...)` switcher
 (`pyrulearn.learners.DecomposingLearner`) shared by every learner family
 -- native (the SeCo family, `PyLORD`) and external alike
-(`RelabelingExternalLearner` -- sklearn's `DecisionTree`/`RandomForest`;
-`_WittgensteinLearner` -- wittgenstein's `IREP`/`RIPPERk`). `fit(data,
+(`RelabelingExternalLearner` -- sklearn's `SKLDecisionTree`/`SKLRandomForest`;
+`_WittgensteinLearner` -- wittgenstein's `WittIREP`/`WittRIPPER`). `fit(data,
 model=ConceptSet | ConceptCascade | PairwiseModel)` decomposes into
 per-class binary sub-fits, each through the learner's own `_fit_binary`.
 `pyrulearn.learners.multiclass` wraps these three as thin sugar over the same
@@ -1508,16 +1508,30 @@ reads the fitted model, or the tool's printed output, back as rules bound to
 the same `DataSpec`. This section covers both directions: first what each tool
 receives, then the importers.
 
+**Naming.** A learner that runs an external tool carries a short prefix for
+the tool, so results tables show which implementation produced them: `SKL`
+(scikit-learn: `SKLDecisionTree`, `SKLRandomForest`), `Witt` (wittgenstein:
+`WittIREP`, `WittRIPPER`), `IMod` (imodels: `IModBayesianRuleList`,
+`IModBayesianRuleSet`, `IModRuleFit`, `IModSlipper`), `Weka` (`WekaJRip`,
+`WekaPART`, `WekaJ48`), `PArc` (pyarc: `PArcCBA`), `Mlrl` (mlrl-boomer:
+`MlrlBoomer`), `RKD` (realkd: `RKDRuleBoosting`); the reference LORD
+implementation is `JavaLord`. Native learners have plain names (`CN2`,
+`Slipper`, `Boomer`). Every learner's `display_name` gives the name for a
+table -- `"IMod:Slipper"`, `"CN2"`. The importers keep their names
+(`JRipImporter`, ...). The names before 0.2.0 (`JRip`, `DecisionTree`,
+`RIPPERk`, `LordJar`, ...) still work, with a `DeprecationWarning`, and will
+be removed in a later release.
+
 ### What each tool receives
 
 | Package | Learner classes | Rules imported | What is handed over | Feature names |
 |---|---|---|---|---|
-| scikit-learn | `DecisionTree`, `RandomForest` | directly | `data.X` as-is: the Boolean feature matrix, in memory | not needed to fit; the importer binds the thresholds back to the `DataSpec` |
-| wittgenstein | `IREP`, `RIPPERk` | directly | `data.X` and the labels, in memory; binary only, so `pos_class` is required | the `DataSpec`'s own feature names |
-| imodels | `BayesianRuleList`, `BayesianRuleSet`, `ImodelsRuleFit` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL; RuleFit gets floats); BRS and RuleFit refuse anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
-| Weka | `JRip`, `PART`, `J48` | by parsing text | an ARFF file in a temporary directory: every feature a `{False,True}` nominal attribute, plus a `class` column; run as `java -cp weka.jar <classifier> -t train.arff -no-cv` | placeholders `f0..fN` |
-| LORD | `LordJar` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
-| pyarc | `PyarcCBA` | directly | transactions (via `TransactionDB.from_DataFrame`) holding only each row's True features plus the class; False cells are dropped, which matches this library's own item semantics | placeholders `f0..fN` |
+| scikit-learn | `SKLDecisionTree`, `SKLRandomForest` | directly | `data.X` as-is: the Boolean feature matrix, in memory | not needed to fit; the importer binds the thresholds back to the `DataSpec` |
+| wittgenstein | `WittIREP`, `WittRIPPER` | directly | `data.X` and the labels, in memory; binary only, so `pos_class` is required | the `DataSpec`'s own feature names |
+| imodels | `IModBayesianRuleList`, `IModBayesianRuleSet`, `IModRuleFit` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL; RuleFit gets floats); BRS and RuleFit refuse anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
+| Weka | `WekaJRip`, `WekaPART`, `WekaJ48` | by parsing text | an ARFF file in a temporary directory: every feature a `{False,True}` nominal attribute, plus a `class` column; run as `java -cp weka.jar <classifier> -t train.arff -no-cv` | placeholders `f0..fN` |
+| LORD | `JavaLord` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
+| pyarc | `PArcCBA` | directly | transactions (via `TransactionDB.from_DataFrame`) holding only each row's True features plus the class; False cells are dropped, which matches this library's own item semantics | placeholders `f0..fN` |
 
 Rules are imported either directly from the fitted model object (an
 `ObjectRuleImporter`) or by parsing text the tool printed or wrote (a
@@ -1664,7 +1678,7 @@ more classes; `fit` raises without an explicit `pos_class` for anything
 beyond two/boolean-like labels, but given an explicit one it silently
 proceeds on *any* number of classes instead, collapsing everything that
 isn't `pos_class` into one undifferentiated negative with no warning --
-`IREP`/`RIPPERk` (below) refuse this outright rather than let it happen
+`WittIREP`/`WittRIPPER` (below) refuse this outright rather than let it happen
 unnoticed. So rules never actually
 conflict when several cover the same example (any `RuleCombiner`
 agrees on the answer). What *does* need resolving is only the
@@ -1682,7 +1696,7 @@ model.fit(my_rep.X, y=my_rep.y, pos_class="pos", feature_names=my_rep.spec.featu
 rules = RIPPERImporter().import_model(model, my_dataspec)  # rules.default_rule is None
 ```
 
-Use `IREP`/`RIPPERk` (below) instead of the bare importer to get that
+Use `WittIREP`/`WittRIPPER` (below) instead of the bare importer to get that
 fallback wired up automatically from training labels.
 
 Fit on **raw** numeric/categorical columns and there are two ways to
@@ -1704,7 +1718,7 @@ still get a correct conversion, the same two as for
   ds = build_dataspec(df, target="label", arff_types={...}).build()
   X = binarize(ds, df)
   rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
-  rules = RIPPERk(pos_class="pos").fit(rep)
+  rules = WittRIPPER(pos_class="pos").fit(rep)
   ```
 
 - **Fit on raw columns** directly and let
@@ -1723,9 +1737,9 @@ still get a correct conversion, the same two as for
   *previous* bin) rather than assumed:
 
   ```python
-  from pyrulearn.interfaces.wittgenstein import RIPPERk, RIPPERImporter
+  from pyrulearn.interfaces.wittgenstein import WittRIPPER, RIPPERImporter
 
-  learner = RIPPERk(pos_class="pos", k=2, random_state=0)
+  learner = WittRIPPER(pos_class="pos", k=2, random_state=0)
   model = learner.fit_external(df.to_numpy(), y, feature_names=["age", "color"])
 
   importer = RIPPERImporter()
@@ -1772,9 +1786,9 @@ from its own measured `stats()` instead (pass `data=` to
 itemsets, so rules only ever contain **positive** literals.
 
 ```python
-from pyrulearn.interfaces.imodels import BayesianRuleList
+from pyrulearn.interfaces.imodels import IModBayesianRuleList
 
-rules = BayesianRuleList(random_state=0).fit(train_rep)   # a RuleList
+rules = IModBayesianRuleList(random_state=0).fit(train_rep)   # a RuleList
 print(rules.to_string("logic"))
 # if   f0 ∧ f1 → neg
 # elif f0 ∧ f2 → pos
@@ -1790,7 +1804,7 @@ rules never actually disagree in target when several cover the same
 example. Same Boolean-input requirement as BRL, but `imodels` doesn't
 raise a clear error for either that or a non-binary target here (an
 opaque downstream `AssertionError`/`ValueError` instead), so
-`BayesianRuleSet.fit_external` checks both itself first. Rule items are
+`IModBayesianRuleSet.fit_external` checks both itself first. Rule items are
 real feature names, optionally `_neg`-suffixed for a negative literal
 (`model.rules_`, unlike BRL, can and does contain both), looked up via
 `dataspec.feature_index` directly (no `X_0`-placeholder indirection).
@@ -1801,19 +1815,19 @@ never disagree. **Two genuine bugs found in `imodels` itself** while testing
 this importer (both documented in the module's docstring, not fixable
 from this side): its own `fit` mixes seeded `np.random` with
 *unseeded* stdlib `random.sample` (worked around in
-`BayesianRuleSet.fit_external` by seeding that too), and its
+`IModBayesianRuleSet.fit_external` by seeding that too), and its
 simulated-annealing "clean" move has a genuine off-by-value-vs-index
 bug that can raise a bare `list.remove(x): x not in list`.
 
 ```python
-from pyrulearn.interfaces.imodels import BayesianRuleSet
+from pyrulearn.interfaces.imodels import IModBayesianRuleSet
 
-rules = BayesianRuleSet(random_state=0, maxlen=3).fit(train_rep)   # a RuleSet
+rules = IModBayesianRuleSet(random_state=0, maxlen=3).fit(train_rep)   # a RuleSet
 ```
 
 `RuleFitImporter` reads an `imodels.RuleFitClassifier` as a
 `LinearRuleModel`, the model the native `learners.rulefit.RuleFit`
-returns, and `ImodelsRuleFit` is the learner (named apart from the native
+returns, and `IModRuleFit` is the learner (named apart from the native
 one). The conversion is exact on 0/1 input: tree-path tests become
 features or their negation features, imodels' scaled linear terms become
 length-1 rules (with any constant part folded into the intercept), and
@@ -1846,16 +1860,16 @@ two steps with pyrulearn's own fit. `examples/demo_rulefit_comparison.py`
 compares the two implementations step by step.
 
 ```python
-from pyrulearn.interfaces.imodels import ImodelsRuleFit, rulefit_candidates
+from pyrulearn.interfaces.imodels import IModRuleFit, rulefit_candidates
 from pyrulearn.learners.rulefit import RuleFit
 
-imported = ImodelsRuleFit(random_state=0).fit(train_rep)         # a LinearRuleModel
+imported = IModRuleFit(random_state=0).fit(train_rep)         # a LinearRuleModel
 native = RuleFit(rules=rulefit_candidates(train_rep, random_state=0), cv=5).fit(train_rep)
 ```
 
 `SlipperImporter` reads an `imodels.SlipperClassifier` as a
 `LinearRuleModel`, reproducing its predictions exactly, and
-`ImodelsSlipper` is the learner. Despite its name, imodels' Slipper is
+`IModSlipper` is the learner. Despite its name, imodels' Slipper is
 scikit-learn's AdaBoost (SAMME) over imodels' own rule learner, not Cohen
 & Singer's confidence-rated boosting (that is the native
 `learners.boosting.Slipper`): each rule votes with its AdaBoost weight α
@@ -1870,7 +1884,7 @@ and AdaBoost typically stops after one to three rules. **With labels
 other than 0/1, its `predict` always returns the first class**:
 `BoostedRulesClassifier.fit` restores the original labels in `classes_`,
 which scikit-learn's AdaBoost compares its rules' 0/1 predictions with.
-`ImodelsSlipper` fits on 0/1 labels to avoid that, and the import
+`IModSlipper` fits on 0/1 labels to avoid that, and the import
 reproduces the intended model.
 
 ### weka: JRip, PART and J48
@@ -1998,7 +2012,7 @@ header and its `` ---- `` divider before reading the tree body.
 
 `pyrulearn.interfaces.lord` runs the Java implementation of LORD (Huynh,
 Fürnkranz & Beck, 2023; [vqphuynh/LORD](https://github.com/vqphuynh/LORD)) as
-a subprocess. `LordJar` is the `fit()` learner (`variant=` selects
+a subprocess. `JavaLord` is the `fit()` learner (`variant=` selects
 `run.LordRun`, `LordStarRun` or `LordLoopRun`; `metric=`/`metric_arg=` are
 LORD's `-mt`/`-ma`), `LORDImporter` parses the `eg_output.txt` it writes, and
 `run_lord` is the function that drives the jar. `classpath=` (else
@@ -2015,7 +2029,7 @@ negation features (`DataSpecBuilder`'s default). LORD is natively multi-class.
 
 ### pyarc: CBA
 
-`pyrulearn.interfaces.pyarc.PyarcCBA` fits the external `pyarc` package's CBA
+`pyrulearn.interfaces.pyarc.PArcCBA` fits the external `pyarc` package's CBA
 and returns a `DecisionList`; `PyarcCBAImporter` reads an already-fitted
 `pyarc.CBA`. It is the reference that the native
 `pyrulearn.learners.associative.CBA` is cross-checked against, and a faster
@@ -2023,7 +2037,7 @@ drop-in (the C library `fim` that `pyarc` mines with is roughly 10x faster than
 this package's pure-Python miner). Its defaults (`min_support=0.01`,
 `min_confidence=0.5`, `max_len=4`) mirror the native `CBA`'s, and `max_len`
 means the same in both (`pyarc`'s own `maxlen` also counts the class item,
-which `PyarcCBA` adjusts for); `algorithm=` picks `pyarc`'s `"m1"` (default)
+which `PArcCBA` adjusts for); `algorithm=` picks `pyarc`'s `"m1"` (default)
 or `"m2"` classifier builder. `pyarc` needs Borgelt's `pyfim` C extension,
 which has no Windows wheels and must be built separately; importing the module
 needs neither.
@@ -2045,7 +2059,7 @@ about ten times faster, though BOOMER's feature sampling gives it
 somewhat different rules. BOOMER's multi-label learning isn't supported
 yet (see *Not yet implemented*).
 
-`pyrulearn.interfaces.realkd.RealkdRuleBoosting` fits Mario Boley's
+`pyrulearn.interfaces.realkd.RKDRuleBoosting` fits Mario Boley's
 `realkd` rule boosting, the reference implementation of optimal rule
 boosting (Boley et al. 2021), and `RealkdImporter` reads its rule ensemble.
 `realkd` is given the data's positive features as columns `c0, c1, ...`;
@@ -2057,12 +2071,12 @@ several times faster.
 
 ```python
 from pyrulearn.interfaces.boomer import MlrlBoomer
-from pyrulearn.interfaces.realkd import RealkdRuleBoosting
+from pyrulearn.interfaces.realkd import RKDRuleBoosting
 from pyrulearn.learners.boosting import OptimalRuleBoosting
 
 boomer = MlrlBoomer(max_rules=50, random_state=0).fit(train_rep)
 native_boomer = Boomer(n_rules=50).fit(train_rep)      # from pyrulearn.learners.boosting
-reference = RealkdRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)
+reference = RKDRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)
 native = OptimalRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)   # the same model
 ```
 

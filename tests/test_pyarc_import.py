@@ -9,7 +9,7 @@ from pyarc import CBA as PyarcRawCBA
 from pyarc.data_structures import TransactionDB
 
 from pyrulearn.data import BooleanDataRepresentation, DataSpec
-from pyrulearn.interfaces.pyarc import PyarcCBA, PyarcCBAImporter
+from pyrulearn.interfaces.pyarc import PArcCBA, PyarcCBAImporter
 from pyrulearn.learners.associative import CBA
 from pyrulearn.models import DecisionList
 
@@ -32,24 +32,24 @@ def _hand_worked():
 
 def test_pyarc_cba_fit_returns_a_decision_list_matching_the_native_cba_on_a_hand_worked_dataset():
     data = _hand_worked()
-    external = PyarcCBA(min_support=0.01, min_confidence=0.5, max_len=1).fit(data)
+    external = PArcCBA(min_support=0.01, min_confidence=0.5, max_len=1).fit(data)
     native = CBA(min_support=0.01, min_confidence=0.5, max_len=1).fit(data)
 
     assert isinstance(external, DecisionList)
     assert [r.conditions[0].feature for r in external.rules] == [0]
     assert external.default_prediction == "b"
     assert list(external.predict(data)) == list(native.predict(data))
-    print("PyarcCBA and the native CBA agree on the hand-worked dataset: OK")
+    print("PArcCBA and the native CBA agree on the hand-worked dataset: OK")
 
 
 def test_pyarc_cba_stamps_provenance_and_measured_stats():
     data = _hand_worked()
-    model = PyarcCBA(max_len=1).fit(data)
-    assert model.provenance.learner == "PyarcCBA"
+    model = PArcCBA(max_len=1).fit(data)
+    assert model.provenance.learner == "PArcCBA"
     assert model.provenance.params["max_len"] == 1
     assert all(r.stats() is not None for r in model.rules)          # annotated by the fit round trip
     assert all(r.provenance.source == "pyarc.CBA" for r in model.rules)
-    print("PyarcCBA stamps learner provenance, per-rule source, and training stats: OK")
+    print("PArcCBA stamps learner provenance, per-rule source, and training stats: OK")
 
 
 def test_importer_reproduces_a_fitted_pyarc_models_own_predictions():
@@ -75,13 +75,13 @@ def test_pyarc_cba_agrees_with_the_native_cba_on_a_multiclass_problem_with_negat
     y = np.where(raw[:, 0] & ~raw[:, 1], "x", np.where(raw[:, 2] & raw[:, 3], "y", "z"))
     data = BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
 
-    external = PyarcCBA(min_support=0.05, min_confidence=0.5, max_len=3).fit(data)
+    external = PArcCBA(min_support=0.05, min_confidence=0.5, max_len=3).fit(data)
     native = CBA(min_support=0.05, min_confidence=0.5, max_len=3).fit(data)
     acc_ext = float(np.mean(np.asarray(external.predict(data)) == y))
     acc_nat = float(np.mean(np.asarray(native.predict(data)) == y))
     assert acc_ext > 0.9 and acc_nat > 0.9
     assert abs(acc_ext - acc_nat) < 0.03, (acc_ext, acc_nat)
-    print(f"PyarcCBA (acc {acc_ext:.3f}) and native CBA (acc {acc_nat:.3f}) agree on a 3-class problem: OK")
+    print(f"PArcCBA (acc {acc_ext:.3f}) and native CBA (acc {acc_nat:.3f}) agree on a 3-class problem: OK")
 
 
 def test_max_len_means_the_rule_body_length_not_pyarcs_class_inclusive_maxlen():
@@ -90,9 +90,9 @@ def test_max_len_means_the_rule_body_length_not_pyarcs_class_inclusive_maxlen():
     y = np.where(raw[:, 0] & ~raw[:, 1], "x", np.where(raw[:, 2] & raw[:, 3], "y", "z"))
     data = BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
     for L in (1, 2):
-        model = PyarcCBA(min_support=0.02, max_len=L).fit(data)
+        model = PArcCBA(min_support=0.02, max_len=L).fit(data)
         assert max(len(r.conditions) for r in model.rules) <= L
-    print("PyarcCBA(max_len=L) bounds the rule body at L (pyarc's maxlen=L+1 handled internally): OK")
+    print("PArcCBA(max_len=L) bounds the rule body at L (pyarc's maxlen=L+1 handled internally): OK")
 
 
 def test_importer_rejects_an_unfitted_model():

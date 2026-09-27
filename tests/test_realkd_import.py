@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("realkd")
 
 from pyrulearn.data import BooleanDataRepresentation  # noqa: E402
-from pyrulearn.interfaces.realkd import RealkdRuleBoosting  # noqa: E402
+from pyrulearn.interfaces.realkd import RKDRuleBoosting  # noqa: E402
 from pyrulearn.learners.boosting import OptimalRuleBoosting  # noqa: E402
 from pyrulearn.models import LinearRuleModel  # noqa: E402
 
@@ -23,7 +23,7 @@ def _data(n=300, seed=0):
 @pytest.mark.parametrize("offset", [False, True])
 def test_native_optimal_rule_boosting_equals_realkd(search, offset):
     data = _data()
-    ref = RealkdRuleBoosting(n_rules=5, search=search, offset=offset).fit(data)
+    ref = RKDRuleBoosting(n_rules=5, search=search, offset=offset).fit(data)
     native = OptimalRuleBoosting(n_rules=5, search=search, offset=offset).fit(data)
     assert isinstance(ref, LinearRuleModel)
     assert sorted(r.to_string() for r in ref.rules) == sorted(r.to_string() for r in native.rules)
@@ -33,7 +33,7 @@ def test_native_optimal_rule_boosting_equals_realkd(search, offset):
 
 def test_realkd_rules_carry_provenance_and_stats():
     data = _data()
-    model = RealkdRuleBoosting(n_rules=3).fit(data)
+    model = RKDRuleBoosting(n_rules=3).fit(data)
     assert all(r.provenance.source == "realkd.RuleBoostingEstimator" for r in model.rules)
     assert all(r.stats() is not None for r in model.rules)
     assert model.labels == ["neg", "pos"]

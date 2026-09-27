@@ -91,14 +91,14 @@ correspondingly less legible):
   the way BRL's does -- it fails downstream with `AssertionError: Only
   0 potential rules found, change hyperparams to allow for more`, since
   its `1 - X` negation and support-based rule screening only make sense
-  for already-0/1 columns. `BayesianRuleSet.fit_external` checks this
+  for already-0/1 columns. `IModBayesianRuleSet.fit_external` checks this
   itself before calling into `imodels`, raising a clearer error, since
   the library doesn't.
 - **Binary targets only, but not enforced either.** A >2-class `y`
   isn't rejected up front -- it fails deep inside simulated annealing
   with an opaque `ValueError: math domain error` (a `log` of a
   quantity that only makes sense for a 0/1 target). Same fix:
-  `BayesianRuleSet.fit_external` checks `y` has exactly two classes
+  `IModBayesianRuleSet.fit_external` checks `y` has exactly two classes
   itself and raises a clear message before that can happen.
 - **Items can be feature-present or feature-absent tests**, unlike BRL:
   each entry of `model.rules_` is a list of item names, each either a
@@ -146,7 +146,7 @@ this module can fully work around):
   sample` in `imodels/rule_set/brs.py`), which `random_state` never
   seeds. So a given `random_state` alone is *not* reproducible -- the
   same call can hit the bug above or not depending on unrelated earlier
-  code's use of the global `random` module. `BayesianRuleSet.
+  code's use of the global `random` module. `IModBayesianRuleSet.
   fit_external` seeds `random.seed(random_state)` itself before calling
   in, to actually make results (and whether this run hits the "clean"
   bug) reproducible.
@@ -199,7 +199,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import ExternalRuleLearner, RelabelingExternalLearner
 from ..models import ConceptModel, DecisionList, FlatRuleSet, LinearRuleModel
@@ -310,7 +310,7 @@ class BayesianRuleListImporter(ObjectRuleImporter):
 register_importer("bayesian_rule_list", BayesianRuleListImporter)
 
 
-class BayesianRuleList(RelabelingExternalLearner):
+class IModBayesianRuleList(RelabelingExternalLearner):
     """`imodels.BayesianRuleListClassifier`. `fit(data)` ->
     `pyrulearn.models.DecisionList` (BRL is a 2-class decision list).
     `**params` are its constructor args (`minsupport=`, `maxcardinality=`,
@@ -328,7 +328,7 @@ class BayesianRuleList(RelabelingExternalLearner):
         from imodels import BayesianRuleListClassifier
 
         if y is None:
-            raise ValueError("BayesianRuleList needs labels (y) to fit")
+            raise ValueError("IModBayesianRuleList needs labels (y) to fit")
         model = BayesianRuleListClassifier(**self.params)
         # X must be 0/1 ints, not bools: BRL's own fit does
         # `X_df[col].replace({1: col, 0: ''})` on a DataFrame built from
@@ -412,7 +412,7 @@ class BayesianRuleSetImporter(ObjectRuleImporter):
     a `default_prediction` of `model.classes_[0]` for examples no rule
     covers. See the module docstring for the Boolean-
     input/binary-target requirements this importer doesn't itself
-    enforce (that's `BayesianRuleSet.fit_external`'s job) and why
+    enforce (that's `IModBayesianRuleSet.fit_external`'s job) and why
     imported rules carry no per-rule weight/posterior.
     """
 
@@ -446,7 +446,7 @@ class BayesianRuleSetImporter(ObjectRuleImporter):
 register_importer("bayesian_rule_set", BayesianRuleSetImporter)
 
 
-class BayesianRuleSet(RelabelingExternalLearner):
+class IModBayesianRuleSet(RelabelingExternalLearner):
     """`imodels.BayesianRuleSetClassifier`. `fit(data)` ->
     `pyrulearn.models.FlatRuleSet`. `**params` are its constructor args
     (`n_rules=`, `supp=`, `maxlen=`, `discretization_method=`,
@@ -465,18 +465,18 @@ class BayesianRuleSet(RelabelingExternalLearner):
         from imodels import BayesianRuleSetClassifier
 
         if y is None:
-            raise ValueError("BayesianRuleSet needs labels (y) to fit")
+            raise ValueError("IModBayesianRuleSet needs labels (y) to fit")
         y = np.asarray(y)
         classes = np.unique(y)
         if len(classes) != 2:
             raise ValueError(
-                f"BayesianRuleSet only supports binary targets, got {len(classes)} classes: "
+                f"IModBayesianRuleSet only supports binary targets, got {len(classes)} classes: "
                 f"{list(classes)}"
             )
         X = np.asarray(X)
         if not np.all((X == 0) | (X == 1)):
             raise ValueError(
-                "BayesianRuleSet needs already-Boolean (0/1) input -- binarize categorical/"
+                "IModBayesianRuleSet needs already-Boolean (0/1) input -- binarize categorical/"
                 "numeric attributes first, e.g. via pyrulearn.data.io.build_dataspec/binarize"
             )
         # BayesianRuleSetClassifier.fit mixes np.random (seeded from its own
@@ -599,7 +599,7 @@ class RuleFitImporter(ObjectRuleImporter):
 register_importer("rulefit", RuleFitImporter)
 
 
-class ImodelsRuleFit(ExternalRuleLearner):
+class IModRuleFit(ExternalRuleLearner):
     """`imodels.RuleFitClassifier`. `fit(data)` ->
     `pyrulearn.models.LinearRuleModel` (binary targets only -- a linear
     model doesn't decompose into the `ConceptModel`s the multiclass
@@ -624,11 +624,11 @@ class ImodelsRuleFit(ExternalRuleLearner):
         from imodels import RuleFitClassifier
 
         if y is None:
-            raise ValueError("ImodelsRuleFit needs labels (y) to fit")
+            raise ValueError("IModRuleFit needs labels (y) to fit")
         X = np.asarray(X)
         if not np.all((X == 0) | (X == 1)):
             raise ValueError(
-                "ImodelsRuleFit needs already-Boolean (0/1) input -- binarize categorical/"
+                "IModRuleFit needs already-Boolean (0/1) input -- binarize categorical/"
                 "numeric attributes first, e.g. via pyrulearn.data.io.build_dataspec/binarize"
             )
         model = RuleFitClassifier(**self.params)
@@ -735,7 +735,7 @@ class SlipperImporter(ObjectRuleImporter):
     rule's 0/1 prediction with `classes_` -- with e.g. string labels
     nothing ever matches, and `predict` returns the first class for every
     row. The import reproduces the intended model (what `predict` returns
-    for 0/1 labels). `ImodelsSlipper` sidesteps the bug by fitting on 0/1
+    for 0/1 labels). `IModSlipper` sidesteps the bug by fitting on 0/1
     labels and keeping the real ones in ``model.label_names_``, which the
     importer uses when present.
     """
@@ -774,7 +774,7 @@ class SlipperImporter(ObjectRuleImporter):
 register_importer("slipper", SlipperImporter)
 
 
-class ImodelsSlipper(ExternalRuleLearner):
+class IModSlipper(ExternalRuleLearner):
     """`imodels.SlipperClassifier` (AdaBoost over imodels' rule learner,
     see `SlipperImporter`). `fit(data)` -> `LinearRuleModel`, binary
     targets only. `**params` are its constructor args (`n_estimators=`,
@@ -791,13 +791,13 @@ class ImodelsSlipper(ExternalRuleLearner):
         from imodels import SlipperClassifier
 
         if y is None:
-            raise ValueError("ImodelsSlipper needs labels (y) to fit")
+            raise ValueError("IModSlipper needs labels (y) to fit")
         X = np.asarray(X)
         if not np.all((X == 0) | (X == 1)):
-            raise ValueError("ImodelsSlipper needs already-Boolean (0/1) input")
+            raise ValueError("IModSlipper needs already-Boolean (0/1) input")
         labels, y01 = np.unique(np.asarray(y), return_inverse=True)
         if len(labels) != 2:
-            raise ValueError(f"ImodelsSlipper needs a binary target, got {len(labels)} classes")
+            raise ValueError(f"IModSlipper needs a binary target, got {len(labels)} classes")
         model = SlipperClassifier(**self.params)
         # fit on 0/1 labels: with others imodels' predict always returns the first class
         try:
@@ -810,3 +810,13 @@ class ImodelsSlipper(ExternalRuleLearner):
             raise
         model.label_names_ = labels
         return model
+
+# -- naming ------------------------------------------------------------------
+
+IModBayesianRuleList.TOOL = "IMod"
+IModBayesianRuleSet.TOOL = "IMod"
+IModRuleFit.TOOL = "IMod"
+IModSlipper.TOOL = "IMod"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'BayesianRuleList': 'IModBayesianRuleList', 'BayesianRuleSet': 'IModBayesianRuleSet', 'ImodelsRuleFit': 'IModRuleFit', 'ImodelsSlipper': 'IModSlipper'})

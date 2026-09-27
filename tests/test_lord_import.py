@@ -6,7 +6,7 @@ import pytest
 from pyrulearn import BooleanDataRepresentation, Rule
 from pyrulearn.data import DataSpecBuilder
 from pyrulearn.heuristics import RuleStats
-from pyrulearn.interfaces.lord import LordJar, LORDImporter, _parse_rules, run_lord
+from pyrulearn.interfaces.lord import JavaLord, LORDImporter, _parse_rules, run_lord
 from pyrulearn.models import ConceptSet, FlatRuleSet
 
 from _negation_helpers import neg_spec, neg_X
@@ -148,10 +148,10 @@ def test_placeholder_features_requires_a_dataspec():
 
 
 def test_lordjar_is_a_fit_learner():
-    caps = LordJar().produces()
+    caps = JavaLord().produces()
     assert FlatRuleSet in caps and ConceptSet in caps
     with pytest.raises(ValueError, match="variant"):
-        LordJar(variant="nope")
+        JavaLord(variant="nope")
 
 
 @pytest.mark.skipif(
@@ -165,11 +165,11 @@ def test_lordjar_fits_end_to_end():
     ds = neg_spec([f"x{i}" for i in range(4)])
     rep = BooleanDataRepresentation(ds, neg_X(raw), y)
 
-    model = LordJar(timeout=120).fit(rep)
+    model = JavaLord(timeout=120).fit(rep)
     assert type(model) is FlatRuleSet and model.default_prediction is not None
     acc = float(np.mean(np.asarray(model.predict(rep)) == y))
-    assert acc > 0.8, f"LordJar train accuracy only {acc:.3f}"
-    assert type(LordJar(timeout=120).fit(rep, model=ConceptSet)) is ConceptSet
+    assert acc > 0.8, f"JavaLord train accuracy only {acc:.3f}"
+    assert type(JavaLord(timeout=120).fit(rep, model=ConceptSet)) is ConceptSet
 
 
 @pytest.mark.skipif(

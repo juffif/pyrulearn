@@ -5,6 +5,18 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Changed (may break imports: external learners renamed)
+
+- Learners that run an external tool now carry a short prefix for the
+  tool: `SKLDecisionTree`, `SKLRandomForest`, `WittIREP`, `WittRIPPER`
+  (was `RIPPERk`), `IModBayesianRuleList`, `IModBayesianRuleSet`,
+  `IModRuleFit`, `IModSlipper`, `WekaJRip`, `WekaPART`, `WekaJ48`,
+  `PArcCBA`, `RKDRuleBoosting`, and `JavaLord` for the reference LORD
+  implementation (was `LordJar`); native learners keep plain names. The old
+  names still work, with a `DeprecationWarning`. Importers keep their
+  names. `RuleLearner.display_name` gives the name for results tables
+  (`"IMod:Slipper"`, `"CN2"`); a learner's `TOOL` holds its prefix.
+
 ### Changed (may break code: statistics redesigned)
 
 - Only rules store measurements: a rule's training statistics,

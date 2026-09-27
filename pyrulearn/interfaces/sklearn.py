@@ -37,7 +37,7 @@ sklearn's own `RandomForestClassifier.predict()` mechanism, using each
 leaf's own *measured* stats (pass `data=` to `import_model`) rather
 than a single scalar weight.
 
-`DecisionTree`/`RandomForest` are the `pyrulearn.learners.ExternalRuleLearner`
+`SKLDecisionTree`/`SKLRandomForest` are the `pyrulearn.learners.ExternalRuleLearner`
 counterparts of `SklearnTreeImporter`/`RandomForestImporter` -- thin
 wrappers that fit a fresh sklearn estimator on a `DataRepresentation`
 and hand it to the importer right next to them, so a comparative
@@ -64,7 +64,7 @@ see `_rules_from_tree`'s docstring for exactly how. This is
 existing `DataRepresentation`, `BooleanDataRepresentation`, casts to
 bool in its own constructor) can't hold raw data, workflow 2 doesn't go
 through `fit`/`prepare` (workflow-1-only) at all -- call
-`DecisionTree(**params).fit_external(raw_X, y, feature_names=names)`
+`SKLDecisionTree(**params).fit_external(raw_X, y, feature_names=names)`
 directly, then `importer.infer_dataspec(model, names)`, then
 `importer.import_model(model, ds, feature_names=names)`.
 """
@@ -76,7 +76,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from .base import ObjectRuleImporter, register_importer
+from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..combiners import RuleCombiner
 from ..data import BooleanDataRepresentation, DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
@@ -390,14 +390,14 @@ def from_sklearn_tree(
 register_importer("sklearn_tree", SklearnTreeImporter)
 
 
-class DecisionTree(RelabelingExternalLearner):
+class SKLDecisionTree(RelabelingExternalLearner):
     """`ExternalRuleLearner` for `sklearn.tree.DecisionTreeClassifier`:
     fits a fresh tree with `**params` (the usual `DecisionTreeClassifier`
     constructor arguments, e.g. `max_depth=`, `random_state=`), then
     extracts it via `SklearnTreeImporter`. `prepare` isn't overridden --
     sklearn's native input format already is `data.X`.
 
-    ``DecisionTree(**params).fit(data)`` (workflow 1, an
+    ``SKLDecisionTree(**params).fit(data)`` (workflow 1, an
     existing `DataSpec` + already-Boolean data) is the uniform-`fit`
     counterpart to calling `from_sklearn_tree` by hand -- it produces a
     `models.DisjointRuleSet` (a lone tree's leaves are pairwise disjoint).
@@ -503,7 +503,7 @@ def from_random_forest(
 register_importer("random_forest", RandomForestImporter)
 
 
-class RandomForest(ExternalRuleLearner):
+class SKLRandomForest(ExternalRuleLearner):
     """`ExternalRuleLearner` for `sklearn.ensemble.RandomForestClassifier`:
     fits a fresh forest with `**params` (the usual
     `RandomForestClassifier` constructor arguments, e.g. `n_estimators=`,
@@ -511,7 +511,7 @@ class RandomForest(ExternalRuleLearner):
     `RandomForestImporter`. `prepare` isn't overridden -- sklearn's
     native input format already is `data.X`.
 
-    ``RandomForest(**params).fit(data)`` (workflow 1) is the
+    ``SKLRandomForest(**params).fit(data)`` (workflow 1) is the
     uniform-`fit` counterpart to calling `from_random_forest` by hand --
     it produces a `models.EnsembleModel` with one `DisjointRuleSet` member
     per tree (its honest structure: a bagged vote over per-tree leaf
@@ -519,7 +519,7 @@ class RandomForest(ExternalRuleLearner):
     model=FlatRuleSet)` gives the flattened single-bag view instead (via
     `ensemblemodel_to_flatruleset` -- an unweighted plurality vote over
     the pooled leaves, *not* sklearn's soft per-tree-distribution vote).
-    See `DecisionTree`'s docstring for workflow 2.
+    See `SKLDecisionTree`'s docstring for workflow 2.
     """
 
     IMPORTER = RandomForestImporter
@@ -603,3 +603,11 @@ def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -
     # feature[i] == -2 (sklearn's TREE_UNDEFINED) marks a leaf, i.e. no split there.
     raw = sorted(float(t) for f, t in zip(feature, threshold) if f != -2)
     return [_prettify_threshold(t, sorted_unique) for t in raw]
+
+# -- naming ------------------------------------------------------------------
+
+SKLDecisionTree.TOOL = "SKL"
+SKLRandomForest.TOOL = "SKL"
+
+#: the pre-0.2.0 names, deprecated
+__getattr__ = deprecated_aliases(globals(), {'DecisionTree': 'SKLDecisionTree', 'RandomForest': 'SKLRandomForest'})
