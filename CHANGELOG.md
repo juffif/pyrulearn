@@ -64,6 +64,18 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- Row weights on every data representation: `weights=` in the
+  constructors and `with_weights(w)` (a copy sharing the storage). Every
+  count becomes a sum of weights -- the searches, `RuleStats`, Pypper's
+  description length, `evaluate` and the rules' stored and printed
+  training stats. Integer weights give exactly the results of duplicated
+  rows; without weights nothing changes. `RuleStats` counts may now be
+  floats. Mined rule pools (`CARMiner`) don't use weights yet.
+- Weighted covering: `SeCo(covering=...)` with `RemovalCovering` (the
+  default, as before) or `WeightedCovering` (covered positives
+  down-weighted by `gamma ** k` or `1 / (k + 1)` instead of removed, as in
+  CN2-SD); also accepted by `CN2`, `AQR`, `PFoil` and `PFossil`. A search
+  scope (`example_mask`) may now be a weight vector.
 - `RuleFit` (`pyrulearn.learners.rulefit`), a RuleFit-style rule
   distiller: a sparse (L1, or elastic-net with `l1_ratio`) logistic
   regression over the coverage of a rule pool (`rules=`, or mined like

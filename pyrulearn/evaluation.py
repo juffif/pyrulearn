@@ -107,6 +107,11 @@ class RuleStats:
     positives/negatives) are derived, not stored, since they're just
     `tp+fn`/`fp+tn`.
 
+    The four counts are plain integers (rows), or floats -- sums of row
+    weights -- when the data carries weights or a search is restricted
+    to a weight vector (see `pyrulearn.data.DataRepresentation`). Every
+    heuristic is plain arithmetic on them and works with either.
+
     `length` (rule size, e.g. `Rule.length()`) defaults to unused --
     only heuristics that specifically want it read past `tp`/`fp`/`fn`/
     `tn`. A gain-style heuristic's *parent* stats (the rule before its
@@ -114,18 +119,18 @@ class RuleStats:
     which takes them as a separate, mandatory argument to `score`
     instead.
     """
-    tp: int
-    fp: int
-    fn: int
-    tn: int
+    tp: Union[int, float]
+    fp: Union[int, float]
+    fn: Union[int, float]
+    tn: Union[int, float]
     length: int = 0
 
     @property
-    def n_pos(self) -> int:
+    def n_pos(self) -> Union[int, float]:
         return self.tp + self.fn
 
     @property
-    def n_neg(self) -> int:
+    def n_neg(self) -> Union[int, float]:
         return self.fp + self.tn
 
     @classmethod
@@ -182,6 +187,9 @@ class RuleStats:
         examples, etc. -- without constructing a smaller
         `DataRepresentation` for it. Works over any `DataRepresentation`:
         coverage dispatches to the representation's own `coverage`.
+        `example_mask` may also be a weight vector, and `data` may carry
+        row weights (`DataRepresentation.scope`); the counts are then
+        sums of the effective weights.
         """
         if data.y is None:
             raise ValueError("data has no labels; RuleStats.from_rule needs data.y")
@@ -190,6 +198,12 @@ class RuleStats:
             raise ValueError("from_rule needs positive_class (or a Rule with a target)")
         cov = rule.covers_data_packed(data)
         pos_mask = data.y == pos_class
+        example_mask, weights = data.scope(example_mask)
+        if weights is not None:
+            pw, nw = weights * pos_mask, weights * ~pos_mask
+            tp, fp = float(pw[cov].sum()), float(nw[cov].sum())
+            return cls(tp=tp, fp=fp, fn=float(pw.sum()) - tp, tn=float(nw.sum()) - fp,
+                       length=rule.length())
         if example_mask is not None:
             tp = int(np.sum(cov & pos_mask & example_mask))
             fp = int(np.sum(cov & ~pos_mask & example_mask))
@@ -292,7 +306,9 @@ class ConfusionMatrix:
 
     def __init__(self, labels: Sequence[Any], counts: np.ndarray):
         self.labels: List[Any] = list(labels)
-        self.counts: np.ndarray = np.asarray(counts, dtype=np.int64)
+        counts = np.asarray(counts)
+        # row counts stay integers; sums of row weights stay floats
+        self.counts: np.ndarray = counts.astype(float if counts.dtype.kind == "f" else np.int64)
         if self.counts.shape != (len(self.labels), len(self.labels)):
             raise ValueError(
                 f"counts must be ({len(self.labels)}, {len(self.labels)}) for "
@@ -303,6 +319,7 @@ class ConfusionMatrix:
     @classmethod
     def from_predictions(
         cls, y_true: Sequence[Any], y_pred: Sequence[Any], labels: Optional[Sequence[Any]] = None,
+        weights: Optional[Sequence[float]] = None,
     ) -> "ConfusionMatrix":
         """Build the matrix from parallel true/predicted arrays. `labels`
         fixes the label set (and its order) -- typically a model's own
@@ -314,7 +331,8 @@ class ConfusionMatrix:
         caller's label set is stale, not that the data is wrong. `None`
         entries in `y_pred` (an abstained row) go to a trailing `ABSTAIN`
         pseudo-label column, added automatically iff at least one
-        prediction actually abstained.
+        prediction actually abstained. With `weights` (one per row), each
+        cell is a sum of row weights instead of a row count (floats).
         """
         y_true = list(y_true)
         y_pred = [ABSTAIN if p is None else p for p in y_pred]
@@ -328,9 +346,14 @@ class ConfusionMatrix:
 
         index = {l: i for i, l in enumerate(all_labels)}
         n = len(all_labels)
-        counts = np.zeros((n, n), dtype=np.int64)
-        for t, p in zip(y_true, y_pred):
-            counts[index[t], index[p]] += 1
+        if weights is None:
+            counts = np.zeros((n, n), dtype=np.int64)
+            for t, p in zip(y_true, y_pred):
+                counts[index[t], index[p]] += 1
+        else:
+            counts = np.zeros((n, n), dtype=float)
+            for t, p, w in zip(y_true, y_pred, weights):
+                counts[index[t], index[p]] += w
         return cls(all_labels, counts)
 
     @classmethod
@@ -379,11 +402,17 @@ class ConfusionMatrix:
         different result (its own tp/fp are the complement's fn/tn),
         not a cached, retrievable pair."""
         i = self._index[label]
-        tp = int(self.counts[i, i])
-        fp = int(self.counts[:, i].sum()) - tp
-        fn = int(self.counts[i, :].sum()) - tp
-        tn = int(self.counts.sum()) - tp - fp - fn
+        num = self._num
+        tp = num(self.counts[i, i])
+        fp = num(self.counts[:, i].sum()) - tp
+        fn = num(self.counts[i, :].sum()) - tp
+        tn = num(self.counts.sum()) - tp - fp - fn
         return RuleStats(tp=tp, fp=fp, fn=fn, tn=tn)
+
+    @property
+    def _num(self):
+        """`int` for a row-count matrix, `float` for a weighted one."""
+        return float if self.counts.dtype.kind == "f" else int
 
     def predicted_as(self, label: Any) -> Dict[Any, int]:
         """The true-label breakdown of every row predicted `label`:
@@ -399,11 +428,12 @@ class ConfusionMatrix:
         the rows this rule actually fired on.
         """
         j = self._index[label]
-        return {self.labels[i]: int(self.counts[i, j]) for i in range(len(self.labels))}
+        num = self._num
+        return {self.labels[i]: num(self.counts[i, j]) for i in range(len(self.labels))}
 
     @property
-    def n_total(self) -> int:
-        return int(self.counts.sum())
+    def n_total(self) -> Union[int, float]:
+        return self._num(self.counts.sum())
 
     @property
     def accuracy(self) -> float:

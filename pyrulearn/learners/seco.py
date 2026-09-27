@@ -81,6 +81,16 @@ examples are still uncovered") does so via a boolean `example_mask` over
 `BooleanDataRepresentation`. This is already how `RuleStats.from_rule`
 and `Rule.specialize` work; the pieces built here just thread that mask
 through rather than reintroducing a splitting approach.
+
+The `example_mask` may also be a non-negative *weight vector* -- a
+weighted covering scope (`WeightedCovering`) -- and the data may carry
+row weights of its own (`pyrulearn.data.DataRepresentation.weights`).
+Everything that counts examples then sums their effective weights
+(`DataRepresentation.scope`); everything that only needs to know which
+rows are in scope (seed picking, the grow/prune split) takes the rows
+with a positive weight. How the scope evolves from one rule to the next
+is `SeCo`'s `covering` strategy: `RemovalCovering` (the default, the
+classic "separate") or `WeightedCovering`.
 """
 
 from __future__ import annotations
@@ -821,7 +831,8 @@ class SeedExample(SearchSpaceInit):
         if self.strategy == "index":
             return int(self.index)
         positive = data.y == target_class
-        in_scope = positive if example_mask is None else (positive & example_mask)
+        support = data.scope(example_mask)[0]
+        in_scope = positive if support is None else (positive & support)
         candidates = np.flatnonzero(in_scope)
         if candidates.size == 0:
             raise ValueError("SeedExample: no uncovered positive example to seed on")
@@ -884,6 +895,9 @@ class GrowPruneSplit(SingleRulePreparation):
     then no split at all (search on every in-scope example, no pruning
     set -- same as `NoSplit`) if even that isn't possible (too few
     in-scope examples to split at all).
+
+    A weighted scope (`WeightedCovering`) is split by rows (those with a
+    positive weight), and both halves keep their rows' weights.
     """
 
     def __init__(self, prune_fraction: float = 0.33, random_state: Optional[int] = None):
@@ -897,7 +911,8 @@ class GrowPruneSplit(SingleRulePreparation):
         from sklearn.model_selection import train_test_split
 
         n = data.n_samples
-        in_scope = np.arange(n) if example_mask is None else np.flatnonzero(example_mask)
+        support = data.scope(example_mask)[0]
+        in_scope = np.arange(n) if support is None else np.flatnonzero(support)
         if len(in_scope) < 2:
             return example_mask, None  # too few examples to split at all
 
@@ -918,6 +933,9 @@ class GrowPruneSplit(SingleRulePreparation):
         grow_mask[grow_idx] = True
         prune_mask = np.zeros(n, dtype=bool)
         prune_mask[prune_idx] = True
+        if example_mask is not None and np.asarray(example_mask).dtype != bool:   # keep the weights
+            w = np.asarray(example_mask, dtype=float)
+            return w * grow_mask, w * prune_mask
         return grow_mask, prune_mask
 
 
@@ -1135,17 +1153,17 @@ def rule_set_description_length(
     """Total MDL of `rules` as a theory for the binary problem
     ``target_class`` vs. the rest (within `example_mask` if given): the
     sum of each rule's `_rule_theory_bits` plus the `_exception_bits` for
-    the union of their coverage."""
+    the union of their coverage. With row weights (the data's, or a
+    weighted `example_mask`) the example counts are sums of weights."""
     n_possible = data.spec.n_features
     theory = sum(_rule_theory_bits(r.length(), n_possible) for r in rules)
-    y = np.asarray(data.y)
-    scope = np.ones(data.n_samples, dtype=bool) if example_mask is None else np.asarray(example_mask, dtype=bool)
-    covered = _combined_cover(rules, data) & scope
-    pos = (y == target_class) & scope
-    n_covered = int(covered.sum())
-    n_fp = int((covered & ~pos).sum())
-    n_uncovered = int((scope & ~covered).sum())
-    n_fn = int((scope & ~covered & pos).sum())
+    w = data.scope_weights(example_mask)
+    covered = _combined_cover(rules, data)
+    pos = np.asarray(data.y) == target_class
+    n_covered = float(w[covered].sum())
+    n_fp = float(w[covered & ~pos].sum())
+    n_uncovered = float(w[~covered].sum())
+    n_fn = float(w[~covered & pos].sum())
     return theory + _exception_bits(n_covered, n_fp, n_uncovered, n_fn)
 
 
@@ -1189,9 +1207,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
     ) -> List[Rule]:
         if not rules:
             return rules
-        y = np.asarray(data.y)
-        scope = np.ones(data.n_samples, dtype=bool) if example_mask is None else np.asarray(example_mask, dtype=bool)
-        n_feat = data.spec.n_features
+        scope = example_mask
 
         for p in range(self.passes):
             rs = None if self.random_state is None else self.random_state + p
@@ -1237,10 +1253,12 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
             return grown
 
         # prune trailing conditions to minimize the whole set's error on the pruning split
-        def err(rule: Rule) -> int:
-            covered = _combined_cover(context + [rule], data) & prune_mask
-            pos = (np.asarray(data.y) == target_class) & prune_mask
-            return int((covered & ~pos).sum()) + int((~covered & pos).sum())
+        w = data.scope_weights(prune_mask)
+        pos = np.asarray(data.y) == target_class
+
+        def err(rule: Rule) -> float:
+            covered = _combined_cover(context + [rule], data)
+            return float(w[covered & ~pos].sum()) + float(w[~covered & pos].sum())
 
         best, best_err = grown, err(grown)
         for k in range(grown.length() - 1, 0, -1):
@@ -1252,7 +1270,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
 
     def _dl_prune(
         self, rules: List[Rule], data: BooleanDataRepresentation, target_class: Any,
-        scope: np.ndarray,
+        scope: Optional[np.ndarray],
     ) -> List[Rule]:
         kept = list(rules)
         for r in reversed(list(kept)):  # RIPPER: consider the last-added rules first
@@ -1261,6 +1279,111 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
                rule_set_description_length(kept, data, target_class, scope):
                 kept = without
         return kept
+
+
+# -- covering strategies -----------------------------------------------------------
+
+class CoveringStrategy(ABC):
+    """How `SeCo`'s covering loop changes the scope -- which examples, with
+    which weights, the next rule is learned on -- after each accepted
+    rule. The scope is what every building block receives as
+    `example_mask`: a boolean mask (`RemovalCovering`) or a weight vector
+    (`WeightedCovering`). A strategy is stateless: the scope itself
+    carries all it needs.
+    """
+
+    @abstractmethod
+    def start(self, data: Any, positive: np.ndarray) -> np.ndarray:
+        """The scope before the first rule (`positive`: the target-class rows)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self, scope: np.ndarray, covered: np.ndarray, positive: np.ndarray) -> np.ndarray:
+        """The scope after accepting a rule covering the rows `covered`."""
+        raise NotImplementedError
+
+    def exhausted(self, scope: np.ndarray, positive: np.ndarray) -> bool:
+        """Whether the loop is done: no positive example left in scope."""
+        return not np.any(positive & (scope > 0))
+
+    def drop(self, scope: np.ndarray, row: int) -> np.ndarray:
+        """`scope` with `row` taken out entirely -- a seed example no
+        acceptable rule could be found for (see `SeCo._covering_loop`)."""
+        scope = scope.copy()
+        scope[row] = 0
+        return scope
+
+
+class RemovalCovering(CoveringStrategy):
+    """The classic separate-and-conquer policy (the default): every
+    example an accepted rule covers -- both classes -- leaves the scope.
+    The scope is a boolean mask."""
+
+    def start(self, data: Any, positive: np.ndarray) -> np.ndarray:
+        return np.ones(len(positive), dtype=bool)
+
+    def update(self, scope: np.ndarray, covered: np.ndarray, positive: np.ndarray) -> np.ndarray:
+        return scope & ~covered
+
+
+class WeightedCovering(CoveringStrategy):
+    """Weighted covering (Gamberger & Lavrač 2002; Lavrač, Kavšek, Flach
+    & Todorovski 2004, CN2-SD): covered examples stay in scope with a
+    lower weight instead of being removed, so later rules may overlap
+    earlier ones but are steered towards the positives covered least so
+    far. Only positive examples are reweighted; negatives keep weight 1.
+    A positive covered by `k` accepted rules has weight
+
+    - ``gamma ** k`` (`scheme="multiplicative"`, `0 < gamma < 1`), or
+    - ``1 / (k + 1)`` (`scheme="additive"`).
+
+    The weights multiply with the data's own row weights, if any. The
+    loop ends once every positive has been covered at least
+    `max_covered` times (then no positive weight is above that of a
+    `max_covered`-times-covered one), when no acceptable rule is found,
+    or at `SeCo`'s `max_rules`. When the best rule is one already
+    learned, it isn't added again, but its covered positives are
+    reweighted once more -- unless they are all at the
+    `max_covered`-times weight already, which ends the loop.
+
+    Meant for unordered rule sets (`ConceptModel`/`ConceptSet`): a
+    decision list's first-match semantics assumes the removal policy.
+    """
+
+    def __init__(self, scheme: str = "multiplicative", gamma: float = 0.5, max_covered: int = 5):
+        if scheme not in ("multiplicative", "additive"):
+            raise ValueError(f"scheme must be 'multiplicative' or 'additive', got {scheme!r}")
+        if scheme == "multiplicative" and not 0.0 < gamma < 1.0:
+            raise ValueError(f"gamma must be in (0, 1), got {gamma}")
+        if max_covered < 1:
+            raise ValueError(f"max_covered must be at least 1, got {max_covered}")
+        self.scheme = scheme
+        self.gamma = gamma
+        self.max_covered = max_covered
+
+    def _weight_after(self, k: float) -> float:
+        return self.gamma ** k if self.scheme == "multiplicative" else 1.0 / (k + 1.0)
+
+    def start(self, data: Any, positive: np.ndarray) -> np.ndarray:
+        return np.ones(len(positive), dtype=float)
+
+    def update(self, scope: np.ndarray, covered: np.ndarray, positive: np.ndarray) -> np.ndarray:
+        scope = np.asarray(scope, dtype=float).copy()
+        hit = covered & positive & (scope > 0)
+        if self.scheme == "multiplicative":
+            scope[hit] *= self.gamma
+        else:                       # 1/(k+1) -> 1/(k+2)
+            scope[hit] = 1.0 / (1.0 / scope[hit] + 1.0)
+        return scope
+
+    def exhausted(self, scope: np.ndarray, positive: np.ndarray) -> bool:
+        live = scope[positive & (scope > 0)]
+        # tolerance: the weights are products/reciprocals, not exact
+        return live.size == 0 or float(live.max()) <= self._weight_after(self.max_covered) * (1 + 1e-9)
+
+
+def _resolve_covering(covering: Optional[CoveringStrategy]) -> CoveringStrategy:
+    return RemovalCovering() if covering is None else covering
 
 
 class SeCo(DecomposingLearner, NativeRuleLearner):
@@ -1346,6 +1469,13 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     default `sort_rules`/`covered_by` use for inspection; pass
     `combiner=HeuristicMaxCombiner(SomeHeuristic())` for a different one.
 
+    `covering` (a `CoveringStrategy`, default `RemovalCovering`) is how
+    the scope changes after each accepted rule: removing everything the
+    rule covers (the description above), or `WeightedCovering` --
+    down-weighting the covered positives instead, so rules may overlap
+    (CN2-SD). Only the binary covering loop uses it; the all-classes seed
+    covering (`model=DecisionList`) always removes.
+
     `optimization` (a `RuleSetOptimizer`, default `None`) runs once the
     covering loop is done, reworking the whole class's rules before they
     become a `FlatRuleSet` -- RIPPER's optimization phase. Only in the
@@ -1367,6 +1497,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
         optimization: Optional[RuleSetOptimizer] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         self.single_rule_learner = single_rule_learner
         self.target_class = target_class
@@ -1374,6 +1505,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         self.max_rules = max_rules
         self.optimization = optimization
         self.random_state = random_state
+        self.covering = covering
 
     def _default_model(self, data: BooleanDataRepresentation) -> type:
         """`fit(data)` with no `model=`: one concept (`target_class` set)
@@ -1399,6 +1531,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         paired with a consistency-filtered learner (`AQR`): consistent
         per-class rules never conflict, so the arbitrary seed order
         doesn't matter."""
+        if not isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering):
+            raise ValueError("the all-classes seed covering (model=DecisionList) needs RemovalCovering: "
+                             "a decision list's first-match semantics assumes covered examples are removed")
         rng = np.random.default_rng(self.random_state)
         remaining = np.ones(data.n_samples, dtype=bool)
         rules: List[Rule] = []
@@ -1445,9 +1580,13 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         seed would otherwise end the whole class.) Dropping a positive
         can't affect later rules' consistency, which only negatives
         decide. A learner searching all rules at once stops at its first
-        failure, since no other search would find anything else."""
+        failure, since no other search would find anything else.
+
+        `remaining` is the covering scope, a boolean mask or a weight
+        vector, as `self.covering` (`CoveringStrategy`) maintains it."""
         positive = data.y == target
-        remaining = np.ones(data.n_samples, dtype=bool)
+        covering = _resolve_covering(getattr(self, "covering", None))
+        remaining = covering.start(data, positive)
         rules: List[Rule] = []
         space_init = getattr(self.single_rule_learner, "space_init", None)
         seeded = isinstance(space_init, SeedExample) and space_init.strategy != "index"
@@ -1455,7 +1594,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         while True:
             if self.max_rules is not None and len(rules) >= self.max_rules:
                 break
-            if not np.any(positive & remaining):
+            if covering.exhausted(remaining, positive):
                 break  # every positive example is covered (or dropped as a failed seed)
 
             if seeded:
@@ -1477,12 +1616,21 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
                 # nothing acceptable found (no rule, one covering nothing
                 # new, or one `stop_covering` rejects)
                 if seeded:
-                    remaining[seed] = False
+                    remaining = covering.drop(remaining, seed)
                     continue
                 break
+            if rule in rules:
+                # the same rule again (only possible when covering doesn't remove):
+                # don't add it twice, but reweight its positives once more -- until
+                # they are all as low as they go, which ends the loop
+                covered = rule.covers_data_packed(data)
+                if covering.exhausted(remaining, positive & covered):
+                    break
+                remaining = covering.update(remaining, covered, positive)
+                continue
 
             rules.append(rule)
-            remaining = remaining & ~rule.covers_data_packed(data)
+            remaining = covering.update(remaining, rule.covers_data_packed(data), positive)
 
         if self.optimization is not None:
             rules = self.optimization.optimize(
@@ -1626,6 +1774,7 @@ class CN2(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
             raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
@@ -1651,6 +1800,7 @@ class CN2(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
     @produces(ConceptSet)
@@ -1764,6 +1914,7 @@ class AQR(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         stop_covering: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         heuristic = heuristic if heuristic is not None else LEF(
             CoveredPositives(), CoveredNegatives(), MinimalLength()
@@ -1787,6 +1938,7 @@ class AQR(SeCo):
             stop_covering=stop_covering,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 
@@ -1841,6 +1993,7 @@ class PFoil(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         heuristic = heuristic if heuristic is not None else FoilGain()
         search = search if search is not None else GainAscentHillClimbing()
@@ -1860,6 +2013,7 @@ class PFoil(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 
@@ -1937,6 +2091,7 @@ class PFossil(SeCo):
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         random_state: Optional[int] = None,
+        covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
             raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
@@ -1963,6 +2118,7 @@ class PFossil(SeCo):
             target_class=target_class,
             max_rules=max_rules,
             random_state=random_state,
+            covering=covering,
         )
 
 

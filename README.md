@@ -58,7 +58,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 
 | Algorithm | Class (in `pyrulearn.learners`) | Notes | Reference |
 |---|---|---|---|
-| **SeCo framework** | `seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
+| **SeCo framework** | `seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization, covering: removal or weighted) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
 | **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test; unlike the rest of the family, its default `ConceptSet` resolves a clash between firing rules by summing their covered-class distributions (`MicroVoteCombiner`), not the family's generic `combiner="max"`, matching Clark & Boswell's own unordered-CN2 | Clark & Niblett 1989; Clark & Boswell 1991 |
 | **AQR** | `seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
 | **PFOIL** | `seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
@@ -167,6 +167,31 @@ schema-only versions. `rep.select_rows(mask)` gives a same-type
 representation over a row subset (feature space unchanged, so learned
 rules still apply to the full data) -- rebuilt from scratch, used by
 `OrderedOneVsRest` to train each stage on the not-yet-peeled classes.
+
+### Row weights
+
+Every representation can carry non-negative row weights: how much each
+row counts, e.g. how often it was observed. Pass them to the constructor
+(`BooleanDataRepresentation(spec, X, y, weights=w)`) or use
+`rep.with_weights(w)`, a cheap copy that shares the storage (so an
+N-list isn't rebuilt). `select_rows`, `relabel`, the negation toggles and
+`from_boolean` keep them.
+
+With weights, every count becomes a sum of weights: the searches'
+coverage counts, `RuleStats.from_rule`, Pypper's description length,
+`evaluate`, and so the training stats rules store and print
+(`% (12.5/3)`). Integer weights give exactly the results of duplicating
+rows. Without weights, all counts stay integers as before.
+
+The heuristics are plain arithmetic on tp/fp/fn/tn and work unchanged
+with weighted counts. Only the meaning of a few shifts: the pseudo-counts
+of `Laplace`/`MEstimate` are in weight units, and the significance tests
+(`LikelihoodRatio`, `ChiSquare`) and description-length criteria assume
+whole-example counts, so with weights they are approximations -- as
+usual in weighted rule learning (CN2-SD, Slipper).
+
+Not yet weighted: mined rule pools (`CARMiner` counts rows) and the
+coverage-space analyses.
 
 ### Typed attributes
 
@@ -1202,6 +1227,36 @@ AQR, or `pyrulearn.learners.pylord.PyLORD`): `fit` induces straight against
 `data`, with no external algorithm call and no `RuleImporter`
 round-trip at all.
 
+### Weighted covering
+
+`SeCo`'s `covering=` sets how the covering loop's scope changes after
+each accepted rule. `RemovalCovering` (the default) is classic
+separate-and-conquer: everything the rule covers leaves the scope.
+`WeightedCovering` (Gamberger & Lavrač 2002; Lavrač et al. 2004)
+keeps covered examples with a lower weight instead: a positive covered
+by `k` rules weighs `gamma ** k` (`scheme="multiplicative"`) or `1 / (k
++ 1)` (`"additive"`); negatives keep weight 1. Later rules may then
+overlap earlier ones, but are steered towards the positives covered least
+so far. The loop ends once every positive has been covered `max_covered`
+times; a rule found again isn't added twice, but reweights its positives
+once more. `CN2`, `AQR`, `PFoil` and `PFossil` accept `covering=`; the
+all-classes seed covering behind `model=DecisionList` requires removal,
+since first-match semantics assumes it.
+
+CN2-SD is CN2 with `WRAcc` and weighted covering:
+
+```python
+from pyrulearn.heuristics import WRAcc
+from pyrulearn.learners.seco import CN2, WeightedCovering
+
+model = CN2(heuristic=WRAcc(), covering=WeightedCovering(gamma=0.5)).fit(train_rep)
+```
+
+The scope the building blocks receive as `example_mask` is then a weight
+vector instead of a boolean mask; it multiplies with the data's own row
+weights. Seed picking and the grow/prune split use the rows with a
+positive weight, and everything that counts uses the weights.
+
 ### Multiclass classification
 
 Multiclass support is one `fit(data, model=...)` switcher
@@ -1846,16 +1901,10 @@ against it).
   optimization phase (`ReplaceReviseOptimization` itself is already done).
 
 - **Weighted and additive rule models**, at two different points in the
-  pipeline. `SeCo`'s covering step is currently hard-coded inline
-  (`SeCo._covering_loop`), with a boolean `example_mask` as the only
-  notion of "scope" threaded through `learn_one_rule`, `RuleStats.from_rule`,
-  pruning/filtering/stopping, and the incremental cover handles. Plan: a
-  `CoveringStrategy` alongside `SeCo`'s other pluggable strategies, with
-  `RemovalCovering` (today's behavior) and `WeightedCovering` (covered
-  examples down-weighted instead of dropped) -- the real cost is
-  downstream, since `RuleStats` would need weighted `tp`/`fp`/`fn`/`tn`
-  (heuristics work unchanged) and the `NListRepresentation` popcount fast
-  path doesn't extend to weights for free. Three things motivate it:
+  pipeline. Weighted covering itself is done (`CoveringStrategy`:
+  `RemovalCovering`, `WeightedCovering`; row weights on every
+  representation, see *Row weights* and *Weighted covering*). What builds
+  on it is not:
   - **CPAR** (Yin & Han, 2003) and `imodels`' **`SlipperClassifier`**
     (Cohen & Singer, 1999) both need it *during induction* -- CPAR via a
     fixed per-round decay, Slipper via boosting-style reweighting -- and

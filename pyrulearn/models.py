@@ -549,7 +549,8 @@ class RuleModel(ABC):
                                                               # still-in-progress dissolution)
         rules = self.rules
         preds = self.predict(data)
-        confusion = (ConfusionMatrix.from_predictions(data.y, preds, labels=self.labels)
+        confusion = (ConfusionMatrix.from_predictions(data.y, preds, labels=self.labels,
+                                                      weights=data.weights)
                     if data.y is not None else None)
         return ModelStats(
             n_rows=int(data.n_samples),
@@ -972,15 +973,21 @@ def _decorate(
         return text
     by_class = coverage.get("n_covered_by_class")
     if class_order and by_class is not None:
-        counts = ", ".join(str(by_class.get(c, 0)) for c in class_order)
+        counts = ", ".join(_fmt_count(by_class.get(c, 0)) for c in class_order)
         comment = f"% [{counts}]"
     elif by_class is not None and rule.target is not None:
         tp = by_class.get(rule.target, 0)
         fp = coverage["n_covered"] - tp
-        comment = f"% ({tp}/{fp})"
+        comment = f"% ({_fmt_count(tp)}/{_fmt_count(fp)})"
     else:
-        comment = f"% ({coverage['n_covered']})"
+        comment = f"% ({_fmt_count(coverage['n_covered'])})"
     return f"{comment}\n{text}" if above else f"{text}  {comment}"
+
+
+def _fmt_count(x) -> str:
+    """A count as printed in a stats comment: an integer as is, a sum of
+    row weights compactly (``12.5``, ``3``)."""
+    return str(x) if isinstance(x, (int, np.integer)) else f"{x:.4g}"
 
 
 #: rule formats that render only the body, no head (see `Rule.to_string`):
