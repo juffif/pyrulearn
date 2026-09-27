@@ -6,7 +6,7 @@ pyrulearn.interfaces.boomer
 Fürnkranz, Nguyen & Hüllermeier, ECML PKDD 2020) -- gradient boosted
 multi-output rules, an extension of ENDER -- as implemented by the
 `mlrl-boomer` package (`mlrl.boosting.BoomerClassifier`), and
-`MlrlBoomer`, its learner.
+`MLRLBoomer`, its learner.
 
 BOOMER learns an additive model of rules for several outputs (labels) at
 once; pyrulearn uses it for binary classification, i.e. a single output:
@@ -28,7 +28,7 @@ floats).
 
 The single-output case of BOOMER (logistic loss, L2-regularized Newton
 steps) is ENDER's Newton method with L2 regularization -- natively
-`pyrulearn.learners.boosting.Boomer`, which predicts like `MlrlBoomer` on
+`pyrulearn.learners.boosting.Boomer`, which predicts like `MLRLBoomer` on
 binary data. BOOMER's multi-label learning (several outputs at once) is
 not supported: pyrulearn has no multi-label data or models yet (on the
 to-do list with preference learning and label ranking, see the README).
@@ -110,7 +110,7 @@ class BoomerImporter(ObjectRuleImporter):
     BoomerClassifier` with a single output, fit on `dataspec`'s features
     as 0/1 columns (see the module docstring). `labels` are the two
     classes, the one coded 0 first; `model.label_names_` (set by
-    `MlrlBoomer`) takes precedence."""
+    `MLRLBoomer`) takes precedence."""
 
     SOURCE = "mlrl.boosting.BoomerClassifier"
 
@@ -145,7 +145,7 @@ class BoomerImporter(ObjectRuleImporter):
 register_importer("boomer", BoomerImporter)
 
 
-class MlrlBoomer(ExternalRuleLearner):
+class MLRLBoomer(ExternalRuleLearner):
     """BOOMER (`mlrl.boosting.BoomerClassifier`) for binary classification.
     `fit(data)` -> `LinearRuleModel` (see `BoomerImporter`). `**params` are
     its constructor arguments (`max_rules=`, `shrinkage=`, `loss=`,
@@ -164,7 +164,7 @@ class MlrlBoomer(ExternalRuleLearner):
 
         labels, y01 = np.unique(np.asarray(y), return_inverse=True)
         if len(labels) != 2:
-            raise ValueError(f"MlrlBoomer needs a binary target, got {len(labels)} classes")
+            raise ValueError(f"MLRLBoomer needs a binary target, got {len(labels)} classes")
         model = BoomerClassifier(**self.params)
         model.fit(np.asarray(X, dtype=float), y01)
         model.label_names_ = labels
@@ -172,4 +172,9 @@ class MlrlBoomer(ExternalRuleLearner):
 
 # -- naming ------------------------------------------------------------------
 
-MlrlBoomer.TOOL = "Mlrl"
+MLRLBoomer.TOOL = "MLRL"
+
+from .base import deprecated_aliases as _deprecated_aliases  # noqa: E402
+
+#: the 0.2.0 name, deprecated
+__getattr__ = _deprecated_aliases(globals(), {"MlrlBoomer": "MLRLBoomer"})

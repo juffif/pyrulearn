@@ -60,7 +60,7 @@ class RuleLearner(ABC):
 
     Naming: native learners have plain names (`CN2`, `Slipper`); a learner
     that runs an external tool is named with a short prefix for the tool
-    (`TOOL`: ``SKL``, ``Witt``, ``IMod``, ``Weka``, ``PArc``, ``Mlrl``,
+    (`TOOL`: ``SKL``, ``Witt``, ``IMod``, ``Weka``, ``PArc``, ``MLRL``,
     ``RKD``; e.g. `IModSlipper`), so tables show at a glance which
     results come from which implementation. `display_name` is the name
     for such tables: ``"CN2"``, ``"IMod:Slipper"``."""

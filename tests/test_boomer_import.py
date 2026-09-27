@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("mlrl.boosting")
 
 from pyrulearn.data import BooleanDataRepresentation  # noqa: E402
-from pyrulearn.interfaces.boomer import MlrlBoomer  # noqa: E402
+from pyrulearn.interfaces.boomer import MLRLBoomer  # noqa: E402
 from pyrulearn.models import LinearRuleModel  # noqa: E402
 
 from _negation_helpers import neg_spec, neg_X  # noqa: E402
@@ -21,7 +21,7 @@ def _data(n=400, seed=0):
 @pytest.mark.parametrize("params", [dict(max_rules=10), dict(max_rules=40, l2_regularization_weight=1.0)])
 def test_boomer_import_reproduces_its_decision_function(params):
     data = _data()
-    learner = MlrlBoomer(random_state=0, **params)
+    learner = MLRLBoomer(random_state=0, **params)
     model = learner.fit(data)
     assert isinstance(model, LinearRuleModel) and model.labels == ["neg", "pos"]
     fitted = learner.fit_external(data.X, data.y)
@@ -37,13 +37,13 @@ def test_boomer_is_binary_only_here():
     raw = rng.random((60, 3)) < 0.5
     three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
-        MlrlBoomer(max_rules=5).fit(three)
+        MLRLBoomer(max_rules=5).fit(three)
 
 
 def test_native_boomer_predicts_like_mlrl_boomer():
     from pyrulearn.learners.boosting import Boomer
     data, test = _data(), _data(seed=1)
     native = Boomer(n_rules=50, random_state=0).fit(data)
-    original = MlrlBoomer(max_rules=50, random_state=0).fit(data)
+    original = MLRLBoomer(max_rules=50, random_state=0).fit(data)
     agree = np.mean(np.asarray(native.predict(test)) == np.asarray(original.predict(test)))
     assert agree > 0.95

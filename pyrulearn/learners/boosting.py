@@ -608,7 +608,7 @@ class Boomer(ENDER):
     With more than two classes, `Boomer` uses the multinomial logistic
     loss (each rule voting for one class), where BOOMER would treat the
     classes as labels. The original is interfaced as
-    `pyrulearn.interfaces.boomer.MlrlBoomer` (binary classification),
+    `pyrulearn.interfaces.boomer.MLRLBoomer` (binary classification),
     whose rule induction differs in details (e.g. its feature sampling),
     so the two don't produce identical models.
     """

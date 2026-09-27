@@ -136,3 +136,15 @@ def test_external_learners_are_prefixed_and_old_names_still_work():
     assert len(caught) == 3 and all(issubclass(w.category, DeprecationWarning) for w in caught)
     with pytest.raises(AttributeError):
         weka.NoSuchLearner
+
+
+def test_mlrl_boomer_is_renamed_with_a_deprecated_alias():
+    import warnings
+
+    from pyrulearn.interfaces import boomer
+
+    assert boomer.MLRLBoomer().display_name == "MLRL:Boomer"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert boomer.MlrlBoomer is boomer.MLRLBoomer
+    assert caught and issubclass(caught[0].category, DeprecationWarning)

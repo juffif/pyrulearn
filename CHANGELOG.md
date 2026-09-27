@@ -3,6 +3,13 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Changed (may break imports)
+
+- `MlrlBoomer` is renamed `MLRLBoomer` (tool prefix `MLRL`); the old name
+  still works, with a `DeprecationWarning`.
+
 ## 0.2.0 (2026-09-27)
 
 A feature release, with breaking changes. Rule statistics are redesigned: a
