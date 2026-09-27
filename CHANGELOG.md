@@ -24,6 +24,14 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   names, dropped leakage columns, category codes, missing-value markers).
   `tools/build_catalog.py` maintains the catalog file.
 
+### Fixed
+
+- `RuleFit` fitted dense (L2) models with scikit-learn before 1.8 (e.g. on
+  Python 3.10, where 1.8 isn't available): those versions use `l1_ratio`
+  only with an explicit `penalty`, which `RuleFit` now passes there.
+- The `ABSTAIN` pseudo-label prints as `ABSTAIN` instead of `<object object
+  at 0x...>`, which also changed with every run.
+
 ## 0.2.0 (2026-09-27)
 
 A feature release, with breaking changes. Rule statistics are redesigned: a

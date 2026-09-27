@@ -92,8 +92,18 @@ def _sortkey(c: Any):
 #: sentinel pseudo-label for a `None` (abstained) prediction in a
 #: `ConfusionMatrix` -- distinct from any real label, including a real
 #: `None` label if one ever occurs, since `is`/`in` identity is used to
-#: place it, not equality.
-ABSTAIN = object()
+#: place it, not equality. It prints as ``ABSTAIN``.
+class _Abstain:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "ABSTAIN"
+
+    def __reduce__(self):             # pickling keeps the singleton
+        return "ABSTAIN"
+
+
+ABSTAIN = _Abstain()
 
 
 @dataclass(frozen=True)
