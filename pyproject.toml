@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 data = ["pandas", "scipy"]                 # pyrulearn.data.io (scipy: ARFF / sparse representations)
 plot = ["matplotlib", "networkx"]          # pyrulearn.evaluation plotting
+experiments = ["pandas", "scipy", "matplotlib"]  # pyrulearn.experiments: run_cv, stats, report (catalog.load needs pandas)
 wittgenstein = ["wittgenstein"]            # interfaces.wittgenstein: IREP, RIPPER
 imodels = ["imodels"]                      # interfaces.imodels: Bayesian rule lists / sets
 pyarc = ["pyarc"]                          # interfaces.pyarc: CBA (pyarc itself also needs Borgelt's `pyfim`, a C extension)
@@ -43,7 +44,7 @@ Issues = "https://github.com/juffif/pyrulearn/issues"
 include = ["pyrulearn*"]
 
 [tool.setuptools.package-data]
-"pyrulearn.data" = ["catalog.json"]   # the dataset catalog (metadata only, no data)
+"pyrulearn.experiments" = ["catalog.json"]   # the dataset catalog (metadata only, no data)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

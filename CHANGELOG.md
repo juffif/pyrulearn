@@ -7,17 +7,42 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
-- `pyrulearn.data.catalog`: a catalog of 100 benchmark datasets on OpenML
-  (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
-  rule-learning datasets) plus a few pointer-only entries, metadata and
-  download pointers only. Select by
-  task (binary/multiclass), size (small/medium/large), attribute types
-  (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
-  or `.parse("binary,small,medium")`, optionally picking `n` of the matches
-  at random -- and `entry.load()` downloads and
-  caches the raw data with curated fixes applied (restored attribute
-  names, dropped leakage columns, category codes, missing-value markers).
-  `tools/build_catalog.py` maintains the catalog file.
+- `pyrulearn.experiments`: shared infrastructure for demos and other
+  cross-validation-style experiments, replacing the loading/splitting/
+  timeout/measurement/report code each `examples/demo_*.py` script
+  otherwise reimplements.
+  - `experiments.catalog`: a catalog of 100 benchmark datasets on OpenML
+    (OpenML-CC18, the LORD evaluation's datasets, classic XAI and
+    rule-learning datasets) plus a few pointer-only entries, metadata and
+    download pointers only. Select by
+    task (binary/multiclass), size (small/medium/large), attribute types
+    (categorical/numeric/mixed), tags or name -- `Catalog.default().select(...)`
+    or `.parse("binary,small,medium")`, optionally picking `n` of the matches
+    at random -- and `entry.load()` downloads and
+    caches the raw data with curated fixes applied (restored attribute
+    names, dropped leakage columns, category codes, missing-value markers).
+    `tools/build_catalog.py` maintains the catalog file.
+  - `experiments.runner.run_cv(learners, datasets, n_folds=10, ...)`: the
+    cross-validation loop -- per-fold binarization (`build_dataspec`/
+    `binarize` on the training split only, test split binarized against
+    that fold's `DataSpec`), a per-fit timeout (`TimeoutRunner`, a
+    persistent worker subprocess so one hung fit can't block the run),
+    uniform measurement via `RuleModel.evaluate` plus whatever a
+    `measure_fn` adds, and optional fold caching (`cache_dir`) so
+    resuming after a crash, or adding one learner, doesn't refit
+    everything. Returns one long-format `pandas.DataFrame`.
+  - `experiments.stats`: optional, separately-callable statistics over a
+    `run_cv` table -- `mean_rank`, `friedman_test`
+    (`scipy.stats.friedmanchisquare`), `critical_difference_diagram`
+    (hand-rolled Nemenyi/Demsar (2006) formula, `matplotlib`). Never run
+    automatically by `run_cv`.
+  - `experiments.report`: small Markdown-writing building blocks
+    (`render_setup_section`, `render_results_table`).
+  - New `experiments` extras group (`pandas`, `scipy`, `matplotlib`).
+- `pyrulearn.data.io.build_dataspec`: a new `skip_unusable` flag leaves
+  out a column with no useful split (rather than raising) -- for
+  automated runs like `run_cv` where a column can turn constant or
+  entirely missing within one training fold.
 
 ## 0.2.1 (2026-09-27)
 

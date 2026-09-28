@@ -101,6 +101,7 @@ def build_dataspec(
     include_negations: bool = True,
     negation_overrides: Optional[Dict[str, bool]] = None,
     domains: Optional[Dict[str, Sequence[Any]]] = None,
+    skip_unusable: bool = False,
 ) -> DataSpecBuilder:
     """Infer one attribute per (non-target) column of `df` and return the
     `DataSpecBuilder` that generated them -- the shared core of "read and
@@ -123,6 +124,12 @@ def build_dataspec(
     whether each attribute also gets explicit negation features;
     `negation_overrides` (``{column: bool}``) overrides it per column.
     Neither affects a BINARY attribute.
+
+    A numeric column the discretization finds no split for, or a nominal
+    column with no observed value, raises `ValueError` -- unless
+    `skip_unusable` is set, which leaves such columns out instead (for
+    automated runs such as cross-validation, where a column can be
+    constant or entirely missing within one training fold).
     """
     overrides = negation_overrides or {}
     builder = DataSpecBuilder(negation=include_negations)
@@ -139,6 +146,8 @@ def build_dataspec(
             declared_domain = (domains or {}).get(col)
             domain = (list(declared_domain) if declared_domain is not None
                       else sorted(df[col].dropna().unique().tolist()))
+            if not domain and skip_unusable:
+                continue
             if len(domain) == 2:
                 builder.add_binary(col, domain)
             else:
@@ -153,6 +162,8 @@ def build_dataspec(
             from ..interfaces.sklearn import tree_thresholds
             thresholds = tree_thresholds(df[col].to_numpy(dtype=float), y, max_intervals=max_intervals)
             if not thresholds:
+                if skip_unusable:
+                    continue
                 raise ValueError(
                     f"Decision-tree discretization found no useful split for numeric "
                     f"column {col!r} (max_intervals={max_intervals}); provide thresholds "

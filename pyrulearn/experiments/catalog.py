@@ -1,5 +1,5 @@
 """
-pyrulearn.data.catalog
+pyrulearn.experiments.catalog
 ======================
 
 A catalog of benchmark datasets: metadata and download pointers only --
@@ -8,7 +8,7 @@ OpenML id, plus UCI/Kaggle/original-source links where known) and
 carries enough statistics to *select* datasets without downloading
 them::
 
-    from pyrulearn.data.catalog import Catalog
+    from pyrulearn.experiments.catalog import Catalog
 
     cat = Catalog.default()
     for entry in cat.select(task="binary", size=["small", "medium"]):

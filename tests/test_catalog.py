@@ -4,7 +4,7 @@ logic. Offline -- nothing here downloads data."""
 import pandas as pd
 import pytest
 
-from pyrulearn.data.catalog import (
+from pyrulearn.experiments.catalog import (
     ATTRIBUTE_KINDS, MEDIUM_MAX, SIZES, SMALL_MAX, TASKS, Catalog, CatalogEntry, prepare_frame,
 )
 

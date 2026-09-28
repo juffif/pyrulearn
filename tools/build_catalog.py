@@ -1,6 +1,6 @@
 """
-Maintain pyrulearn/data/catalog.json, the dataset catalog behind
-`pyrulearn.data.catalog`.
+Maintain pyrulearn/experiments/catalog.json, the dataset catalog behind
+`pyrulearn.experiments.catalog`.
 
 The catalog's curated fields (name, openml_id, target, tags, uci/kaggle
 links, nominal, missing_markers, notes) are edited by hand; this script
@@ -39,9 +39,9 @@ import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pyrulearn.data.catalog import Catalog, CatalogEntry, fetch_openml_frame  # noqa: E402
+from pyrulearn.experiments.catalog import Catalog, CatalogEntry, fetch_openml_frame  # noqa: E402
 
-CATALOG = os.path.join(os.path.dirname(__file__), "..", "pyrulearn", "data", "catalog.json")
+CATALOG = os.path.join(os.path.dirname(__file__), "..", "pyrulearn", "experiments", "catalog.json")
 OPENML = "https://www.openml.org/api/v1/json"
 UCI = "https://archive.ics.uci.edu/api/dataset"
 CC18_STUDY = 99
