@@ -30,7 +30,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
     uniform measurement via `RuleModel.evaluate` plus whatever a
     `measure_fn` adds, and optional fold caching (`cache_dir`) so
     resuming after a crash, or adding one learner, doesn't refit
-    everything. Returns one long-format `pandas.DataFrame`.
+    everything. Returns one long-format `pandas.DataFrame`. `verbose`
+    (default on) prints live per-dataset and per-(fold, learner)
+    progress, flushed immediately, so a long run's state is visible even
+    piped to a file.
   - `experiments.stats`: optional, separately-callable statistics over a
     `run_cv` table -- `mean_rank`, `friedman_test`
     (`scipy.stats.friedmanchisquare`), `critical_difference_diagram`

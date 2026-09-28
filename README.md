@@ -2123,6 +2123,19 @@ Three categories are computed from each entry's statistics:
 | `size` | `small` (< 1,000 rows), `medium` (1,000-10,000), `large` (> 10,000) |
 | `attributes` | `categorical` (all attributes nominal), `numeric` (all numeric), `mixed` |
 
+`task` x `size` for the 100 loadable entries, for gauging how big a
+`select(...)`/`.parse(...)` run is before starting it (a demo's default
+should stay small/medium -- see *Try it* below; `size="large"` climbs
+past 10,000 rows up to 581,012, so an `all` run is an overnight-on-a-
+strong-machine job, not a quick one):
+
+| | binary | multiclass | total |
+|---|--:|--:|--:|
+| `small` (< 1,000 rows) | 25 | 17 | 42 |
+| `medium` (1,000-10,000) | 19 | 22 | 41 |
+| `large` (> 10,000) | 10 | 7 | 17 |
+| **total** | **54** | **46** | **100** |
+
 `tags` record where an entry comes from: `cc18` (the OpenML-CC18 benchmark
 suite, minus its 13 image/signal/text datasets with more than 200
 attributes), `lord` (the datasets of the LORD evaluation), `xai` (classic

@@ -32,6 +32,15 @@ Notes for the demo overhaul on this branch.
 
 Suggested order: infrastructure, (a), (d), (b), (c), (e), (f), tour demos.
 
+Decided (2026-09-28): infrastructure landed as `pyrulearn.experiments`
+(`runner`/`stats`/`report`/`catalog`, the last moved from
+`pyrulearn.data.catalog`). `demo_ripper_comparison.py` stays its own
+separate demo rather than folding into (a) -- migrated onto the new
+infra, `jrip_native` (JRip on raw data) dropped, and the two Slipper
+variants (`Slipper`, `IModSlipper`) added to it. **Next up after that:
+(e), also kept as its own demo** -- native numeric-attribute handling
+vs. discretization.
+
 Open questions: infrastructure in `examples/` or as a library module
 (e.g. `pyrulearn.experiments`; leaning towards the library); statistics
 (mean ranks only, or Friedman tests with critical-difference diagrams);

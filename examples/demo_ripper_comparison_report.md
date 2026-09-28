@@ -1,118 +1,101 @@
-# RIPPER comparison: jrip / jrip_native / wittgenstein / pypper
+# RIPPER-family comparison: Weka:JRip / Witt:RIPPER / Pypper / Slipper
 
-`jrip`, `wittgenstein` and `pypper` share one binarized feature set (`build_dataspec` + `binarize`, one DataSpec per dataset); `jrip_native` is the same Weka JRip run on the raw columns instead (its own discretization). 70/30 stratified split, seed 0, datasets capped at 1600 rows. wittgenstein on multi-class = manual one-vs-rest (one fit per class, rules pooled). `bin.feat` is the shared binary feature count -- not what `jrip_native` used.
+## Setup
 
-![accuracy and fit time per dataset](demo_ripper_comparison.png)
+Four RIPPER-family rule learners -- Weka:JRip, Witt:RIPPER,
+Pypper, Slipper -- compared on 44 binary datasets from
+`pyrulearn.experiments.catalog`
+(default: 'binary,small,medium'; `--datasets` overrides the selection,
+e.g. 'small,medium' or 'all' -- see the module docstring for what those add).
 
-| dataset | n | bin.feat | classes | algo | acc | rules | conds | conds/rule | fit s |
-|---|--:|--:|--:|---|--:|--:|--:|--:|--:|
-| vote | 435 | 96 | 2 | jrip | 0.931 | 2 | 4 | 2.0 | 1.2 |
-| vote | 435 | 96 | 2 | jrip_native | 0.931 | 3 | 7 | 2.3 | 1.4 |
-| vote | 435 | 96 | 2 | wittgenstein | 0.908 | 3 | 9 | 3.0 | 0.2 |
-| vote | 435 | 96 | 2 | pypper | 0.947 | 1 | 1 | 1.0 | 0.3 |
-| breast-cancer | 286 | 78 | 2 | jrip | 0.698 | 1 | 2 | 2.0 | 0.7 |
-| breast-cancer | 286 | 78 | 2 | jrip_native | 0.698 | 1 | 2 | 2.0 | 1.5 |
-| breast-cancer | 286 | 78 | 2 | wittgenstein | 0.686 | 1 | 2 | 2.0 | 0.2 |
-| breast-cancer | 286 | 78 | 2 | pypper | 0.616 | 1 | 1 | 1.0 | 0.3 |
-| colic | 368 | 340 | 2 | jrip | 0.919 | 4 | 8 | 2.0 | 1.3 |
-| colic | 368 | 340 | 2 | jrip_native | 0.892 | 3 | 5 | 1.7 | 1.5 |
-| colic | 368 | 340 | 2 | wittgenstein | 0.901 | 3 | 6 | 2.0 | 0.8 |
-| colic | 368 | 340 | 2 | pypper | 0.901 | 2 | 3 | 1.5 | 3.2 |
-| credit-approval | 690 | 144 | 2 | jrip | 0.879 | 4 | 9 | 2.2 | 1.1 |
-| credit-approval | 690 | 144 | 2 | jrip_native | 0.855 | 2 | 2 | 1.0 | 1.5 |
-| credit-approval | 690 | 144 | 2 | wittgenstein | 0.831 | 5 | 13 | 2.6 | 0.5 |
-| credit-approval | 690 | 144 | 2 | pypper | 0.870 | 5 | 12 | 2.4 | 2.1 |
-| credit-g | 1000 | 154 | 2 | jrip | 0.720 | 2 | 5 | 2.5 | 1.4 |
-| credit-g | 1000 | 154 | 2 | jrip_native | 0.717 | 4 | 7 | 1.8 | 1.6 |
-| credit-g | 1000 | 154 | 2 | wittgenstein | 0.730 | 6 | 27 | 4.5 | 0.9 |
-| credit-g | 1000 | 154 | 2 | pypper | 0.717 | 3 | 12 | 4.0 | 3.3 |
-| diabetes | 768 | 80 | 2 | jrip | 0.766 | 2 | 4 | 2.0 | 1.1 |
-| diabetes | 768 | 80 | 2 | jrip_native | 0.758 | 2 | 4 | 2.0 | 1.5 |
-| diabetes | 768 | 80 | 2 | wittgenstein | 0.745 | 3 | 11 | 3.7 | 0.4 |
-| diabetes | 768 | 80 | 2 | pypper | 0.766 | 2 | 4 | 2.0 | 0.6 |
-| sonar | 208 | 600 | 2 | jrip | 0.683 | 4 | 10 | 2.5 | 1.4 |
-| sonar | 208 | 600 | 2 | jrip_native | 0.667 | 2 | 3 | 1.5 | 1.5 |
-| sonar | 208 | 600 | 2 | wittgenstein | 0.778 | 2 | 3 | 1.5 | 1.1 |
-| sonar | 208 | 600 | 2 | pypper | 0.698 | 3 | 7 | 2.3 | 10.9 |
-| ionosphere | 351 | 322 | 2 | jrip | 0.877 | 6 | 9 | 1.5 | 1.2 |
-| ionosphere | 351 | 322 | 2 | jrip_native | 0.887 | 4 | 6 | 1.5 | 1.5 |
-| ionosphere | 351 | 322 | 2 | wittgenstein | 0.868 | 6 | 9 | 1.5 | 0.6 |
-| ionosphere | 351 | 322 | 2 | pypper | 0.887 | 4 | 7 | 1.8 | 2.2 |
-| tic-tac-toe | 958 | 54 | 2 | jrip | 0.979 | 8 | 24 | 3.0 | 1.0 |
-| tic-tac-toe | 958 | 54 | 2 | jrip_native | 0.979 | 10 | 35 | 3.5 | 1.5 |
-| tic-tac-toe | 958 | 54 | 2 | wittgenstein | 0.979 | 8 | 24 | 3.0 | 0.2 |
-| tic-tac-toe | 958 | 54 | 2 | pypper | 0.979 | 8 | 24 | 3.0 | 0.4 |
-| banknote-authentication | 1372 | 40 | 2 | jrip | 0.983 | 5 | 11 | 2.2 | 0.8 |
-| banknote-authentication | 1372 | 40 | 2 | jrip_native | 0.978 | 6 | 13 | 2.2 | 1.4 |
-| banknote-authentication | 1372 | 40 | 2 | wittgenstein | 0.983 | 6 | 16 | 2.7 | 0.1 |
-| banknote-authentication | 1372 | 40 | 2 | pypper | 0.983 | 5 | 11 | 2.2 | 0.2 |
-| hepatitis | 155 | 126 | 2 | jrip | 0.745 | 2 | 3 | 1.5 | 0.6 |
-| hepatitis | 155 | 126 | 2 | jrip_native | 0.723 | 1 | 2 | 2.0 | 1.4 |
-| hepatitis | 155 | 126 | 2 | wittgenstein | 0.830 | 3 | 5 | 1.7 | 0.2 |
-| hepatitis | 155 | 126 | 2 | pypper | 0.830 | 3 | 5 | 1.7 | 0.4 |
-| heart-statlog | 270 | 80 | 2 | jrip | 0.765 | 3 | 7 | 2.3 | 0.6 |
-| heart-statlog | 270 | 80 | 2 | jrip_native | 0.815 | 3 | 7 | 2.3 | 1.4 |
-| heart-statlog | 270 | 80 | 2 | wittgenstein | 0.741 | 5 | 14 | 2.8 | 0.2 |
-| heart-statlog | 270 | 80 | 2 | pypper | 0.852 | 3 | 8 | 2.7 | 0.3 |
-| kr-vs-kp | 1600 | 76 | 2 | jrip | 0.983 | 12 | 34 | 2.8 | 1.2 |
-| kr-vs-kp | 1600 | 76 | 2 | jrip_native | 0.979 | 11 | 30 | 2.7 | 1.6 |
-| kr-vs-kp | 1600 | 76 | 2 | wittgenstein | 0.967 | 14 | 39 | 2.8 | 0.4 |
-| kr-vs-kp | 1600 | 76 | 2 | pypper | 0.958 | 7 | 23 | 3.3 | 0.7 |
-| iris | 150 | 40 | 3 | jrip | 0.956 | 3 | 5 | 1.7 | 0.5 |
-| iris | 150 | 40 | 3 | jrip_native | 1.000 | 2 | 4 | 2.0 | 1.3 |
-| iris | 150 | 40 | 3 | wittgenstein | 0.956 | 5 | 7 | 1.4 | 0.1 |
-| iris | 150 | 40 | 3 | pypper | 1.000 | 2 | 3 | 1.5 | 0.0 |
-| wine | 178 | 130 | 3 | jrip | 0.926 | 2 | 3 | 1.5 | 0.6 |
-| wine | 178 | 130 | 3 | jrip_native | 0.944 | 3 | 6 | 2.0 | 1.4 |
-| wine | 178 | 130 | 3 | wittgenstein | 0.870 | 5 | 7 | 1.4 | 0.4 |
-| wine | 178 | 130 | 3 | pypper | 0.889 | 2 | 3 | 1.5 | 0.2 |
-| glass | 214 | 90 | 6 | jrip | 0.677 | 6 | 18 | 3.0 | 0.6 |
-| glass | 214 | 90 | 6 | jrip_native | 0.554 | 6 | 14 | 2.3 | 1.3 |
-| glass | 214 | 90 | 6 | wittgenstein | 0.738 | 14 | 35 | 2.5 | 0.6 |
-| glass | 214 | 90 | 6 | pypper | 0.769 | 6 | 15 | 2.5 | 0.6 |
-| vehicle | 846 | 180 | 4 | jrip | 0.657 | 12 | 33 | 2.8 | 1.2 |
-| vehicle | 846 | 180 | 4 | jrip_native | 0.634 | 11 | 26 | 2.4 | 1.5 |
-| vehicle | 846 | 180 | 4 | wittgenstein | 0.591 | 20 | 68 | 3.4 | 2.1 |
-| vehicle | 846 | 180 | 4 | pypper | 0.654 | 8 | 19 | 2.4 | 3.6 |
-| segment | 1600 | 168 | 7 | jrip | 0.929 | 17 | 53 | 3.1 | 1.6 |
-| segment | 1600 | 168 | 7 | jrip_native | 0.933 | 14 | 33 | 2.4 | 1.6 |
-| segment | 1600 | 168 | 7 | wittgenstein | 0.912 | 27 | 87 | 3.2 | 3.0 |
-| segment | 1600 | 168 | 7 | pypper | 0.948 | 16 | 51 | 3.2 | 3.9 |
-| car | 1600 | 42 | 4 | jrip | 0.923 | 13 | 61 | 4.7 | 0.9 |
-| car | 1600 | 42 | 4 | jrip_native | 0.883 | 35 | 132 | 3.8 | 1.5 |
-| car | 1600 | 42 | 4 | wittgenstein | 0.900 | 39 | 181 | 4.6 | 1.4 |
-| car | 1600 | 42 | 4 | pypper | 0.940 | 12 | 55 | 4.6 | 0.8 |
-| balance-scale | 625 | 32 | 3 | jrip | 0.777 | 6 | 20 | 3.3 | 0.6 |
-| balance-scale | 625 | 32 | 3 | jrip_native | 0.814 | 9 | 27 | 3.0 | 1.4 |
-| balance-scale | 625 | 32 | 3 | wittgenstein | 0.819 | 24 | 77 | 3.2 | 0.5 |
-| balance-scale | 625 | 32 | 3 | pypper | 0.803 | 5 | 15 | 3.0 | 0.2 |
-| zoo | 101 | 40 | 7 | jrip | 0.806 | 6 | 10 | 1.7 | 0.5 |
-| zoo | 101 | 40 | 7 | jrip_native | 0.806 | 6 | 10 | 1.7 | 1.3 |
-| zoo | 101 | 40 | 7 | wittgenstein | 0.742 | 7 | 10 | 1.4 | 0.2 |
-| zoo | 101 | 40 | 7 | pypper | 0.806 | 6 | 9 | 1.5 | 0.1 |
-| ecoli | 336 | 54 | 8 | jrip | 0.822 | 7 | 11 | 1.6 | 0.6 |
-| ecoli | 336 | 54 | 8 | jrip_native | 0.822 | 8 | 15 | 1.9 | 1.5 |
-| ecoli | 336 | 54 | 8 | wittgenstein | 0.832 | 16 | 43 | 2.7 | 0.6 |
-| ecoli | 336 | 54 | 8 | pypper | 0.842 | 7 | 13 | 1.9 | 0.2 |
-| lymph | 148 | 90 | 4 | jrip | 0.889 | 3 | 8 | 2.7 | 0.6 |
-| lymph | 148 | 90 | 4 | jrip_native | 0.756 | 3 | 5 | 1.7 | 1.3 |
-| lymph | 148 | 90 | 4 | wittgenstein | 0.778 | 5 | 8 | 1.6 | 0.3 |
-| lymph | 148 | 90 | 4 | pypper | 0.822 | 3 | 5 | 1.7 | 0.2 |
+A fifth, IMod:Slipper (`imodels`' SlipperClassifier), is checked
+separately first against the native Slipper on a handful of small,
+low-feature-count datasets, then left out of the main comparison below --
+see "Why IMod:Slipper isn't in the main comparison". Across 4 datasets (3-fold), IMod:Slipper was no more accurate than Slipper (mean accuracy 0.690 vs. 0.804) while taking 14x as long per fit (3.27s vs. 0.23s, mean) -- not worth its cost at the scale of the main comparison below.
 
-## Means (successful fits only)
+Protocol: `10`-fold stratified cross-validation
+(`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
+(`build_dataspec(max_intervals=6)`), the test fold binarized
+against that same `DataSpec` -- every learner sees the identical
+Boolean feature matrix per fold, so differences reflect the algorithms,
+not the data preparation. Each fit is capped at 180s; a
+timeout or an exception is recorded as a failure, not fatal to the run.
 
-| algo | datasets | mean acc | mean rules | mean conds | mean conds/rule | mean fit s |
-|---|--:|--:|--:|--:|--:|--:|
-| jrip | 23 | 0.839 | 5.7 | 15.3 | 2.37 | 0.93 |
-| jrip_native | 23 | 0.827 | 6.5 | 17.2 | 2.15 | 1.45 |
-| wittgenstein | 23 | 0.830 | 9.9 | 30.5 | 2.57 | 0.65 |
-| pypper | 23 | 0.847 | 5.0 | 13.3 | 2.28 | 1.50 |
+Measures: test accuracy, rule count, total condition count, fit time
+(seconds, JVM startup included for Weka:JRip). Witt:RIPPER auto-dispatches
+one-vs-rest for multi-class (see the module docstring); every other
+learner handles multi-class natively.
 
-## Mean accuracy by target type
+![accuracy vs. complexity, fit time per dataset](demo_ripper_comparison.png)
 
-| algo | binary | multi-class |
-|---|--:|--:|
-| jrip | 0.841 | 0.836 |
-| jrip_native | 0.837 | 0.815 |
-| wittgenstein | 0.842 | 0.814 |
-| pypper | 0.846 | 0.847 |
+![critical-difference diagram (accuracy)](demo_ripper_comparison_cd.png)
+
+## Why IMod:Slipper isn't in the main comparison
+
+Across 4 datasets (3-fold), IMod:Slipper was no more accurate than Slipper (mean accuracy 0.690 vs. 0.804) while taking 14x as long per fit (3.27s vs. 0.23s, mean) -- not worth its cost at the scale of the main comparison below.
+
+| learner | accuracy | fit_time |
+|---|---|---|
+| IMod:Slipper | 0.690 | 3.271 |
+| Slipper | 0.804 | 0.233 |
+| overall | 0.747 | 1.752 |
+
+## Per-dataset results (mean across folds)
+
+| dataset | accuracy | n_rules | n_conditions | conds_per_rule | fit_time |
+|---|---|---|---|---|---|
+| SPECT | 0.803 | 3.700 | 13.675 | 5.329 | 0.139 |
+| Titanic | 0.782 | 6.125 | 14.700 | 2.397 | 0.346 |
+| banknote-authentication | 0.986 | 7.125 | 15.925 | 2.297 | 0.267 |
+| blood-transfusion-service-center | 0.754 | 4.825 | 9.800 | 2.348 | 0.220 |
+| breast-cancer | 0.680 | 4.425 | 7.625 | 2.056 | 0.206 |
+| breast-w | 0.943 | 7.150 | 13.375 | 2.150 | 0.601 |
+| churn | 0.914 | 11.400 | 39.375 | 3.435 | 3.904 |
+| climate-model-simulation-crashes | 0.941 | 5.475 | 14.625 | 2.990 | 0.673 |
+| colic | 0.832 | 5.875 | 11.525 | 2.264 | 0.610 |
+| compas-two-years | 0.670 | 6.800 | 18.175 | 2.821 | 2.626 |
+| credit-approval | 0.846 | 6.700 | 14.700 | 2.229 | 0.629 |
+| credit-g | 0.725 | 6.075 | 17.200 | 3.553 | 1.130 |
+| cylinder-bands | 0.664 | 8.325 | 15.850 | 2.365 | 3.531 |
+| diabetes | 0.725 | 6.650 | 18.125 | 2.981 | 0.488 |
+| dresses-sales | 0.562 | 5.175 | 6.975 | 1.812 | 1.056 |
+| heart-c | 0.796 | 5.900 | 11.975 | 2.292 | 0.316 |
+| heart-h | 0.717 | 5.700 | 10.525 | 2.116 | 0.308 |
+| heart-statlog | 0.810 | 5.700 | 10.575 | 2.164 | 0.290 |
+| heloc | 0.699 | 11.325 | 48.675 | 4.082 | 16.763 |
+| hepatitis | 0.793 | 4.875 | 8.425 | 1.837 | 0.229 |
+| ilpd | 0.662 | 4.625 | 10.775 | 2.849 | 0.534 |
+| ionosphere | 0.897 | 7.425 | 10.525 | 1.490 | 1.118 |
+| kc1 | 0.774 | 5.350 | 13.975 | 3.113 | 1.619 |
+| kc2 | 0.819 | 4.975 | 8.775 | 2.116 | 0.733 |
+| kr-vs-kp | 0.988 | 15.075 | 46.925 | 3.103 | 0.794 |
+| mofn-3-7-10 | 0.971 | 15.750 | 69.775 | 4.351 | 0.326 |
+| molecular-biology_promoters | 0.807 | 4.850 | 7.525 | 1.810 | 1.386 |
+| monks-problems-1 | 0.957 | 6.175 | 17.100 | 2.737 | 0.173 |
+| monks-problems-2 | 0.764 | 9.250 | 37.100 | 4.433 | 0.267 |
+| monks-problems-3 | 0.989 | 4.850 | 9.125 | 1.767 | 0.146 |
+| mushroom | 0.997 | 7.150 | 13.800 | 1.933 | 2.872 |
+| ozone-level-8hr | 0.902 | 7.100 | 23.200 | 3.561 | 15.221 |
+| pc1 | 0.875 | 4.700 | 10.250 | 2.526 | 0.987 |
+| pc3 | 0.831 | 5.400 | 16.025 | 3.477 | 3.576 |
+| pc4 | 0.875 | 6.450 | 22.075 | 3.625 | 3.996 |
+| phoneme | 0.801 | 13.250 | 63.050 | 4.793 | 2.752 |
+| qsar-biodeg | 0.827 | 9.250 | 29.400 | 3.389 | 4.500 |
+| sick | 0.940 | 7.375 | 21.925 | 3.016 | 1.141 |
+| sonar | 0.768 | 6.600 | 10.600 | 1.902 | 3.109 |
+| spambase | 0.928 | 17.150 | 75.300 | 4.312 | 20.885 |
+| tic-tac-toe | 0.977 | 9.825 | 29.825 | 3.049 | 0.280 |
+| vote | 0.949 | 4.675 | 9.900 | 2.002 | 0.137 |
+| wdbc | 0.945 | 6.825 | 13.800 | 2.155 | 0.901 |
+| wilt | 0.965 | 6.200 | 16.600 | 2.607 | 0.701 |
+| overall | 0.838 | 7.264 | 20.663 | 2.805 | 2.329 |
+
+## Mean ranks (accuracy, failures tied for last)
+
+| learner | mean rank |
+|---|--:|
+| Slipper | 2.09 |
+| Weka:JRip | 2.15 |
+| Pypper | 2.42 |
+| Witt:RIPPER | 3.34 |
+

@@ -314,7 +314,14 @@ def run_cv(
     doesn't detect that `datasets`/`max_intervals` changed between runs;
     clear `cache_dir` by hand if that matters).
 
-    `verbose` (default True) prints one line per dataset as it starts.
+    `verbose` (default True) prints progress as it runs: one line per
+    dataset as it starts, then one line per (fold, learner) -- name and
+    fold index first (so a slow fit's identity is visible immediately,
+    not only once it finishes), the outcome (fit time, plus accuracy or
+    the error) appended once that cell is done, or ``(cached)`` instead
+    of doing any work at all for a row `cache_dir` already has. Each
+    line is flushed immediately, so progress is visible live even when
+    stdout is redirected to a file or piped.
     """
     import pandas as pd
 
@@ -323,7 +330,7 @@ def run_cv(
     try:
         for entry in datasets:
             if verbose:
-                print(f"{entry.name} ...")
+                print(f"{entry.name} ...", flush=True)
             df, target = entry.load()
             y_all = df[target].to_numpy()
             folds = _stratified_folds(y_all, n_folds, random_state)
@@ -339,15 +346,23 @@ def run_cv(
                 test_rep = BooleanDataRepresentation(spec, test_X, test_df[target].to_numpy())
 
                 for learner in learners:
+                    if verbose:
+                        print(f"  fold {fold + 1}/{n_folds}  {learner.display_name:<15s} ...",
+                             end="", flush=True)
                     key = _cache_key(entry, n_folds, fold, random_state, learner)
                     cached = _cache_load(cache_dir, key)
                     if cached is not None:
                         rows.append(cached)
+                        if verbose:
+                            print(" (cached)", flush=True)
                         continue
                     row = {"dataset": entry.name, "fold": fold, "learner": learner.display_name}
                     row.update(_measure(learner, train_rep, test_rep, timeout_runner, measure_fn))
                     _cache_save(cache_dir, key, row)
                     rows.append(row)
+                    if verbose:
+                        outcome = row["error"] if row["error"] is not None else f"acc={row['accuracy']:.3f}"
+                        print(f" {row['fit_time']:6.2f}s  {outcome}", flush=True)
     finally:
         if timeout_runner is not None:
             timeout_runner.close()

@@ -52,6 +52,35 @@ def test_run_cv_produces_the_documented_columns():
     assert (results["fit_time"] >= 0).all()
 
 
+def test_run_cv_verbose_prints_per_dataset_and_per_fold_progress(capsys):
+    entries = [_synthetic_entry("synth_a"), _synthetic_entry("synth_b", n=50, seed=1)]
+    run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, random_state=0, verbose=True)
+    out = capsys.readouterr().out
+    for name in ("synth_a", "synth_b"):
+        assert f"{name} ..." in out
+    for learner in LEARNERS:
+        assert learner.display_name in out
+    assert "fold 1/2" in out and "fold 2/2" in out
+    assert "acc=" in out  # every fit succeeds on this dataset -- no "error" outcome to check instead
+
+
+def test_run_cv_verbose_false_prints_nothing(capsys):
+    entries = [_synthetic_entry("synth_a")]
+    run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, random_state=0, verbose=False)
+    assert capsys.readouterr().out == ""
+
+
+def test_run_cv_verbose_marks_cached_rows(tmp_path, capsys):
+    entries = [_synthetic_entry("synth_a")]
+    cache_dir = str(tmp_path / "cache")
+    run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, random_state=0,
+          cache_dir=cache_dir, verbose=False)
+    capsys.readouterr()  # discard the first (uncached) run's output, if any
+    run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, random_state=0,
+          cache_dir=cache_dir, verbose=True)
+    assert "(cached)" in capsys.readouterr().out
+
+
 def test_run_cv_measure_fn_adds_extra_columns():
     entries = [_synthetic_entry("synth_a")]
 
