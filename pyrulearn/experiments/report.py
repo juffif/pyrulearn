@@ -13,7 +13,7 @@ already does.
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Sequence, Union
 
 
 def render_setup_section(description: str) -> str:
@@ -24,8 +24,8 @@ def render_setup_section(description: str) -> str:
     return f"## Setup\n\n{description.strip()}\n\n"
 
 
-def render_results_table(results, columns: Sequence[str], group_by: str = "dataset",
-                         float_format: str = "{:.3f}") -> str:
+def render_results_table(results, columns: Sequence[str], group_by: Union[str, Sequence[str]] = "dataset",
+                         float_format: str = "{:.3f}", include_overall: bool = True) -> str:
     """A plain Markdown table over `results` (a `run_cv`-shaped
     long-format DataFrame): one row per `group_by` value (default:
     per dataset) then an ``overall`` row averaging across all of them,
@@ -34,17 +34,43 @@ def render_results_table(results, columns: Sequence[str], group_by: str = "datas
     per-dataset-then-overall accuracy/runtime table. Values are the
     plain mean across whatever rows fall in that group (`run_cv`'s
     per-fold rows, most commonly) -- NaN (every fold failed) prints as
-    ``n/a``. `results` is not mutated."""
+    ``n/a``. `results` is not mutated.
+
+    `group_by` can also be a list of columns, e.g. ``["dataset",
+    "learner"]`` for one row per (dataset, learner) pair -- **the usual
+    choice for a per-dataset table that also compares algorithms**; a
+    single `group_by` averages every learner (and everything else)
+    together within each group, which silently erases the very
+    comparison most reports want.
+
+    `include_overall` (default True) adds that final row, spanning every
+    row regardless of how many `group_by` columns there are -- pass
+    `False` when `group_by` includes ``"learner"`` (or anything else
+    naming a different *thing being compared*, not just a different
+    *sample* of the same thing): averaging accuracy across several
+    algorithms isn't a meaningful number the way averaging across
+    datasets or folds is, so that row would misrepresent the table
+    rather than summarize it.
+    """
     import pandas as pd
 
-    grouped = results.groupby(group_by)[list(columns)].mean(numeric_only=True)
-    overall = results[list(columns)].mean(numeric_only=True)
-    overall.name = "overall"
-    table = pd.concat([grouped, overall.to_frame().T])
+    group_cols = [group_by] if isinstance(group_by, str) else list(group_by)
+    grouped = results.groupby(group_cols)[list(columns)].mean(numeric_only=True)
+    table = grouped
+    if include_overall:
+        overall = results[list(columns)].mean(numeric_only=True)
+        overall.name = "overall"
+        table = pd.concat([grouped, overall.to_frame().T])
 
-    lines = [f"| {group_by} | " + " | ".join(columns) + " |",
-            "|" + "---|" * (len(columns) + 1)]
+    header_cols = group_cols + list(columns)
+    lines = ["| " + " | ".join(header_cols) + " |",
+            "|" + "---|" * len(header_cols)]
     for name, row in table.iterrows():
-        cells = [(float_format.format(v) if v == v else "n/a") for v in row]  # v == v is False for NaN
-        lines.append(f"| {name} | " + " | ".join(cells) + " |")
+        # a plain (single-column) group_by gives a scalar `name`; several
+        # columns give a tuple -- except the appended "overall" row,
+        # always a scalar, padded out to the same column count.
+        key_parts = list(name) if isinstance(name, tuple) else [name] + [""] * (len(group_cols) - 1)
+        cells = [str(k) for k in key_parts] + \
+            [(float_format.format(v) if v == v else "n/a") for v in row]  # v == v is False for NaN
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"

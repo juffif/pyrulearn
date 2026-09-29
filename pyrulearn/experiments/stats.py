@@ -12,6 +12,9 @@ measure columns), so a demo picks whichever of these (if any) its own
 report needs:
 
 - `mean_rank` -- per-learner average rank across datasets.
+- `win_counts` -- per-learner count of datasets it was (tied-for-)best
+  on, generalizing ``demo_workflow_comparison.py``'s pairwise
+  `_better_counts` to any number of learners.
 - `friedman_test` -- whether the learners' ranks differ significantly
   overall (`scipy.stats.friedmanchisquare`).
 - `critical_difference_diagram` -- mean ranks plus the Nemenyi/Demsar
@@ -62,6 +65,28 @@ def mean_rank(results, measure: str, higher_is_better: bool = True):
         last_rank = n_ok + (n_fail + 1) / 2
         ranks.loc[dataset, failed] = last_rank
     return ranks.mean(axis=0).sort_values()
+
+
+def win_counts(results, measure: str, higher_is_better: bool = True):
+    """Each learner's win count: for every dataset, whoever's `measure`
+    is best gets a point -- a tie among the best split that point evenly
+    among them (`demo_workflow_comparison.py`'s `_better_counts`
+    convention, generalized from two learners to any number). A dataset
+    where every learner failed (no successful fold at all -- see the
+    module docstring) contributes no points to anyone. Returns a
+    `pandas.Series` indexed by learner, sorted most-wins-first."""
+    import pandas as pd
+
+    table = _pivot(results, measure)
+    wins = pd.Series(0.0, index=table.columns)
+    for _, row in table.iterrows():
+        ok = row.dropna()
+        if ok.empty:
+            continue
+        best = ok.max() if higher_is_better else ok.min()
+        winners = ok.index[ok == best]
+        wins.loc[winners] += 1.0 / len(winners)
+    return wins.sort_values(ascending=False)
 
 
 @dataclass

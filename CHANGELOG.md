@@ -35,12 +35,19 @@ is in early development (alpha): until 1.0, minor versions may change the API.
     progress, flushed immediately, so a long run's state is visible even
     piped to a file.
   - `experiments.stats`: optional, separately-callable statistics over a
-    `run_cv` table -- `mean_rank`, `friedman_test`
+    `run_cv` table -- `mean_rank`, `win_counts` (per-learner count of
+    datasets it was (tied-for-)best on), `friedman_test`
     (`scipy.stats.friedmanchisquare`), `critical_difference_diagram`
     (hand-rolled Nemenyi/Demsar (2006) formula, `matplotlib`). Never run
     automatically by `run_cv`.
   - `experiments.report`: small Markdown-writing building blocks
-    (`render_setup_section`, `render_results_table`).
+    (`render_setup_section`, `render_results_table`). `render_results_table`'s
+    `group_by` also takes a list of columns (e.g. `["dataset", "learner"]`,
+    for a per-dataset table that still breaks out each algorithm -- a
+    single `group_by` averages every learner together within each row,
+    silently erasing the comparison); `include_overall=False` drops its
+    trailing "overall" row for a `group_by` that mixes different
+    algorithms together, where averaging across them isn't meaningful.
   - New `experiments` extras group (`pandas`, `scipy`, `matplotlib`).
 - `pyrulearn.data.io.build_dataspec`: a new `skip_unusable` flag leaves
   out a column with no useful split (rather than raising) -- for

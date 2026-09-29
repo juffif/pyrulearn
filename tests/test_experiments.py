@@ -13,7 +13,7 @@ from pyrulearn.experiments.catalog import CatalogEntry
 from pyrulearn.experiments.report import render_results_table, render_setup_section
 from pyrulearn.experiments.runner import TimeoutRunner, run_cv
 from pyrulearn.experiments.stats import (
-    critical_difference, critical_difference_diagram, friedman_test, mean_rank,
+    critical_difference, critical_difference_diagram, friedman_test, mean_rank, win_counts,
 )
 from pyrulearn.learners.seco import PFossil, Pypper
 
@@ -129,12 +129,14 @@ def _sleep_then_return(seconds: float) -> str:
 
 
 def test_timeout_runner_records_a_timeout_instead_of_raising():
-    # timeout=3.0 leaves headroom for the replacement worker's own spawn
-    # (~1-2s: a fresh `python -m multiprocessing.spawn` reimporting this
-    # test module and its dependencies) on top of the trivial call itself.
-    runner = TimeoutRunner(timeout=3.0)
+    # timeout=15.0 leaves generous headroom for the replacement worker's
+    # own spawn -- a fresh `python -m multiprocessing.spawn` reimporting
+    # this test module and its dependencies, measured at ~1.3s in
+    # isolation but seen taking several times that under load (a smaller
+    # budget here made this test measurably flaky).
+    runner = TimeoutRunner(timeout=15.0)
     try:
-        result, error = runner.run(_sleep_then_return, 30.0)
+        result, error = runner.run(_sleep_then_return, 60.0)
         assert result is None
         assert error == "timeout"
         # the worker was replaced -- a fast call afterwards still works
@@ -180,6 +182,30 @@ def test_mean_rank_ties_a_failed_pair_for_last():
     # d1: A=1, B=2. d2: B=1 (A failed, tied for "last" among 2 -> rank 2)
     assert ranks["A"] == pytest.approx((1 + 2) / 2)
     assert ranks["B"] == pytest.approx((2 + 1) / 2)
+
+
+def test_win_counts_counts_best_per_dataset_ties_split():
+    results = pd.DataFrame({
+        "dataset": ["d1", "d1", "d2", "d2", "d3", "d3"],
+        "learner": ["A", "B", "A", "B", "A", "B"],
+        "accuracy": [0.9, 0.8, 0.7, 0.9, 0.6, 0.6],  # d1: A wins, d2: B wins, d3: tie
+    })
+    wins = win_counts(results, "accuracy", higher_is_better=True)
+    assert wins["A"] == pytest.approx(1.5)
+    assert wins["B"] == pytest.approx(1.5)
+    assert list(wins.index) == list(wins.sort_values(ascending=False).index)  # most wins first
+
+
+def test_win_counts_a_dataset_where_everyone_failed_awards_nothing():
+    results = pd.DataFrame({
+        "dataset": ["d1", "d1", "d2", "d2"],
+        "learner": ["A", "B", "A", "B"],
+        "accuracy": [0.9, 0.8, np.nan, np.nan],
+    })
+    wins = win_counts(results, "accuracy")
+    assert wins["A"] == pytest.approx(1.0)
+    assert wins["B"] == pytest.approx(0.0)
+    assert wins.sum() == pytest.approx(1.0)  # d2 contributed nothing
 
 
 def test_friedman_test_runs_on_a_complete_matrix():
@@ -240,3 +266,30 @@ def test_render_results_table_has_an_overall_row_and_marks_failures():
 
     all_nan = pd.DataFrame({"dataset": ["d1"], "learner": ["A"], "accuracy": [np.nan]})
     assert "n/a" in render_results_table(all_nan, ["accuracy"])
+
+
+def test_render_results_table_group_by_list_breaks_out_every_column():
+    results = pd.DataFrame({
+        "dataset": ["d1", "d1", "d2", "d2"],
+        "learner": ["A", "B", "A", "B"],
+        "accuracy": [0.8, 0.6, 0.9, 0.7],
+    })
+    out = render_results_table(results, ["accuracy"], group_by=["dataset", "learner"])
+    assert "| dataset | learner | accuracy |" in out
+    assert "| d1 | A | 0.800 |" in out
+    assert "| d1 | B | 0.600 |" in out
+    assert "| d2 | A | 0.900 |" in out
+    assert "| d2 | B | 0.700 |" in out
+    assert "| overall |  | 0.750 |" in out  # padded blank for the second group_by column
+
+
+def test_render_results_table_include_overall_false_omits_the_row():
+    results = pd.DataFrame({
+        "dataset": ["d1", "d1"],
+        "learner": ["A", "B"],
+        "accuracy": [0.8, 0.6],
+    })
+    out = render_results_table(results, ["accuracy"], group_by="learner", include_overall=False)
+    assert "| A | 0.800 |" in out
+    assert "| B | 0.600 |" in out
+    assert "overall" not in out

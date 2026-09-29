@@ -4,16 +4,15 @@ examples/demo_ripper_comparison.py
 
 Four RIPPER-family rule learners (Slipper included -- Cohen & Singer's
 own confidence-rated-boosting follow-up to RIPPER, not a separate
-family), cross-validated
-through `pyrulearn.experiments.runner.run_cv` (shared per-fold
-binarization, per-fit timeout, uniform measurement, fold caching) on
-every small/medium binary dataset in `pyrulearn.experiments.catalog`
-(44 of them, by default -- `--datasets` widens or narrows the selection,
-e.g. to `small,medium` for 83 datasets including multi-class, or `all`
-for the full 100-dataset catalog, sized for a strong machine running
-overnight rather than a quick check) -- this demo picks the learners,
-the datasets, and what to report; everything else is the shared
-infrastructure:
+family), cross-validated through `pyrulearn.experiments.runner.run_cv`
+(shared per-fold binarization, per-fit timeout, uniform measurement,
+fold caching) on datasets from `pyrulearn.experiments.catalog` -- this
+demo picks the learners, the datasets, and what to report; everything
+else is the shared infrastructure. Two run sizes (see "Run:" below):
+**quick** (10 small datasets, the no-args default, output not
+checked in) and **full** (`FULL_DATASETS_SPEC` -- every small/medium
+binary dataset, 44 of them -- or any other `--datasets` spec, output to
+the checked-in report/plots):
 
 - **Weka:JRip**   -- Weka's `weka.classifiers.rules.JRip`, via
                      `pyrulearn.interfaces.weka.WekaJRip` (subprocess,
@@ -58,9 +57,17 @@ discretization) is a deliberately separate, later demo
 run Weka JRip on raw data (`jrip_native`) as a preview of that, which is
 why the two are related but no longer why they're the same script.
 
-Run: `python examples/demo_ripper_comparison.py` (needs Weka installed
-at `WEKA_JAR`/`WEKA_JAVA` below, plus the `experiments`, `wittgenstein`
-and `imodels` extras).
+Run: `python examples/demo_ripper_comparison.py` with no arguments is the
+**quick** default -- `QUICK_DATASETS_SPEC` (10 small datasets),
+`QUICK_FOLDS`-fold, well under a minute; its report/plots go to
+``demo_ripper_comparison_quick_*`` and are *not* checked in (see
+`.gitignore`) -- rerun it any time for a fast sanity check. `--full` (or
+an explicit `--datasets <spec>`) runs the full comparison instead
+(`FULL_DATASETS_SPEC`, `N_FOLDS`-fold) and writes to the canonical
+``demo_ripper_comparison_report.md``/``.png`` paths, which *are* checked
+in -- a sample from a real full run, not regenerated on every change to
+this script. Either way needs Weka installed at `WEKA_JAR`/`WEKA_JAVA`
+below, plus the `experiments`, `wittgenstein` and `imodels` extras.
 """
 
 from __future__ import annotations
@@ -73,7 +80,7 @@ import numpy as np
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import render_results_table, render_setup_section
 from pyrulearn.experiments.runner import run_cv
-from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank
+from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
 from pyrulearn.interfaces.imodels import IModSlipper
 from pyrulearn.interfaces.weka import WekaJRip
 from pyrulearn.interfaces.wittgenstein import WittRIPPER as _WittRIPPERBase
@@ -100,39 +107,71 @@ PRELIM_FOLDS = 3
 PRELIM_TIMEOUT = 90.0
 
 HERE = os.path.dirname(__file__)
+# The canonical, checked-in output -- reproduced by `--full` (or an
+# explicit `--datasets`); see FULL_DATASETS_SPEC/QUICK_DATASETS_SPEC below.
 REPORT_PATH = os.path.join(HERE, "demo_ripper_comparison_report.md")
 PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison.png")
 CD_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_cd.png")
+# The quick, no-args default's output -- *not* checked in (see .gitignore's
+# examples/*_quick_report.md / _quick*.png patterns): a fast sanity check
+# shouldn't overwrite the committed full-run sample every time it's run.
+QUICK_REPORT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick_report.md")
+QUICK_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick.png")
+QUICK_CD_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick_cd.png")
 CACHE_DIR = os.path.join(HERE, "_ripper_comparison_cache")
 
-# Default: every small/medium (<=10,000 rows) binary dataset in the
+# Full run: every small/medium (<=10,000 rows) binary dataset in the
 # catalog -- 44 of them as of this writing (25 small + 19 medium; see
-# Catalog.default().summary()). --datasets overrides this, e.g.
+# Catalog.default().summary()). `--datasets` overrides this, e.g.
 # '--datasets small,medium' (83, binary and multi-class both --
 # exercises Witt:RIPPER's multi-class dispatch) or '--datasets all'
 # (100 -- includes >10,000-row datasets, an overnight-on-a-strong-
-# machine run, not a quick one).
-DEFAULT_DATASETS_SPEC = "binary,small,medium"
+# machine run, not a quick one); `--full` is shorthand for this exact spec.
+FULL_DATASETS_SPEC = "binary,small,medium"
+
+# Quick run (the no-args default): 10 hand-picked small datasets, 3-fold
+# instead of N_FOLDS -- a sanity check that runs in well under a minute
+# (`sonar`'s 60 numeric attributes make it the slowest of the ten, still
+# a few seconds), not a statistically rigorous comparison. Named
+# explicitly (not e.g. "binary,small,10" picked at random) so it's the
+# same ten -- and the same cache hits -- every time. No monks-problems-*
+# (synthetic, and all three landing in one quick run skews it towards
+# them).
+QUICK_DATASETS_SPEC = ("vote,tic-tac-toe,hepatitis,breast-cancer,heart-statlog,"
+                       "credit-approval,colic,diabetes,ionosphere,sonar")
+QUICK_FOLDS = 3
 
 
-def _build_description(datasets, prelim_verdict: str) -> str:
+def _build_description(datasets, n_folds: int, prelim_verdict: str, quick: bool) -> str:
     n_binary = sum(1 for d in datasets if d.task == "binary")
     n_multiclass = len(datasets) - n_binary
     dataset_count = (f"{len(datasets)} binary" if n_multiclass == 0
                     else f"{n_binary} binary and {n_multiclass} multi-class")
+    mode_note = (
+        f"**Quick run** ({dataset_count} datasets, a fast sanity check, not a "
+        f"statistically rigorous comparison -- default with no arguments). For the "
+        f"full comparison ({FULL_DATASETS_SPEC!r}, 44 datasets, {N_FOLDS}-fold): "
+        f"`python examples/demo_ripper_comparison.py --full` (or an explicit "
+        f"`--datasets`); a sample from that run is committed at "
+        f"`{os.path.basename(REPORT_PATH)}` (plus its plots) in this directory.\n\n"
+        if quick else
+        f"**Full run** ({dataset_count} datasets). For a quick sanity check instead "
+        f"(10 small datasets, {QUICK_FOLDS}-fold, well under a minute): "
+        f"`python examples/demo_ripper_comparison.py` with no arguments -- its "
+        f"output isn't checked in (see `{os.path.basename(QUICK_REPORT_PATH)}` "
+        f"after running it).\n\n"
+    )
     return f"""\
-Four RIPPER-family rule learners -- Weka:JRip, Witt:RIPPER,
+{mode_note}Four RIPPER-family rule learners -- Weka:JRip, Witt:RIPPER,
 Pypper, Slipper -- compared on {dataset_count} datasets from
-`pyrulearn.experiments.catalog`
-(default: {DEFAULT_DATASETS_SPEC!r}; `--datasets` overrides the selection,
-e.g. 'small,medium' or 'all' -- see the module docstring for what those add).
+`pyrulearn.experiments.catalog`.
 
 A fifth, IMod:Slipper (`imodels`' SlipperClassifier), is checked
 separately first against the native Slipper on a handful of small,
 low-feature-count datasets, then left out of the main comparison below --
 see "Why IMod:Slipper isn't in the main comparison". {prelim_verdict}
 
-Protocol: `{N_FOLDS}`-fold stratified cross-validation
+Protocol: `{n_folds}`-fold stratified cross-validation
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical
@@ -169,8 +208,8 @@ LEARNER_ORDER = ["Weka:JRip", "Witt:RIPPER", "Pypper", "Slipper"]
 COLORS = dict(zip(LEARNER_ORDER, ["tab:blue", "tab:orange", "tab:green", "tab:red"]))
 
 
-def select_datasets(spec: Optional[str] = None):
-    return Catalog.default().parse(spec or DEFAULT_DATASETS_SPEC, random_state=RANDOM_STATE)
+def select_datasets(spec: str):
+    return Catalog.default().parse(spec, random_state=RANDOM_STATE)
 
 
 def run_preliminary_slipper_check():
@@ -198,31 +237,45 @@ def run_preliminary_slipper_check():
     return results, verdict
 
 
-def write_report(results, datasets, prelim_results, prelim_verdict: str) -> None:
+def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict: str,
+                 report_path: str, plot_path: str, cd_plot_path: str, quick: bool) -> None:
     task_by_name = {d.name: d.task for d in datasets}
     results = results.copy()
     results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
 
     lines = ["# RIPPER-family comparison: Weka:JRip / Witt:RIPPER / Pypper / Slipper\n\n"]
-    lines.append(render_setup_section(_build_description(datasets, prelim_verdict)))
-    lines.append(f"![accuracy vs. complexity, fit time per dataset]({os.path.basename(PLOT_PATH)})\n\n")
-    lines.append(f"![critical-difference diagram (accuracy)]({os.path.basename(CD_PLOT_PATH)})\n\n")
+    lines.append(render_setup_section(_build_description(datasets, n_folds, prelim_verdict, quick)))
+    lines.append(f"![accuracy vs. complexity, fit time per dataset]({os.path.basename(plot_path)})\n\n")
+    lines.append(f"![critical-difference diagram (accuracy)]({os.path.basename(cd_plot_path)})\n\n")
 
     lines.append("## Why IMod:Slipper isn't in the main comparison\n\n")
     lines.append(f"{prelim_verdict}\n\n")
-    lines.append(render_results_table(prelim_results, ["accuracy", "fit_time"], group_by="learner"))
+    lines.append(render_results_table(prelim_results, ["accuracy", "fit_time"], group_by="learner",
+                                      include_overall=False))  # averaging across two different
+    # algorithms isn't a meaningful "overall" -- see render_results_table's own docstring
     lines.append("\n")
 
-    lines.append("## Per-dataset results (mean across folds)\n\n")
-    lines.append(render_results_table(
-        results, ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]))
-    lines.append("\n")
-
-    lines.append("## Mean ranks (accuracy, failures tied for last)\n\n")
+    lines.append("## Summary by learner (mean across every dataset and fold)\n\n")
     ranks = mean_rank(results, "accuracy")
-    lines.append("| learner | mean rank |\n|---|--:|\n")
-    for learner, rank in ranks.items():
-        lines.append(f"| {learner} | {rank:.2f} |\n")
+    wins = win_counts(results, "accuracy")
+    summary = results.groupby("learner")[["accuracy", "n_rules", "conds_per_rule", "fit_time"]].mean(
+        numeric_only=True)
+    lines.append("| learner | accuracy | n_rules | conds/rule | fit_time (s) | wins | mean rank |\n"
+                "|---|--:|--:|--:|--:|--:|--:|\n")
+    for learner in ranks.index:  # ranks is already sorted best-first
+        row = summary.loc[learner]
+        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.2f} | "
+                     f"{row['conds_per_rule']:.2f} | {row['fit_time']:.2f} | "
+                     f"{wins.get(learner, 0.0):.1f} | {ranks[learner]:.2f} |\n")
+    lines.append("\n`wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
+                "split evenly (`pyrulearn.experiments.stats.win_counts`); `mean rank` -- average "
+                "accuracy rank across datasets, failures tied for last (`stats.mean_rank`).\n\n")
+
+    lines.append("## Per-dataset results, per learner (mean across folds)\n\n")
+    lines.append(render_results_table(
+        results, ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"],
+        group_by=["dataset", "learner"], include_overall=False))  # ditto -- see "Summary by
+    # learner" above instead for a meaningful per-learner overall
     lines.append("\n")
 
     binary_names = {d.name for d in datasets if task_by_name.get(d.name) == "binary"}
@@ -237,12 +290,12 @@ def write_report(results, datasets, prelim_results, prelim_verdict: str) -> None
             fmt = lambda v: f"{v:.3f}" if v == v else "n/a"  # noqa: E731 -- v == v is False for NaN
             lines.append(f"| {learner} | {fmt(bin_acc)} | {fmt(multi_acc)} |\n")
 
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
+    with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
-    print(f"Report -> {REPORT_PATH}")
+    print(f"Report -> {report_path}")
 
 
-def write_plots(results) -> None:
+def write_plots(results, plot_path: str, cd_plot_path: str) -> None:
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -281,39 +334,62 @@ def write_plots(results) -> None:
     ax2.grid(alpha=0.3, axis="y")
 
     fig.tight_layout()
-    fig.savefig(PLOT_PATH, dpi=110)
+    fig.savefig(plot_path, dpi=110)
     plt.close(fig)
-    print(f"Plot   -> {PLOT_PATH}")
+    print(f"Plot   -> {plot_path}")
 
     try:
         ax = critical_difference_diagram(results, "accuracy")
         ax.figure.tight_layout()
-        ax.figure.savefig(CD_PLOT_PATH, dpi=110)
+        ax.figure.savefig(cd_plot_path, dpi=110)
         plt.close(ax.figure)
-        print(f"Plot   -> {CD_PLOT_PATH}")
+        print(f"Plot   -> {cd_plot_path}")
     except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the rest of the report
         print(f"Critical-difference diagram skipped: {type(e).__name__}: {e}")
 
 
 def main(datasets_spec: Optional[str] = None) -> None:
+    """No arguments -> the quick, no-args default (`QUICK_DATASETS_SPEC`,
+    `QUICK_FOLDS`, output *not* checked in -- see the module docstring
+    and `.gitignore`). Any `datasets_spec` -> a full-scale run
+    (`N_FOLDS` folds, output to the canonical, checked-in paths) --
+    pass `FULL_DATASETS_SPEC` itself to reproduce the committed sample,
+    or any other `Catalog.parse()` spec for a custom full-scale run.
+    """
+    quick = datasets_spec is None
+    spec = QUICK_DATASETS_SPEC if quick else datasets_spec
+    n_folds = QUICK_FOLDS if quick else N_FOLDS
+    report_path = QUICK_REPORT_PATH if quick else REPORT_PATH
+    plot_path = QUICK_PLOT_PATH if quick else PLOT_PATH
+    cd_plot_path = QUICK_CD_PLOT_PATH if quick else CD_PLOT_PATH
+
     print("Preliminary check: Slipper vs. IMod:Slipper ...")
     prelim_results, prelim_verdict = run_preliminary_slipper_check()
     print(prelim_verdict)
 
-    datasets = select_datasets(datasets_spec)
-    results = run_cv(build_learners(), datasets, n_folds=N_FOLDS, fit_timeout=FIT_TIMEOUT,
+    datasets = select_datasets(spec)
+    results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
                      max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
-    write_report(results, datasets, prelim_results, prelim_verdict)
-    write_plots(results)
+    write_report(results, datasets, n_folds, prelim_results, prelim_verdict,
+                report_path, plot_path, cd_plot_path, quick)
+    write_plots(results, plot_path, cd_plot_path)
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--full", action="store_true",
+                        help=f"run the full comparison ({FULL_DATASETS_SPEC!r}, 44 datasets, "
+                             f"{N_FOLDS}-fold) instead of the quick default -- shorthand for "
+                             f"--datasets {FULL_DATASETS_SPEC!r}")
     parser.add_argument("--datasets", default=None,
-                        help=f"Catalog.parse() spec overriding the default {DEFAULT_DATASETS_SPEC!r} "
-                             "(44 datasets), e.g. 'small,medium' (83, binary and multi-class), "
-                             "'all' (100 -- an overnight run) or 'vote,mushroom'")
+                        help=f"Catalog.parse() spec for a full-scale run (any spec here means "
+                             f"'full mode': {N_FOLDS}-fold, output to the checked-in report/plots, "
+                             f"not the quick ones) -- e.g. 'small,medium' (83, binary and "
+                             "multi-class), 'all' (100 -- an overnight run) or 'vote,mushroom'. "
+                             "With neither --full nor --datasets, runs the quick default instead "
+                             f"({QUICK_DATASETS_SPEC.count(',') + 1} small datasets, "
+                             f"{QUICK_FOLDS}-fold, output not checked in).")
     args = parser.parse_args()
-    main(args.datasets)
+    main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))
