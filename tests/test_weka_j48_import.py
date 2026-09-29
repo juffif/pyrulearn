@@ -302,7 +302,32 @@ def test_single_leaf_tree_parses_as_one_unconditional_rule():
     print("A single-leaf (no-split) J48 tree parses as one unconditional rule: OK")
 
 
+MULTIWORD_LABEL_TREE = """J48 pruned tree
+------------------
+
+Ba <= 0.27
+|   RI <= 1.5241: build wind float (70.0/20.0)
+|   RI > 1.5241: containers (13.0/2.0)
+Ba > 0.27: vehic wind non-float (17.0)
+
+Number of Leaves  : 	3
+
+Size of the tree : 	5
+"""
+
+
+def test_multiword_class_labels_are_kept():
+    # regression test: the leaf regex took the target as a single \S+
+    # token, so every leaf whose label contains a space (e.g. glass's
+    # "build wind float") was silently dropped.
+    rules = J48Importer().parse(MULTIWORD_LABEL_TREE)
+    assert sorted(r.target for r in rules.rules) == [
+        "build wind float", "containers", "vehic wind non-float"]
+    print("Multi-word J48 class labels are kept: OK")
+
+
 if __name__ == "__main__":
+    test_multiword_class_labels_are_kept()
     test_parses_real_j48_output_as_disjoint_ruleset()
     test_confusion_matrix_trap_line_is_not_misparsed()
     test_multiway_nominal_split_parses_correctly()
