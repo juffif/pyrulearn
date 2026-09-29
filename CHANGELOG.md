@@ -54,6 +54,15 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   automated runs like `run_cv` where a column can turn constant or
   entirely missing within one training fold.
 
+### Fixed
+
+- `J48Importer` raised "no leaves found in J48 tree text" on a degenerate
+  single-leaf tree (no attribute predictive enough to split on, so J48
+  predicts the majority class unconditionally) -- Weka omits the blank
+  line it otherwise prints between the tree header's divider and the
+  tree body for exactly this one case, which a hardcoded line offset
+  didn't account for.
+
 ## 0.2.1 (2026-09-27)
 
 A bug-fix release: `RuleFit` fitted dense models with scikit-learn before

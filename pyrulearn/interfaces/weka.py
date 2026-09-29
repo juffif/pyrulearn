@@ -627,13 +627,24 @@ def _extract_j48_tree_lines(source: str) -> List[str]:
     start = None
     for i, line in enumerate(lines):
         if _J48_HEADER_RE.match(line.strip()) and i + 1 < len(lines) and _J48_DIVIDER_RE.match(lines[i + 1].strip()):
-            start = i + 3  # header, divider, then a blank line before the tree itself
+            start = i + 2  # right after header, divider
             break
     if start is None:
         raise ValueError(
             "no 'J48 ... tree' header found in source -- expected a line matching "
             "'J48 <word> tree' immediately followed by a '----' divider line"
         )
+    # normally one blank line separates the divider from the tree body --
+    # except for a *single-leaf* tree (the root itself is a leaf, no split
+    # at all: "no attribute is predictive enough to split on", or the
+    # training fold's own class column ends up constant), where Weka
+    # prints that one leaf line immediately after the divider with no
+    # blank line first. Skip at most one blank line here rather than
+    # assuming it's always there, or a single-leaf tree's one real line
+    # gets skipped too, leaving nothing (confirmed directly: `"J48 pruned
+    # tree\n------------------\n: 1 (499.0/119.0)\n\nNumber of Leaves..."`).
+    if start < len(lines) and not lines[start].strip():
+        start += 1
     end = start
     while end < len(lines) and lines[end].strip():
         end += 1

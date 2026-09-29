@@ -261,6 +261,47 @@ def test_raises_when_no_leaves_found():
     print("J48Importer raises a clear error when the tree has no leaves: OK")
 
 
+# Captured verbatim from a real weka.jar 3.8.7 run (a fold where no
+# attribute was predictive enough to split on, so J48 prunes all the way
+# back to the root and predicts the majority class unconditionally) --
+# note there's no blank line between the divider and the tree body here,
+# unlike every other captured example above: Weka only prints that blank
+# separator when the tree actually has a body to separate it from.
+REAL_J48_SINGLE_LEAF_STDOUT = """
+=== Classifier model (full training set) ===
+
+J48 pruned tree
+------------------
+: 1 (499.0/119.0)
+
+Number of Leaves  : \t1
+
+Size of the tree : \t1
+
+
+Time taken to build model: 0.17 seconds
+"""
+
+
+def test_single_leaf_tree_parses_as_one_unconditional_rule():
+    # regression test: _extract_j48_tree_lines used to assume a blank
+    # line always separates the divider from the tree body (true for
+    # every multi-leaf tree, since each split line starts with the
+    # recursive dump's own leading newline) -- but a single-leaf tree
+    # has no such line, so that assumption skipped straight past the
+    # tree's one real line into blank space, and "no leaves found" fired
+    # for a perfectly valid model.
+    importer = J48Importer()
+    rules = importer.parse(REAL_J48_SINGLE_LEAF_STDOUT)
+    assert isinstance(rules, DisjointRuleSet)
+    assert len(rules.rules) == 1
+    rule = rules.rules[0]
+    assert rule.rule.conditions == ()
+    assert rule.target == "1"
+    assert importer.dataspec.feature_names == []
+    print("A single-leaf (no-split) J48 tree parses as one unconditional rule: OK")
+
+
 if __name__ == "__main__":
     test_parses_real_j48_output_as_disjoint_ruleset()
     test_confusion_matrix_trap_line_is_not_misparsed()
@@ -271,4 +312,5 @@ if __name__ == "__main__":
     test_reuses_dataspec_across_multiple_parse_calls()
     test_raises_without_header()
     test_raises_when_no_leaves_found()
+    test_single_leaf_tree_parses_as_one_unconditional_rule()
     print("\nAll tests passed.")
