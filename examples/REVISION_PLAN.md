@@ -133,4 +133,5 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
   script's docstring.
 - Once a demo is done, it moves from `examples/` to `demos/` and drops
   its `demo_` prefix (decided 2026-09-29; done so far: `ripper_comparison`,
+  `numeric_discretization`,
   `covering`). A demo's plots go into their own subfolder there.
