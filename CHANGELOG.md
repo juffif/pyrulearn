@@ -54,6 +54,14 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   automated runs like `run_cv` where a column can turn constant or
   entirely missing within one training fold.
 
+### Changed
+
+- `Rule.specialize` computes the parent rule's constraint closure once and
+  extends it per child (new `DataSpec.extend_closure`), re-checking only
+  the constraints that involve the added feature instead of propagating
+  every child's conditions from scratch. Same result, 3-4x faster rule
+  search on data with many numeric thresholds.
+
 ### Fixed
 
 - `J48Importer` raised "no leaves found in J48 tree text" on a degenerate

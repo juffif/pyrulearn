@@ -291,6 +291,50 @@ class DataSpec:
                         changed = True
         return assignment
 
+    def extend_closure(self, closure: FeatureValues, new: FeatureValues) -> FeatureValues:
+        """`propagate(closure | new)`, for a `closure` that is already
+        closed under the constraints (e.g. a parent rule's): only the
+        constraints involving a newly fixed feature are re-checked,
+        repeated until nothing new is fixed. Same result and the same
+        `ValueError` on a contradiction as `propagate`, much cheaper when
+        one literal is added to a long rule."""
+        assignment = dict(closure)
+        changed = []
+        for i, v in new.items():
+            self._assign(assignment, i, v, changed)
+        if not self.constraints:
+            return assignment
+        by_feature = self._constraints_by_feature()
+        while changed:
+            affected = {id(c): c for i in changed for c in by_feature.get(i, ())}
+            changed = []
+            for c in affected.values():
+                for i, v in c.propagate(assignment).items():
+                    self._assign(assignment, i, v, changed)
+        return assignment
+
+    def _assign(self, assignment: FeatureValues, i: int, v: bool, changed: List[int]) -> None:
+        if i in assignment:
+            if assignment[i] != v:
+                raise ValueError(
+                    f"Contradiction: feature {i} ({self.feature_names[i]}) "
+                    f"forced to both {assignment[i]} and {v}"
+                )
+        else:
+            assignment[i] = v
+            changed.append(i)
+
+    def _constraints_by_feature(self) -> Dict[int, Tuple[Constraint, ...]]:
+        index = self.__dict__.get("_by_feature")
+        if index is None:
+            lists: Dict[int, List[Constraint]] = {}
+            for c in self.constraints:
+                for i in c.feature_indices:
+                    lists.setdefault(i, []).append(c)
+            index = {i: tuple(cs) for i, cs in lists.items()}
+            self._by_feature = index
+        return index
+
     def __repr__(self) -> str:
         label = f" {self.name!r}" if self.name else ""
         con_info = f", {len(self.constraints)} constraints" if self.constraints else ""
