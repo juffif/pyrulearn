@@ -13,6 +13,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   line it otherwise prints between the tree header's divider and the
   tree body for exactly this one case, which a hardcoded line offset
   didn't account for.
+- `J48Importer` and `PARTImporter` silently dropped every leaf/rule whose
+  class label contains a space (e.g. glass's `build wind float`): the
+  target was matched as a single whitespace-free token.
 
 ## 0.2.1 (2026-09-27)
 

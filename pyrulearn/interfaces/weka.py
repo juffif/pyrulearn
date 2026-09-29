@@ -503,7 +503,7 @@ register_importer("weka_jrip", JRipImporter)
 # PART's own rule terminator: "<conditions>: target (covered[.0][/errors[.0]])"
 # -- the tail (possibly empty) of a rule's last line, before its stats.
 _PART_TERMINATOR_RE = re.compile(
-    r"^(?P<tail>.*?):\s*(?P<target>\S+)\s*"
+    r"^(?P<tail>.*?):\s*(?P<target>\S(?:.*?\S)?)\s*"  # target may contain spaces
     r"\(\s*(?P<covered>[\d.]+)\s*(?:/\s*(?P<errors>[\d.]+)\s*)?\)\s*$"
 )
 # a non-final condition line always ends in a trailing " AND"
