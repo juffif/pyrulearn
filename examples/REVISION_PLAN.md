@@ -109,9 +109,14 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
 - **Learners:** JRip and J48 on raw data vs. on our binarized data;
   the native learners (Pypper, CN2, Slipper, LRI, ...) on the binarized
   data at each level.
-- **Discretizers:** the current `build_dataspec` binning at each level;
-  later FUSINTER (Zighed, Rabaséda & Rakotomalala 1998), a supervised
-  discretization, once implemented.
+- **Discretizers:** the current `build_dataspec` binning at each level
+  (supervised, decision-tree-based, `tree_thresholds`); `sklearn.
+  preprocessing.KBinsDiscretizer` (unsupervised -- `strategy=`
+  `"uniform"`/`"quantile"`/`"kmeans"`, no target needed -- its
+  `bin_edges_` feed straight into `DataSpecBuilder.add_numeric
+  (thresholds=...)`, which takes cut points regardless of how they were
+  derived); later FUSINTER (Zighed, Rabaséda & Rakotomalala 1998), a
+  supervised discretization, once implemented.
 - **Datasets:** ones with many numeric attributes (the catalog's
   numeric-heavy selection: diabetes, sonar, ionosphere,
   banknote-authentication, ...).
