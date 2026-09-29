@@ -457,7 +457,42 @@ def test_negation_toggles_keep_a_binary_attributes_pairing():
             assert toggled.negation_of("sex=male") == toggled.feature_index("sex=female")
 
 
+def test_extend_closure_matches_propagate_from_scratch():
+    import pandas as pd
+    from pyrulearn.data.io import build_dataspec
+
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame({
+        "x": rng.normal(size=60), "z": rng.integers(0, 9, size=60).astype(float),
+        "c": rng.choice(["r", "g", "b", "k"], size=60), "b": rng.choice(["y", "n"], size=60),
+        "t": rng.choice(["p", "q"], size=60),
+    })
+    spec = build_dataspec(df, target="t", max_intervals=5).build()
+    n = spec.n_features
+    checked = 0
+    for _ in range(400):
+        base = {int(i): True for i in rng.choice(n, size=rng.integers(0, 3), replace=False)}
+        try:
+            closure = spec.propagate(base)
+        except ValueError:
+            continue
+        new = {int(i): bool(rng.integers(0, 2)) for i in rng.choice(n, size=rng.integers(1, 3), replace=False)}
+        try:
+            expected = spec.propagate({**base, **new}) if all(closure.get(i, v) == v for i, v in new.items()) else None
+        except ValueError:
+            expected = None
+        if expected is None:
+            with pytest.raises(ValueError):
+                spec.extend_closure(closure, new)
+        else:
+            assert spec.extend_closure(closure, new) == expected
+        checked += 1
+    assert checked > 200
+    print("extend_closure matches propagate from scratch: OK")
+
+
 if __name__ == "__main__":
+    test_extend_closure_matches_propagate_from_scratch()
     test_builder_generates_features_and_constraints()
     test_nominal_mutual_exclusion_propagation()
     test_numeric_threshold_chain_propagation()

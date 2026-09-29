@@ -528,12 +528,19 @@ class Rule:
             mask = frozenset(range(self.n_features)) - used
 
         results: List[Tuple["Rule", FrozenSet[int]]] = []
+        constrained = dv is not None and bool(dv.constraints)
+        if constrained:
+            # the parent's closure once, then extended per child -- only the
+            # constraints touching the added literal need re-checking
+            try:
+                parent_closure = dv.propagate({l.feature: True for l in self.conditions})
+            except ValueError:
+                return results  # self is already contradictory: no consistent child
         for i in sorted(mask):  # deterministic order -- frozenset iteration isn't
             new_conditions = self.conditions + (Literal(i),)
-            if dv is not None and dv.constraints:
-                fixed: FeatureValues = {l.feature: True for l in new_conditions}
+            if constrained:
                 try:
-                    closure = dv.propagate(fixed)
+                    closure = dv.extend_closure(parent_closure, {i: True})
                 except ValueError:
                     continue  # contradicts dv's constraints
                 determined = set(closure)  # every feature this refinement pins, either way
