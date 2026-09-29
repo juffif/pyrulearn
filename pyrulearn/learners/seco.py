@@ -97,7 +97,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 
@@ -329,6 +329,8 @@ class BeamSearch(RuleSearch):
             return heuristic.score(_optimistic_stats(stats)) > threshold
 
         def is_eligible(rule: Rule, stats: RuleStats) -> bool:
+            if stats.tp == 0:
+                return False
             return filtering is None or filtering.accept(rule, stats, data, target_class, example_mask)
 
         # beam entries carry their own already-computed handle and stats:
@@ -392,11 +394,27 @@ class BeamSearch(RuleSearch):
             # exact duplicates, which this can't be -- `mask` never
             # offers a feature already fixed), so `conditions[-1]` is
             # always that one new literal -- O(1), no per-child set-diff.
-            proposals: List[Tuple[Rule, FrozenSet[int], Any]] = []
+            #
+            # A child covering no positives is dropped (some heuristics score
+            # one well -- Laplace gives (0, 0) 0.5 -- and in the beam it would
+            # end the search, since it can't be refined). Its condition is
+            # also masked out of that parent's other children: coverage only
+            # shrinks under refinement, so it covers no positives further
+            # down either.
+            proposals: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
             for rule, mask, handle, stats in refinable:
+                children: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
+                dead: Set[int] = set()
                 for child_rule, child_mask in rule.specialize(dataspec, mask):
                     added = child_rule.conditions[-1].feature
-                    proposals.append((child_rule, child_mask, data.refine_cover(handle, added)))
+                    child_handle = data.refine_cover(handle, added)
+                    child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
+                    if child_stats.tp == 0:
+                        dead.add(added)
+                    else:
+                        children.append((child_rule, child_mask, child_handle, child_stats))
+                for child_rule, child_mask, child_handle, child_stats in children:
+                    proposals.append((child_rule, child_mask - dead, child_handle, child_stats))
             if not proposals:
                 break
 
@@ -405,24 +423,24 @@ class BeamSearch(RuleSearch):
             # Rule's own order-independent __eq__/__hash__ (Rule.pos/neg;
             # target is fixed across every candidate here, so this reduces
             # to plain literal-set equality) already treats those as
-            # identical, and their masks agree too (propagate's closure
-            # depends on the *set* of fixed features, not the order they
-            # were fixed in) -- so collapsing duplicates into one
-            # representative here loses nothing, and is the only thing
-            # standing between this and an exponential blow-up: each
-            # surviving duplicate would otherwise re-explore the same
-            # subtree of further refinements independently, every round.
-            # (Their handles are equally interchangeable -- both refine to
-            # the identical coverage -- so keeping whichever arrived first
-            # is exactly as sound as the mask-only dedup this replaces.)
-            deduped: Dict[Rule, Tuple[FrozenSet[int], Any]] = {}
-            for child_rule, child_mask, child_handle in proposals:
-                deduped.setdefault(child_rule, (child_mask, child_handle))
+            # identical. Their masks may differ only in dead conditions
+            # masked out under one parent but not the other -- either mask
+            # is sound -- so collapsing duplicates into one representative
+            # here loses nothing, and is the only thing standing between
+            # this and an exponential blow-up: each surviving duplicate
+            # would otherwise re-explore the same subtree of further
+            # refinements independently, every round. (Their handles and
+            # stats are equally interchangeable -- both refine to the
+            # identical coverage -- so keeping whichever arrived first is
+            # sound.)
+            deduped: Dict[Rule, Tuple[FrozenSet[int], Any, RuleStats]] = {}
+            for child_rule, child_mask, child_handle, child_stats in proposals:
+                deduped.setdefault(child_rule, (child_mask, child_handle, child_stats))
 
-            scored: List[Tuple[Score, Rule, FrozenSet[int], Any, RuleStats]] = []
-            for rule, (mask, handle) in deduped.items():
-                stats = _stats_from_handle(data, target_class, rule, handle)
-                scored.append((heuristic.score(stats), rule, mask, handle, stats))
+            scored: List[Tuple[Score, Rule, FrozenSet[int], Any, RuleStats]] = [
+                (heuristic.score(stats), rule, mask, handle, stats)
+                for rule, (mask, handle, stats) in deduped.items()
+            ]
             # ties broken toward the shorter (more general) rule -- otherwise
             # an arbitrary, sort-order-dependent longer duplicate could win a
             # beam slot over an equally-good shorter one
@@ -600,6 +618,8 @@ class HillClimbing(RuleSearch):
             # configured criterion -- so `stopping` (like `filtering`)
             # never lets the search hand back a rule from its own reject
             # region; it just *also* halts the walk (see below).
+            if stats.tp == 0:
+                return False
             for crit in (filtering, stopping):
                 if crit is not None and not crit.accept(
                     rule, stats, data, target_class, example_mask
@@ -634,12 +654,16 @@ class HillClimbing(RuleSearch):
             threshold = self._improvement_threshold(heuristic, stats)
 
             best_child: Optional[Tuple[Rule, FrozenSet[int], Any, RuleStats, Score]] = None
+            dead: Set[int] = set()
             for child_rule, child_mask in rule.specialize(dataspec, mask):
                 added = child_rule.conditions[-1].feature  # see BeamSearch.search's comment
                 child_handle = data.refine_cover(handle, added)
                 child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
-                if not self.stop_at_local_optimum and child_stats.tp == 0:
-                    continue  # never grow toward a rule covering no positives
+                if child_stats.tp == 0:
+                    # never move to a rule covering no positives, and mask the
+                    # condition out further down (see BeamSearch.search)
+                    dead.add(added)
+                    continue
                 value = self._child_score(heuristic, child_stats, stats)
                 if best_child is None or value > best_child[4]:
                     best_child = (child_rule, child_mask, child_handle, child_stats, value)
@@ -650,6 +674,7 @@ class HillClimbing(RuleSearch):
                 break  # local optimum -- no child beats the current rule
 
             rule, mask, handle, stats, _ = best_child
+            mask = mask - dead
             depth += 1
 
             if stopping is not None and stopping.evaluate(rule, stats, data, target_class, example_mask):

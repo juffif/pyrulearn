@@ -448,8 +448,34 @@ def test_beam_search_tp_zero_floor_stops_specializing():
     with _counting_specialize() as count:
         best = BeamSearch(beam_width=3).search(rep, "pos", Accuracy(), initial)
     assert count[0] == 0  # tp==0 floor stopped it before specialize() was ever called
-    assert best == useless_rule
+    assert best is None  # a rule covering no positives is never returned
     print("BeamSearch's tp==0 floor stops specialize() from being called at all: OK")
+
+
+def _laplace_trap_dataset():
+    # "e" covers no example at all, so its one-condition rule scores
+    # Laplace (0+1)/(0+0+2) = 0.5 -- above every impure one-condition rule
+    # (a: 2 pos / 3 neg -> 3/7). The pure rule a AND b (2 pos / 0 neg,
+    # 0.75) is only reachable through an impure first step.
+    X = np.array([
+        [1, 1, 0], [1, 1, 0],                                        # positives
+        [1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 1, 0],  # negatives
+    ], dtype=bool)
+    y = np.array(["pos", "pos"] + ["neg"] * 6)
+    ds = DataSpec(["a", "b", "e"])
+    return BooleanDataRepresentation(ds, X, y), ds
+
+
+@pytest.mark.parametrize("search", [BeamSearch(beam_width=1), HillClimbing()])
+def test_rule_covering_no_positives_never_blocks_the_search(search):
+    # regression test: a child covering no positives used to win the beam
+    # slot (or the hill-climbing move) on its heuristic score alone, and,
+    # being unrefinable, end the search at an impure one-condition rule
+    rep, ds = _laplace_trap_dataset()
+    empty = [(Rule([], target="pos", dataspec=ds), frozenset(range(3)))]
+    best = search.search(rep, "pos", Laplace(), empty)
+    assert best == Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)
+    print(f"{type(search).__name__} gets past a rule covering no positives: OK")
 
 
 def test_beam_search_optimistic_pruning_skips_an_already_pure_seed():

@@ -16,6 +16,16 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `J48Importer` and `PARTImporter` silently dropped every leaf/rule whose
   class label contains a space (e.g. glass's `build wind float`): the
   target was matched as a single whitespace-free token.
+- `BeamSearch` and `HillClimbing` could pick a candidate rule covering no
+  positive examples when the heuristic scored it well (Laplace gives an
+  empty-coverage rule 0.5, Accuracy N/(P+N)). Such a rule can't be refined,
+  so the search ended early with an overly general rule, and covering
+  stopped long before the positives were covered. Candidates without
+  positive coverage are now never chosen or returned, and their condition
+  is masked out of the search below the same parent. This changes the
+  rules learned with Laplace, Accuracy or cost heuristics -- including
+  `CN2`, which now learns larger theories. Learners that did not hit this
+  (e.g. `Pypper`, `PFossil`, `PFoil`, `AQR`) learn the same rules as before.
 
 ## 0.2.1 (2026-09-27)
 
