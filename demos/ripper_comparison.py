@@ -1,6 +1,6 @@
 """
-examples/demo_ripper_comparison.py
-===================================
+demos/ripper_comparison.py
+==========================
 
 Four RIPPER-family rule learners (Slipper included -- Cohen & Singer's
 own confidence-rated-boosting follow-up to RIPPER, not a separate
@@ -57,14 +57,14 @@ discretization) is a deliberately separate, later demo
 run Weka JRip on raw data (`jrip_native`) as a preview of that, which is
 why the two are related but no longer why they're the same script.
 
-Run: `python examples/demo_ripper_comparison.py` with no arguments is the
+Run: `python demos/ripper_comparison.py` with no arguments is the
 **quick** default -- `QUICK_DATASETS_SPEC` (10 small datasets),
 `QUICK_FOLDS`-fold, well under a minute; its report/plots go to
-``demo_ripper_comparison_quick_*`` and are *not* checked in (see
+``ripper_comparison_quick_*`` and are *not* checked in (see
 `.gitignore`) -- rerun it any time for a fast sanity check. `--full` (or
 an explicit `--datasets <spec>`) runs the full comparison instead
 (`FULL_DATASETS_SPEC`, `N_FOLDS`-fold) and writes to the canonical
-``demo_ripper_comparison_report.md``/``.png`` paths, which *are* checked
+``ripper_comparison_report.md``/``.png`` paths, which *are* checked
 in -- a sample from a real full run, not regenerated on every change to
 this script. Either way needs Weka installed at `WEKA_JAR`/`WEKA_JAVA`
 below, plus the `experiments`, `wittgenstein` and `imodels` extras.
@@ -109,15 +109,18 @@ PRELIM_TIMEOUT = 90.0
 HERE = os.path.dirname(__file__)
 # The canonical, checked-in output -- reproduced by `--full` (or an
 # explicit `--datasets`); see FULL_DATASETS_SPEC/QUICK_DATASETS_SPEC below.
-REPORT_PATH = os.path.join(HERE, "demo_ripper_comparison_report.md")
-PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison.png")
-CD_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_cd.png")
+REPORT_PATH = os.path.join(HERE, "ripper_comparison_report.md")
+PLOTS_DIR = os.path.join(HERE, "ripper_comparison_plots")
+ACCURACY_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_accuracy.png")
+FIT_TIME_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_fit_time.png")
+CD_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_cd.png")
 # The quick, no-args default's output -- *not* checked in (see .gitignore's
 # examples/*_quick_report.md / _quick*.png patterns): a fast sanity check
 # shouldn't overwrite the committed full-run sample every time it's run.
-QUICK_REPORT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick_report.md")
-QUICK_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick.png")
-QUICK_CD_PLOT_PATH = os.path.join(HERE, "demo_ripper_comparison_quick_cd.png")
+QUICK_REPORT_PATH = os.path.join(HERE, "ripper_comparison_quick_report.md")
+QUICK_ACCURACY_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_accuracy.png")
+QUICK_FIT_TIME_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_fit_time.png")
+QUICK_CD_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_cd.png")
 CACHE_DIR = os.path.join(HERE, "_ripper_comparison_cache")
 
 # Full run: every small/medium (<=10,000 rows) binary dataset in the
@@ -151,13 +154,13 @@ def _build_description(datasets, n_folds: int, prelim_verdict: str, quick: bool)
         f"**Quick run** ({dataset_count} datasets, a fast sanity check, not a "
         f"statistically rigorous comparison -- default with no arguments). For the "
         f"full comparison ({FULL_DATASETS_SPEC!r}, 44 datasets, {N_FOLDS}-fold): "
-        f"`python examples/demo_ripper_comparison.py --full` (or an explicit "
+        f"`python demos/ripper_comparison.py --full` (or an explicit "
         f"`--datasets`); a sample from that run is committed at "
         f"`{os.path.basename(REPORT_PATH)}` (plus its plots) in this directory.\n\n"
         if quick else
         f"**Full run** ({dataset_count} datasets). For a quick sanity check instead "
         f"(10 small datasets, {QUICK_FOLDS}-fold, well under a minute): "
-        f"`python examples/demo_ripper_comparison.py` with no arguments -- its "
+        f"`python demos/ripper_comparison.py` with no arguments -- its "
         f"output isn't checked in (see `{os.path.basename(QUICK_REPORT_PATH)}` "
         f"after running it).\n\n"
     )
@@ -238,15 +241,18 @@ def run_preliminary_slipper_check():
 
 
 def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict: str,
-                 report_path: str, plot_path: str, cd_plot_path: str, quick: bool) -> None:
+                 report_path: str, accuracy_plot_path: str, fit_time_plot_path: str,
+                 cd_plot_path: str, quick: bool) -> None:
     task_by_name = {d.name: d.task for d in datasets}
     results = results.copy()
     results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
 
+    plots_dir = os.path.basename(os.path.dirname(accuracy_plot_path))
     lines = ["# RIPPER-family comparison: Weka:JRip / Witt:RIPPER / Pypper / Slipper\n\n"]
     lines.append(render_setup_section(_build_description(datasets, n_folds, prelim_verdict, quick)))
-    lines.append(f"![accuracy vs. complexity, fit time per dataset]({os.path.basename(plot_path)})\n\n")
-    lines.append(f"![critical-difference diagram (accuracy)]({os.path.basename(cd_plot_path)})\n\n")
+    lines.append(f"![accuracy vs. rule-set complexity]({plots_dir}/{os.path.basename(accuracy_plot_path)})\n\n")
+    lines.append(f"![fit time per dataset]({plots_dir}/{os.path.basename(fit_time_plot_path)})\n\n")
+    lines.append(f"![critical-difference diagram (accuracy)]({plots_dir}/{os.path.basename(cd_plot_path)})\n\n")
 
     lines.append("## Why IMod:Slipper isn't in the main comparison\n\n")
     lines.append(f"{prelim_verdict}\n\n")
@@ -295,7 +301,7 @@ def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict
     print(f"Report -> {report_path}")
 
 
-def write_plots(results, plot_path: str, cd_plot_path: str) -> None:
+def write_plots(results, accuracy_plot_path: str, fit_time_plot_path: str, cd_plot_path: str) -> None:
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -303,9 +309,10 @@ def write_plots(results, plot_path: str, cd_plot_path: str) -> None:
     except ImportError:
         return
 
+    os.makedirs(os.path.dirname(accuracy_plot_path), exist_ok=True)
     per_pair = results.groupby(["dataset", "learner"], as_index=False).mean(numeric_only=True)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+    fig1, ax1 = plt.subplots(figsize=(6.5, 5.5))
     for learner in LEARNER_ORDER:
         sub = per_pair[per_pair["learner"] == learner].dropna(subset=["accuracy"])
         if len(sub):
@@ -317,10 +324,15 @@ def write_plots(results, plot_path: str, cd_plot_path: str) -> None:
     ax1.set_xscale("symlog")
     ax1.legend()
     ax1.grid(alpha=0.3)
+    fig1.tight_layout()
+    fig1.savefig(accuracy_plot_path, dpi=110)
+    plt.close(fig1)
+    print(f"Plot   -> {accuracy_plot_path}")
 
     names = sorted(per_pair["dataset"].unique())
     x = np.arange(len(names))
     w = 0.8 / len(LEARNER_ORDER)
+    fig2, ax2 = plt.subplots(figsize=(9, 5.5))
     for i, learner in enumerate(LEARNER_ORDER):
         sub = per_pair[per_pair["learner"] == learner].set_index("dataset")
         ts = [sub["fit_time"].get(n, np.nan) for n in names]
@@ -332,11 +344,10 @@ def write_plots(results, plot_path: str, cd_plot_path: str) -> None:
     ax2.set_xticklabels(names, rotation=60, ha="right", fontsize=8)
     ax2.legend()
     ax2.grid(alpha=0.3, axis="y")
-
-    fig.tight_layout()
-    fig.savefig(plot_path, dpi=110)
-    plt.close(fig)
-    print(f"Plot   -> {plot_path}")
+    fig2.tight_layout()
+    fig2.savefig(fit_time_plot_path, dpi=110)
+    plt.close(fig2)
+    print(f"Plot   -> {fit_time_plot_path}")
 
     try:
         ax = critical_difference_diagram(results, "accuracy")
@@ -360,7 +371,8 @@ def main(datasets_spec: Optional[str] = None) -> None:
     spec = QUICK_DATASETS_SPEC if quick else datasets_spec
     n_folds = QUICK_FOLDS if quick else N_FOLDS
     report_path = QUICK_REPORT_PATH if quick else REPORT_PATH
-    plot_path = QUICK_PLOT_PATH if quick else PLOT_PATH
+    accuracy_plot_path = QUICK_ACCURACY_PLOT_PATH if quick else ACCURACY_PLOT_PATH
+    fit_time_plot_path = QUICK_FIT_TIME_PLOT_PATH if quick else FIT_TIME_PLOT_PATH
     cd_plot_path = QUICK_CD_PLOT_PATH if quick else CD_PLOT_PATH
 
     print("Preliminary check: Slipper vs. IMod:Slipper ...")
@@ -371,8 +383,8 @@ def main(datasets_spec: Optional[str] = None) -> None:
     results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
                      max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
     write_report(results, datasets, n_folds, prelim_results, prelim_verdict,
-                report_path, plot_path, cd_plot_path, quick)
-    write_plots(results, plot_path, cd_plot_path)
+                report_path, accuracy_plot_path, fit_time_plot_path, cd_plot_path, quick)
+    write_plots(results, accuracy_plot_path, fit_time_plot_path, cd_plot_path)
 
 
 if __name__ == "__main__":

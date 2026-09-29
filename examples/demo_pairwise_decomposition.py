@@ -41,7 +41,7 @@ separately** -- predict dominates for pairwise (many sub-models), and
 
 Shared binarized feature set (`build_dataspec` + `binarize` once per
 dataset), 70/30 stratified split, seed 0. Uncapped by default; `--cap N`
-subsamples larger sets. Reuses `demo_ripper_comparison`'s OpenML loader.
+subsamples larger sets. Self-contained OpenML loader (see `load`/`prepare` below).
 
 `letter` (26 classes) is excluded by default -- `C(26,2)=325` pairwise
 Pypper fits per variant makes it by far the slowest dataset here (`pw_both`
@@ -55,16 +55,23 @@ import argparse
 import os
 import time
 import warnings
+from typing import NamedTuple
 
 import numpy as np
+import pandas as pd
+from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split
 
-import examples.demo_ripper_comparison as drc
+from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.models import AccuracyWeightedVote, MajorityVote, WeightedVote
 from pyrulearn.learners.multiclass import OneVsRest, OrderedOneVsRest, Pairwise
 from pyrulearn.learners.seco import Pypper
 
 RANDOM_STATE = 0
 MAX_ROWS = None
+MAX_INTERVALS = 6  # numeric-feature discretization (build_dataspec)
+TEST_SIZE = 0.30
 HERE = os.path.dirname(__file__)
 REPORT_PATH = os.path.join(HERE, "demo_pairwise_decomposition_report.md")
 PLOT_PREFIX = os.path.join(HERE, "demo_pairwise_decomposition")
@@ -84,6 +91,70 @@ DISABLED_REASON = {
               "measured ~1050s train time. Re-run with --include-large to include it.",
 }
 SMALL_DATASETS = [d for d in STANDARD_DATASETS if d not in LARGE_DATASETS]
+
+
+# -- data (self-contained: was `import examples.demo_ripper_comparison as
+# drc; drc.load(...)`/`drc.prepare(...)`, until that demo's migration onto
+# pyrulearn.experiments dropped those pre-infra helpers and silently broke
+# this cross-demo import -- inlined here instead of re-linking to another
+# demo's internals, matching this demo's own still-pre-infra style) ------
+
+def _fill_missing(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
+    df = df.copy()
+    drop = [c for c in df.columns
+           if c != target_col and (df[c].isna().all() or df[c].nunique(dropna=True) <= 1)]
+    df = df.drop(columns=drop)
+    for c in df.columns:
+        if c == target_col or not df[c].isna().any():
+            continue
+        if pd.api.types.is_numeric_dtype(df[c]):
+            df[c] = df[c].fillna(df[c].median())
+        else:
+            df[c] = df[c].astype(object).where(df[c].notna(), "?")
+    drop = [c for c in df.columns if c != target_col and df[c].nunique(dropna=True) <= 1]
+    return df.drop(columns=drop)
+
+
+def load(name: str, max_rows=MAX_ROWS):
+    """`max_rows` caps the row count (a uniform subsample, seeded); pass
+    `None` to keep every row. Defaults to this module's `MAX_ROWS`."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        d = fetch_openml(name=name, version=1, as_frame=True, parser="auto")
+    target_col = d.target.name
+    df = _fill_missing(d.frame, target_col)
+    df = df.dropna(subset=[target_col])
+    if max_rows is not None and len(df) > max_rows:
+        df = df.sample(max_rows, random_state=RANDOM_STATE).reset_index(drop=True)
+    return df, target_col
+
+
+class Ctx(NamedTuple):
+    name: str
+    ds: object
+    train_rep: BooleanDataRepresentation
+    test_rep: BooleanDataRepresentation
+    tr_y: np.ndarray
+    te_y: np.ndarray
+
+
+def prepare(df: pd.DataFrame, target_col: str) -> Ctx:
+    """One shared binary representation: split, build one DataSpec on the
+    training rows, binarize both halves against it."""
+    y = df[target_col].astype(str).to_numpy()
+    train_df, test_df = train_test_split(
+        df, test_size=TEST_SIZE, random_state=RANDOM_STATE,
+        stratify=y if min(np.bincount(np.unique(y, return_inverse=True)[1])) >= 2 else None,
+    )
+    feats = [c for c in df.columns if c != target_col]
+    arff_types = {c: ("numeric" if pd.api.types.is_numeric_dtype(df[c]) else "nominal") for c in feats}
+    ds = build_dataspec(train_df, target=target_col, arff_types=arff_types,
+                        max_intervals=MAX_INTERVALS).build()
+    tr_y = train_df[target_col].astype(str).to_numpy()
+    te_y = test_df[target_col].astype(str).to_numpy()
+    train_rep = BooleanDataRepresentation(ds, binarize(ds, train_df), tr_y)
+    test_rep = BooleanDataRepresentation(ds, binarize(ds, test_df), te_y)
+    return Ctx(name="", ds=ds, train_rep=train_rep, test_rep=test_rep, tr_y=tr_y, te_y=te_y)
 
 
 def pypper():
@@ -120,8 +191,8 @@ def _complexity(model, n_classes, kind):
 
 
 def run_dataset(name):
-    df, target = drc.load(name, max_rows=MAX_ROWS)
-    c = drc.prepare(df, target)._replace(name=name)
+    df, target = load(name, max_rows=MAX_ROWS)
+    c = prepare(df, target)._replace(name=name)
     n = len(np.unique(c.tr_y))
     print(f"\n{name}  (n={len(df)}, {c.ds.n_features} bin.feat, {n} classes)")
     row = {"name": name, "n": len(df), "n_classes": n, "res": {}, "cx": {}}

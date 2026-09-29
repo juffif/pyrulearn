@@ -316,7 +316,7 @@ correctly, AQR's covering fixed, and several printing fixes.
   binary, and a binary one with a nominal one (or with a binary one over
   different values) as the nominal union. `Rule.remap` turns `x!=a` into
   `x=b` when the target attribute is binary over `{a, b}`.
-- `examples/demo_covering.py`: a step-by-step separate-and-conquer teaching
+- `demos/covering.py`: a step-by-step separate-and-conquer teaching
   demo (PFossil's covering and hill climbing replayed on Titanic, one set
   of plots per search step).
 

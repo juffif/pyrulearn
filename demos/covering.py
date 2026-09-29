@@ -12,7 +12,7 @@ before any plotting happens -- see `_covering_replay_matches_pfossil`.
 
 Output, per hill-climbing step, is **three separate static PNGs** (not one
 combined figure -- meant to be stepped through by hand, e.g. one triptych
-per PowerPoint click) plus a companion `demo_covering.md` narrating every
+per PowerPoint click) plus a companion `covering.md` narrating every
 step in Prolog notation (`Rule.to_string("prolog")`) with the images
 embedded inline:
 
@@ -70,8 +70,8 @@ from pyrulearn.pruning import ThresholdPrePruning
 from pyrulearn.rule import Rule
 
 OUT_DIR = os.path.dirname(__file__)
-FRAMES_DIR = os.path.join(OUT_DIR, "demo_covering_frames")
-MD_PATH = os.path.join(OUT_DIR, "demo_covering.md")
+FRAMES_DIR = os.path.join(OUT_DIR, "covering_frames")
+MD_PATH = os.path.join(OUT_DIR, "covering.md")
 TARGET_CLASS = "survived"
 CORR_THRESHOLD = 0.3
 FEATURES = ["pclass", "sex", "age", "sibsp", "parch", "fare", "embarked"]

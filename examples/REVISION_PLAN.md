@@ -34,7 +34,7 @@ Suggested order: infrastructure, (a), (d), (b), (c), (e), (f), tour demos.
 
 Decided (2026-09-28): infrastructure landed as `pyrulearn.experiments`
 (`runner`/`stats`/`report`/`catalog`, the last moved from
-`pyrulearn.data.catalog`). `demo_ripper_comparison.py` stays its own
+`pyrulearn.data.catalog`). `demos/ripper_comparison.py` stays its own
 separate demo rather than folding into (a) -- migrated onto the new
 infra, `jrip_native` (JRip on raw data) dropped, and the two Slipper
 variants (`Slipper`, `IModSlipper`) added to it. **Next up after that:
@@ -122,7 +122,7 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
   banknote-authentication, ...).
 - **Measures:** accuracy, number and length of rules, fit time, and the
   number of binary features each discretization produces.
-- `demo_ripper_comparison.py` already runs JRip on both the raw data
+- `demos/ripper_comparison.py` already runs JRip on both the raw data
   (`jrip_native`) and our binarization -- a starting point.
 
 ## For every demo
@@ -131,3 +131,6 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
   variants and their settings, measures) in a Setup section, taken from
   one `DESCRIPTION` string in the script, rather than referring to the
   script's docstring.
+- Once a demo is done, it moves from `examples/` to `demos/` and drops
+  its `demo_` prefix (decided 2026-09-29; done so far: `ripper_comparison`,
+  `covering`). A demo's plots go into their own subfolder there.

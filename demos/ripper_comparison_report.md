@@ -2,7 +2,7 @@
 
 ## Setup
 
-**Full run** (44 binary datasets). For a quick sanity check instead (10 small datasets, 3-fold, well under a minute): `python examples/demo_ripper_comparison.py` with no arguments -- its output isn't checked in (see `demo_ripper_comparison_quick_report.md` after running it).
+**Full run** (44 binary datasets). For a quick sanity check instead (10 small datasets, 3-fold, well under a minute): `python demos/ripper_comparison.py` with no arguments -- its output isn't checked in (see `ripper_comparison_quick_report.md` after running it).
 
 Four RIPPER-family rule learners -- Weka:JRip, Witt:RIPPER,
 Pypper, Slipper -- compared on 44 binary datasets from
@@ -26,9 +26,11 @@ Measures: test accuracy, rule count, total condition count, fit time
 one-vs-rest for multi-class (see the module docstring); every other
 learner handles multi-class natively.
 
-![accuracy vs. complexity, fit time per dataset](demo_ripper_comparison.png)
+![accuracy vs. rule-set complexity](ripper_comparison_plots/ripper_comparison_accuracy.png)
 
-![critical-difference diagram (accuracy)](demo_ripper_comparison_cd.png)
+![fit time per dataset](ripper_comparison_plots/ripper_comparison_fit_time.png)
+
+![critical-difference diagram (accuracy)](ripper_comparison_plots/ripper_comparison_cd.png)
 
 ## Why IMod:Slipper isn't in the main comparison
 

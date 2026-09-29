@@ -4,7 +4,7 @@ Heuristic: `Correlation`. Search: greedy hill climbing to a local optimum (`Hill
 
 Training set: 350 positives (`survived`) / 566 negatives (`died`), 7 features (`pclass, sex, age, sibsp, parch, fare, embarked`).
 
-![full training set](demo_covering_frames/overview_population.png)
+![full training set](covering_frames/overview_population.png)
 
 ---
 
@@ -31,8 +31,8 @@ Top candidates by Correlation (49 considered in total):
 
 Chosen: `survived(X) :- sex(X, female).` (tp=238, fp=96, Correlation=0.515) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule1_condition1_search.png)
-![population view](demo_covering_frames/rule1_condition1_population.png)
+![search view](covering_frames/rule1_condition1_search.png)
+![population view](covering_frames/rule1_condition1_population.png)
 
 ### Condition 2
 
@@ -53,8 +53,8 @@ Top candidates by Correlation (47 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 2.5, sex(X, female).` (tp=164, fp=15, Correlation=0.542) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule1_condition2_search.png)
-![population view](demo_covering_frames/rule1_condition2_population.png)
+![search view](covering_frames/rule1_condition2_search.png)
+![population view](covering_frames/rule1_condition2_population.png)
 
 ### Condition 3
 
@@ -75,8 +75,8 @@ Top candidates by Correlation (45 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 2.5, sex(X, female), sibsp(X, V2), V2 < 3.5.` (tp=164, fp=15, Correlation=0.542) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule1_condition3_search.png)
-![population view](demo_covering_frames/rule1_condition3_population.png)
+![search view](covering_frames/rule1_condition3_search.png)
+![population view](covering_frames/rule1_condition3_population.png)
 
 **Rule 1 accepted:** `survived(X) :- pclass(X, V1), V1 < 2.5, sex(X, female).`
 
@@ -86,7 +86,7 @@ Model so far (1 rule):
 survived(X) :- pclass(X, V1), V1 < 2.5, sex(X, female).  % (164/15)
 ```
 
-![progress view](demo_covering_frames/rule1_condition3_progress.png)
+![progress view](covering_frames/rule1_condition3_progress.png)
 
 ## Rule 2
 
@@ -111,8 +111,8 @@ Top candidates by Correlation (49 considered in total):
 
 Chosen: `survived(X) :- sex(X, female).` (tp=74, fp=81, Correlation=0.267) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule2_condition1_search.png)
-![population view](demo_covering_frames/rule2_condition1_population.png)
+![search view](covering_frames/rule2_condition1_search.png)
+![population view](covering_frames/rule2_condition1_population.png)
 
 ### Condition 2
 
@@ -133,8 +133,8 @@ Top candidates by Correlation (47 considered in total):
 
 Chosen: `survived(X) :- sex(X, female), parch(X, V1), V1 < 1.5.` (tp=65, fp=55, Correlation=0.294) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule2_condition2_search.png)
-![population view](demo_covering_frames/rule2_condition2_population.png)
+![search view](covering_frames/rule2_condition2_search.png)
+![population view](covering_frames/rule2_condition2_population.png)
 
 ### Condition 3
 
@@ -155,8 +155,8 @@ Top candidates by Correlation (39 considered in total):
 
 Chosen: `survived(X) :- sex(X, female), sibsp(X, V1), V1 < 2.5, parch(X, V2), V2 < 1.5.` (tp=64, fp=52, Correlation=0.298) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule2_condition3_search.png)
-![population view](demo_covering_frames/rule2_condition3_population.png)
+![search view](covering_frames/rule2_condition3_search.png)
+![population view](covering_frames/rule2_condition3_population.png)
 
 ### Condition 4
 
@@ -177,8 +177,8 @@ Top candidates by Correlation (33 considered in total):
 
 Chosen: `survived(X) :- sex(X, female), sibsp(X, V1), V1 < 2.5, parch(X, V2), V2 < 1.5, fare(X, V3), V3 < 39.64.` (tp=64, fp=51, Correlation=0.301) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule2_condition4_search.png)
-![population view](demo_covering_frames/rule2_condition4_population.png)
+![search view](covering_frames/rule2_condition4_search.png)
+![population view](covering_frames/rule2_condition4_population.png)
 
 ### Condition 5
 
@@ -199,8 +199,8 @@ Top candidates by Correlation (25 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 >= 1.5, sex(X, female), sibsp(X, V2), V2 < 2.5, parch(X, V3), V3 < 1.5, fare(X, V4), V4 < 39.64.` (tp=64, fp=51, Correlation=0.301) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule2_condition5_search.png)
-![population view](demo_covering_frames/rule2_condition5_population.png)
+![search view](covering_frames/rule2_condition5_search.png)
+![population view](covering_frames/rule2_condition5_population.png)
 
 **Rule 2 accepted:** `survived(X) :- sex(X, female), sibsp(X, V1), V1 < 2.5, parch(X, V2), V2 < 1.5, fare(X, V3), V3 < 39.64.`
 
@@ -211,7 +211,7 @@ survived(X) :- pclass(X, V1), V1 < 2.5, sex(X, female).  % (164/15)
 survived(X) :- sex(X, female), sibsp(X, V1), V1 < 2.5, parch(X, V2), V2 < 1.5, fare(X, V3), V3 < 39.64.  % (129/63)
 ```
 
-![progress view](demo_covering_frames/rule2_condition5_progress.png)
+![progress view](covering_frames/rule2_condition5_progress.png)
 
 ## Rule 3
 
@@ -236,8 +236,8 @@ Top candidates by Correlation (49 considered in total):
 
 Chosen: `survived(X) :- age(X, V1), V1 < 6.5.` (tp=19, fp=11, Correlation=0.248) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule3_condition1_search.png)
-![population view](demo_covering_frames/rule3_condition1_population.png)
+![search view](covering_frames/rule3_condition1_search.png)
+![population view](covering_frames/rule3_condition1_population.png)
 
 ### Condition 2
 
@@ -258,8 +258,8 @@ Top candidates by Correlation (39 considered in total):
 
 Chosen: `survived(X) :- age(X, V1), V1 < 6.5, sibsp(X, V2), V2 < 2.5.` (tp=17, fp=3, Correlation=0.300) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule3_condition2_search.png)
-![population view](demo_covering_frames/rule3_condition2_population.png)
+![search view](covering_frames/rule3_condition2_search.png)
+![population view](covering_frames/rule3_condition2_population.png)
 
 ### Condition 3
 
@@ -280,8 +280,8 @@ Top candidates by Correlation (33 considered in total):
 
 Chosen: `survived(X) :- age(X, V1), V1 < 6.5, sibsp(X, V2), V2 < 2.5, parch(X, V3), V3 >= 0.5.` (tp=17, fp=3, Correlation=0.300) -- passes the 0.3 threshold.
 
-![search view](demo_covering_frames/rule3_condition3_search.png)
-![population view](demo_covering_frames/rule3_condition3_population.png)
+![search view](covering_frames/rule3_condition3_search.png)
+![population view](covering_frames/rule3_condition3_population.png)
 
 **Rule 3 accepted:** `survived(X) :- age(X, V1), V1 < 6.5, sibsp(X, V2), V2 < 2.5.`
 
@@ -293,7 +293,7 @@ survived(X) :- sex(X, female), sibsp(X, V1), V1 < 2.5, parch(X, V2), V2 < 1.5, f
 survived(X) :- age(X, V1), V1 < 6.5, sibsp(X, V2), V2 < 2.5.  % (25/7)
 ```
 
-![progress view](demo_covering_frames/rule3_condition3_progress.png)
+![progress view](covering_frames/rule3_condition3_progress.png)
 
 ## Rejected attempt
 
@@ -318,8 +318,8 @@ Top candidates by Correlation (49 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5.` (tp=37, fp=78, Correlation=0.189) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule4_condition1_search.png)
-![population view](demo_covering_frames/rule4_condition1_population.png)
+![search view](covering_frames/rule4_condition1_search.png)
+![population view](covering_frames/rule4_condition1_population.png)
 
 ### Condition 2
 
@@ -340,8 +340,8 @@ Top candidates by Correlation (45 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5, parch(X, V2), V2 < 2.5.` (tp=37, fp=76, Correlation=0.194) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule4_condition2_search.png)
-![population view](demo_covering_frames/rule4_condition2_population.png)
+![search view](covering_frames/rule4_condition2_search.png)
+![population view](covering_frames/rule4_condition2_population.png)
 
 ### Condition 3
 
@@ -362,8 +362,8 @@ Top candidates by Correlation (39 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5, parch(X, V2), V2 < 2.5, fare(X, V3), V3 >= 15.2.` (tp=36, fp=71, Correlation=0.199) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule4_condition3_search.png)
-![population view](demo_covering_frames/rule4_condition3_population.png)
+![search view](covering_frames/rule4_condition3_search.png)
+![population view](covering_frames/rule4_condition3_population.png)
 
 ### Condition 4
 
@@ -384,8 +384,8 @@ Top candidates by Correlation (37 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5, sibsp(X, V2), V2 < 2.5, parch(X, V3), V3 < 2.5, fare(X, V4), V4 >= 15.2.` (tp=36, fp=70, Correlation=0.201) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule4_condition4_search.png)
-![population view](demo_covering_frames/rule4_condition4_population.png)
+![search view](covering_frames/rule4_condition4_search.png)
+![population view](covering_frames/rule4_condition4_population.png)
 
 ### Condition 5
 
@@ -406,12 +406,12 @@ Top candidates by Correlation (31 considered in total):
 
 Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5, sex(X, male), sibsp(X, V2), V2 < 2.5, parch(X, V3), V3 < 2.5, fare(X, V4), V4 >= 15.2.` (tp=36, fp=70, Correlation=0.201) -- does not (yet) pass the 0.3 threshold.
 
-![search view](demo_covering_frames/rule4_condition5_search.png)
-![population view](demo_covering_frames/rule4_condition5_population.png)
+![search view](covering_frames/rule4_condition5_search.png)
+![population view](covering_frames/rule4_condition5_population.png)
 
 **No rule accepted from this attempt.** Hill climbing reached a local optimum whose Correlation never reaches 0.3; the covering loop stops here rather than keeping a rule that fails the filter.
 
-![progress view](demo_covering_frames/rule4_condition5_progress.png)
+![progress view](covering_frames/rule4_condition5_progress.png)
 
 ---
 
@@ -427,4 +427,4 @@ Chosen: `survived(X) :- pclass(X, V1), V1 < 1.5, sex(X, male), sibsp(X, V2), V2 
 
 105 positives / 497 negatives are covered by none of the 3 rules above -- the majority class among them, `died`, is what a decision list built from this ruleset would fall back to for any of these rows.
 
-![uncovered examples](demo_covering_frames/final_uncovered_population.png)
+![uncovered examples](covering_frames/final_uncovered_population.png)

@@ -27,8 +27,13 @@ work/
 examples/_*_arff/
 examples/_*_cache/
 examples/__pycache__/
+demos/_*_arff/
+demos/_*_cache/
+demos/__pycache__/
 # A demo's quick/no-args-default output -- a sample from its full run is
 # committed instead (see the demo's own module docstring).
 examples/*_quick_report.md
-examples/*_quick.png
-examples/*_quick_cd.png
+examples/*_quick*.png
+demos/*_quick_report.md
+demos/*_quick*.png
+demos/*/*_quick*.png
