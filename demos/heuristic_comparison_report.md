@@ -18,7 +18,9 @@ WRA, Correlation), its tuned parametrized ones (cost c=0.437, relative
 cost c_r=0.342, F-measure beta=0.5, m-estimate m=22.466), and an
 m-estimate sweep over m in {2, 4, 8, 16, 32}.
 Benchmarks: Weka's JRip and pyrulearn's Pypper, both with their own
-pruning, and both also use ordered class binarization.
+pruning, and both also use ordered class binarization. What each
+heuristic prefers is visualized by its coverage-space isometrics in the
+companion demo, [heuristic_isometrics](heuristic_isometrics_report.md).
 
 Datasets: 36 of the paper's datasets that are in
 `pyrulearn.experiments.catalog` (20 binary,

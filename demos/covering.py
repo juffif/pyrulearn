@@ -22,7 +22,7 @@ embedded inline:
    within one rule's own growth); the *entire* growth path so far (not
    just this round's hop), rendered via the same
    `CoverageSpace.plot_rule_refinement`/`rule_refinement_path` machinery
-   `demo_heuristics.py` uses for exactly this purpose; and the
+   `heuristic_isometrics.py` uses for exactly this purpose; and the
    `Correlation = 0.3` isometric overlaid, thin and dashed like the
    random-guess diagonal but in a distinct, more visible color, so the
    acceptance cutoff reads clearly against the (differently colored,
@@ -230,7 +230,7 @@ def _label_growth_path(ax, path, conds, spec):
 def plot_search_view(out_path, rule_idx, step_idx, n_steps, data, remaining_mask, target_class, step):
     """Panel 1: this round's candidates, the rule's entire growth path so
     far (`CoverageSpace.plot_rule_refinement`, the same routine
-    `demo_heuristics.py` uses for a rule's specialization path), and the
+    `heuristic_isometrics.py` uses for a rule's specialization path), and the
     0.3 correlation cutoff as a thin dashed isometric."""
     n_pos_remaining = int(np.sum(remaining_mask & (data.y == target_class)))
     n_neg_remaining = int(np.sum(remaining_mask & (data.y != target_class)))

@@ -1137,7 +1137,7 @@ hyperbolic curves -- and, empirically, that `Entropy`'s isometrics are
 *also* a pencil through the origin (same pivot as `Precision`), just
 with each score value split into a symmetric pair of rays, and that
 `FoilGain`'s (with a fixed parent) aren't even a single smooth curve
-(see *Isometrics*, above). See `examples/demo_heuristics.py`
+(see *Isometrics*, above). See `demos/heuristic_isometrics.py`
 for all of this in practice, including layering `Precision`/`Accuracy`
 isometrics under a rule's own refinement path.
 
@@ -2179,7 +2179,7 @@ coverage-space plots -- a rule set as a `DecisionList`'s arrow-connected
 cumulative path (`coverage_space_rulelist.png`), and one rule's own
 precision-ordered refinement path (`rule_refinement.png`).
 
-Other demos: `examples/demo_heuristics.py` (heuristic isometrics),
+Other demos: `demos/heuristic_isometrics.py` (heuristic isometrics),
 `examples/demo_workflow_comparison.py` and
 `examples/demo_seco_learners_comparison.py` (cross-benchmark model
 comparisons, each writing a `*_report.md`), and
