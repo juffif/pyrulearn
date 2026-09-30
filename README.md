@@ -2443,6 +2443,18 @@ that all of them give the same rules as `BooleanDataRepresentation`).
 
 ## Not yet implemented (left as clear extension points)
 
+Development plans, with the reasons behind them, are in
+[`ROADMAP.md`](ROADMAP.md).
+
+- **Every native learner on any data representation.** The SeCo learners
+  and `PyLORD` run unchanged on all four representations, and on
+  N-lists take about half the time (see `demos/representations_report.md`).
+  `ENDER`, `Boomer`, `OptimalRuleBoosting`, `CPAR` and `LRI` still work on
+  a dense matrix of the data, so they gain nothing from the other
+  representations; they should use the representation's coverage
+  functions instead. The representation would then be chosen once, when
+  the data is prepared (e.g. in `run_cv`), with N-lists as the default.
+
 - **More rule learners and importers.** Beyond what's already interfaced
   (decision trees, random forests, wittgenstein's IREP/RIPPER, imodels'
   Bayesian Rule Lists/Rule Sets, Weka's JRip/PART/J48, LORD, and pyarc's
@@ -2566,7 +2578,7 @@ Copyright © 2026 Johannes Fürnkranz.
 
 pyrulearn re-implements algorithms published by many others (see
 [`references.bib`](references.bib)) and interfaces to scikit-learn,
-`wittgenstein`, `imodels`, `pyarc` `pyfim`, Weka and
+`wittgenstein`, `imodels`, `pyarc` and `pyfim`, Weka and
 LORD. These are used through their public interfaces under their own
 licenses; none of them is bundled with pyrulearn. Datasets used in the demos
 come from public repositories such as OpenML and the UCI repository and are not
