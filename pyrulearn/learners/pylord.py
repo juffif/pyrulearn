@@ -61,7 +61,7 @@ discussion):
   `pyrulearn.data.NListRepresentation` builds that index --
   passing one to `PyLORD.fit` instead of a `BooleanDataRepresentation`
   runs the whole every-example search on it, with identical rules (see
-  `examples/demo_representations.py`). `pyrulearn.learners.seco.BeamSearch`/
+  `demos/representations.py`). `pyrulearn.learners.seco.BeamSearch`/
   `HillClimbing` now thread that N-list incrementally too
   (`initial_cover`/`refine_cover`/`cover_counts`), so this is
   substantively LORD's real scheme, not just a from-scratch recompute

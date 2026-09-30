@@ -1,6 +1,6 @@
 """
-examples/demo_seco_learners_comparison.py
-=========================================
+demos/seco_learners_comparison.py
+=================================
 
 pyrulearn's separate-and-conquer (SeCo) rule learners side by side, with
 Weka's JRip and the reference Java implementation of LORD as external
@@ -39,13 +39,13 @@ against CN2 on a few small datasets first, and its measured result --
 long, overfit rules and far higher fit times -- is the report's argument
 for leaving it out.
 
-Run: `python examples/demo_seco_learners_comparison.py` with no arguments
+Run: `python demos/seco_learners_comparison.py` with no arguments
 is the **quick** default (`QUICK_DATASETS_SPEC`, `QUICK_FOLDS`-fold); its
-report/plots go to ``demo_seco_learners_comparison_quick_*`` and are not
+report/plots go to ``seco_learners_comparison_quick_*`` and are not
 checked in. `--full` runs `FULL_DATASETS_SPEC`, `N_FOLDS`-fold
 (`LARGE_FOLDS`-fold for the two large datasets), and writes the canonical
-``demo_seco_learners_comparison_report.md`` (plots in
-``demo_seco_learners_comparison_plots/``). Needs the `experiments` extra.
+``seco_learners_comparison_report.md`` (plots in
+``seco_learners_comparison_plots/``). Needs the `experiments` extra.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ QUICK_DATASETS_SPEC = ("vote,tic-tac-toe,hepatitis,breast-cancer,heart-statlog,c
 QUICK_FOLDS = 3
 
 HERE = os.path.dirname(__file__)
-NAME = "demo_seco_learners_comparison"
+NAME = "seco_learners_comparison"
 REPORT_PATH = os.path.join(HERE, f"{NAME}_report.md")
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 QUICK_REPORT_PATH = os.path.join(HERE, f"{NAME}_quick_report.md")
@@ -197,10 +197,10 @@ def _build_description(datasets, n_folds: int, quick: bool, learner_names,
     mode_note = (
         f"**Quick run** ({len(datasets)} small datasets, {n_folds}-fold) -- a fast sanity "
         f"check, the default with no arguments. Full comparison ({len(FULL_BINARY)} binary and "
-        f"{len(FULL_MULTICLASS)} multi-class datasets): `python examples/{NAME}.py --full`.\n\n"
+        f"{len(FULL_MULTICLASS)} multi-class datasets): `python demos/{NAME}.py --full`.\n\n"
         if quick else
         f"**Full run** ({len(datasets)} datasets). Quick sanity check "
-        f"instead: `python examples/{NAME}.py` with no arguments.\n\n"
+        f"instead: `python demos/{NAME}.py` with no arguments.\n\n"
     )
     n_multiclass = sum(1 for d in datasets if d.task == "multiclass")
     large = [d.name for d in datasets if d.size == "large"]
@@ -246,11 +246,31 @@ Measures: test accuracy, number of rules and conditions, fit time.
 """
 
 
+def _summary_table(results) -> list:
+    """Per learner, sorted by mean rank (best first): accuracy, size, fit time,
+    wins, mean rank and failures -- ranks and wins within `results`."""
+    ranks = mean_rank(results, "accuracy")
+    wins = win_counts(results, "accuracy")
+    summary = results.groupby("learner")[
+        ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]].mean(numeric_only=True)
+    failures = results.groupby("learner")["error"].apply(lambda e: e.notna().sum())
+    lines = ["| learner | accuracy | n_rules | n_conditions | conds/rule | fit_time (s) | "
+             "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n"]
+    for learner in ranks.sort_values().index:
+        row = summary.loc[learner]
+        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
+                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
+                     f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
+                     f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
+    return lines
+
+
 def write_report(results, datasets, n_folds: int, report_path: str, plots: dict, quick: bool,
                  learner_names, aqr_results, aqr_verdict: str) -> None:
     results = results.copy()
     results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
     plots_dir = os.path.basename(PLOTS_DIR)
+    large_names = {d.name for d in datasets if d.size == "large"}
 
     lines = ["# Separate-and-conquer rule learners compared\n\n"]
     lines.append(render_setup_section(_build_description(datasets, n_folds, quick, learner_names, aqr_verdict)))
@@ -267,34 +287,61 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
         group_by=["dataset", "learner"], include_overall=False))
     lines.append("\n")
 
-    lines.append("## Summary by learner (mean across every dataset and fold)\n\n")
-    ranks = mean_rank(results, "accuracy")
-    wins = win_counts(results, "accuracy")
+    large = results[results["dataset"].isin(large_names)]
+    results = results[~results["dataset"].isin(large_names)]
+    n_main = results["dataset"].nunique()
+    lines.append(f"## Summary by learner (mean across the {n_main} datasets and their folds)\n\n")
+    if large_names:
+        lines.append(f"Without the two large datasets ({', '.join(sorted(large_names))}), where most "
+                     "learners hit the time cap -- see the section on them below. On these "
+                     f"{n_main} datasets every learner has a result for (almost) every fold, so the "
+                     "means compare like with like.\n\n")
     summary = results.groupby("learner")[
         ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]].mean(numeric_only=True)
-    failures = results.groupby("learner")["error"].apply(lambda e: e.notna().sum())
-    lines.append("| learner | accuracy | n_rules | n_conditions | conds/rule | fit_time (s) | "
-                 "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n")
-    for learner in summary["accuracy"].sort_values(ascending=False).index:
-        row = summary.loc[learner]
-        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
-                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
-                     f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
-                     f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
-    lines.append("\n`wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
+    lines += _summary_table(results)
+    lines.append("\nSorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
                  "split evenly; `mean rank` -- average accuracy rank across datasets, failures "
                  "tied for last. Means over successful fits only; `failures` counts the fits "
                  "that timed out or raised.\n\n")
 
-    task = {d.name: d.task for d in datasets}
+    size = {d.name: d.size for d in datasets}
+    by_size = results.assign(size=results["dataset"].map(size))
+    for label, sizes, rows_note in (("small", "small", "fewer than 1,000 examples"),
+                                    ("medium", "medium", "1,000 to 10,000 examples")):
+        part = by_size[by_size["size"] == sizes].drop(columns="size")
+        if part["dataset"].nunique() and len(set(size.values()) - {"large"}) > 1:
+            names = sorted(part["dataset"].unique())
+            lines.append(f"### {label.capitalize()} datasets only ({len(names)}, {rows_note})\n\n")
+            lines.append(", ".join(f"`{n}`" for n in names) + "\n\n")
+            lines += _summary_table(part)
+            lines.append("\n")
+
+    task = {d.name: d.task for d in datasets if d.name not in large_names}
     if len(set(task.values())) > 1:
         lines.append("## Mean accuracy by target type\n\n")
         lines.append("| learner | binary | multi-class |\n|---|--:|--:|\n")
         by_task = results.assign(task=results["dataset"].map(task)).groupby(
             ["learner", "task"])["accuracy"].mean()
-        for learner in summary["accuracy"].sort_values(ascending=False).index:
+        for learner in mean_rank(results, "accuracy").sort_values().index:
             b, m = by_task.get((learner, "binary")), by_task.get((learner, "multiclass"))
             lines.append(f"| {learner} | {b:.3f} | {m:.3f} |\n")
+        lines.append("\n")
+
+    if len(large):
+        lines.append(f"## The large datasets: {', '.join(sorted(large_names))}\n\n")
+        lines.append(
+            f"{LARGE_FOLDS}-fold cross-validation, with the same {FIT_TIMEOUT:.0f}s cap per fit as "
+            "everywhere else -- which learners get through tens of thousands of examples at all "
+            "is the result here. `folds` counts the folds that finished; accuracy, size and fit "
+            "time are means over those folds only.\n\n")
+        lines.append("| dataset | learner | folds | accuracy | n_rules | n_conditions | fit_time (s) |\n"
+                     "|---|---|--:|--:|--:|--:|--:|\n")
+        for (ds, learner), g in large.groupby(["dataset", "learner"]):
+            ok = g[g["error"].isna()]
+            cells = ([f"{ok[c].mean():.3f}" if c == "accuracy" else f"{ok[c].mean():.1f}"
+                      for c in ("accuracy", "n_rules", "n_conditions", "fit_time")]
+                     if len(ok) else ["--"] * 4)
+            lines.append(f"| {ds} | {learner} | {len(ok)}/{len(g)} | " + " | ".join(cells) + " |\n")
         lines.append("\n")
 
     lines.append("## Per-dataset results, per learner (mean across folds)\n\n")
@@ -391,7 +438,8 @@ def main(datasets_spec: Optional[str] = None) -> None:
     ], ignore_index=True)
     write_report(results, datasets, n_folds, report_path, plots, quick, learner_names,
                  aqr_results, aqr_verdict)
-    write_plots(results, plots, learner_names)
+    large_names = {d.name for d in datasets if d.size == "large"}
+    write_plots(results[~results["dataset"].isin(large_names)], plots, learner_names)
 
 
 if __name__ == "__main__":

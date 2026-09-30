@@ -158,11 +158,11 @@ produces byte-identical rules:
   `PrePostNListRepresentation` adds pre/post visit codes, giving its search
   fast path a second way to narrow a common feature's occurrences down to
   the current search branch. A deliberate opt-in, not a flag on
-  `NListRepresentation`: it's correct (see `examples/demo_representations.py`,
-  which runs it alongside the other three) but measured to be roughly
-  break-even to slightly *slower* than plain `NListRepresentation` at the
-  data scales this library deals with -- see its own docstring for the
-  numbers and when it might actually help.
+  `NListRepresentation`: it's correct (see `demos/representations.py`,
+  which runs it alongside the other three) but measured to be about
+  break-even with plain `NListRepresentation` at the data scales this
+  library deals with -- see `demos/representations_report.md` and its own
+  docstring for the numbers and when it might actually help.
 
 Coverage dispatches on the `DataRepresentation` subclass:
 `Rule.covers_data` / `Rule.covers_data_packed` both forward to
@@ -170,9 +170,9 @@ Coverage dispatches on the `DataRepresentation` subclass:
 is stored.
 
 Build any of the three with `.from_boolean(bool_rep)` (or `from_xy` /
-`from_dataframe`); see `examples/demo_representations.py`, which also
-runs each dataset in both feature encodings (paired negation features
-vs. positive tests only). Any `DataRepresentation` can switch between
+`from_dataframe`); see `demos/representations.py`, which also runs
+both feature encodings (paired negation features vs. positive tests
+only). Any `DataRepresentation` can switch between
 those encodings in place: `rep.without_negations()` drops every
 `not f` / `x != v` / `x < t` feature (a column slice; regenerates the
 constraints), and `rep.with_negations()` adds the missing ones back
@@ -2181,16 +2181,11 @@ precision-ordered refinement path (`rule_refinement.png`).
 
 Other demos: `demos/heuristic_isometrics.py` (heuristic isometrics),
 `examples/demo_workflow_comparison.py` and
-`examples/demo_seco_learners_comparison.py` (cross-benchmark model
+`demos/seco_learners_comparison.py` (cross-benchmark model
 comparisons, each writing a `*_report.md`), and
-`examples/demo_representations.py` (checks `NListRepresentation`,
-`PrePostNListRepresentation` and `SparseDataRepresentation` all give
-every SeCo learner byte-identical rules to `BooleanDataRepresentation`,
-in both feature encodings, times all four, and finishes with two
-synthetic sweeps -- one growing the feature count with density falling
-as a side effect, one fixing the feature count and sweeping density
-directly -- each plotting fit/`coverage()` time per representation
-against it).
+`demos/representations.py` (fit time of the four data representations
+over growing training sets and falling density, checking at every point
+that all of them give the same rules as `BooleanDataRepresentation`).
 
 ## Not yet implemented (left as clear extension points)
 

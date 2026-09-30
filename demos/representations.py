@@ -1,6 +1,6 @@
 """
-examples/demo_representations.py
-================================
+demos/representations.py
+========================
 
 Four encodings of the same Boolean data, all behind one
 `DataRepresentation` interface:
@@ -30,11 +30,11 @@ Learners: CN2, PFossil, Pypper and PyLORD, each with its defaults. Every
 fit runs in a worker process under a `FIT_TIMEOUT` cap; after a time-out
 the remaining, larger points of that curve are skipped.
 
-Run: `python examples/demo_representations.py` is the **quick** default
+Run: `python demos/representations.py` is the **quick** default
 (sizes up to 1,000, a short density sweep); its report/plots go to
-``demo_representations_quick_*`` and are not checked in. `--full` runs the
-full curves and writes ``demo_representations_report.md`` (plots in
-``demo_representations_plots/``). Every measurement is cached, so an
+``representations_quick_*`` and are not checked in. `--full` runs the
+full curves and writes ``representations_report.md`` (plots in
+``representations_plots/``). Every measurement is cached, so an
 interrupted run continues where it stopped.
 """
 
@@ -83,7 +83,7 @@ QUICK_DENSITIES = [0.5, 0.05, 0.005]
 COVERAGE_TRIALS = 800
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "demo_representations"
+NAME = "representations"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_representations_cache")
 
@@ -438,9 +438,9 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
     L = ["# Data representations: same rules, different speed\n\n"]
     L.append(
         ("**Quick run** (training sets up to 1,000 examples, short density sweep) -- a fast sanity "
-         "check, the default with no arguments. Full run: `python examples/demo_representations.py "
+         "check, the default with no arguments. Full run: `python demos/representations.py "
          "--full`.\n\n" if quick else
-         "**Full run.** Quick sanity check instead: `python examples/demo_representations.py`.\n\n")
+         "**Full run.** Quick sanity check instead: `python demos/representations.py`.\n\n")
         + "pyrulearn's learners never look at the data directly. They ask it two things -- which "
         "examples a rule covers (`coverage(rule)`) and which features an example has "
         "(`features_of(row)`) -- so the data can be stored in any structure that answers these "

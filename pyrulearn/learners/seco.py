@@ -2248,7 +2248,7 @@ class PFossil(SeCo):
 
     This replaces an earlier `BeamSearch(beam_width=5)` + `Correlation`
     default that behaved badly on two fronts, both confirmed on the
-    binary-UCI benchmark suite (`examples/demo_seco_learners_comparison`):
+    binary-UCI benchmark suite (`demos/seco_learners_comparison`):
 
     - *Runaway search.* `Correlation` evaluated at the beam's top
       candidate rarely drops below 0.3 as conditions are added (near-
