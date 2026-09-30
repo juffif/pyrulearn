@@ -188,15 +188,30 @@ def _stratified_folds(y: np.ndarray, n_folds: int, random_state: int):
         return list(splitter.split(np.zeros(len(y))))
 
 
+def _stable_params(value, depth: int = 0):
+    """`value` as JSON-ready data that is the same in every run: nested
+    component objects (e.g. a SeCo learner's `SingleRuleLearner`) by class
+    name and public attributes -- their default `str` includes a memory
+    address, which would change the cache key from run to run."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _stable_params(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [_stable_params(v, depth + 1) for v in value]
+        return sorted(items, key=repr) if isinstance(value, (set, frozenset)) else items
+    if hasattr(value, "__dict__") and depth < 8:
+        attrs = {k: v for k, v in vars(value).items() if not k.startswith("_")}
+        return {"__class__": f"{type(value).__module__}.{type(value).__qualname__}",
+                **{k: _stable_params(v, depth + 1) for k, v in attrs.items()}}
+    return f"{type(value).__module__}.{type(value).__qualname__}:{value!r}"
+
+
 def _cache_key(dataset: CatalogEntry, n_folds: int, fold: int, random_state: int,
               learner: RuleLearner) -> str:
     """A stable hash identifying one (dataset, fold split, learner
     configuration) cell -- see `run_cv`'s "Fold caching" paragraph."""
-    params = learner._provenance_params()
-    try:
-        params_repr = json.dumps(params, sort_keys=True, default=str)
-    except TypeError:
-        params_repr = repr(sorted(params.items(), key=lambda kv: kv[0]))
+    params_repr = json.dumps(_stable_params(learner._provenance_params()), sort_keys=True)
     payload = "|".join([
         dataset.name, str(dataset.openml_id), str(dataset.openml_version),
         str(n_folds), str(fold), str(random_state),

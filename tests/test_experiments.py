@@ -121,6 +121,20 @@ def test_run_cv_caches_finished_folds(tmp_path):
     )
 
 
+def test_cache_key_is_stable_for_learners_built_from_components():
+    # regression test: a SeCo learner's parameters include its
+    # SingleRuleLearner object, whose default str() carries a memory
+    # address -- two equal learners built separately (as in two runs) got
+    # different keys, so their cached folds were never reused
+    from pyrulearn.experiments.runner import _cache_key
+
+    entry = _synthetic_entry("synth_a")
+    key = lambda learner: _cache_key(entry, 3, 0, 0, learner)  # noqa: E731
+    assert key(PFossil(random_state=0)) == key(PFossil(random_state=0))
+    assert key(PFossil(random_state=0)) != key(PFossil(random_state=0, correlation_threshold=0.2))
+    print("run_cv's cache key is the same for equal, separately built learners: OK")
+
+
 def _sleep_then_return(seconds: float) -> str:
     """Module-level (picklable by reference) -- see `TimeoutRunner`'s
     docstring on why that's required."""
