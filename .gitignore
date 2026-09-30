@@ -34,6 +34,7 @@ demos/__pycache__/
 # committed instead (see the demo's own module docstring).
 examples/*_quick_report.md
 examples/*_quick*.png
+examples/*/*_quick*.png
 demos/*_quick_report.md
 demos/*_quick*.png
 demos/*/*_quick*.png
