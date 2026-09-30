@@ -25,7 +25,10 @@ Notes for the demo overhaul on this branch.
    - (d) rule ensembles: Slipper, LRI, CPAR, the ENDER variants, Boomer,
      optimal rule boosting, as accuracy against number of rules;
    - (e) numeric attributes: intrinsic handling vs. discretization (below);
-   - (f) multiclass decompositions (refresh of the pairwise demo).
+   - (f) multiclass decompositions (refresh of the pairwise demo). Idea
+     (2026-09-30): quick runs on small multi-class datasets, then a
+     detailed study on a few selected ones with many classes, such as
+     `kropt` (18 classes) and `letter` (26).
 3. **Tour demos** (overview, representations, heuristics/isometrics,
    decision-tree import) stay as short illustrations, updated to the new
    API and names.
@@ -40,6 +43,19 @@ infra, `jrip_native` (JRip on raw data) dropped, and the two Slipper
 variants (`Slipper`, `IModSlipper`) added to it. **Next up after that:
 (e), also kept as its own demo** -- native numeric-attribute handling
 vs. discretization.
+
+Decided (2026-09-30): the seco-learners demo stays its own demo instead
+of folding into (a), on the new infra: binary datasets only, the
+removal-covering learners CN2 (beam 5 only), PFoil, PFossil, AQR, Pypper
+and PyLORD, with Weka's JRip and the Java LORD as baselines. CPAR and LRI
+go into the covering vs. weighted covering demo (c), as complete
+learners next to the reweighting schemes, rather than into (d); the
+pool generators x distillers demo is (b).
+
+To do (2026-09-30): inverted heuristics (Stecher, Janssen & Fürnkranz)
+-- a refinement evaluated in the coverage space of its parent rule
+instead of the empty rule. Implement them in `pyrulearn.heuristics`,
+then add them to `heuristic_isometrics` and `heuristic_comparison`.
 
 Open questions: infrastructure in `examples/` or as a library module
 (e.g. `pyrulearn.experiments`; leaning towards the library); statistics

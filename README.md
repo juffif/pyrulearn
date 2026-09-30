@@ -2216,6 +2216,13 @@ against it).
   residual IREP\* re-growth pass is the one piece still missing from its
   optimization phase (`ReplaceReviseOptimization` itself is already done).
 
+- **Inverted heuristics** (Stecher, Janssen & Fürnkranz): evaluating a
+  refinement in the coverage space of the rule it refines -- the origin
+  moved to the parent rule's own coverage point -- rather than from the
+  empty rule, which favors longer, more specific rules in top-down search.
+  They would fit in as a heuristic wrapper next to `DeltaGain`, plotted
+  by `heuristic_isometrics` and compared in `heuristic_comparison`.
+
 - **Weighted and additive rule models**, at two different points in the
   pipeline. Weighted covering itself is done (`CoveringStrategy`:
   `RemovalCovering`, `WeightedCovering`; row weights on every

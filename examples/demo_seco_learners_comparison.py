@@ -1,492 +1,407 @@
 """
-JRip vs. pyrulearn's own SeCo-based learners -- comparison across the
-same binary UCI/OpenML benchmarks `demo_workflow_comparison.py` uses
-(`STANDARD_DATASETS`, reused directly from that module, along with its
-dataset loading/timeout/Weka-subprocess machinery -- see that module's
-own docstring for what each of those pieces does and why). `sonar` and
-`ionosphere` are excluded by default (`aqr`/`pylord` are very slow on
-their few-hundred-feature discretizations); `--include-large` adds them.
+examples/demo_seco_learners_comparison.py
+=========================================
 
-A separate demo from `demo_workflow_comparison.py` on purpose: the
-pyrulearn learners compared here (`CN2`, `PFoil`, `PFossil`, `AQR`, and
-`PyLORD`) build only over a `BooleanDataRepresentation` -- unlike the
-tree/RIPPER/IREP models in the other demo, they have no "fit on raw/
-native data" path. So there's only ever one data-preparation workflow
-here (`build_dataspec`/`binarize` first, i.e. the other demo's
-"Binarized" mode), not a Binarized-vs-Original comparison -- these models
-are compared against each other, not against themselves under two
-preparations. `jrip` and `lord` are the external baselines: both run on
-the same pre-binarized 0/1 data (placeholder feature names), one via
-`weka.jar`, one via LORD's jar. `pylord` is pyrulearn's own simplified
-take on LORD, run against the same reference (`lord`) directly.
+pyrulearn's separate-and-conquer (SeCo) rule learners side by side, with
+Weka's JRip and the reference Java implementation of LORD as external
+baselines, cross-validated through `pyrulearn.experiments.runner.run_cv`
+on mostly symbolic binary and multi-class datasets of
+`pyrulearn.experiments.catalog` (see `FULL_BINARY`/`FULL_MULTICLASS`
+for which, and why). All learners
+here learn a rule at a time and *remove* what it covers; learners that
+instead reweight covered examples (CPAR, LRI) belong to a separate
+covering vs. weighted-covering comparison.
 
-Models:
-- **`jrip`** -- Weka's JRip (RIPPER), via subprocess (`weka.jar`), same
-  invocation `demo_workflow_comparison.py`'s Weka trio uses, on the same
-  pre-binarized data with placeholder feature names (Weka's ARFF parser
-  chokes on `ds1`'s own condition-style names, e.g. `"age>=30"` --
-  see that module's docstring, wrinkle 3).
-- **`lord`** -- LORD (Huynh, Fürnkranz & Beck, 2023), the reference Java
-  implementation, via subprocess (needs `$LORD_CLASSPATH` = `<repo>/bin`
-  + `<repo>/libs/weka_3.8_stable.jar`; n/a otherwise, same as `jrip`
-  needs `weka.jar`). Runs `run.LordRun -mt mestimate -ma 0.1` on the
-  pre-binarized 0/1 CSV; `pyrulearn.interfaces.lord.LORDImporter`
-  reads its printed rule set back. Natively multi-class, no direction.
-- **`pylord`** -- `pyrulearn.learners.pylord.PyLORD`: the same algorithm
-  reimplemented (simplified) on `pyrulearn.learners.seco`'s pieces -- seed every
-  example, greedy m-estimate grow (`beam_width=1`), prune with RIPPER's
-  routine scored on the training set (LORD grows/prunes on the same
-  data), coverage filter, best-rule-wins. With no N-lists the every-row
-  search is ~O(n**2), so it's much slower than `lord` (and n/a on the
-  large datasets -- excluded by default, see `LARGE_DATASETS`); where it
-  runs it tracks `lord`'s rule sets closely. In-process through
-  `TimeoutRunner`.
-- **`pfoil`** -- `pyrulearn.learners.seco.PFoil`: `GainAscentHillClimbing` +
-  `FoilGain` + Quinlan's (1990) MDL-based encoding-length restriction as
-  `stopping=` (`mdl_stopping=True`, the default).
-- **`cn2beam1`** -- `pyrulearn.learners.seco.CN2` with `beam_width=1`: `BeamSearch`
-  at a beam of one is close to greedy hill-climbing over an ordinary
-  heuristic (`Laplace` here, unlike `PFoil`'s `FoilGain`), CN2's own
-  significance test still active as `stopping=`.
-- **`cn2beam5`** -- `CN2` with its own default `beam_width=5` (the
-  original paper's "star size").
-- **`pfossil`** -- `pyrulearn.learners.seco.PFossil`: `HillClimbing` over
-  `Correlation()` (FOSSIL's own heuristic; hill climbing, as in the
-  original), with FOSSIL's published 0.3 correlation cutoff wired as
-  `filtering=`. (Before 2026 this was `BeamSearch(beam_width=5)` +
-  `Correlation` + a 0.3 `stopping=` threshold, which searched orders of
-  magnitude harder and over-generalized badly -- see `PFossil`'s own
-  docstring.)
-- **`aqr`** -- `pyrulearn.learners.seco.AQR` (Clark & Niblett, 1989): the AQ
-  baseline CN2 was designed to improve on. `SeedExample` + a `LEF` +
-  **consistency required** (no rule may cover a negative), which on any
-  dataset with class noise forces long, overfit rules -- included here
-  precisely to show that failure mode against `cn2`'s significance test.
-  Expect it to be the slowest model and to time out (n/a) on the larger
-  noisy datasets -- rule count and rule length both blow up when every
-  rule has to reach zero training errors. Uses `BeamSearch` over the
-  seed-restricted space, not AQ's literal star search (see `AQR`'s
-  docstring).
+Learners (each with its own default settings and its own default way of
+handling several classes -- see `LEARNER_NOTES`):
 
-Like `ripper`/`irep` in the other demo, `pfoil`/`cn2beam1`/`cn2beam5`/
-`pfossil`/`aqr` are all *directional*: each only ever learns rules *for*
-one class, using the other as the default/passive prediction. Both
-directions are fit and reported separately -- `{model}_A` treats the
-(alphabetically) first class as positive, `{model}_B` the second.
-`jrip`, `lord` and `pylord` need no such split -- all handle multi-class
-natively.
+- **CN2**      -- `pyrulearn.learners.seco.CN2` (Clark & Boswell 1991):
+                  beam search (width 5) with Laplace, CN2's significance
+                  test as the stopping criterion.
+- **PFoil**    -- `PFoil`: FOIL's greedy gain-ascent search with FOIL
+                  gain and Quinlan's (1990) encoding-length restriction.
+- **PFossil**  -- `PFossil`: FOSSIL (Fürnkranz 1994), hill climbing on
+                  correlation with a 0.3 correlation cutoff.
+- **Pypper**   -- `Pypper`: pyrulearn's RIPPER (IREP* grow/prune plus
+                  `ReplaceReviseOptimization`).
+- **PyLORD**   -- `pyrulearn.learners.pylord.PyLORD`: a simplified
+                  reimplementation of LORD (Huynh, Fürnkranz & Beck 2023),
+                  one locally optimal rule per training example.
+- **Weka:JRip** -- Weka's RIPPER, via `pyrulearn.interfaces.weka.WekaJRip`
+                  (needs Weka, `WEKA_JAR`/`WEKA_JAVA` below).
+- **JavaLord** -- the reference LORD implementation, via
+                  `pyrulearn.interfaces.lord.JavaLord`. Only included when
+                  found (`LORD_CLASSPATH` below, or `$LORD_CLASSPATH`).
+
+**AQR** (Clark & Niblett 1989, the AQ baseline CN2 was designed to improve
+on) is *not* in the main comparison: `run_preliminary_aqr_check` fits it
+against CN2 on a few small datasets first, and its measured result --
+long, overfit rules and far higher fit times -- is the report's argument
+for leaving it out.
+
+Run: `python examples/demo_seco_learners_comparison.py` with no arguments
+is the **quick** default (`QUICK_DATASETS_SPEC`, `QUICK_FOLDS`-fold); its
+report/plots go to ``demo_seco_learners_comparison_quick_*`` and are not
+checked in. `--full` runs `FULL_DATASETS_SPEC`, `N_FOLDS`-fold
+(`LARGE_FOLDS`-fold for the two large datasets), and writes the canonical
+``demo_seco_learners_comparison_report.md`` (plots in
+``demo_seco_learners_comparison_plots/``). Needs the `experiments` extra.
 """
 
+from __future__ import annotations
+
 import os
-import time
-from datetime import datetime
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-import demo_workflow_comparison as base
-from pyrulearn.data.io import binarize, build_dataspec, write_arff
-from pyrulearn.interfaces.lord import LORDImporter, run_lord
-from pyrulearn.interfaces.weka import JRipImporter
+from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.runner import run_cv
+from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
+from pyrulearn.interfaces.lord import JavaLord
+from pyrulearn.interfaces.weka import WekaJRip
 from pyrulearn.learners.pylord import PyLORD
-from pyrulearn.data import BooleanDataRepresentation
-from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil
+from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil, Pypper
 
-N_FOLDS = base.N_FOLDS
-RANDOM_STATE = base.RANDOM_STATE
-MAX_INTERVALS = base.MAX_INTERVALS
-FIT_TIMEOUT_SECONDS = base.FIT_TIMEOUT_SECONDS
-STANDARD_DATASETS = base.STANDARD_DATASETS
-# Datasets the slow native learners can't finish in FIT_TIMEOUT_SECONDS:
-# `sonar`/`ionosphere` blow up in *feature* count (60/33 numeric attrs ->
-# a few hundred discretized features -> `aqr` times out); `kr-vs-kp`/
-# `mushroom` blow up in *row* count (2.5k/6.5k rows -> `pylord`'s every-row
-# search is ~O(n**2) without N-lists). Excluded by default; `--include-large`
-# (or `main(include_large=True)`) adds them back.
-LARGE_DATASETS = ["sonar", "ionosphere", "kr-vs-kp", "mushroom"]
-SMALL_DATASETS = [d for d in STANDARD_DATASETS if d not in LARGE_DATASETS]
+WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
+WEKA_JAR = r"C:\Program Files\Weka-3-8-7\weka.jar"
+# the reference LORD (github.com/vqphuynh/LORD): its compiled classes plus
+# its bundled Weka; $LORD_CLASSPATH / $LORD_JAVA take precedence
+LORD_DIR = r"C:\Users\juffi\Github\LORD"
+LORD_CLASSPATH = os.environ.get("LORD_CLASSPATH") or os.pathsep.join(
+    [os.path.join(LORD_DIR, "bin"), os.path.join(LORD_DIR, "libs", "weka_3.8_stable.jar")])
+LORD_JAVA = os.environ.get("LORD_JAVA") or WEKA_JAVA
 
-REPORT_PATH = os.path.join(os.path.dirname(__file__), "demo_seco_learners_comparison_report.md")
-ARFF_DIR = os.path.join(os.path.dirname(__file__), "_seco_learners_demo_arff")
-os.makedirs(ARFF_DIR, exist_ok=True)
+RANDOM_STATE = 0
+N_FOLDS = 10
+MAX_INTERVALS = 8
+FIT_TIMEOUT = 300.0
 
-DIRECTIONAL_MODELS = ["pfoil", "cn2beam1", "cn2beam5", "pfossil", "aqr"]
-SINGLE_MODELS = ["jrip", "lord", "pylord"]
-MODEL_VARIANTS = ["jrip", "lord", "pylord", "pfoil_A", "pfoil_B", "cn2beam1_A", "cn2beam1_B",
-                  "cn2beam5_A", "cn2beam5_B", "pfossil_A", "pfossil_B", "aqr_A", "aqr_B"]
+# Datasets whose attributes are mostly symbolic (at least half nominal) --
+# the kind these learners were designed for; numeric attributes and their
+# discretization are the numeric_discretization demo's topic. Left out:
+# artificial concepts (monks-problems-1/2/3, mofn-3-7-10, hayes-roth, led24),
+# datasets with many classes (audiology, primary-tumor, soybean, kropt --
+# for the multi-class demo), and large datasets other than adult and
+# connect-4.
+FULL_BINARY = [
+    "molecular-biology_promoters", "hepatitis", "SPECT", "heart-statlog", "breast-cancer",
+    "heart-h", "heart-c", "colic", "vote", "dresses-sales", "cylinder-bands", "credit-approval",
+    "tic-tac-toe", "credit-g", "kr-vs-kp", "sick", "mushroom", "adult",
+]
+FULL_MULTICLASS = [
+    "zoo", "lymph", "analcatdata_dmft", "anneal", "solar-flare", "cmc", "car", "dna", "splice",
+    "hypothyroid", "connect-4",
+]
+FULL_DATASETS_SPEC = ",".join(FULL_BINARY + FULL_MULTICLASS)
+LARGE_FOLDS = 5  # for the catalog's "large" datasets (adult, connect-4)
 
+# ten small, mostly symbolic datasets, two of them multi-class
+QUICK_DATASETS_SPEC = ("vote,tic-tac-toe,hepatitis,breast-cancer,heart-statlog,credit-approval,"
+                       "colic,SPECT,zoo,lymph")
+QUICK_FOLDS = 3
 
-# ---- module-level fit functions for TimeoutRunner (must be picklable by
-# reference, so no closures/lambdas -- see base.TimeoutRunner's docstring) ----
-
-def _fit_pfoil(rep, pos_class):
-    return PFoil(target_class=pos_class).fit(rep)
-
-
-def _fit_cn2_beam1(rep, pos_class):
-    return CN2(target_class=pos_class, beam_width=1).fit(rep)
-
-
-def _fit_cn2_beam5(rep, pos_class):
-    return CN2(target_class=pos_class, beam_width=5).fit(rep)
-
-
-def _fit_pfossil(rep, pos_class):
-    return PFossil(target_class=pos_class).fit(rep)
-
-
-def _fit_aqr(rep, pos_class):
-    return AQR(target_class=pos_class, maxstar=5).fit(rep)
+HERE = os.path.dirname(__file__)
+NAME = "demo_seco_learners_comparison"
+REPORT_PATH = os.path.join(HERE, f"{NAME}_report.md")
+PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
+QUICK_REPORT_PATH = os.path.join(HERE, f"{NAME}_quick_report.md")
+CACHE_DIR = os.path.join(HERE, "_seco_learners_comparison_cache")
 
 
-def _fit_pylord(rep):
-    return PyLORD(m=0.1, random_state=RANDOM_STATE).fit(rep)  # greedy grow, training-set prune
+def _plot_paths(quick: bool):
+    tag = "_quick" if quick else ""
+    return {kind: os.path.join(PLOTS_DIR, f"{NAME}{tag}_{kind}.png")
+            for kind in ("accuracy", "fit_time", "cd")}
 
 
-DIRECTIONAL_FIT_FNS = {
-    "pfoil": _fit_pfoil,
-    "cn2beam1": _fit_cn2_beam1,
-    "cn2beam5": _fit_cn2_beam5,
-    "pfossil": _fit_pfossil,
-    "aqr": _fit_aqr,
+def lord_available() -> bool:
+    return os.path.exists(LORD_CLASSPATH.split(os.pathsep)[0])
+
+
+def build_learners():
+    learners = [
+        CN2(random_state=RANDOM_STATE),
+        PFoil(random_state=RANDOM_STATE),
+        PFossil(random_state=RANDOM_STATE),
+        Pypper(random_state=RANDOM_STATE),
+        PyLORD(random_state=RANDOM_STATE),
+        WekaJRip(jar=WEKA_JAR, java=WEKA_JAVA),
+    ]
+    if lord_available():
+        learners.append(JavaLord(classpath=LORD_CLASSPATH, java=LORD_JAVA))
+    return learners
+
+
+# AQR vs. CN2 preliminary check -- see run_preliminary_aqr_check(): small
+# datasets with class noise, one of them (credit-approval) with several
+# numeric attributes, where AQR's time blows up
+PRELIM_DATASETS = ["breast-cancer", "hepatitis", "heart-statlog", "credit-approval"]
+PRELIM_FOLDS = 3
+
+
+def run_preliminary_aqr_check():
+    """Fits `AQR` against `CN2` -- the learner designed to improve on it --
+    on `PRELIM_DATASETS`, and returns `(results, verdict)`: the `run_cv`
+    table and a sentence built from the measured numbers."""
+    datasets = Catalog.default().select(names=PRELIM_DATASETS)
+    results = run_cv([CN2(random_state=RANDOM_STATE), AQR(random_state=RANDOM_STATE)], datasets,
+                     n_folds=PRELIM_FOLDS, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
+                     random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+    r = results.copy()
+    r["conds_per_rule"] = r["n_conditions"] / r["n_rules"]
+    m = r.groupby("learner")[["accuracy", "n_conditions", "conds_per_rule", "fit_time"]].mean()
+    aqr, cn2 = m.loc["AQR"], m.loc["CN2"]
+    verdict = (
+        f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), AQR was "
+        f"{'less' if aqr['accuracy'] < cn2['accuracy'] else 'not less'} accurate than CN2 "
+        f"(mean accuracy {aqr['accuracy']:.3f} vs. {cn2['accuracy']:.3f}), learned rules "
+        f"{aqr['conds_per_rule'] / cn2['conds_per_rule']:.1f}x as long "
+        f"({aqr['conds_per_rule']:.1f} vs. {cn2['conds_per_rule']:.1f} conditions per rule; "
+        f"{aqr['n_conditions']:.0f} vs. {cn2['n_conditions']:.0f} conditions in total), and took "
+        f"{aqr['fit_time'] / cn2['fit_time']:.0f}x as long per fit ({aqr['fit_time']:.1f}s vs. "
+        f"{cn2['fit_time']:.2f}s, mean) -- requiring every rule to be consistent overfits noisy "
+        f"data, and on larger datasets with numeric attributes the fit times would dominate the "
+        f"whole comparison."
+    )
+    return results, verdict
+
+
+# what the report says about each learner, keyed by display_name
+LEARNER_NOTES = {
+    "CN2": "Beam search (width 5) with the Laplace estimate; CN2's likelihood-ratio "
+           "significance test stops rules that aren't significant. Learns rules for "
+           "every class (one-vs-rest rule set).",
+    "PFoil": "FOIL: greedy search that adds the condition with the highest FOIL gain; "
+             "Quinlan's encoding-length restriction stops rules that cost more bits "
+             "than the examples they explain. Rules for every class.",
+    "PFossil": "FOSSIL: hill climbing on the correlation between rule and class; rules "
+               "below a correlation of 0.3 are dropped. Rules for every class.",
+    "Pypper": "pyrulearn's RIPPER: grow on two thirds of the data, prune on the rest "
+              "(IREP*), then optimize the rule set (replace/revise). Rules for the "
+              "classes from least to most frequent, the most frequent one as default.",
+    "PyLORD": "A simplified LORD: for every training example, the best rule covering it "
+              "(greedy m-estimate search, then pruning); a test example is classified by "
+              "the best rule that covers it. Many overlapping rules.",
+    "Weka:JRip": "Weka's RIPPER, run as a subprocess on the same binarized data. Fit time "
+                 "includes the JVM start.",
+    "JavaLord": "The reference LORD implementation (Java), run as a subprocess on the same "
+                "binarized data.",
 }
 
 
-def run_fold(train_df: pd.DataFrame, test_df: pd.DataFrame, target_col: str, arff_prefix: str,
-             runner: "base.TimeoutRunner"):
-    """Returns `(metrics, failures)`. `metrics` maps a model name (a
-    `MODEL_VARIANTS` entry) to a dict with `acc`/`n_rules`/`avg_cond`/
-    `fit_time`, for every model that fit within `FIT_TIMEOUT_SECONDS`
-    this fold. `failures` maps the same kind of key to an error string
-    (`"timeout"`, or the exception stringified) for every model that
-    didn't -- see `base.TimeoutRunner`/`base._run_weka_safe`.
-    """
-    feature_cols = [c for c in train_df.columns if c != target_col]
-    nominal_cols = [c for c in feature_cols if not pd.api.types.is_numeric_dtype(train_df[c])]
-    arff_types = {c: ("nominal" if c in nominal_cols else "numeric") for c in feature_cols}
+def _build_description(datasets, n_folds: int, quick: bool, learner_names,
+                       aqr_verdict: str) -> str:
+    mode_note = (
+        f"**Quick run** ({len(datasets)} small datasets, {n_folds}-fold) -- a fast sanity "
+        f"check, the default with no arguments. Full comparison ({len(FULL_BINARY)} binary and "
+        f"{len(FULL_MULTICLASS)} multi-class datasets): `python examples/{NAME}.py --full`.\n\n"
+        if quick else
+        f"**Full run** ({len(datasets)} datasets). Quick sanity check "
+        f"instead: `python examples/{NAME}.py` with no arguments.\n\n"
+    )
+    n_multiclass = sum(1 for d in datasets if d.task == "multiclass")
+    large = [d.name for d in datasets if d.size == "large"]
+    folds_note = (f"{n_folds}-fold stratified cross-validation" if quick or not large else
+                  f"{n_folds}-fold stratified cross-validation ({LARGE_FOLDS}-fold for the "
+                  f"large {', '.join(large)})")
+    lord_note = ("" if lord_available() else
+                 f"\nThe reference Java LORD is not included in this run (not found at "
+                 f"`{LORD_CLASSPATH.split(os.pathsep)[0]}`; set `$LORD_CLASSPATH`).\n")
+    learner_lines = "\n".join(f"- **{n}** -- {LEARNER_NOTES.get(n, '')}" for n in learner_names)
+    return f"""\
+{mode_note}pyrulearn's separate-and-conquer rule learners compared with each other
+and with two external baselines, on {len(datasets) - n_multiclass} binary and
+{n_multiclass} multi-class datasets from `pyrulearn.experiments.catalog`.
+All of them learn one rule at a time and remove the examples it covers;
+they differ in how a rule is searched for, when it stops, and whether and
+how the rule set is pruned. Every learner runs with its default settings,
+including its default way of handling several classes.
 
-    classes = sorted(pd.unique(train_df[target_col]).tolist())
-    if len(classes) != 2:
-        raise ValueError(f"expected a binary target, got {len(classes)} classes: {classes}")
-    class_a, class_b = classes
-    pos_directions = [(class_a, "A"), (class_b, "B")]
+The datasets have mostly symbolic attributes (at least half nominal), the
+kind these learners were designed for -- numeric attributes and their
+discretization are the topic of the numeric-discretization demo. Artificial
+concepts (the monks problems, m-of-n, Hayes-Roth, LED) and datasets with
+many classes (left for the multi-class demo) are not included.
 
-    train_y = train_df[target_col].to_numpy()
-    test_y = test_df[target_col].to_numpy()
+{learner_lines}
+{lord_note}
+AQR, the AQ baseline CN2 was designed to improve on, was checked
+separately and left out -- see "Why AQR isn't in the main comparison".
+{aqr_verdict}
 
-    metrics: dict = {}
-    failures: dict = {}
+Protocol: {folds_note}
+(`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
+(`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
+against that same `DataSpec` -- every learner sees the identical Boolean
+feature matrix per fold. Each fit is capped at {FIT_TIMEOUT:.0f}s; a
+time-out or an error counts as a failure (and as last in the ranking),
+not as the end of the run. The cap is deliberately kept for the large
+datasets too: which learners scale to tens of thousands of examples is
+part of the result (a single CN2 fit on adult takes about 20 minutes).
 
-    def record(model, acc, n_rules, avg_cond, fit_time):
-        metrics[model] = {"acc": acc, "n_rules": n_rules, "avg_cond": avg_cond, "fit_time": fit_time}
+Measures: test accuracy, number of rules and conditions, fit time.
+"""
 
-    def fail(model, error):
-        failures[model] = error
 
-    ds1 = build_dataspec(train_df, target=target_col, arff_types=arff_types, max_intervals=MAX_INTERVALS).build()
-    train_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, train_df), train_y)
-    test_rep1 = BooleanDataRepresentation(ds1, binarize(ds1, test_df), test_y)
+def write_report(results, datasets, n_folds: int, report_path: str, plots: dict, quick: bool,
+                 learner_names, aqr_results, aqr_verdict: str) -> None:
+    results = results.copy()
+    results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
+    plots_dir = os.path.basename(PLOTS_DIR)
 
-    for pos, tag in pos_directions:
-        for name, fit_fn in DIRECTIONAL_FIT_FNS.items():
-            model = f"{name}_{tag}"
-            t0 = time.time()
-            rules, err = runner.run(fit_fn, train_rep1, pos)
-            fit_time = time.time() - t0
-            if err is None:
-                record(model, *base._eval(rules, test_rep1, test_y), fit_time)
-            else:
-                fail(model, err)
+    lines = ["# Separate-and-conquer rule learners compared\n\n"]
+    lines.append(render_setup_section(_build_description(datasets, n_folds, quick, learner_names, aqr_verdict)))
+    lines.append(f"![accuracy vs. rule-set complexity]({plots_dir}/{os.path.basename(plots['accuracy'])})\n\n")
+    lines.append(f"![fit time per dataset]({plots_dir}/{os.path.basename(plots['fit_time'])})\n\n")
+    lines.append(f"![critical-difference diagram (accuracy)]({plots_dir}/{os.path.basename(plots['cd'])})\n\n")
 
-    # jrip: pre-binarized 0/1 data, placeholder feature names (Weka's ARFF
-    # parser can't handle ds1's own condition-style names -- see this
-    # module's docstring)
-    plain_names = [f"f{i}" for i in range(ds1.n_features)]
-    train_bool_df = pd.DataFrame(train_rep1.X.astype(int), columns=plain_names)
-    train_bool_df[target_col] = train_y
-    train_arff = os.path.join(ARFF_DIR, f"{arff_prefix}_train.arff")
-    write_arff(train_bool_df, target_col, train_arff)
+    lines.append("## Why AQR isn't in the main comparison\n\n")
+    lines.append(f"{aqr_verdict}\n\n")
+    aqr_results = aqr_results.copy()
+    aqr_results["conds_per_rule"] = aqr_results["n_conditions"] / aqr_results["n_rules"]
+    lines.append(render_results_table(
+        aqr_results, ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"],
+        group_by=["dataset", "learner"], include_overall=False))
+    lines.append("\n")
 
-    t0 = time.time()
-    stdout, err = base._run_weka_safe("jrip", train_arff)
-    fit_time = time.time() - t0
-    if err is not None:
-        fail("jrip", err)
-    else:
-        importer = JRipImporter()
-        rules = importer.parse(stdout)
-        ds = importer.dataspec
-        test_bool_df = pd.DataFrame(binarize(ds1, test_df).astype(int), columns=plain_names)
-        rep = BooleanDataRepresentation(ds, binarize(ds, test_bool_df), test_y)
-        record("jrip", *base._eval(rules, rep, test_y), fit_time)
+    lines.append("## Summary by learner (mean across every dataset and fold)\n\n")
+    ranks = mean_rank(results, "accuracy")
+    wins = win_counts(results, "accuracy")
+    summary = results.groupby("learner")[
+        ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]].mean(numeric_only=True)
+    failures = results.groupby("learner")["error"].apply(lambda e: e.notna().sum())
+    lines.append("| learner | accuracy | n_rules | n_conditions | conds/rule | fit_time (s) | "
+                 "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n")
+    for learner in summary["accuracy"].sort_values(ascending=False).index:
+        row = summary.loc[learner]
+        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
+                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
+                     f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
+                     f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
+    lines.append("\n`wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
+                 "split evenly; `mean rank` -- average accuracy rank across datasets, failures "
+                 "tied for last. Means over successful fits only; `failures` counts the fits "
+                 "that timed out or raised.\n\n")
 
-    # lord: same pre-binarized 0/1 CSV (placeholder names, class column last),
-    # driven via the LORD jar (needs the LORD_JAR env var; n/a otherwise --
-    # same as jrip needs weka.jar). LORD is natively multi-class, no direction.
-    header = plain_names + [target_col]
-    train_rows = [list(r) + [c] for r, c in zip(train_rep1.X.astype(int), train_y)]
-    t0 = time.time()
+    task = {d.name: d.task for d in datasets}
+    if len(set(task.values())) > 1:
+        lines.append("## Mean accuracy by target type\n\n")
+        lines.append("| learner | binary | multi-class |\n|---|--:|--:|\n")
+        by_task = results.assign(task=results["dataset"].map(task)).groupby(
+            ["learner", "task"])["accuracy"].mean()
+        for learner in summary["accuracy"].sort_values(ascending=False).index:
+            b, m = by_task.get((learner, "binary")), by_task.get((learner, "multiclass"))
+            lines.append(f"| {learner} | {b:.3f} | {m:.3f} |\n")
+        lines.append("\n")
+
+    lines.append("## Per-dataset results, per learner (mean across folds)\n\n")
+    lines.append(render_results_table(
+        results, ["accuracy", "n_rules", "n_conditions", "fit_time"],
+        group_by=["dataset", "learner"], include_overall=False))
+    lines.append("\n")
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    print(f"Report -> {report_path}")
+
+
+def write_plots(results, plots: dict, learner_names) -> None:
     try:
-        text = run_lord(train_rows, header, metric="mestimate", metric_arg=0.1,
-                        timeout=FIT_TIMEOUT_SECONDS)
-        fit_time = time.time() - t0
-        # dataspec=ds1, placeholder_features=True -- bind each f{i} condition
-        # to ds1's own feature i *by position* (same trick JavaLord._import
-        # uses), instead of letting parse() infer its own throwaway dataspec
-        # from the rule text. An inferred dataspec numbers features in
-        # first-seen-in-text order, which doesn't line up with ds1's/
-        # train_rep1's real column layout -- that mismatch is what caused
-        # rules to get measured-stats/evaluated against the wrong columns
-        # (IndexError, or silently wrong stats before that).
-        importer = LORDImporter(dataspec=ds1, placeholder_features=True)
-        # data=train_rep1 -- the exact representation LORD's own train_rows
-        # came from -- so each rule gets real measured stats: LORD's
-        # FlatRuleSet is unordered (unlike jrip's DecisionList) and needs
-        # them to resolve a genuine covering conflict via its default "max"
-        # combiner, which a bare parse() leaves un-annotated for.
-        rules = importer.parse(text, data=train_rep1)
-        rules.default_prediction = _majority_default_target(train_y)
-        # ds == ds1 now, so test_rep1 (already binarized against ds1) is
-        # exactly the representation these rules need -- no more round-trip
-        # through placeholder-named columns.
-        record("lord", *base._eval(rules, test_rep1, test_y), fit_time)
-    except Exception as e:  # noqa: BLE001 -- report any failure back, don't crash the fold
-        fail("lord", f"{type(e).__name__}: {e}")
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    colors = dict(zip(learner_names, plt.get_cmap("tab10").colors))
+    per_pair = results.groupby(["dataset", "learner"], as_index=False).mean(numeric_only=True)
 
-    # pylord: pyrulearn's own simplified reimplementation (pyrulearn.learners.pylord.
-    # PyLORD) -- seed every example, m-estimate, IREP-style grow/prune,
-    # best-rule-wins. No N-lists, so slow on large data; through TimeoutRunner
-    # like the SeCo learners.
-    t0 = time.time()
-    rules, err = runner.run(_fit_pylord, train_rep1)
-    if err is None:
-        record("pylord", *base._eval(rules, test_rep1, test_y), time.time() - t0)
-    else:
-        fail("pylord", err)
+    fig, ax = plt.subplots(figsize=(7, 5.5))
+    for learner in learner_names:
+        sub = per_pair[per_pair["learner"] == learner].dropna(subset=["accuracy"])
+        if len(sub):
+            ax.scatter(sub["n_conditions"], sub["accuracy"], label=learner,
+                       color=colors[learner], alpha=0.7, s=40)
+    ax.set_xscale("symlog")
+    ax.set_xlabel("total conditions (rule set complexity)")
+    ax.set_ylabel("test accuracy")
+    ax.set_title("accuracy vs. rule-set complexity, one point per dataset")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(plots["accuracy"], dpi=110)
+    plt.close(fig)
+    print(f"Plot   -> {plots['accuracy']}")
 
-    return metrics, failures
-
-
-def _majority_default_target(train_y):
-    """The training-majority class -- LORD doesn't print its own default
-    class, so the caller supplies it as the rule set's `default_prediction`."""
-    values, counts = np.unique(train_y, return_counts=True)
-    return values[int(np.argmax(counts))]
-
-
-def run_dataset(name: str, df: pd.DataFrame, target_col: str, runner: "base.TimeoutRunner", max_folds=None):
-    """Same `max_folds` semantics as `demo_workflow_comparison.run_dataset`."""
-    y = df[target_col].to_numpy()
-    classes = sorted(pd.unique(y).tolist())
-    print(f"\n{'=' * 78}\n{name}  (n={len(df)}, attributes={df.shape[1] - 1}, "
-          f"A={classes[0]!r}, B={classes[1]!r})\n{'=' * 78}")
-
-    md = [f"## {name}\n\n", f"n={len(df)}, attributes={df.shape[1] - 1}, "
-          f"A={classes[0]!r}, B={classes[1]!r}\n\n"]
+    names = sorted(per_pair["dataset"].unique())
+    x = np.arange(len(names))
+    w = 0.8 / len(learner_names)
+    fig, ax = plt.subplots(figsize=(max(8, 0.45 * len(names) * len(learner_names) / 4), 5.5))
+    for i, learner in enumerate(learner_names):
+        sub = per_pair[per_pair["learner"] == learner].set_index("dataset")
+        ts = [sub["fit_time"].get(n, np.nan) for n in names]
+        ax.bar(x + (i - (len(learner_names) - 1) / 2) * w, ts, w, label=learner, color=colors[learner])
+    ax.set_yscale("log")
+    ax.set_ylabel("mean fit time (s, log)")
+    ax.set_title("fit time per dataset")
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=60, ha="right", fontsize=8)
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3, axis="y")
+    fig.tight_layout()
+    fig.savefig(plots["fit_time"], dpi=110)
+    plt.close(fig)
+    print(f"Plot   -> {plots['fit_time']}")
 
     try:
-        splitter = base.StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
-        folds = list(splitter.split(df, y))
-    except ValueError as e:
-        print(f"  StratifiedKFold unavailable ({e}); falling back to plain KFold")
-        splitter = base.KFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
-        folds = list(splitter.split(df))
-    if max_folds is not None:
-        folds = folds[:max_folds]
-
-    all_metrics = {m: {"acc": [], "n_rules": [], "avg_cond": [], "fit_time": []} for m in MODEL_VARIANTS}
-    n_failures = {m: 0 for m in MODEL_VARIANTS}
-    t0 = time.time()
-    for i, (train_idx, test_idx) in enumerate(folds):
-        train_df = df.iloc[train_idx].reset_index(drop=True)
-        test_df = df.iloc[test_idx].reset_index(drop=True)
-        fold_metrics, failures = run_fold(train_df, test_df, target_col, arff_prefix=f"{name}_{i}", runner=runner)
-        for model, v in fold_metrics.items():
-            for field in ("acc", "n_rules", "avg_cond", "fit_time"):
-                all_metrics[model][field].append(v[field])
-        for model in failures:
-            n_failures[model] += 1
-        line = "  ".join(
-            f"{m}={base._pct(fold_metrics[m]['acc'])}" if m in fold_metrics else f"{m}=FAIL"
-            for m in MODEL_VARIANTS
-        )
-        note = f"  [failed/timed out: {', '.join(f'{m} ({e})' for m, e in failures.items())}]" if failures else ""
-        print(f"  fold {i + 1} ({time.time() - t0:.1f}s so far): {line}{note}")
-    dt = time.time() - t0
-
-    total_failures = sum(n_failures.values())
-    print(f"\n  Summary over {len(folds)} folds ({dt:.1f}s"
-          f"{f', {total_failures} model-fold timeout(s)/failure(s)' if total_failures else ''}):")
-    if total_failures:
-        md.append(f"*{total_failures} model-fold combination(s) timed out (> {FIT_TIMEOUT_SECONDS}s) or raised "
-                   f"and were skipped for that fold -- see per-model failure counts below.*\n\n")
-
-    md.append("**Accuracy**\n\n| model | accuracy | failed folds |\n|---|---|---|\n")
-    summary = {"name": name, "n": len(df), "time": dt}
-    for m in MODEL_VARIANTS:
-        vals = all_metrics[m]
-        fails = n_failures[m]
-        if vals["acc"]:
-            mean, std = float(np.mean(vals["acc"])), float(np.std(vals["acc"]))
-            acc_str = f"{base._pct(mean)} +/- {base._pct(std)}"
-            time_mean = float(np.mean(vals["fit_time"]))
-            nrules_mean = float(np.mean(vals["n_rules"]))
-            avgcond_mean = float(np.mean(vals["avg_cond"]))
-        else:
-            mean = time_mean = nrules_mean = avgcond_mean = float("nan")
-            acc_str = "n/a"
-        print(f"    {m:<12} acc={acc_str}" + (f"  ({fails}/{len(folds)} failed)" if fails else ""))
-        md.append(f"| {m} | {acc_str} | {fails}/{len(folds)} |\n")
-        summary[f"acc_{m}"] = mean
-        summary[f"time_{m}"] = time_mean
-        summary[f"nrules_{m}"] = nrules_mean
-        summary[f"avgcond_{m}"] = avgcond_mean
-
-    md.append("\n**Fit time (seconds/fold)**\n\n| model | time |\n|---|---|\n")
-    for m in MODEL_VARIANTS:
-        md.append(f"| {m} | {summary[f'time_{m}']:.3f} |\n")
-
-    md.append("\n**Rule complexity**\n\n| model | n_rules | avg_conditions |\n|---|---|---|\n")
-    for m in MODEL_VARIANTS:
-        md.append(f"| {m} | {summary[f'nrules_{m}']:.1f} | {summary[f'avgcond_{m}']:.2f} |\n")
-
-    md.append(f"\n({dt:.1f}s total)\n\n---\n\n")
-
-    return summary, md
+        ax = critical_difference_diagram(results, "accuracy")
+        ax.figure.tight_layout()
+        ax.figure.savefig(plots["cd"], dpi=110)
+        plt.close(ax.figure)
+        print(f"Plot   -> {plots['cd']}")
+    except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the report
+        print(f"Critical-difference diagram skipped: {type(e).__name__}: {e}")
 
 
-def _build_overview_table(results: list) -> list:
-    """Cross-dataset overview: average performance and average rank per
-    model (one column per `base.CRITERIA` field, failures tied last) --
-    the single-workflow analogue of `demo_workflow_comparison.
-    _build_overview_tables` (no Binarized-vs-Original comparison here,
-    since there's only ever one workflow)."""
-    lines = ["## Overview evaluation (across all datasets)\n\n"]
+def main(datasets_spec: Optional[str] = None) -> None:
+    quick = datasets_spec is None
+    spec = QUICK_DATASETS_SPEC if quick else datasets_spec
+    n_folds = QUICK_FOLDS if quick else N_FOLDS
+    report_path = QUICK_REPORT_PATH if quick else REPORT_PATH
+    plots = _plot_paths(quick)
 
-    lines.append("**Average performance across datasets**\n\n")
-    lines.append("| model | accuracy (%) | fit time (s) | n_rules | avg_conditions | datasets fully failed |\n")
-    lines.append("|---|---|---|---|---|---|\n")
-    for m in MODEL_VARIANTS:
-        accs = np.array([r[f"acc_{m}"] for r in results], dtype=float)
-        times = np.array([r[f"time_{m}"] for r in results], dtype=float)
-        nrules = np.array([r[f"nrules_{m}"] for r in results], dtype=float)
-        avgconds = np.array([r[f"avgcond_{m}"] for r in results], dtype=float)
-        n_fully_failed = int(np.isnan(accs).sum())
-        lines.append(
-            f"| {m} | {base._pct(np.nanmean(accs))} | {np.nanmean(times):.3f} | "
-            f"{np.nanmean(nrules):.1f} | {np.nanmean(avgconds):.2f} | {n_fully_failed} |\n"
-        )
+    datasets = Catalog.default().parse(spec, random_state=RANDOM_STATE)
+    learners = build_learners()
+    learner_names = [l.display_name for l in learners]
+    print("Preliminary check: AQR vs. CN2 ...")
+    aqr_results, aqr_verdict = run_preliminary_aqr_check()
+    print(aqr_verdict)
 
-    lines.append("\n**Average rank per criterion** (1 = best of "
-                  f"{len(MODEL_VARIANTS)}; failed entries tie for last)\n\n")
-    lines.append("| model | rank (accuracy) | rank (fit time) | rank (n_rules) | rank (avg_conditions) |\n")
-    lines.append("|---|---|---|---|---|\n")
-    avg_ranks = {m: {} for m in MODEL_VARIANTS}
-    for field, higher_is_better in base.CRITERIA:
-        per_dataset_ranks = {m: [] for m in MODEL_VARIANTS}
-        for r in results:
-            ranks = base._rank_dataset_by(r, MODEL_VARIANTS, field, higher_is_better)
-            for m in MODEL_VARIANTS:
-                per_dataset_ranks[m].append(ranks[m])
-        for m in MODEL_VARIANTS:
-            avg_ranks[m][field] = float(np.mean(per_dataset_ranks[m]))
-    for m in MODEL_VARIANTS:
-        ar = avg_ranks[m]
-        lines.append(
-            f"| {m} | {ar['acc']:.2f} | {ar['time']:.2f} | {ar['nrules']:.2f} | {ar['avgcond']:.2f} |\n"
-        )
-
-    return lines
-
-
-def main(datasets=None, max_folds=None, include_large=False):
-    if datasets is None:
-        datasets = STANDARD_DATASETS if include_large else SMALL_DATASETS
-    results = []
-    fold_note = f" Only the first {max_folds} of {N_FOLDS} fold(s) actually run (preview mode)." \
-        if max_folds is not None else ""
-    if not include_large and datasets == SMALL_DATASETS:
-        fold_note += f" {', '.join(LARGE_DATASETS)} excluded (pass --include-large)."
-    report = [
-        "# JRip vs. pyrulearn's SeCo-based learners -- comparison across binary datasets\n\n",
-        f"Generated {datetime.now():%Y-%m-%d %H:%M:%S}. N_FOLDS={N_FOLDS}, "
-        f"MAX_INTERVALS={MAX_INTERVALS}, FIT_TIMEOUT_SECONDS={FIT_TIMEOUT_SECONDS}.{fold_note} "
-        f"`{{model}}_A`/`{{model}}_B` treat each dataset's (alphabetically) first/second class "
-        f"as positive (`pfoil`/`cn2beam1`/`cn2beam5`/`pfossil`/`aqr` only -- `jrip`/`lord`/`pylord` need no direction). "
-        f"`jrip`'s fit-time includes JVM subprocess startup overhead, not just the algorithm "
-        f"itself. See this module's own docstring for what each model is.\n\n---\n\n",
+    groups = [(datasets, n_folds)] if quick else [
+        ([d for d in datasets if d.size != "large"], n_folds),
+        ([d for d in datasets if d.size == "large"], LARGE_FOLDS),
     ]
-
-    runner = base.TimeoutRunner()
-    try:
-        for name in datasets:
-            df, target_col = base.load_openml_raw(name)
-            summary, md = run_dataset(name, df, target_col, runner=runner, max_folds=max_folds)
-            results.append(summary)
-            report.extend(md)
-    finally:
-        runner.close()
-
-    print(f"\n{'=' * 78}\nOverall summary (mean accuracy per model)\n{'=' * 78}")
-    header = f"{'dataset':<16}" + "".join(f"{m:>14}" for m in MODEL_VARIANTS)
-    print(header)
-    report.append("## Overall summary\n\n")
-    report.append("### Accuracy\n\n")
-    report.append("| dataset | " + " | ".join(MODEL_VARIANTS) + " |\n")
-    report.append("|---" * (len(MODEL_VARIANTS) + 1) + "|\n")
-    for r in results:
-        print(f"{r['name']:<16}" + "".join(f"{base._pct(r['acc_' + m]):>14}" for m in MODEL_VARIANTS))
-        report.append(f"| {r['name']} | " + " | ".join(base._pct(r['acc_' + m]) for m in MODEL_VARIANTS) + " |\n")
-
-    report.append("\n### Fit time (seconds/fold)\n\n")
-    report.append("| dataset | " + " | ".join(MODEL_VARIANTS) + " |\n")
-    report.append("|---" * (len(MODEL_VARIANTS) + 1) + "|\n")
-    for r in results:
-        report.append(f"| {r['name']} | " + " | ".join(f"{r['time_' + m]:.3f}" for m in MODEL_VARIANTS) + " |\n")
-
-    report.append("\n### Rule count\n\n")
-    report.append("| dataset | " + " | ".join(MODEL_VARIANTS) + " |\n")
-    report.append("|---" * (len(MODEL_VARIANTS) + 1) + "|\n")
-    for r in results:
-        report.append(f"| {r['name']} | " + " | ".join(f"{r['nrules_' + m]:.1f}" for m in MODEL_VARIANTS) + " |\n")
-
-    report.append("\n### Average conditions per rule\n\n")
-    report.append("| dataset | " + " | ".join(MODEL_VARIANTS) + " |\n")
-    report.append("|---" * (len(MODEL_VARIANTS) + 1) + "|\n")
-    for r in results:
-        report.append(f"| {r['name']} | " + " | ".join(f"{r['avgcond_' + m]:.2f}" for m in MODEL_VARIANTS) + " |\n")
-
-    overview_lines = _build_overview_table(results)
-    report.extend(overview_lines)
-    print("".join(overview_lines))
-
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
-        f.writelines(report)
-    print(f"\nFull report written to {REPORT_PATH}")
+    results = pd.concat([
+        run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
+               random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+        for group, folds in groups if group
+    ], ignore_index=True)
+    write_report(results, datasets, n_folds, report_path, plots, quick, learner_names,
+                 aqr_results, aqr_verdict)
+    write_plots(results, plots, learner_names)
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="JRip vs. pyrulearn's SeCo-based learners comparison demo.")
-    parser.add_argument(
-        "--preview", action="store_true",
-        help="Run only fold 1 of every dataset (fold sizes match a full "
-             f"{N_FOLDS}-fold split -- only the loop is shortened) as a quick "
-             "timing/sanity check before committing to the full run. "
-             "Shorthand for --max-folds 1.",
-    )
-    parser.add_argument(
-        "--max-folds", type=int, default=None, metavar="N",
-        help="Run only the first N of the dataset's N_FOLDS folds. Overrides --preview.",
-    )
-    parser.add_argument(
-        "--include-large", action="store_true",
-        help=f"Also run the large numeric datasets ({', '.join(LARGE_DATASETS)}), "
-             "excluded by default because aqr/pylord are very slow on them.",
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--full", action="store_true",
+                        help=f"run the full comparison ({len(FULL_BINARY)} binary and "
+                             f"{len(FULL_MULTICLASS)} multi-class datasets) instead of the quick default")
+    parser.add_argument("--datasets", default=None,
+                        help="Catalog.parse() spec for a full-scale run, e.g. 'vote,mushroom'")
     args = parser.parse_args()
-    main(
-        max_folds=args.max_folds if args.max_folds is not None else (1 if args.preview else None),
-        include_large=args.include_large,
-    )
+    main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))
