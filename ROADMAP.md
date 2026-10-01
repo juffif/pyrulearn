@@ -76,6 +76,29 @@ matrix anyway.
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
 
+## Open problems from the multi-class demo
+
+Found with `examples/demo_multiclass_decomposition.py` (2026-10-01), to
+be discussed before that demo is final:
+
+- **Weighted vote of pairwise models.** `WeightedVote` scores a pair's
+  vote by the Laplace estimate of the deciding rule's stored statistics.
+  A binary model's default rule has its statistics counted over *all*
+  rows of the pair (e.g. `(383/371)` on `optdigits`, weight 0.51), not
+  over the rows it actually decides (those no rule covers, where it is
+  nearly always right). Default votes are therefore almost neutral while
+  rule votes are near 1, which biases the vote towards each pair's
+  rule-covered class: with the smaller class as the pair's target,
+  accuracy drops from 0.94 to 0.43 on `segment` and `optdigits`.
+  Decision lists already count the default rule over the rows that reach
+  it. To reconsider: count a binary model's default rule the same way, or
+  weight default votes differently in `WeightedVote`.
+- **Pypper with the larger class as a pair's target** learns no rules for
+  many pairs (128 of 210 on `primary-tumor`), and every rule-less model
+  votes for its pair's smaller class -- so the plain vote predicts the
+  rarest classes and collapses (accuracy 0.003). Why Pypper learns
+  nothing there is open.
+
 ## Release checklist
 
 - The version number is in four places: `pyproject.toml`,
