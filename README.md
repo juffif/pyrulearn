@@ -2414,6 +2414,10 @@ report and plots are checked in next to the script:
   against JRip and the Java LORD.
 - `representations` -- fit time of the four data representations over
   training-set size and density (its own loop, not `run_cv`).
+- `multiclass_decomposition` -- one-vs-rest, ordered one-vs-rest and
+  pairwise decomposition with Pypper and PFossil, after Fürnkranz's round
+  robin study: accuracy, and training and prediction time over the
+  number of classes.
 
 `heuristic_isometrics` and `covering` are illustrations, without
 cross-validation.
@@ -2513,6 +2517,12 @@ Development plans, with the reasons behind them, are in
   interface (export to `sympy`/DIMACS, SAT-based analysis) -- an earlier
   version was removed from this release and will return in a reworked
   form.
+
+- **Error-correcting output codes** (Dietterich & Bakiri 1995) for
+  multi-class classification, next to the existing one-vs-rest, ordered
+  and pairwise decompositions (see *Multiclass classification*): one
+  binary model per bit of a code word assigned to each class, and the
+  class whose code word is nearest to the predictions wins.
 
 - **Multi-label classification, preference learning and label ranking.**
   Learning tasks beyond a single class per example: several labels per

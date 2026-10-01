@@ -150,5 +150,5 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
 - Once a demo is done, it moves from `examples/` to `demos/` and drops
   its `demo_` prefix (decided 2026-09-29; done so far: `ripper_comparison`,
   `numeric_discretization`, `heuristic_comparison`, `heuristic_isometrics`,
-  `seco_learners_comparison`, `representations`,
+  `seco_learners_comparison`, `representations`, `multiclass_decomposition`,
   `covering`). A demo's plots go into their own subfolder there.

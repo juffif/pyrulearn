@@ -2,7 +2,7 @@
 
 ## Setup
 
-**Full run.** Quick sanity check instead: `python examples/demo_multiclass_decomposition.py`.
+**Full run.** Quick sanity check instead: `python demos/multiclass_decomposition.py`.
 
 A rule learner that learns rules for one class against the rest has to
 decompose a problem with several classes into two-class problems. This
@@ -84,11 +84,11 @@ Sorted by mean rank (accuracy rank across datasets, failures last). Rules and co
 
 One point per dataset and base learner: the mean one-vs-rest time divided by the mean pairwise time. Above 1, pairwise is faster. The dashed line is what a learner whose time grows linearly with the number of examples would give.
 
-![training time ratio, one-vs-rest / pairwise](demo_multiclass_decomposition_plots/demo_multiclass_decomposition_train_ratio.png)
+![training time ratio, one-vs-rest / pairwise](multiclass_decomposition_plots/multiclass_decomposition_train_ratio.png)
 
-![training time ratio, one-vs-rest / double round robin](demo_multiclass_decomposition_plots/demo_multiclass_decomposition_train_ratio_double.png)
+![training time ratio, one-vs-rest / double round robin](multiclass_decomposition_plots/multiclass_decomposition_train_ratio_double.png)
 
-![prediction time ratio, one-vs-rest / pairwise](demo_multiclass_decomposition_plots/demo_multiclass_decomposition_predict_ratio.png)
+![prediction time ratio, one-vs-rest / pairwise](multiclass_decomposition_plots/multiclass_decomposition_predict_ratio.png)
 
 ## Per dataset (mean across folds)
 
@@ -380,4 +380,42 @@ One point per dataset and base learner: the mean one-vs-rest time divided by the
 | zoo | Pypper:pw_smaller:accuracy_vote | 0.910 | 20.000 | 0.107 | 0.001 |
 | zoo | Pypper:pw_smaller:vote | 0.891 | 20.000 | 0.107 | 0.001 |
 | zoo | Pypper:pw_smaller:weighted_vote | 0.881 | 20.000 | 0.107 | 0.002 |
+
+## Why the weighted vote does poorly
+
+The weighted vote is clearly worse than the plain vote here, and much slower to predict. Both have the same cause in how it works: a pair model's vote is weighted by the Laplace estimate of the rule that decided it, and split -- weight `p` to the class it predicts, `1 - p` to the other class of its pair. Prediction is slower because it has to find, for every example and every pair model, the deciding rule among all covering rules, instead of just taking each model's prediction.
+
+Most of a pair model's decisions are made by its default rule: of the c(c-1)/2 pair models, only c - 1 have the example's own class as one of theirs, so most of them see an example of neither of their classes, and their rules rarely fire. pyrulearn annotates every rule with the training examples its body covers, independently of the other rules -- so a rule means the same in every model it is part of, and the counts don't change when a rule set is reordered or turned into a decision list. The default rule's body is empty ("true"), so it is counted over all of its pair's examples, and its Laplace estimate is simply its class's share of the pair. For a balanced pair that is about 0.5: the default votes are almost neutral, while a rule that fires -- rightly or wrongly -- votes with a weight near 1. With the larger class as the pair's target, the default is the smaller class and its share is below 0.5, so the split gives most of the default's vote to the *other* class, against the model's own prediction.
+
+To check that this is the cause, the default rules' counts are swapped, for prediction only, for counts over the examples each default actually decides (those no rule covers), on 4 small datasets (`primary-tumor`, `soybean`, `vowel`, `segment`; the first two with very unbalanced, the last two with balanced classes), 3-fold. Mean accuracy:
+
+| base learner | pair target | vote | accuracy-weighted | weighted (default over all rows) | weighted (default over the rows it decides) |
+|---|---|--:|--:|--:|--:|
+| PFossil | larger | 0.739 | 0.762 | 0.360 | 0.760 |
+| PFossil | smaller | 0.767 | 0.775 | 0.501 | 0.773 |
+| Pypper | larger | 0.637 | 0.754 | 0.362 | 0.744 |
+| Pypper | smaller | 0.748 | 0.747 | 0.475 | 0.727 |
+
+Counted over the examples it decides, the default rule gets a weight near its real reliability, and the weighted vote comes up to the level of the other two -- but not above it. The two ways of counting the default are two different meanings of a rule's counts (a statement in its own right vs. its role in this particular model); pyrulearn keeps the first, so the weighted vote stays as it is. The result: when most decisions come from default rules, rule-based vote weights add little, and the plain or the accuracy-weighted vote is the better choice.
+
+Per dataset:
+
+| dataset | base learner | pair target | vote | accuracy-weighted | weighted (default over all rows) | weighted (default over the rows it decides) |
+|---|---|---|--:|--:|--:|--:|
+| primary-tumor | PFossil | larger | 0.301 | 0.375 | 0.248 | 0.383 |
+| primary-tumor | PFossil | smaller | 0.404 | 0.425 | 0.407 | 0.442 |
+| primary-tumor | Pypper | larger | 0.003 | 0.442 | 0.248 | 0.407 |
+| primary-tumor | Pypper | smaller | 0.419 | 0.425 | 0.322 | 0.381 |
+| segment | PFossil | larger | 0.926 | 0.928 | 0.445 | 0.934 |
+| segment | PFossil | smaller | 0.926 | 0.928 | 0.445 | 0.934 |
+| segment | Pypper | larger | 0.946 | 0.945 | 0.464 | 0.944 |
+| segment | Pypper | smaller | 0.946 | 0.945 | 0.464 | 0.944 |
+| soybean | PFossil | larger | 0.919 | 0.924 | 0.372 | 0.912 |
+| soybean | PFossil | smaller | 0.925 | 0.925 | 0.774 | 0.905 |
+| soybean | Pypper | larger | 0.884 | 0.921 | 0.389 | 0.914 |
+| soybean | Pypper | smaller | 0.912 | 0.914 | 0.767 | 0.874 |
+| vowel | PFossil | larger | 0.811 | 0.823 | 0.377 | 0.811 |
+| vowel | PFossil | smaller | 0.811 | 0.823 | 0.377 | 0.811 |
+| vowel | Pypper | larger | 0.716 | 0.706 | 0.347 | 0.711 |
+| vowel | Pypper | smaller | 0.716 | 0.706 | 0.347 | 0.711 |
 

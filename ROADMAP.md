@@ -72,27 +72,49 @@ matrix anyway.
 - **`pyrulearn/learners/seco.py`**: the module docstring still says that
   rule-set optimization is not implemented, although `SeCo` has
   `optimization=` and Pypper uses `ReplaceReviseOptimization`.
+- **Error-correcting output codes** (Dietterich & Bakiri 1995) as a
+  further multi-class decomposition, next to one-vs-rest, ordered
+  one-vs-rest and pairwise: each class gets a code word, one binary
+  model is learned per code bit, and an example is assigned the class
+  whose code word is nearest to the models' predictions. It would fit as
+  another model type of `DecomposingLearner` (`fit(data, model=...)`) and
+  as another method in the multi-class decomposition demo.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
 
+## Design decisions and known behaviour
+
+Not to-dos: choices made deliberately, with the behaviour they imply, so
+they aren't reopened by accident.
+
+- **How rules are annotated** (decided 2026-10-01). Every rule is
+  annotated with the training examples its body covers, independently of
+  the other rules (`annotate_rules`, `annotate_default_rule`) -- so a
+  rule's counts mean the same in every model it belongs to, and don't
+  change when a rule set is reordered or turned into a decision list. The
+  default rule's body is empty, so it is counted over all training
+  examples (Weka, by contrast, prints JRip's rules and default over the
+  examples that reach them). Two alternatives were considered and not
+  taken: counting each rule over the examples it actually decides in its
+  model (more informative for decision lists, but model-dependent, so
+  every conversion or reordering would have to recount -- needing the
+  data), and counting it over the examples it was learned from (which
+  would make the same rule set annotated differently depending on the
+  order it was learned in).
+- **The pairwise weighted vote does poorly** -- a result of the
+  multi-class decomposition demo, explained in its report. It weights a
+  pair model's vote by the Laplace estimate of the deciding rule; most
+  pair models decide most examples by their default rule, whose counts
+  (over all of its pair's examples) make its weight just its class's
+  share of the pair -- about 0.5 for a balanced pair, below 0.5 when the
+  default is the pair's smaller class. Counting the default over the
+  examples it decides brings the weighted vote up to the plain vote, but
+  not above (the demo's final check). Kept as it is, following the
+  decision above.
+
 ## Open problems from the multi-class demo
 
-Found with `examples/demo_multiclass_decomposition.py` (2026-10-01), to
-be discussed before that demo is final:
-
-- **Weighted vote of pairwise models.** `WeightedVote` scores a pair's
-  vote by the Laplace estimate of the deciding rule's stored statistics.
-  A binary model's default rule has its statistics counted over *all*
-  rows of the pair (e.g. `(383/371)` on `optdigits`, weight 0.51), not
-  over the rows it actually decides (those no rule covers, where it is
-  nearly always right). Default votes are therefore almost neutral while
-  rule votes are near 1, which biases the vote towards each pair's
-  rule-covered class: with the smaller class as the pair's target,
-  accuracy drops from 0.94 to 0.43 on `segment` and `optdigits`.
-  Decision lists already count the default rule over the rows that reach
-  it. To reconsider: count a binary model's default rule the same way, or
-  weight default votes differently in `WeightedVote`.
 - **Pypper with the larger class as a pair's target** learns no rules for
   many pairs (128 of 210 on `primary-tumor`), and every rule-less model
   votes for its pair's smaller class -- so the plain vote predicts the

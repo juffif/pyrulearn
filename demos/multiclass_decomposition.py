@@ -1,6 +1,6 @@
 """
-examples/demo_multiclass_decomposition.py
-=========================================
+demos/multiclass_decomposition.py
+=================================
 
 Multi-class problems decomposed into two-class problems for a rule
 learner: one-vs-rest against pairwise (round robin) classification, after
@@ -38,13 +38,19 @@ examples in total, pairwise from (c - 1) * n, so for a learner whose time
 grows linearly with the examples the ratio is c / (c - 1), and above that
 for one that grows faster.
 
-Run: `python examples/demo_multiclass_decomposition.py` with no arguments
+A final check (`run_default_confidence_check`, on `CHECK_DATASETS`)
+explains why the weighted vote does poorly: it re-scores the pairwise
+models with each default rule counted over the examples it decides,
+instead of over all of its pair's examples (pyrulearn's convention, which
+the models keep).
+
+Run: `python demos/multiclass_decomposition.py` with no arguments
 is the **quick** default (`QUICK_DATASETS`, `QUICK_FOLDS`-fold); its
-report/plots go to ``demo_multiclass_decomposition_quick_*`` and are not
+report/plots go to ``multiclass_decomposition_quick_*`` and are not
 checked in. `--full` runs `FULL_DATASETS` (`N_FOLDS`-fold, `LARGE_FOLDS`
 for the large `kropt` and `letter`) and writes the canonical
-``demo_multiclass_decomposition_report.md`` (plots in
-``demo_multiclass_decomposition_plots/``). Needs the `experiments` extra.
+``multiclass_decomposition_report.md`` (plots in
+``multiclass_decomposition_plots/``). Needs the `experiments` extra.
 """
 
 from __future__ import annotations
@@ -82,7 +88,7 @@ FULL_DATASETS = QUICK_DATASETS + ["solar-flare", "segment", "yeast", "led24", "o
                                   "kropt", "letter"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "demo_multiclass_decomposition"
+NAME = "multiclass_decomposition"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_multiclass_decomposition_cache")
 
@@ -91,17 +97,22 @@ class Decomposition(NativeRuleLearner):
     """`base` decomposed by `method`, named ``"<base>:<method>"``; records
     the time of its own fit on the returned model (`fit_seconds`)."""
 
-    def __init__(self, base: str, method: str, random_state: int = RANDOM_STATE):
+    def __init__(self, base: str, method: str, random_state: int = RANDOM_STATE,
+                 record_default: bool = False):
         self.base = base
         self.method = method
         self.random_state = random_state
+        self.record_default = record_default
 
     @property
     def display_name(self) -> str:
         return f"{self.base}:{self.method}"
 
     def _provenance_params(self):
-        return {"base": self.base, "method": self.method, "random_state": self.random_state}
+        params = {"base": self.base, "method": self.method, "random_state": self.random_state}
+        if self.record_default:  # only then: keeps the main runs' cache keys unchanged
+            params["record_default"] = True
+        return params
 
     def fit(self, data):
         learner = {"Pypper": Pypper, "PFossil": PFossil}[self.base](random_state=self.random_state)
@@ -115,7 +126,27 @@ class Decomposition(NativeRuleLearner):
         t0 = time.perf_counter()
         model = learner.fit(data, **kwargs)
         model.fit_seconds = time.perf_counter() - t0
+        if self.record_default and isinstance(model, PairwiseModel):
+            model.default_decided_stats = _default_decided_stats(model, data)
         return model
+
+
+def _default_decided_stats(model: PairwiseModel, data) -> list:
+    """Per pair model: its default rule's statistics counted over the
+    pair's training examples that no rule covers -- the examples the
+    default actually decides -- instead of pyrulearn's convention (every
+    rule counted over everything its body covers, i.e. all of the pair's
+    examples for the default rule's empty body). Used only by the
+    default-confidence check; the model's own statistics stay unchanged."""
+    out = []
+    y = np.asarray(data.y)
+    for a, b, sub in model._triples:
+        pair = data.select_rows(np.isin(y, [a, b]))
+        uncovered = np.asarray(sub.predict(pair)) == sub.default_prediction
+        rule = sub.default_rule
+        out.append(None if rule is None or not uncovered.any()
+                   else rule.evaluate(pair.select_rows(uncovered)))
+    return out
 
 
 def build_learners():
@@ -140,6 +171,45 @@ def measure(model, test_rep) -> dict:
         model.predict(test_rep)
         out["predict_time"] = time.perf_counter() - t0
     return out
+
+
+def measure_default_confidence(model, test_rep) -> dict:
+    """The three vote schemes, plus the weighted vote with each default
+    rule's statistics swapped for those counted over the examples it
+    decides (`_default_decided_stats`), then swapped back."""
+    y = np.asarray(test_rep.y)
+
+    def accuracy(vote: str) -> float:
+        model.combiner = _resolve_pairwise_combiner(vote)
+        return float(np.mean(np.asarray(model.predict(test_rep)) == y))
+
+    out = {vote: accuracy(vote) for vote in VOTES}
+    rules = [sub.default_rule for _, _, sub in model._triples]
+    saved = [None if r is None else r._stats for r in rules]  # demo-only swap of the frozen stats
+    for rule, alt in zip(rules, model.default_decided_stats):
+        if rule is not None and alt is not None:
+            rule._stats = alt
+    try:
+        out["weighted_vote_default_decided"] = accuracy("weighted_vote")
+    finally:
+        for rule, old in zip(rules, saved):
+            if rule is not None:
+                rule._stats = old
+    return out
+
+
+# the default-confidence check: small datasets, unbalanced (primary-tumor,
+# soybean) and balanced (vowel, segment) classes
+CHECK_DATASETS = ["primary-tumor", "soybean", "vowel", "segment"]
+CHECK_FOLDS = 3
+
+
+def run_default_confidence_check() -> pd.DataFrame:
+    learners = [Decomposition(base, method, record_default=True)
+                for base in BASES for method in ("pw_smaller", "pw_larger")]
+    return run_cv(learners, Catalog.default().select(names=CHECK_DATASETS), n_folds=CHECK_FOLDS,
+                  fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                  cache_dir=CACHE_DIR, measure_fn=measure_default_confidence)
 
 
 def variants(results: pd.DataFrame) -> pd.DataFrame:
@@ -235,8 +305,8 @@ def _description(datasets, quick: bool, n_folds: int) -> str:
              f"{', '.join(large)})")
     names = ", ".join(f"`{d.name}` ({d.n_classes})" for d in sorted(datasets, key=lambda d: -d.n_classes))
     mode = ("**Quick run** -- a fast sanity check, the default with no arguments. Full run: "
-            f"`python examples/{NAME}.py --full`.\n\n" if quick else
-            f"**Full run.** Quick sanity check instead: `python examples/{NAME}.py`.\n\n")
+            f"`python demos/{NAME}.py --full`.\n\n" if quick else
+            f"**Full run.** Quick sanity check instead: `python demos/{NAME}.py`.\n\n")
     return f"""\
 {mode}A rule learner that learns rules for one class against the rest has to
 decompose a problem with several classes into two-class problems. This
@@ -280,7 +350,62 @@ shipping data and models between processes.
 """
 
 
-def write_report(results, var, datasets, paths, quick: bool, n_folds: int, report_path: str) -> None:
+def _weighted_vote_section(check: pd.DataFrame) -> list:
+    cols = {"vote": "vote", "accuracy_vote": "accuracy-weighted",
+            "weighted_vote": "weighted (default over all rows)",
+            "weighted_vote_default_decided": "weighted (default over the rows it decides)"}
+    ok = check[check["error"].isna()].copy()
+    ok["base"] = ok["learner"].str.split(":").str[0]
+    ok["target"] = ok["learner"].str.split(":").str[1].str.replace("pw_", "", regex=False)
+    means = ok.groupby(["base", "target"])[list(cols)].mean()
+    per_ds = ok.groupby(["dataset", "base", "target"])[list(cols)].mean()
+    L = ["## Why the weighted vote does poorly\n\n"]
+    L.append(
+        "The weighted vote is clearly worse than the plain vote here, and much slower to predict. "
+        "Both have the same cause in how it works: a pair model's vote is weighted by the Laplace "
+        "estimate of the rule that decided it, and split -- weight `p` to the class it predicts, "
+        "`1 - p` to the other class of its pair. Prediction is slower because it has to find, for "
+        "every example and every pair model, the deciding rule among all covering rules, instead of "
+        "just taking each model's prediction.\n\n"
+        "Most of a pair model's decisions are made by its default rule: of the c(c-1)/2 pair models, "
+        "only c - 1 have the example's own class as one of theirs, so most of them see an example of "
+        "neither of their classes, and their rules rarely fire. pyrulearn annotates every rule with "
+        "the training examples its body covers, independently of the other rules -- so a rule means "
+        "the same in every model it is part of, and the counts don't change when a rule set is "
+        "reordered or turned into a decision list. The default rule's body is empty (\"true\"), so "
+        "it is counted over all of its pair's examples, and its Laplace estimate is simply its "
+        "class's share of the pair. For a balanced pair that is about 0.5: the default votes are "
+        "almost neutral, while a rule that fires -- rightly or wrongly -- votes with a weight near "
+        "1. With the larger class as the pair's target, the default is the smaller class and its "
+        "share is below 0.5, so the split gives most of the default's vote to the *other* class, "
+        "against the model's own prediction.\n\n"
+        "To check that this is the cause, the default rules' counts are swapped, for prediction "
+        "only, for counts over the examples each default actually decides (those no rule covers), "
+        f"on {len(CHECK_DATASETS)} small datasets ({', '.join(f'`{d}`' for d in CHECK_DATASETS)}; "
+        f"the first two with very unbalanced, the last two with balanced classes), "
+        f"{CHECK_FOLDS}-fold. Mean accuracy:\n\n")
+    L.append("| base learner | pair target | " + " | ".join(cols.values()) + " |\n"
+             "|---|---|" + "--:|" * len(cols) + "\n")
+    for (base, target), row in means.iterrows():
+        L.append(f"| {base} | {target} | " + " | ".join(f"{row[c]:.3f}" for c in cols) + " |\n")
+    L.append(
+        "\nCounted over the examples it decides, the default rule gets a weight near its real "
+        "reliability, and the weighted vote comes up to the level of the other two -- but not "
+        "above it. The two ways of counting the default are two different meanings of a rule's "
+        "counts (a statement in its own right vs. its role in this particular model); pyrulearn "
+        "keeps the first, so the weighted vote stays as it is. The result: when most decisions "
+        "come from default rules, rule-based vote weights add little, and the plain or the "
+        "accuracy-weighted vote is the better choice.\n\n")
+    L.append("Per dataset:\n\n| dataset | base learner | pair target | " + " | ".join(cols.values())
+             + " |\n|---|---|---|" + "--:|" * len(cols) + "\n")
+    for (ds, base, target), row in per_ds.iterrows():
+        L.append(f"| {ds} | {base} | {target} | " + " | ".join(f"{row[c]:.3f}" for c in cols) + " |\n")
+    L.append("\n")
+    return L
+
+
+def write_report(results, var, datasets, paths, quick: bool, n_folds: int, report_path: str,
+                 check: pd.DataFrame) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda k, alt: f"![{alt}]({plots}/{os.path.basename(paths[k])})\n\n"  # noqa: E731
     L = ["# Multi-class decomposition: one-vs-rest vs. pairwise\n\n"]
@@ -317,6 +442,8 @@ def write_report(results, var, datasets, paths, quick: bool, n_folds: int, repor
                                   ["accuracy", "n_conditions", "train_time", "predict_time"],
                                   group_by=["dataset", "learner"], include_overall=False))
     L.append("\n")
+
+    L += _weighted_vote_section(check)
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(L)
     print(f"Report -> {report_path}")
@@ -339,8 +466,10 @@ def main(quick: bool = True) -> None:
     var = variants(results)
     n_classes = {d.name: d.n_classes for d in datasets}
     paths = write_plots(results, n_classes, quick)
+    print("Default-confidence check ...")
+    check = run_default_confidence_check()
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(results, var, datasets, paths, quick, n_folds, report)
+    write_report(results, var, datasets, paths, quick, n_folds, report, check)
 
 
 if __name__ == "__main__":
