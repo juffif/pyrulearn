@@ -24,11 +24,20 @@ intercept; repeated queries are merged. The result is a
 predicts the positive class where its score is ``>= 0``; the model where
 it is ``> 0`` -- only an exactly-zero score can differ).
 
-Installing `realkd` 0.2.1 on Python 3.14 takes some care: it pins
-`bitarray==1.5.3`, which doesn't build there (a current `bitarray` works:
-``pip install realkd --no-deps``, then ``pip install bitarray
-sortedcontainers``), and `sortednp` has no Windows wheel (it builds with
-MinGW). This module requires `realkd` only when used.
+Installing `realkd` 0.2.1 takes some care. It pins `bitarray==1.5.3`,
+which is often unavailable as a wheel; a current `bitarray` works fine
+in practice (``pip install realkd --no-deps``, then ``pip install
+bitarray sortedcontainers``). `sortednp` has no Windows wheel either,
+but builds there with a plain MinGW-w64 toolchain, no patch needed
+(verified: `sortednp` 0.5.0, WinLibs' MinGW-w64 16.2.0, Python 3.12):
+download its sdist, then, with MinGW's `bin/` on `PATH`, ``python
+setup.py build_ext --compiler=mingw32 bdist_wheel`` and `pip install`
+the wheel (``--user`` if the interpreter lives under `Program Files`).
+Caution: `sortednp`'s own build pulls in ``numpy<2``, which can
+silently downgrade an already-installed newer numpy system-wide --
+reinstall the intended numpy version right afterwards and recheck
+anything that depends on it (e.g. `scipy`). This module requires
+`realkd` only when used.
 """
 
 from __future__ import annotations

@@ -52,6 +52,23 @@ go into the covering vs. weighted covering demo (c), as complete
 learners next to the reweighting schemes, rather than into (d); the
 pool generators x distillers demo is (b).
 
+Decided (2026-10-01): the remaining demos.
+
+- `demo.py` is replaced by a short step-by-step tutorial on using the
+  framework.
+- `demo_rulefit_comparison.py` grows into the pool generators x rule
+  distillers comparison (b); `demo_random_forest_combiners.py` goes into
+  it too -- a pool used directly with a combiner is a special case of a
+  distiller.
+- One demo compares the native implementations with the interfaced
+  originals (a), pointing to `ripper_comparison` for the RIPPER family
+  (and to its Slipper check, and to `seco_learners_comparison` for
+  PyLORD vs. the Java LORD).
+- Weighted covering (c) and the rule ensembles / boosting (d) become one
+  demo.
+- `demo_decision_tree_import.py` and `demo_workflow_comparison.py` are no
+  longer needed.
+
 To do (2026-09-30): inverted heuristics (Stecher, Janssen & Fürnkranz)
 -- a refinement evaluated in the coverage space of its parent rule
 instead of the empty rule. Implement them in `pyrulearn.heuristics`,

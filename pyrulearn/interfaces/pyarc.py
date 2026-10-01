@@ -13,11 +13,20 @@ with, is roughly 10x faster than this package's pure-Python miner).
 
 **Dependencies.** `pyarc` itself is pure Python but refuses to import
 without Christian Borgelt's `fim` C extension (`pyfim`), which has no
-Windows wheels; on Windows it has to be built with a compiler (MinGW
-`g++` works, one missing `#include <time.h>` in `pyfim.c` needs adding
-first). Importing *this* module needs neither -- `pyarc` is imported
-lazily inside `PArcCBA.fit_external` -- and `PyarcCBAImporter` only
-reads attributes of an already-fitted `pyarc.CBA`.
+Windows wheels. It builds there with a plain MinGW-w64 toolchain, no
+source patch needed (verified: `pyfim` 6.28, WinLibs' MinGW-w64 16.2.0,
+Python 3.12) -- download the `pyfim` sdist, then, with MinGW's `bin/` on
+`PATH`, ``python setup.py build_ext --compiler=mingw32 bdist_wheel`` and
+`pip install` the resulting wheel (``--user`` if the interpreter lives
+under `Program Files`, not writable without elevation). `pyarc` itself
+also declares a dependency on the deprecated PyPI package literally
+named `sklearn`, which now refuses to build; a real `scikit-learn`
+install already provides the `sklearn` import `pyarc` needs at runtime,
+so install it with ``pip install --no-deps pyarc`` rather than letting
+pip pull that shim in. Importing *this* module needs neither -- `pyarc`
+is imported lazily inside `PArcCBA.fit_external` -- and
+`PyarcCBAImporter` only reads attributes of an already-fitted
+`pyarc.CBA`.
 
 **Input encoding.** Rows go to `pyarc` as transactions containing *only
 the features that are True* (False cells are turned into NaN, which

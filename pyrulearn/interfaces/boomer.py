@@ -32,8 +32,12 @@ steps) is ENDER's Newton method with L2 regularization -- natively
 binary data. BOOMER's multi-label learning (several outputs at once) is
 not supported: pyrulearn has no multi-label data or models yet (on the
 to-do list with preference learning and label ranking, see the README).
-This module requires `mlrl-boomer` only when used (it pins
-scikit-learn to its supported range).
+This module requires `mlrl-boomer` only when used. `mlrl-common`
+declares ``scikit-learn<1.9,>=1.8``, but that pin isn't actually
+enforced at runtime (verified working, including a real fit, against
+scikit-learn 1.9.1) -- install with ``pip install --no-deps mlrl-boomer
+mlrl-common mlrl-util`` to avoid an unnecessary downgrade of an
+already-installed newer scikit-learn.
 """
 
 from __future__ import annotations

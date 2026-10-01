@@ -5,6 +5,37 @@ releases, and why. The list of missing features for users is in the
 README (*Not yet implemented*); the overhaul of the demos has its own
 plan in [`examples/REVISION_PLAN.md`](examples/REVISION_PLAN.md).
 
+## High priority: count a numeric attribute's thresholds together
+
+**Not done yet** (as of 2026-10-01). The rule searches (`BeamSearch`,
+`HillClimbing`) score a candidate condition by counting the covered
+positives and negatives separately for every candidate -- one pass over
+the covered examples per threshold of a numeric attribute. Since the
+constraint propagation in `Rule.specialize` was made incremental
+(2026-09-30), this counting is about half of a search's time on numeric
+data (`segment`, Laplace SeCo: 3.0 s of 7.6 s).
+
+A numeric attribute's thresholds form a chain: `x >= t_k` covers exactly
+the examples in intervals `k` and above, `x < t_k` those below. Two ways
+to use that, in increasing order of gain and effort:
+
+1. *Skip dead thresholds*: walk a chain in threshold order and stop
+   counting once a threshold covers no positives -- every further one
+   in that direction covers a subset.
+2. *Count a whole chain in one pass*: over the examples the current rule
+   covers, count positives and negatives per interval of the attribute
+   once, then get the counts of every `>=` and `<` threshold by running
+   sums -- one pass per attribute instead of one per threshold (with
+   8 intervals, up to about 15 times less counting for numeric
+   attributes). The same works for a nominal attribute's values. The
+   search would score candidates from these counts and build the covered
+   set only for the candidates it keeps.
+
+Must work on every data representation (see the 0.3.0 plan below), and be
+checked as before: identical rules to the current search on the A/B
+datasets, the full test suite, and the speed-up measured per
+representation.
+
 ## 0.3.0: every native learner on any data representation
 
 **Principle.** Learners are written against the `DataRepresentation`

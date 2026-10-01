@@ -94,9 +94,9 @@ Requires Python ≥ 3.10, `numpy` and `scikit-learn` (the latter because
 | `experiments` | `pandas`, `scipy`, `matplotlib` | `pyrulearn.experiments` (the dataset catalog, cross-validation runner, ranking statistics and report helpers behind the comparison scripts in `demos/`) |
 | `wittgenstein` | `wittgenstein` | `pyrulearn.interfaces.wittgenstein` (IREP, RIPPER) |
 | `imodels` | `imodels` | `pyrulearn.interfaces.imodels` (Bayesian rule lists / sets, RuleFit, Slipper) |
-| `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, which must be built separately (no Windows wheels) |
-| `boomer` | `mlrl-boomer` | `pyrulearn.interfaces.boomer` (BOOMER); pins scikit-learn to its supported range |
-| `realkd` | `realkd` | `pyrulearn.interfaces.realkd` (optimal rule boosting); on Python 3.14 install it with `--no-deps` plus a current `bitarray` and `sortedcontainers`, and build `sortednp` (no Windows wheel) |
+| `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, no Windows wheels but builds there with MinGW-w64 -- see the module docstring |
+| `boomer` | `mlrl-boomer` | `pyrulearn.interfaces.boomer` (BOOMER); its declared scikit-learn pin isn't enforced at runtime -- install with `--no-deps`, see the module docstring |
+| `realkd` | `realkd` | `pyrulearn.interfaces.realkd` (optimal rule boosting); needs `sortednp`, no Windows wheel but builds there with MinGW-w64 -- see the module docstring |
 | `test` | `pytest` | running the test suite |
 | `all` | all of the above except `pyarc`, `boomer` and `realkd` | |
 
@@ -2459,20 +2459,9 @@ Development plans, with the reasons behind them, are in
   functions instead. The representation would then be chosen once, when
   the data is prepared (e.g. in `run_cv`), with N-lists as the default.
 
-- **More rule learners and importers.** Beyond what's already interfaced
-  (decision trees, random forests, wittgenstein's IREP/RIPPER, imodels'
-  Bayesian Rule Lists/Rule Sets, Weka's JRip/PART/J48, LORD, and pyarc's
-  CBA): more `StringRuleImporter` text formats (e.g. FOIL output); more
-  `ObjectRuleImporter`s for other sklearn tree ensembles (gradient
-  boosting, AdaBoost -- lower priority) and `imodels`'
-  `BoostedRulesClassifier`; and `pyIDS` (github.com/jirifilip/pyIDS) as an
-  external cross-check for the native `IDS` -- its selected rules read back through
-  the same `pyarc` CAR shape `PyarcCBAImporter` already parses, but the
-  package is unmaintained since 2021 and its declared `sklearn` dependency
-  is a now-broken PyPI package name (installs with `--no-deps`; a full
-  compatibility check on a modern Python is still open).
-  `imodels`' `SlipperClassifier` is addressed below instead, not here --
-  it is better served by native machinery than by a direct import.
+- **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 
+ `StringRuleImporter` for importing rule in text formats or
+  `ObjectRuleImporter`s for direct import of Python objects from other learners. We intend to add new learners on a per-need basis. 
 
 - **Closing gaps between native algorithms and their reference papers.**
   `AQR`'s literal *star* search and `PyLORD`'s exhaustive branch-and-bound
@@ -2487,26 +2476,6 @@ Development plans, with the reasons behind them, are in
   empty rule, which favors longer, more specific rules in top-down search.
   They would fit in as a heuristic wrapper next to `DeltaGain`, plotted
   by `heuristic_isometrics` and compared in `heuristic_comparison`.
-
-- **Weighted and additive rule models**, at two different points in the
-  pipeline. Weighted covering itself is done (`CoveringStrategy`:
-  `RemovalCovering`, `WeightedCovering`; row weights on every
-  representation, see *Row weights* and *Weighted covering*). What builds
-  on it is not:
-  - **CPAR** and **Slipper**, the motivating cases, are done
-    (`learners.cpar.CPAR`, `learners.boosting.Slipper`).
-  - **Lightweight Rule Induction** is done (`learners.lri.LRI`), except
-    for the paper's handling of missing values during the search.
-  - **Additive boosting of rules:** ENDER, BOOMER (single-label) and
-    optimal rule boosting are done natively (`learners.boosting`), BOOMER
-    and `realkd` are also interfaced; multi-label BOOMER waits for
-    multi-label support (see below). Fully corrective orthogonal gradient
-    boosting (Yang & Boley 2024) is not done.
-  - The **RuleFit-style distiller** (`learners.rulefit.RuleFit`, with
-    `LinearRuleModel`) covers weights at the *opposite* end -- fitted after
-    induction -- and is done; its own candidate generation (RuleFit's
-    gradient-boosted trees) is not, since any pool, e.g. one from
-    `from_random_forest`, can be passed as `rules=`.
 
 - **Representation and analysis extensions.** Rule bodies beyond pure
   conjunctions (e.g. general CNF/DNF rules); native readers for sparse
