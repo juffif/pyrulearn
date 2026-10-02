@@ -168,4 +168,15 @@ beforehand, at several discretization levels (`max_intervals`, e.g. 2,
   its `demo_` prefix (decided 2026-09-29; done so far: `ripper_comparison`,
   `numeric_discretization`, `heuristic_comparison`, `heuristic_isometrics`,
   `seco_learners_comparison`, `representations`, `multiclass_decomposition`,
-  `covering`). A demo's plots go into their own subfolder there.
+  `covering`, `native_vs_interfaced`). A demo's plots go into their own
+  subfolder there.
+
+Decided (2026-10-02): (a), native vs. external, is done as
+`demos/native_vs_interfaced.py` -- RuleFit, Boomer, CBA and Pypper
+against IMod:RuleFit, MLRL:Boomer, PArc:CBA and Weka:JRip, pointing to
+`ripper_comparison` (Pypper vs. JRip/RIPPER, and its own Slipper check)
+and `seco_learners_comparison` (PyLORD vs. JavaLord) rather than
+repeating them. OptimalRuleBoosting vs. RKD:RuleBoosting is checked in
+its own preliminary section instead of the main comparison -- neither's
+exhaustive search scales to this demo's wider, one-hot-encoded data
+within a reasonable time budget, a shared limit of the approach itself.

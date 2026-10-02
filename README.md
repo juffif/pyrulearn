@@ -2418,6 +2418,12 @@ report and plots are checked in next to the script:
   pairwise decomposition with Pypper and PFossil, after Fürnkranz's round
   robin study: accuracy, and training and prediction time over the
   number of classes.
+- `native_vs_interfaced` -- four native rule learners (RuleFit, Boomer,
+  CBA, Pypper) against the external reference implementations they're
+  modeled on (IMod:RuleFit, MLRL:Boomer, PArc:CBA, Weka:JRip); a fifth
+  pair, OptimalRuleBoosting vs. RKD:RuleBoosting, is checked separately
+  in its own preliminary section, since neither's exhaustive search
+  scales to this demo's wider data.
 
 `heuristic_isometrics` and `covering` are illustrations, without
 cross-validation.
