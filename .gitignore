@@ -6,6 +6,9 @@ build/
 dist/
 .eggs/
 
+# Jupyter
+.ipynb_checkpoints/
+
 # Virtual / conda environments (machine-specific)
 .conda/
 .venv/

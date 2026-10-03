@@ -22,6 +22,11 @@ algorithms can be run and compared through one API.
 > some demos need revising. Changes between versions are listed in the
 > [changelog](CHANGELOG.md).
 
+New here? [`tutorial/tutorial.ipynb`](tutorial/tutorial.ipynb) (also as a
+[PDF](tutorial/tutorial.pdf)) walks through loading your own data from a
+CSV, fitting a native learner, inspecting the rules it found, and comparing
+two learners across a few benchmark datasets.
+
 ## Contents
 
 - [Install](#install)
@@ -97,6 +102,7 @@ Requires Python ≥ 3.10, `numpy` and `scikit-learn` (the latter because
 | `pyarc` | `pyarc` | `pyrulearn.interfaces.pyarc` (CBA); `pyarc` itself also needs Borgelt's `pyfim` C extension, no Windows wheels but builds there with MinGW-w64 -- see the module docstring |
 | `boomer` | `mlrl-boomer` | `pyrulearn.interfaces.boomer` (BOOMER); its declared scikit-learn pin isn't enforced at runtime -- install with `--no-deps`, see the module docstring |
 | `realkd` | `realkd` | `pyrulearn.interfaces.realkd` (optimal rule boosting); needs `sortednp`, no Windows wheel but builds there with MinGW-w64 -- see the module docstring |
+| `notebook` | `jupyter`, `nbconvert`, `ipykernel` | only to *regenerate* `tutorial/tutorial.ipynb`/`.pdf` -- reading the committed files needs nothing extra. PDF export also needs a LaTeX install (e.g. MiKTeX on Windows) and `pandoc`. |
 | `test` | `pytest` | running the test suite |
 | `all` | all of the above except `pyarc`, `boomer` and `realkd` | |
 

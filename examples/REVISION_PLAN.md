@@ -180,3 +180,13 @@ repeating them. OptimalRuleBoosting vs. RKD:RuleBoosting is checked in
 its own preliminary section instead of the main comparison -- neither's
 exhaustive search scales to this demo's wider, one-hot-encoded data
 within a reasonable time budget, a shared limit of the approach itself.
+
+Decided (2026-10-03): `demo.py`'s replacement is done, but not as a demo
+-- a real Jupyter notebook, `tutorial/tutorial.ipynb` (executed, outputs
+committed, plus a PDF export), not a `.py` script with a generated
+Markdown report like everything else here. Loads Titanic from a bundled
+CSV (`pyrulearn.data.io.read_csv`, the real CSV-import path, not the
+`Catalog`) to fit `Pypper` and inspect its rules in a few `to_string`
+formats, then a small `Pypper` vs. `PFossil` comparison over `run_cv` on
+a few small `Catalog` datasets. `examples/demo.py` (the old smoke-test
+script) hasn't been deleted yet.
