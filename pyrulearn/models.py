@@ -949,7 +949,7 @@ def _container_legend(labels: Sequence[Any], show_classes: Optional[bool]) -> Tu
 
 def _decorate(
     rule: Rule, text: str, coverage: Optional[dict], class_order: Tuple[Any, ...] = (),
-    above: bool = False,
+    comment_on_first_line: bool = False, note: Optional[str] = None,
 ) -> str:
     """Wrap one rule's already-rendered `text` with a trailing coverage
     comment from `coverage` (one entry of `_rule_coverage_dicts`'s
@@ -964,24 +964,38 @@ def _decorate(
     - otherwise (no labels, or no target): the bare covered count,
       ``% (n_covered)``.
 
+    `note`, if given, is appended inside the comment's own brackets --
+    ``% (tp/fp - note)`` -- e.g. `_default_section` passing "default".
+
     No weight decoration here -- `WeightedRule.to_string` already
     renders its own weight natively, in every format.
 
-    `above=True` (pretty-printed Prolog) puts the comment on its own line
-    above the rule's head instead of after it."""
+    `comment_on_first_line=True` (pretty-printed Prolog) appends the
+    comment to `text`'s own first line instead of its last -- a
+    multi-line pretty rule's head and the comment describing the whole
+    rule belong together, not trailing several indented condition lines
+    later. A one-line `text` (no conditions, e.g. `target(X) :- true.`)
+    has only one line either way, so this falls back to the plain
+    trailing form on its own."""
     if coverage is None:
         return text
     by_class = coverage.get("n_covered_by_class")
     if class_order and by_class is not None:
         counts = ", ".join(_fmt_count(by_class.get(c, 0)) for c in class_order)
-        comment = f"% [{counts}]"
+        inner, close = f"[{counts}", "]"
     elif by_class is not None and rule.target is not None:
         tp = by_class.get(rule.target, 0)
         fp = coverage["n_covered"] - tp
-        comment = f"% ({_fmt_count(tp)}/{_fmt_count(fp)})"
+        inner, close = f"({_fmt_count(tp)}/{_fmt_count(fp)}", ")"
     else:
-        comment = f"% ({_fmt_count(coverage['n_covered'])})"
-    return f"{comment}\n{text}" if above else f"{text}  {comment}"
+        inner, close = f"({_fmt_count(coverage['n_covered'])}", ")"
+    if note:
+        inner += f" - {note}"
+    comment = f"% {inner}{close}"
+    if comment_on_first_line and "\n" in text:
+        first, rest = text.split("\n", 1)
+        return f"{first}  {comment}\n{rest}"
+    return f"{text}  {comment}"
 
 
 def _fmt_count(x) -> str:
@@ -996,20 +1010,22 @@ _HEADLESS_FORMATS = ("conditions", "pattern")
 
 
 def _default_section(dr: "SingleRule", fmt: str, ascii: bool, pretty: bool,
-                     dec: Callable[[Rule, str], str], weight_format: Optional[str] = None) -> str:
+                     dec: Callable[..., str], weight_format: Optional[str] = None) -> str:
     """A model's trailing default-rule section: ``% default`` above the
-    rendered default rule -- or, for a format without heads, the class on
-    the header line itself (``% default: x``), since the rule's empty body
-    wouldn't show it."""
+    rendered default rule -- or, for a format without heads, the class as
+    the line's own label (``x: ... (n - default)``), matching how every
+    other rule in the same headless list is labeled, since the rule's
+    empty body wouldn't show it otherwise."""
     if fmt in _HEADLESS_FORMATS:
-        return dec(dr, f"% default: {dr.target}")
+        return dec(dr, f"{dr.target}:", note="default")
     return f"% default\n{dec(dr, _bare(dr, fmt, ascii, pretty, weight_format))}"
 
 
-def _stored_dec(show_stats: bool, above: bool) -> Callable[[Rule, str], str]:
+def _stored_dec(show_stats: bool, comment_on_first_line: bool) -> Callable[..., str]:
     """A decorator adding a rule's own stored stats, as the model
     printers' `dec` does (used where no model-wide coverage is at hand)."""
-    return lambda r, text: _decorate(r, text, _frozen_coverage(r) if show_stats else None, (), above)
+    return lambda r, text, note=None: _decorate(
+        r, text, _frozen_coverage(r) if show_stats else None, (), comment_on_first_line, note)
 
 
 def _bare(rule: Rule, fmt: str, ascii: bool, pretty: bool = False,
@@ -1151,7 +1167,8 @@ class RuleSet(RuleModel):
 
         `pretty=True` prints each rule's conditions on separate indented
         lines (`Rule.to_string`'s `pretty`), with a rule's coverage comment
-        on its own line above its head (Prolog; other formats unaffected).
+        appended to its head line instead of trailing its last condition
+        (Prolog; other formats unaffected).
 
         A set resolved by list order (its own combiner ``"list"``, rules
         with more than one head) prints like a `DecisionList` instead --
@@ -1165,8 +1182,9 @@ class RuleSet(RuleModel):
                                       weight_format=weight_format)
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
-        above = pretty and resolved == "prolog"
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order, above)  # noqa: E731
+        comment_on_first_line = pretty and resolved == "prolog"
+        dec = lambda r, text, note=None: _decorate(  # noqa: E731
+            r, text, coverage.get(id(r)), class_order, comment_on_first_line, note)
         sections = []
         for t in sorted({r.target for r in self.rules}, key=_sortkey):
             group = [r for r in self.rules if r.target == t]
@@ -1249,7 +1267,9 @@ class RuleList(RuleModel):
         formats list rules sequentially in list order, with
         `default_rule` (if set) appended as a trailing ``% default``
         section (an if/elif chain's ``else`` already says "default" for
-        "logic", so no extra label is needed there).
+        "logic", so no extra label is needed there; a headless format
+        instead labels its line ``x: ... (n - default)``, like every
+        other rule's own ``x: ...`` label there).
 
         `show_stats`, `show_distribution` and `show_classes` decorate
         every rule the same way as `RuleSet.to_string` -- see there. Left
@@ -1263,8 +1283,9 @@ class RuleList(RuleModel):
         happens to consult them."""
         resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
         coverage, class_order, legend_classes = _decoration(self, show_stats, show_distribution, show_classes)
-        above = pretty and resolved == "prolog"
-        dec = lambda r, text: _decorate(r, text, coverage.get(id(r)), class_order, above)  # noqa: E731
+        comment_on_first_line = pretty and resolved == "prolog"
+        dec = lambda r, text, note=None: _decorate(  # noqa: E731
+            r, text, coverage.get(id(r)), class_order, comment_on_first_line, note)
         rules = self.rules
         if resolved == "logic":
             arrow_sym = "->" if ascii else "→"
@@ -1454,7 +1475,7 @@ class SingleRule(RuleSet):
         if id(self) not in coverage:
             return text
         decorated = _decorate(self._rule, text, coverage.get(id(self)), class_order,
-                              above=pretty and resolved == "prolog")
+                              comment_on_first_line=pretty and resolved == "prolog")
         return f"{_class_legend(legend_classes)}\n\n{decorated}" if legend_classes else decorated
 
 
@@ -2024,7 +2045,7 @@ class EnsembleModel(CompositeModel):
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-            dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
+            dec = _stored_dec(show_stats, comment_on_first_line=pretty and resolved == "prolog")
             sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)
@@ -2344,7 +2365,7 @@ class PairwiseModel(CompositeModel):
             sections.append(f"{header}\n{body}")
         if self.default_rule is not None:
             resolved = fmt if fmt is not None else Rule.DEFAULT_FORMAT
-            dec = _stored_dec(show_stats, above=pretty and resolved == "prolog")
+            dec = _stored_dec(show_stats, comment_on_first_line=pretty and resolved == "prolog")
             sections.append(_default_section(self.default_rule, resolved, ascii, pretty, dec, weight_format))
         legend_classes = _container_legend(self.labels, show_classes)
         rendered = "\n\n".join(sections)

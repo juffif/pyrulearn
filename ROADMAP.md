@@ -143,6 +143,22 @@ they aren't reopened by accident.
   examples it decides brings the weighted vote up to the plain vote, but
   not above (the demo's final check). Kept as it is, following the
   decision above.
+- **The Prolog rendering of a decision list's default rule isn't
+  faithful standalone Prolog** (noted 2026-10-03, building the
+  tutorial). `died(X) :- true.` reads as "died holds for every X", but
+  the model only means it for rows no earlier rule matched -- the
+  faithful body would be `died(X) :- not(survived_rule_1(X)), not(...),
+  ...`, and in general every non-first rule of a decision list would
+  need the same growing prefix of negated earlier rules to be exactly
+  right, which would make longer lists unreadable. A cleaner fix exists
+  -- give every rule (default included) a shared head like `class(X,
+  <target>)` and a trailing cut (`!`), which is faithful first-match-wins
+  Prolog without any explicit negation -- but it only reads correctly if
+  each rule's printed stats are also its cut-aware decided coverage, not
+  its independent one, which is the "how rules are annotated" choice
+  above, deliberately not reopened. No change: the current rendering
+  stays informal/approximate for a decision list's non-first rules, most
+  visibly its default.
 
 ## Open problems from the multi-class demo
 

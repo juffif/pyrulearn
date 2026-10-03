@@ -96,6 +96,24 @@ def test_pretty_prolog_puts_each_condition_on_its_own_indented_line():
     assert rule.to_string("logic", pretty=True) == rule.to_string("logic")  # other formats: unaffected
 
 
+def test_pattern_format_truncates_long_vectors_unless_pretty():
+    n = Rule.PATTERN_TRUNCATE_AT
+    short = Rule([0, 2], n_features=n)             # exactly at the threshold: no truncation
+    assert "..." not in short.to_string("pattern")
+    assert short.to_string("pattern", pretty=True) == short.to_string("pattern")
+
+    long_ = Rule([0, n], n_features=n + 5)         # one condition past the truncation point
+    truncated = long_.to_string("pattern")
+    assert truncated.endswith("...")
+    assert truncated.split()[:-1] == ["1"] + ["0"] * (n - 1)      # first n tokens, "..." stripped
+    full = long_.to_string("pattern", pretty=True)
+    assert "..." not in full
+    tokens = full.split()
+    assert len(tokens) == n + 5
+    assert [i for i, t in enumerate(tokens) if t == "1"] == [0, n]
+    print("pattern format truncation: OK")
+
+
 def test_prolog_format_gives_each_condition_its_own_variable():
     # two conditions that each introduce a fresh Prolog variable (>=/</
     # !=) must NOT reuse the same variable name -- "age(X, V), V < 30,

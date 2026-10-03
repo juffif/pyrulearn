@@ -841,19 +841,21 @@ def test_repr_identifies_and_print_renders_every_model():
     assert str(fs) == fs.to_string()
 
 
-def test_pretty_prolog_puts_a_rules_stats_above_its_head():
+def test_pretty_prolog_puts_a_rules_stats_after_its_head():
     ds = DataSpec(["f0", "f1"])
     data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
                                      np.array(["pos", "neg", "neg"]))
     rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
     dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
     assert dl.to_string(pretty=True, show_resolution=False).splitlines() == [
-        "% (1/0)", "pos(X) :-", "    f0(X),", "    f1(X).",
-        "% (1/1)", "neg(X) :-", "    f1(X).",
-        "% default", "% (2/1)", "neg(X) :- true.",
+        "pos(X) :-  % (1/0)", "    f0(X),", "    f1(X).",
+        "neg(X) :-  % (1/1)", "    f1(X).",
+        "% default", "neg(X) :- true.  % (2/1)",
     ]
     assert str(rules[0]) == "pos(X) :- f0(X), f1(X).  % (1/0)"          # not pretty by default
-    assert rules[0].to_string(pretty=True) == "% (1/0)\npos(X) :-\n    f0(X),\n    f1(X)."
+    assert rules[0].to_string(pretty=True) == "pos(X) :-  % (1/0)\n    f0(X),\n    f1(X)."
+    # a one-line rule (the default's "true.", no conditions) has nowhere
+    # to put the comment but trailing -- see "neg(X) :- true.  % (2/1)" above
     # logic format: pretty changes nothing yet
     assert dl.to_string(fmt="logic", pretty=True) == dl.to_string(fmt="logic")
 
@@ -866,14 +868,17 @@ def test_headless_formats_name_the_class_inside_models():
                                      np.array(["pos", "neg", "neg"]))
     rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
     dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
+    # the default rule is labeled like every other rule here, "x:", with
+    # "- default" inside its own comment instead of a separate "% default"
+    # prefix (there's no body to show, so no line-up padding needed for it)
     assert dl.to_string(fmt="conditions", show_resolution=False).splitlines() == [
-        "pos: f0, f1  % (1/0)", "neg: f1  % (1/1)", "% default: neg  % (2/1)"]
+        "pos: f0, f1  % (1/0)", "neg: f1  % (1/1)", "neg:  % (2/1 - default)"]
     assert dl.to_string(fmt="pattern", show_resolution=False).splitlines() == [
-        "pos: 1 1  % (1/0)", "neg: 0 1  % (1/1)", "% default: neg  % (2/1)"]
+        "pos: 1 1  % (1/0)", "neg: 0 1  % (1/1)", "neg:  % (2/1 - default)"]
     # a rule set already has class headers; only its default names the class
     fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="neg"), data)
     text = fs.to_string(fmt="conditions")
-    assert "% class: pos\nf0, f1  % (1/0)" in text and text.endswith("% default: neg  % (2/1)")
+    assert "% class: pos\nf0, f1  % (1/0)" in text and text.endswith("neg:  % (2/1 - default)")
     # labels are padded to the longest class name, so the bodies line up
     mixed = DecisionList([Rule([0], target="yes", dataspec=ds), Rule([1], target="n", dataspec=ds)])
     assert mixed.to_string(fmt="pattern", show_resolution=False).splitlines() == ["yes: 1 0", "n:   0 1"]

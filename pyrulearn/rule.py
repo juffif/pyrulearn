@@ -139,6 +139,9 @@ class Rule:
     DEFAULT_FORMAT: str = "prolog"
     #: indentation of each condition line in `to_string(..., pretty=True)`
     PRETTY_INDENT: str = "    "
+    #: `to_string(fmt="pattern")` shows only the first this-many tokens,
+    #: then "..." -- unless `pretty=True`, which shows the full vector
+    PATTERN_TRUNCATE_AT: int = 12
 
     def __init__(
         self,
@@ -661,7 +664,9 @@ class Rule:
                      (head predicate is "rule" if target is None)
         "pattern"    "1 0 0 1 0"  positional 1/0 string (1 = feature is
                      a condition); needs `self.n_features` (set via
-                     `dataspec=` or `n_features=`)
+                     `dataspec=` or `n_features=`). Past
+                     `PATTERN_TRUNCATE_AT` tokens, truncated to that many
+                     plus "..." unless `pretty=True` (see below)
         "conditions" "f0, f3, not f1"  bare literal list, no connective/head
 
         If `fmt` is omitted, uses this rule's own `default_fmt` if set,
@@ -672,14 +677,15 @@ class Rule:
         canonical ascending-feature-index order is used instead.
 
         `pretty=True` puts each condition on its own line, indented by
-        `PRETTY_INDENT` under the head (Prolog; the other formats are
-        unaffected for now)::
+        `PRETTY_INDENT` under the head, for Prolog::
 
             target(X) :-
                 f0(X),
                 \\+f1(X).
 
-        A rule without conditions stays on one line.
+        A rule without conditions stays on one line. For "pattern",
+        `pretty=True` instead means showing the full vector rather than
+        truncating it; the other formats are unaffected.
 
         `weight_format` is accepted for a uniform signature with
         `WeightedRule.to_string` and ignored here (a plain rule has no
@@ -695,6 +701,8 @@ class Rule:
             tokens = ["0"] * self.n_features
             for lit in conds:
                 tokens[lit.feature] = "1"
+            if not pretty and self.n_features > Rule.PATTERN_TRUNCATE_AT:
+                return " ".join(tokens[:Rule.PATTERN_TRUNCATE_AT]) + " ..."
             return " ".join(tokens)
 
         if fmt == "conditions":
