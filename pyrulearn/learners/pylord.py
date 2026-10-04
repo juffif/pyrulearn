@@ -322,3 +322,34 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
     def _fit_binary(self, data: BooleanDataRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
+
+
+def pylord_candidates(
+    data: BooleanDataRepresentation,
+    m: float = 0.1,
+    beam_width: int = 1,
+    prune: bool = True,
+    prune_fraction: Optional[float] = None,
+    max_conditions: Optional[int] = None,
+    random_state: Optional[int] = None,
+    target_class: Optional[Any] = None,
+    metric: Optional[RuleHeuristic] = None,
+) -> FlatRuleSet:
+    """LORD's candidate generation on its own: the raw per-example pool
+    `PyLORD._search_pool` builds (grow, then prune, one rule search
+    seeded per training row, deduplicated) -- *before* LORD's own
+    coverage-filter (stage 3 of the module docstring) ever narrows it --
+    as a pool for a distiller, e.g. ``CBA(rules=pylord_candidates(data))``
+    runs CBA's own selection over LORD's raw candidates instead of
+    mined class association rules. Same parameters as `PyLORD` itself,
+    since they govern how each row's rule is grown and pruned;
+    `skip_covered` isn't exposed here -- `False` (search every row, LORD's
+    own faithful default) is what makes this a genuine, independently
+    generated pool rather than a covering loop's. Each rule carries its
+    training stats.
+    """
+    learner = PyLORD(m=m, beam_width=beam_width, prune=prune, prune_fraction=prune_fraction,
+                     max_conditions=max_conditions, random_state=random_state,
+                     target_class=target_class, metric=metric)
+    pool = learner._search_pool(data)
+    return FlatRuleSet(annotate_rules(pool, data))

@@ -142,13 +142,20 @@ class TimeoutRunner:
                 self.proc.join()
         _kill_tree(pid)
 
-    def run(self, fn: Callable, *args, **kwargs):
+    def run(self, fn: Callable, *args, timeout: Optional[float] = None, **kwargs):
         """Returns `(result, None)` on success, or `(None, error_message)`
         -- for a timeout, `error_message` is exactly ``"timeout"``;
-        otherwise it's `fn`'s own exception, stringified. Never raises."""
+        otherwise it's `fn`'s own exception, stringified. Never raises.
+
+        `timeout`, if given, overrides `self.timeout` for this one call
+        only -- e.g. a caller that needs a longer budget for one kind of
+        call (building a pool) than another (fitting a distiller) can
+        share a single worker process rather than running two at once
+        (two concurrent `spawn`-context `Process`/`Queue` pairs have been
+        observed to corrupt each other's Windows pipe handles)."""
         self.task_q.put((fn, args, kwargs))
         try:
-            status, payload = self.result_q.get(timeout=self.timeout)
+            status, payload = self.result_q.get(timeout=timeout if timeout is not None else self.timeout)
         except queue.Empty:
             self._kill_worker()
             self._start()
