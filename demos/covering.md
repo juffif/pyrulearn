@@ -2,7 +2,18 @@
 
 Heuristic: `Correlation`. Search: greedy hill climbing to a local optimum (`HillClimbing`, `stop_at_local_optimum=True`). Acceptance filter: `Correlation >= 0.3` (FOSSIL's own published threshold), checked once hill climbing stops -- it never cuts a climb short, it only decides whether the climb's own final rule is kept.
 
-Training set: 350 positives (`survived`) / 566 negatives (`died`), 7 features (`pclass, sex, age, sibsp, parch, fare, embarked`).
+## Training set
+- 350 positives (`survived`) / 566 negatives (`died`)
+- 7 features:
+    - `pclass`: class (1-3) of the passenger's cabin
+    - `sex` of the passenger
+    - `age` of the passenger in years
+    - `sibsp`: number of siblings or spouses of the passenger aboard
+    - `parch`: number of parents or children of the passenger aboard
+    - `fare` paid for the ticket
+    - `embarked`: where did the passenger embark the Titanic (**S**outhampton, **C**herbourg, **Q**ueenstown)
+
+Scatterplot of the training set projected into 2-D using t-SNE:
 
 ![full training set](covering_frames/overview_population.png)
 

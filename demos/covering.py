@@ -359,8 +359,21 @@ def render_markdown(data, attempts, rules, heuristic, criterion, target_class, n
         "hill climbing stops -- it never cuts a climb short, it only decides whether the "
         "climb's own final rule is kept.",
         "",
-        f"Training set: {n_pos_total} positives (`{target_class}`) / "
-        f"{n_neg_total} negatives (`died`), {len(FEATURES)} features (`{', '.join(FEATURES)}`).",
+        "## Training set",
+        f"- {n_pos_total} positives (`{target_class}`) / {n_neg_total} negatives (`died`)",
+        f"- {len(FEATURES)} features:",
+    ] + [f"    - {line}" for line in (
+        "`pclass`: class (1-3) of the passenger's cabin",
+        "`sex` of the passenger",
+        "`age` of the passenger in years",
+        "`sibsp`: number of siblings or spouses of the passenger aboard",
+        "`parch`: number of parents or children of the passenger aboard",
+        "`fare` paid for the ticket",
+        "`embarked`: where did the passenger embark the Titanic "
+        "(**S**outhampton, **C**herbourg, **Q**ueenstown)",
+    )] + [
+        "",
+        "Scatterplot of the training set projected into 2-D using t-SNE:",
         "",
         f"![full training set]({os.path.basename(FRAMES_DIR)}/overview_population.png)",
         "",
