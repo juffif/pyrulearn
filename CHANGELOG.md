@@ -3,10 +3,24 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.2.2 (2026-10-07)
+
+A feature release: shared cross-validation infrastructure for demos and
+other experiments (`pyrulearn.experiments`), plus the fixes below.
 
 ### Added
 
+- `pyrulearn.learners.pylord.pylord_candidates(data)`: LORD's raw
+  per-example local-search candidate pool, exposed directly -- e.g. for
+  use as a rule pool with `RuleFit` or another distiller -- instead of
+  only LORD's own coverage-filtered result.
+- `experiments.runner.TimeoutRunner.run(fn, *args, timeout=None,
+  **kwargs)`: a per-call override of the runner's timeout, so one
+  persistent worker process can serve calls that need different budgets
+  (e.g. a longer one for building a rule pool than for fitting a
+  distiller) without running two `TimeoutRunner`s at once -- two
+  concurrent `spawn`-context worker processes were found to corrupt
+  each other's pipe handles on Windows.
 - `pyrulearn.experiments`: shared infrastructure for demos and other
   cross-validation-style experiments, replacing the loading/splitting/
   timeout/measurement/report code each `examples/demo_*.py` script
