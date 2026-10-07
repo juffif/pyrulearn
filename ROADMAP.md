@@ -88,6 +88,39 @@ matrix anyway.
 
 ## Other planned work
 
+- **Measure the SeCo-search-vs-ENDER speed gap, after the threshold-
+  counting speedups above are done, not before.** `demos/covering_boosting.py`
+  (2026-10-06/07) found `WeightedCovering` configs (plain `SeCo`,
+  `BeamSearch(beam_width=5)`) taking tens of seconds per fit
+  (`Weighted-Add+WRAcc`: 86.55s) against boosting's sub-3s
+  (`Boomer@100`: 2.48s) on the same datasets. The likely reason:
+  `ENDER`/`Boomer`'s `_grow` scores every candidate feature in one
+  vectorized `(t * c).T @ Xf` matrix multiply per round, while
+  `BeamSearch`/`HillClimbing` still count each candidate condition with
+  its own pass (the "High priority" item above) -- not a difference
+  between weighted and removal covering, or a beam-width effect (both
+  use the same beam width here). But `ENDER`'s vectorization only works
+  because it commits to a dense `data.X` matrix, exactly what the
+  0.3.0 plan above calls out as *not* representation-independent for
+  `ENDER` itself. So two numbers worth comparing once the chain-counting
+  speedup lands: how much the SeCo searches close the gap, and
+  (separately, from the 0.3.0 work) how much `ENDER` slows down once
+  it's made representation-independent instead of assuming a matrix --
+  i.e. whether the two converge from opposite directions.
+- **`CoverageDifference` is ~3x faster than `Accuracy` for the same
+  ranking** (measured 2026-10-06: 1,000,000 `.score()` calls each,
+  0.07s vs. 0.21s) -- confirms the docstrings' claim that
+  `Accuracy = (CoverageDifference + n_neg) / (n_pos + n_neg)` exactly
+  (checked over 200,000 random stats, zero floating-point difference).
+  For 0.3.0, check every built-in algorithm's default heuristic for a
+  hot-path use of `Accuracy` swappable to `CoverageDifference` without
+  changing which rule wins. None currently defaults to `Accuracy`
+  (grepped) -- start with `Pypper` specifically, since it was asked
+  about directly: its defaults are `Precision` (pruning and the IREP
+  stopping criterion) and `FoilGain` (growing), neither with the same
+  isometrics as `CoverageDifference`, so this needs checking whether a
+  cheaper-but-equivalent swap exists there too, not assuming the same
+  substitution applies.
 - **Inverted heuristics** (Stecher, Janssen & Fürnkranz): a refinement
   evaluated in the coverage space of its parent rule instead of the empty
   rule. Implement in `pyrulearn.heuristics`, then add to the

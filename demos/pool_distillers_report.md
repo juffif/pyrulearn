@@ -2,7 +2,7 @@
 
 ## Setup
 
-**Full run**. Quick sanity check instead: `python examples/demo_pool_distillers.py` with no arguments.
+**Full run**. Quick sanity check instead: `python demos/pool_distillers.py` with no arguments.
 
 Three rule-pool generators (`CARMiner`, `SKLRandomForest`,
 `pylord_candidates`) crossed with seven rule distillers (`RuleFit`,

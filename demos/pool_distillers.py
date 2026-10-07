@@ -1,6 +1,6 @@
 """
-examples/demo_pool_distillers.py
-=================================
+demos/pool_distillers.py
+=========================
 
 Rule-pool generators crossed with rule distillers: a pool is a large,
 unpruned `FlatRuleSet` of candidate rules from one of three unrelated
@@ -59,7 +59,7 @@ is "how differently do several distillers treat the *same* candidate
 pool", not several independent fits that happen to start from similarly-sized
 inputs.
 
-Run: `python examples/demo_pool_distillers.py` with no arguments is the
+Run: `python demos/pool_distillers.py` with no arguments is the
 **quick** default; its report isn't checked in. `--full` runs both
 studies at full scale and writes the canonical report.
 """
@@ -108,7 +108,10 @@ POOL_FIT_TIMEOUT = 1800.0
 CAR_MIN_SUPPORT = 0.05
 CAR_MAX_LEN = 3
 RF_N_ESTIMATORS = 100
-RF_MAX_DEPTH = 3  # matches CAR_MAX_LEN -- a comparable complexity budget
+RF_MAX_DEPTH = 3  # matches CAR_MAX_LEN -- a comparable complexity budget,
+# and no worse a pool for it: an earlier, since-replaced RuleFit-only
+# comparison found a depth<=3 forest pooled as well as a fully-grown one,
+# with far fewer and shorter rules
 
 # "IDS" is the paper-faithful Smooth Local Search optimizer (stochastic,
 # no convergence guarantee for a non-monotone objective); "IDS-greedy"
@@ -134,7 +137,7 @@ STUDY2_QUICK_DATASETS = ["kr-vs-kp"]
 STUDY2_QUICK_FOLDS = 3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "demo_pool_distillers"
+NAME = "pool_distillers"
 CACHE_DIR = os.path.join(HERE, "_pool_distillers_cache")
 
 
@@ -570,8 +573,8 @@ def write_report(
 ) -> None:
     mode_note = (
         f"**Quick run** -- a fast sanity check, the default with no arguments. Full comparison: "
-        f"`python examples/{NAME}.py --full`.\n\n" if quick else
-        f"**Full run**. Quick sanity check instead: `python examples/{NAME}.py` with no arguments.\n\n"
+        f"`python demos/{NAME}.py --full`.\n\n" if quick else
+        f"**Full run**. Quick sanity check instead: `python demos/{NAME}.py` with no arguments.\n\n"
     )
     study1_names = ", ".join(d.name for d in study1_datasets)
     study2_names = ", ".join(d.name for d in study2_datasets)
