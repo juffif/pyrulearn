@@ -371,6 +371,46 @@ class BooleanDataRepresentation(DataRepresentation):
     def cover_rows(self, handle) -> np.ndarray:
         return handle[0]
 
+    def chain_cover_counts(
+        self, handle, positive_class: Any, feature_indices: Sequence[int]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """``(tp, fp)`` arrays, one entry per feature in `feature_indices`
+        -- a numeric attribute's ``attr>=t`` thresholds, ascending, all
+        still open under `handle`'s rule (`pyrulearn.learners.seco`'s
+        `_score_children` only ever calls this with such a list; see
+        `ThresholdChain`/`NumericGroup` in `pyrulearn.data.attributes`).
+        Computed in one pass over `handle`'s covered rows instead of one
+        `refine_cover` + `cover_counts` per threshold: because the chain
+        is monotonic, feature `k` (0-indexed) is True for a row exactly
+        when that row satisfies at least ``k + 1`` of `feature_indices`
+        -- so the per-row count of satisfied thresholds, histogrammed by
+        class and summed from the top down, gives every threshold's
+        tp/fp at once. Opt-in: this method doesn't exist on
+        `DataRepresentation` or the other representations, so
+        `_score_children` falls back to the plain per-threshold path
+        wherever it's absent.
+        """
+        if self.y is None:
+            raise ValueError("chain_cover_counts needs labels (self.y)")
+        cov, scope, w = handle
+        pos_mask = self.y == positive_class
+        m = len(feature_indices)
+        satisfied = self.X[:, feature_indices].sum(axis=1)
+        pos_idx = cov & pos_mask
+        neg_idx = cov & ~pos_mask
+        if w is not None:
+            pos_hist = np.bincount(satisfied[pos_idx], weights=w[pos_idx], minlength=m + 1)
+            neg_hist = np.bincount(satisfied[neg_idx], weights=w[neg_idx], minlength=m + 1)
+        else:
+            pos_hist = np.bincount(satisfied[pos_idx], minlength=m + 1)
+            neg_hist = np.bincount(satisfied[neg_idx], minlength=m + 1)
+        tp = np.cumsum(pos_hist[::-1])[::-1][1:]
+        fp = np.cumsum(neg_hist[::-1])[::-1][1:]
+        if w is None:
+            tp = tp.astype(int)
+            fp = fp.astype(int)
+        return tp, fp
+
     @classmethod
     def from_dataframe(
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None

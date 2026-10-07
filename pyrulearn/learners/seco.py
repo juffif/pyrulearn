@@ -113,6 +113,7 @@ from .base import DecomposingLearner, NativeRuleLearner, produces
 from ..combiners import MicroVoteCombiner
 from ..pruning import AnyOf, EncodingLengthRestriction, PrePruningCriterion, ThresholdPrePruning
 from ..data import BooleanDataRepresentation
+from ..data.attributes import NumericGroup, ThresholdChain
 from ..rule import Rule
 
 
@@ -169,6 +170,128 @@ def _handle_for(data, rule: Rule, example_mask: Optional[np.ndarray]):
 def _stats_from_handle(data, target_class: Any, rule: Rule, handle) -> RuleStats:
     tp, fp, fn, tn = data.cover_counts(handle, target_class)
     return RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=rule.length())
+
+
+def _numeric_chain_lookup(dataspec) -> Dict[int, Tuple[Tuple[int, ...], int]]:
+    """feature -> ``(chain, position)`` for every feature that's one of a
+    numeric attribute's monotonic thresholds -- a `NumericGroup`'s `ge`
+    (ascending) *and* its `lt` reversed (``tuple(reversed(c.lt))``), or a
+    standalone `ThresholdChain`'s `feature_indices`. Built once per
+    search call from `dataspec.constraints` (static for the call, so
+    cheap to redo rather than cache).
+
+    `lt` is reversed deliberately: `ge` is True-from-the-bottom (the
+    lowest threshold is satisfied most often), `lt` is True-from-the-top
+    (the highest threshold's `<` test is satisfied most often) -- same
+    monotonic shape, opposite end. Reversing `lt` makes both families
+    "True iff the row satisfies at least `position + 1` of this chain",
+    the one invariant `chain_cover_counts` relies on, so `_score_children`
+    can batch a `<t` chain through the exact same call as a `>=t` one.
+    This only reorders the *lookup*, not the feature indices themselves,
+    and doesn't assume `lt[k]`/`ge[k]` are complements -- `chain_cover_counts`
+    always counts the real column, so missing values (where *neither*
+    holds under `MissingStrategy.NEVER_COVERS`) need no special case.
+    Used by `_score_children`; see `ROADMAP.md`'s numeric-threshold-
+    counting item.
+    """
+    chains: Dict[int, Tuple[Tuple[int, ...], int]] = {}
+    if dataspec is None:
+        return chains
+    for c in dataspec.constraints:
+        if isinstance(c, NumericGroup):
+            groups: List[Tuple[int, ...]] = [c.ge]
+            if c.lt:
+                groups.append(tuple(reversed(c.lt)))
+        elif isinstance(c, ThresholdChain):
+            groups = [c.feature_indices]
+        else:
+            continue
+        for g in groups:
+            for pos, f in enumerate(g):
+                chains[f] = (g, pos)
+    return chains
+
+
+def _score_children(
+    data,
+    dataspec,
+    target_class: Any,
+    rule: Rule,
+    mask: FrozenSet[int],
+    handle,
+    stats: RuleStats,
+    chains: Dict[int, Tuple[Tuple[int, ...], int]],
+) -> Tuple[List[Tuple[Rule, FrozenSet[int], Any, RuleStats]], Set[int]]:
+    """`rule.specialize(dataspec, mask)`'s one-literal children, each
+    with its handle and stats -- what `BeamSearch`/`HillClimbing` used
+    to get by calling `data.refine_cover` + `_stats_from_handle` once per
+    child. Here, every child whose added literal is one of at least two
+    *open* thresholds of the same numeric attribute's chain (`chains`,
+    from `_numeric_chain_lookup` -- a `>=t` family or a reversed `<t`
+    family) is scored together, via one `data.chain_cover_counts` pass
+    over the attribute's whole open run instead of one `refine_cover`+
+    `cover_counts` per threshold. Everything else (non-numeric features,
+    a lone open threshold, or a representation with no
+    `chain_cover_counts`) falls back to the original per-child
+    `refine_cover`+`cover_counts`.
+
+    `chain_cover_counts` only exists on representations that define it
+    (currently `BooleanDataRepresentation`); on any other representation
+    `getattr` finds nothing and every child falls back, so this is a
+    pure opt-in fast path, not a new required primitive.
+
+    Returns `(children, dead)` exactly as the old inline loop did:
+    `children` the non-degenerate (`tp > 0`) results in `rule.specialize`'s
+    own order (so tie-breaking among equally-scored children is
+    unaffected), `dead` the added features whose child covers no
+    positive -- for the caller to mask out of every sibling's own child
+    mask, same as before.
+    """
+    specialized = rule.specialize(dataspec, mask)
+    if not specialized:
+        return [], set()
+    by_feature: Dict[int, Tuple[Rule, FrozenSet[int]]] = {}
+    for child_rule, child_mask in specialized:
+        by_feature[child_rule.conditions[-1].feature] = (child_rule, child_mask)
+
+    n_pos_scope = stats.tp + stats.fn
+    n_neg_scope = stats.fp + stats.tn
+    chain_counts = getattr(data, "chain_cover_counts", None)
+    tp_fp: Dict[int, Tuple[Any, Any]] = {}
+    if chain_counts is not None:
+        groups: Dict[int, List[int]] = {}
+        for f in by_feature:
+            info = chains.get(f)
+            if info is not None:
+                groups.setdefault(id(info[0]), []).append(f)
+        for feats in groups.values():
+            if len(feats) < 2:
+                continue  # one open threshold: no pass to save by batching
+            full = chains[feats[0]][0]
+            ordered = [f for f in full if f in feats]
+            tp_arr, fp_arr = chain_counts(handle, target_class, ordered)
+            for f, tp, fp in zip(ordered, tp_arr, fp_arr):
+                tp_fp[f] = (tp, fp)
+
+    children: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
+    dead: Set[int] = set()
+    for added, (child_rule, child_mask) in by_feature.items():
+        if added not in tp_fp:
+            child_handle = data.refine_cover(handle, added)
+            child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
+            if child_stats.tp == 0:
+                dead.add(added)
+            else:
+                children.append((child_rule, child_mask, child_handle, child_stats))
+            continue
+        tp, fp = tp_fp[added]
+        if tp == 0:
+            dead.add(added)
+            continue
+        child_handle = data.refine_cover(handle, added)
+        fn, tn = n_pos_scope - tp, n_neg_scope - fp
+        children.append((child_rule, child_mask, child_handle, RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=child_rule.length())))
+    return children, dead
 
 
 def _optimistic_stats(stats: RuleStats) -> RuleStats:
@@ -311,6 +434,7 @@ class BeamSearch(RuleSearch):
         if not initial_candidates:
             raise ValueError("BeamSearch.search needs at least one initial candidate")
         dataspec = data.spec
+        chains = _numeric_chain_lookup(dataspec)
 
         def promises_improvement(stats: RuleStats, threshold: Optional[Score]) -> bool:
             # optimistic pruning: if even the hypothetical perfect
@@ -403,16 +527,9 @@ class BeamSearch(RuleSearch):
             # down either.
             proposals: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
             for rule, mask, handle, stats in refinable:
-                children: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
-                dead: Set[int] = set()
-                for child_rule, child_mask in rule.specialize(dataspec, mask):
-                    added = child_rule.conditions[-1].feature
-                    child_handle = data.refine_cover(handle, added)
-                    child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
-                    if child_stats.tp == 0:
-                        dead.add(added)
-                    else:
-                        children.append((child_rule, child_mask, child_handle, child_stats))
+                children, dead = _score_children(
+                    data, dataspec, target_class, rule, mask, handle, stats, chains,
+                )
                 for child_rule, child_mask, child_handle, child_stats in children:
                     proposals.append((child_rule, child_mask - dead, child_handle, child_stats))
             if not proposals:
@@ -612,6 +729,7 @@ class HillClimbing(RuleSearch):
             )
         self._reject_heuristic(heuristic)
         dataspec = data.spec
+        chains = _numeric_chain_lookup(dataspec)
 
         def is_eligible(rule: Rule, stats: RuleStats) -> bool:
             # returnable only if in the acceptable region of every
@@ -654,16 +772,10 @@ class HillClimbing(RuleSearch):
             threshold = self._improvement_threshold(heuristic, stats)
 
             best_child: Optional[Tuple[Rule, FrozenSet[int], Any, RuleStats, Score]] = None
-            dead: Set[int] = set()
-            for child_rule, child_mask in rule.specialize(dataspec, mask):
-                added = child_rule.conditions[-1].feature  # see BeamSearch.search's comment
-                child_handle = data.refine_cover(handle, added)
-                child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
-                if child_stats.tp == 0:
-                    # never move to a rule covering no positives, and mask the
-                    # condition out further down (see BeamSearch.search)
-                    dead.add(added)
-                    continue
+            children, dead = _score_children(
+                data, dataspec, target_class, rule, mask, handle, stats, chains,
+            )
+            for child_rule, child_mask, child_handle, child_stats in children:
                 value = self._child_score(heuristic, child_stats, stats)
                 if best_child is None or value > best_child[4]:
                     best_child = (child_rule, child_mask, child_handle, child_stats, value)

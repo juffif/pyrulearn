@@ -5,36 +5,63 @@ releases, and why. The list of missing features for users is in the
 README (*Not yet implemented*); the overhaul of the demos has its own
 plan in [`examples/REVISION_PLAN.md`](examples/REVISION_PLAN.md).
 
-## High priority: count a numeric attribute's thresholds together
+## Count a numeric attribute's thresholds together
 
-**Not done yet** (as of 2026-10-01). The rule searches (`BeamSearch`,
-`HillClimbing`) score a candidate condition by counting the covered
-positives and negatives separately for every candidate -- one pass over
-the covered examples per threshold of a numeric attribute. Since the
-constraint propagation in `Rule.specialize` was made incremental
-(2026-09-30), this counting is about half of a search's time on numeric
-data (`segment`, Laplace SeCo: 3.0 s of 7.6 s).
+**Done for `BooleanDataRepresentation` (2026-10-07); still open for the
+other representations.** The rule searches (`BeamSearch`, `HillClimbing`,
+and `GainAscentHillClimbing`, which shares `HillClimbing`'s loop) used to
+score a candidate condition by counting the covered positives and
+negatives separately for every candidate -- one `refine_cover` +
+`cover_counts` pass per threshold of a numeric attribute.
 
 A numeric attribute's thresholds form a chain: `x >= t_k` covers exactly
-the examples in intervals `k` and above, `x < t_k` those below. Two ways
-to use that, in increasing order of gain and effort:
+the examples in intervals `k` and above, `x < t_k` those below (reversed,
+the same shape). `BooleanDataRepresentation.chain_cover_counts` (approach
+2 of the two once sketched here) counts a whole open run of one
+attribute's chain in a single pass -- per-row count of satisfied
+thresholds, histogrammed by class and summed from the top down -- instead
+of one pass per threshold; `pyrulearn.learners.seco._score_children`
+(shared by `BeamSearch`/`HillClimbing`) groups `rule.specialize`'s
+children by chain and calls it, falling back to the original per-child
+path for anything not groupable (a lone open threshold, a non-numeric
+feature, or a representation without `chain_cover_counts` -- an opt-in
+primitive, not a new required one, so N-list/PrePostNList/Sparse keep
+working unchanged, just not yet sped up). A dead child (`tp == 0`) is now
+caught from the count alone, before `refine_cover` ever builds its
+handle -- *not done*: deferring handle construction further, for live
+children that don't survive to the next round/beam slot, as the original
+sketch's "build the covered set only for the candidates it keeps" also
+proposed; nominal-attribute batching (the same idea for a multi-valued
+attribute's value tests) is also still open.
 
-1. *Skip dead thresholds*: walk a chain in threshold order and stop
-   counting once a threshold covers no positives -- every further one
-   in that direction covers a subset.
-2. *Count a whole chain in one pass*: over the examples the current rule
-   covers, count positives and negatives per interval of the attribute
-   once, then get the counts of every `>=` and `<` threshold by running
-   sums -- one pass per attribute instead of one per threshold (with
-   8 intervals, up to about 15 times less counting for numeric
-   attributes). The same works for a nominal attribute's values. The
-   search would score candidates from these counts and build the covered
-   set only for the candidates it keeps.
+**Correctness**: unweighted (plain `RemovalCovering` -- CN2/AQR/PFoil/
+PFossil/Pypper/PyLORD's default) is bit-identical to the old path, every
+count an exact integer; checked against the old path directly (CN2 on 5
+numeric-heavy datasets: `segment`, `diabetes`, `sonar`, `ionosphere`,
+`banknote-authentication`; PFoil/PFossil/Pypper on `sonar`), and the full
+test suite (777 passed). Weighted (`WeightedCovering`, boosting's
+per-round reweighting) can differ from the old path by float-reordering
+noise (~1e-14 relative -- histogram+cumsum sums the same weights in a
+different order than a direct masked sum, same issue any vectorized
+reduction has) -- harmless to the actual numbers, but can rarely flip an
+exact score/stopping-criterion tie to a different, equally valid rule.
+Accepted as expected floating-point behavior, not a bug, after checking
+it against a battery of real fits rather than assuming.
 
-Must work on every data representation (see the 0.3.0 plan below), and be
-checked as before: identical rules to the current search on the A/B
-datasets, the full test suite, and the speed-up measured per
-representation.
+**Measured speedup** (one fit each, old vs. new, same machine): CN2 --
+`segment` 1.49x, `diabetes` 2.24x, `sonar` 1.34x, `ionosphere` 1.17x,
+`banknote-authentication` 1.54x; on `sonar`: PFoil 1.07x, PFossil 1.19x,
+Pypper 1.12x, `WeightedCovering`+`AdditiveReweighting`+Laplace 1.10x,
+Slipper 1.03x. Consistently positive, well short of the sketch's
+upper-bound "~15x less counting" estimate -- that bound was for the
+counting step alone; `refine_cover`'s handle construction for every live
+child (unchanged here) is the rest of a round's cost, and these numbers
+are the net of both.
+
+Still open: N-list, PrePostNList and Sparse representations (each needs
+its own one-pass counting primitive suited to its storage -- see the
+0.3.0 plan below for why this can't be one shared implementation);
+nominal-attribute batching; deferring handle construction past scoring.
 
 ## 0.3.0: every native learner on any data representation
 
@@ -88,8 +115,13 @@ matrix anyway.
 
 ## Other planned work
 
-- **Measure the SeCo-search-vs-ENDER speed gap, after the threshold-
-  counting speedups above are done, not before.** `demos/covering_boosting.py`
+- **Measure the SeCo-search-vs-ENDER speed gap on `demos/covering_boosting.py`
+  itself, now that the Boolean-representation threshold-counting speedup
+  above has landed (2026-10-07).** Not done yet -- the chain-counting
+  work was checked against CN2/PFoil/PFossil/Pypper on other datasets, not
+  by rerunning this demo's own `WeightedCovering`+WRAcc configuration,
+  so the gap this note describes hasn't actually been re-measured.
+  `demos/covering_boosting.py`
   (2026-10-06/07) found `WeightedCovering` configs (plain `SeCo`,
   `BeamSearch(beam_width=5)`) taking tens of seconds per fit
   (`Weighted-Add+WRAcc`: 86.55s) against boosting's sub-3s
