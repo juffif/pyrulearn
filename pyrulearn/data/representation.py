@@ -411,6 +411,39 @@ class BooleanDataRepresentation(DataRepresentation):
             fp = fp.astype(int)
         return tp, fp
 
+    def batch_cover_counts(
+        self, handle, positive_class: Any, feature_indices: Sequence[int]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """``(tp, fp)`` arrays, one entry per feature in `feature_indices`
+        -- *any* open features, not necessarily from the same attribute
+        or even numeric (unlike `chain_cover_counts`, no monotonic chain
+        assumed) -- computed for every one of them in a single matrix
+        multiply, the way `pyrulearn.learners.boosting.ENDER`'s `_grow`
+        scores every candidate feature at once (``(t * c).T @ Xf``)
+        instead of counting one at a time. Experimental: not wired into
+        `pyrulearn.learners.seco._score_children` by default (see
+        `ROADMAP.md`'s numeric-threshold-counting item) -- a tentative
+        alternative to `chain_cover_counts`, benchmarked against it
+        rather than assumed better.
+        """
+        if self.y is None:
+            raise ValueError("batch_cover_counts needs labels (self.y)")
+        cov, scope, w = handle
+        pos_mask = self.y == positive_class
+        if w is not None:
+            pos_w = np.where(cov & pos_mask, w, 0.0)
+            neg_w = np.where(cov & ~pos_mask, w, 0.0)
+        else:
+            pos_w = (cov & pos_mask).astype(float)
+            neg_w = (cov & ~pos_mask).astype(float)
+        cols = self.X[:, feature_indices]
+        tp = pos_w @ cols
+        fp = neg_w @ cols
+        if w is None:
+            tp = tp.astype(int)
+            fp = fp.astype(int)
+        return tp, fp
+
     @classmethod
     def from_dataframe(
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None

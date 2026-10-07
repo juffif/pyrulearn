@@ -82,11 +82,21 @@ intended default.
 (`covers_data_packed`, which forwards to the data's own `coverage`) is
 already representation-independent: the SeCo framework with CN2, AQR,
 PFoil, PFossil and Pypper, PyLORD, the rule models, pruning and
-evaluation. Four implementations are not -- they turn the data into a
-dense matrix (`data.X`) and work on its columns with numpy, so on N-list
-data they rebuild that matrix and gain nothing:
+evaluation. Four implementations turn the data into a dense matrix
+(`data.X`) and work on its columns with numpy instead:
 
-- `ENDER` (and with it `Boomer`),
+- `ENDER` (and with it `Boomer`) -- **investigated and decided to stay
+  this way (2026-10-07/08), not an open item any more.** A
+  representation-generic rewrite (`_grow` scoring through
+  `initial_cover`/`refine_cover` instead of matrix columns, the way
+  `WeightedCovering` does) was prototyped and measured 10-500x slower
+  even before batching, with no plausible fix -- see the "Design
+  decisions" section below for the numbers and why N-list's own
+  per-search caching doesn't transfer to boosting's per-round-changing
+  gradient. `ENDER`'s class docstring ("Data representation") now
+  documents this directly; still correct on every representation (just
+  always at dense-matrix cost), still tested for identical rules across
+  them.
 - `OptimalRuleBoosting`,
 - `CPAR`,
 - `LRI`.
@@ -94,20 +104,24 @@ data they rebuild that matrix and gain nothing:
 External learners reading `data.X` is fine: the external tools need a
 matrix anyway.
 
-**Work.**
+**Work**, for the three remaining learners (`ENDER`/`Boomer` excluded,
+see above -- expect them to need the same investigation before assuming
+the work below is worth doing for them too):
 
 1. *Data preparation*: a `representation=` choice where data is prepared
    (`pyrulearn.experiments.runner.run_cv`, the demos, the loading
    helpers), with N-lists as the default. Build the N-list directly from
    the binarized matrix, without a `BooleanDataRepresentation` in between.
-2. *The four learners*: score candidate conditions through the
+2. *The three learners*: score candidate conditions through the
    representation's (weighted) coverage functions instead of matrix
    columns. Measure the speed on every representation -- numpy scores all
    features in one vectorized step, so this could be slower on Boolean
    data, as with the rule searches.
 3. *Tests*: extend the check that all representations give identical
-   rules (so far the SeCo learners and PyLORD, `tests/test_representations.py`)
-   to every native learner, so the principle is enforced, not just
+   rules (so far CN2/PFoil/PFossil/AQR, PyLORD, and `ENDER` (2026-10-08,
+   checking its deliberate dense-conversion path rather than true
+   representation independence), `tests/test_representations.py`) to
+   every native learner, so the principle is enforced, not just
    intended.
 4. *Optional*: build the N-list index faster (it is a Python loop per row:
    about 7 s for 32,000 rows of `adult`) and store feature indices as
@@ -184,6 +198,110 @@ matrix anyway.
 Not to-dos: choices made deliberately, with the behaviour they imply, so
 they aren't reopened by accident.
 
+- **ENDER-style matrix-multiply counting, tried for `BooleanDataRepresentation`
+  and parked, not adopted (2026-10-07).** Following up on the numeric-
+  threshold-counting item above, `BooleanDataRepresentation.batch_cover_counts`
+  and an experimental `pyrulearn.learners.seco._score_children_matmul`
+  score *every* open feature of a round in one matrix multiply (`pos_w
+  @ X[:, features]`), the way `ENDER`'s `_grow` does -- more general than
+  `chain_cover_counts` (works across attributes and on nominal features
+  too, not just one numeric chain), and simpler code (no monotonic-chain
+  bookkeeping, no missing-value edge case -- a bug in the chain version's
+  first draft, where `<t` was wrongly derived as `>=t`'s complement
+  without accounting for `MissingStrategy.NEVER_COVERS` rows where
+  neither holds).
+  - **Where it wins cleanly**: `HillClimbing` (one lineage, one matmul
+    per round, the clean ENDER-shaped case) -- consistently at or above
+    `chain_cover_counts`'s speed (PFoil 1.07x, PFossil 1.19x, Pypper
+    1.12x, Slipper 1.03x on `sonar`; PFossil 1.07x on `spambase`), and far
+    ahead on nominal-heavy data regardless of search (`kr-vs-kp`: 1.74x
+    over the old path vs. chain's 1.12x, since chain-counting can't help
+    nominal features at all).
+  - **Where it regresses**: `BeamSearch` with a real beam (>1) on a
+    feature-rich dataset. Each of the (up to `beam_width`) surviving
+    parents per round pays its own full-open-feature matmul, with no
+    sharing across parents -- cost scales roughly with `beam_width x
+    open_feature_count`, unlike `chain_cover_counts`'s smaller,
+    per-attribute batches. Measured on `spambase` (its widest feature
+    count): `beam_width=1` 1.08x (matmul wins), `beam_width=3` 0.98x
+    (a wash), `beam_width=5` -- CN2's actual default -- 0.76x (matmul
+    24% *slower*), `beam_width=10` 0.83x. `PyLORD`'s default
+    `BeamSearch(beam_width=1)` lands in the good case; CN2/AQR/PFoil's
+    beam variants, at their real default widths on feature-rich data,
+    don't.
+  - **GPU**: considered and rejected without prototyping, on the
+    numbers already in hand. The matmul is a vector-times-matrix
+    (GEMV, memory-bandwidth-bound, not the large compute-bound GEMM a
+    GPU's parallelism actually pays off on), called once per beam
+    member per round and synchronized back to Python immediately
+    after (`tp == 0` and heuristic scoring need the result right away)
+    -- exactly the per-call-overhead-dominated pattern the beam-width
+    finding above already shows losing to CPU's smaller, more frequent
+    calls. Would need batching across beam members into one bigger
+    matrix-matrix product *and* keeping data device-resident across a
+    whole search to plausibly pay off -- a real redesign, not a backend
+    swap, not attempted.
+  - **Decision**: keep `chain_cover_counts` as `BooleanDataRepresentation`'s
+    shipped default (safe across beam widths); keep `batch_cover_counts`/
+    `_score_children_matmul` in the codebase as a validated-but-not-wired-in
+    alternative, not deleted -- revisit if a beam-width/feature-count-aware
+    dispatch between the two (or restricting matmul to `HillClimbing`-based
+    learners specifically) turns out to be worth the complexity.
+- **A `chain_cover_counts` for `NListRepresentation`: first attempt was
+  wrong, reverted before being committed (2026-10-07).** Tried porting
+  the Boolean trick directly: scan the loosest (shallowest) open
+  threshold's own tree nodes once, then check the stricter thresholds'
+  bits against those same nodes' `path_mask`. Wrong, because the
+  PPC-tree orders features most-frequent-first and a monotonic chain's
+  loosest threshold is, by construction, the *most frequent* member --
+  so it sits *shallower* than the stricter ones, and their bits are only
+  added to the path *further down*, past that node, not yet present
+  there. Silent failure mode, not a crash: the undercounted thresholds
+  came back `tp == 0` and were dropped into the "dead" set before ever
+  reaching the per-child brute-force check, so the check -- which only
+  verified *surviving* children, never *why something didn't survive* --
+  reported zero mismatches on a run that was actually dropping most of
+  a chain's thresholds (caught by comparing old-vs-new *full fits*
+  instead, which disagreed). Scanning the *deepest* (strictest) member
+  instead doesn't fix it either: its own node list only has rows
+  satisfying *every* member of the chain, missing everything that
+  satisfies some but not all of it -- correct for nothing shallower than
+  itself. Reverted rather than shipped; the representation's existing
+  per-threshold `refine_cover` path is untouched.
+
+  **Second attempt, correct but not a win, also reverted (same day).**
+  Intersect the one scan's candidate rows against each stricter
+  threshold's already-precomputed, unmasked `_row_idx[feature]` directly
+  (no tree traversal, no dense matrix) -- `{parent ∧ f_k} = {parent ∧
+  f_1} ∩ row_idx[f_k]` holds exactly, since `f_k` implies `f_1`. Also
+  had to mirror `refine_cover`'s *own* two branches for `f_1` itself
+  (cheap filter vs. re-anchor scan), not just assume the expensive one
+  -- a second, narrower instance of the same mistake: `f_1` is only
+  safe to re-anchor-scan when it's deeper than every condition already
+  in the rule, same as any other feature. Verified correct this time
+  with a stricter check than the first attempt's -- explicitly
+  confirming every *dropped* ("dead") candidate was brute-force-checked
+  too, not just survivors, the exact gap that let the first version's
+  bug through unnoticed -- across 6 datasets, 1844 search-node calls,
+  zero mismatches either way; full test suite (777 passed).
+
+  Despite that, timing (CN2, one fit each, old vs. new) was mostly a
+  regression: `segment` 0.73x, `diabetes` 0.62x, `ionosphere` 0.80x,
+  `banknote-authentication` 0.68x, `sonar` 1.07x (even), `kr-vs-kp`
+  1.60x (the one clear win, nominal-heavy -- same pattern as
+  `BooleanDataRepresentation`'s matmul vs. chain finding above). Likely
+  cause: `np.isin(candidate_rows, row_idx[f])` for each of the `m - 1`
+  remaining thresholds costs more than expected -- its cost scales with
+  both array sizes, re-sorting `row_idx[f]` fresh on every call, which
+  on a numeric-heavy dataset with many samples can exceed what it saves
+  versus the tree re-scans it replaces. A pre-sorted `row_idx` (sorted
+  once, cached, e.g. at `_build` time) plus `np.searchsorted` instead of
+  `np.isin` might close the gap -- not tried. Reverted rather than left
+  as an always-on regression (`_score_children` dispatches on whether
+  `chain_cover_counts` exists at all, with no beam-width/feature-count
+  gating the way the matmul decision got -- so, unlike that one, there
+  was no way to "keep it but not wire it in" without also changing the
+  dispatch).
 - **How rules are annotated** (decided 2026-10-01). Every rule is
   annotated with the training examples its body covers, independently of
   the other rules (`annotate_rules`, `annotate_default_rule`) -- so a

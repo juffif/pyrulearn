@@ -19,6 +19,7 @@ from pyrulearn import (
 from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data import DataSpecBuilder
 from pyrulearn.heuristics import RuleStats
+from pyrulearn.learners.boosting import ENDER
 from pyrulearn.learners.pylord import PyLORD
 from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil
 
@@ -116,6 +117,36 @@ def test_seco_learners_identical_across_representations(negation):
         assert np.array_equal(pb, np.asarray(rs.predict(srep)))
     print(f"CN2/PFoil/PFossil/AQR/PyLORD identical: Boolean == NList == PrePostNList == Sparse "
           f"(negation={negation}): OK")
+
+
+def test_ender_identical_across_representations():
+    """`ENDER` converts every representation to a dense matrix (`data.X`)
+    rather than searching through `initial_cover`/`refine_cover` --
+    deliberately, not yet (see `ROADMAP.md`'s "Design decisions" and
+    `ENDER`'s own "Data representation" docstring paragraph). That
+    conversion must still be correct on every representation, same as
+    the SeCo learners' real representation-independence is checked just
+    above -- this is the gap `ROADMAP.md`'s 0.3.0 "Tests" item flagged as
+    still open for `ENDER` specifically."""
+    brep, ds = _dataset(n=300, k=12, seed=11)
+    nrep = NListRepresentation.from_boolean(brep)
+    pprep = PrePostNListRepresentation.from_boolean(brep)
+    srep = SparseDataRepresentation.from_boolean(brep)
+
+    def rules_of(model):
+        return {(r.target, frozenset(l.feature for l in r.conditions), round(float(r.weight), 9))
+                for r in model.rules}
+
+    make = lambda: ENDER(n_rules=30, random_state=0)
+    mb, mn, mp, ms = make().fit(brep), make().fit(nrep), make().fit(pprep), make().fit(srep)
+    kb = rules_of(mb)
+    assert kb == rules_of(mn)
+    assert kb == rules_of(mp)
+    assert kb == rules_of(ms)
+    pb = np.asarray(mb.predict(brep))
+    assert np.array_equal(pb, np.asarray(mn.predict(nrep)))
+    assert np.array_equal(pb, np.asarray(mp.predict(pprep)))
+    assert np.array_equal(pb, np.asarray(ms.predict(srep)))
 
 
 def test_seco_learners_identical_on_wide_data():

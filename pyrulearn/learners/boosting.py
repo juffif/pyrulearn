@@ -394,6 +394,26 @@ class ENDER(NativeRuleLearner):
     intercept of its class. Numeric attributes come already binarized
     (`pyrulearn.data.io.build_dataspec`) instead of being thresholded
     during the search; the data's row weights weight the loss.
+
+    **Data representation.** Runs on any `DataRepresentation` (accepts
+    `data.X`/`data.y`/`data.weights`/`data.spec`, like every native
+    learner), but always converts to a dense Boolean matrix once at the
+    start of fitting -- `_grow`'s per-round scoring (`ROADMAP.md`'s
+    "every native learner on any data representation") needs vectorized
+    matrix-column access, not a representation's own coverage
+    primitives. `NListRepresentation`/`SparseDataRepresentation` rebuild
+    that matrix from their own storage the same way `data.X` always has,
+    so this is correct everywhere, just never faster on them than on
+    `BooleanDataRepresentation` to begin with -- a representation-generic
+    rewrite (through `initial_cover`/`refine_cover`) was prototyped and
+    measured 10-500x slower, even before batching, with no plausible fix:
+    unlike a `SeCo` search's fixed class labels, `_grow`'s weight vector
+    (the loss's gradient) changes every boosting round, so N-list's own
+    per-search node-count caching never gets the chance to pay for
+    itself. See `ROADMAP.md`'s "Design decisions" section for the
+    measurements. Pass a `BooleanDataRepresentation` directly if the data
+    isn't needed in another form for other learners, to skip paying for
+    an N-list/sparse structure this class never uses.
     """
 
     def __init__(
@@ -455,6 +475,17 @@ class ENDER(NativeRuleLearner):
         n = len(y)
         Y = np.zeros((n, K))
         Y[np.arange(n), y_idx] = 1.0
+        # Deliberate, one-time dense conversion -- see the class docstring's
+        # "Data representation" paragraph: _grow's vectorized scoring needs
+        # matrix columns, and a representation-generic rewrite (going
+        # through initial_cover/refine_cover instead) was prototyped and
+        # found 10-500x slower even unbatched, with no plausible fix -- the
+        # per-round gradient vector changes every round, unlike a SeCo
+        # search's fixed class labels, so N-list's own per-search node-count
+        # caching never gets to pay for itself here. `data.X` already does
+        # this correctly for every representation (`NListRepresentation`/
+        # `SparseDataRepresentation` rebuild it from their own storage), so
+        # this works -- just always at dense-matrix cost, never at N-list's.
         X = np.asarray(data.X, dtype=bool)
         Xf = X.astype(float)
         d = np.ones(n) if data.weights is None else data.weights.astype(float)

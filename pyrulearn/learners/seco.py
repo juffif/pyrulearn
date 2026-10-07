@@ -294,6 +294,61 @@ def _score_children(
     return children, dead
 
 
+def _score_children_matmul(
+    data,
+    dataspec,
+    target_class: Any,
+    rule: Rule,
+    mask: FrozenSet[int],
+    handle,
+    stats: RuleStats,
+    chains: Dict[int, Tuple[Tuple[int, ...], int]],
+) -> Tuple[List[Tuple[Rule, FrozenSet[int], Any, RuleStats]], Set[int]]:
+    """Experimental alternative to `_score_children`: every open feature
+    of `rule.specialize`'s children -- numeric or not, one attribute or
+    several -- scored in a single `data.batch_cover_counts` matrix
+    multiply, the ENDER-style "one matmul per round" rather than
+    `_score_children`'s "one pass per numeric attribute's chain".
+    `chains` is accepted and ignored, only so this is a drop-in swap for
+    `_score_children` (same signature) in a benchmark -- not wired into
+    `BeamSearch`/`HillClimbing` by default. See `batch_cover_counts` and
+    `ROADMAP.md`'s numeric-threshold-counting item.
+    """
+    specialized = rule.specialize(dataspec, mask)
+    if not specialized:
+        return [], set()
+    by_feature: Dict[int, Tuple[Rule, FrozenSet[int]]] = {}
+    for child_rule, child_mask in specialized:
+        by_feature[child_rule.conditions[-1].feature] = (child_rule, child_mask)
+
+    n_pos_scope = stats.tp + stats.fn
+    n_neg_scope = stats.fp + stats.tn
+    batch = getattr(data, "batch_cover_counts", None)
+    children: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
+    dead: Set[int] = set()
+    if batch is None:
+        for added, (child_rule, child_mask) in by_feature.items():
+            child_handle = data.refine_cover(handle, added)
+            child_stats = _stats_from_handle(data, target_class, child_rule, child_handle)
+            if child_stats.tp == 0:
+                dead.add(added)
+            else:
+                children.append((child_rule, child_mask, child_handle, child_stats))
+        return children, dead
+
+    features = list(by_feature.keys())
+    tp_arr, fp_arr = batch(handle, target_class, features)
+    for f, tp, fp in zip(features, tp_arr, fp_arr):
+        child_rule, child_mask = by_feature[f]
+        if tp == 0:
+            dead.add(f)
+            continue
+        child_handle = data.refine_cover(handle, f)
+        fn, tn = n_pos_scope - tp, n_neg_scope - fp
+        children.append((child_rule, child_mask, child_handle, RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=child_rule.length())))
+    return children, dead
+
+
 def _optimistic_stats(stats: RuleStats) -> RuleStats:
     """The best any refinement of a `(tp, fp)` rule could possibly cover:
     every true positive kept, every false positive shed -- `(tp, 0)`.
