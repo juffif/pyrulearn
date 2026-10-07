@@ -8,7 +8,7 @@ from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data.io import binarize
 from pyrulearn.interfaces.weka import PARTImporter
 
-_ARFF_PATH = Path(__file__).resolve().parent.parent / "examples" / "jrip_test.arff"
+_ARFF_PATH = Path(__file__).resolve().parent / "fixtures" / "jrip_test.arff"
 
 # Captured verbatim from a real `weka.jar` 3.8.7 run:
 #   java -cp weka.jar weka.classifiers.rules.PART -t jrip_test.arff -x 2

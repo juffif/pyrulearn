@@ -8,8 +8,8 @@ from pyrulearn.models import DecisionList, DisjointRuleSet
 from pyrulearn.data.io import binarize
 from pyrulearn.interfaces.weka import J48Importer
 
-_ARFF_PATH = Path(__file__).resolve().parent.parent / "examples" / "jrip_test.arff"
-_DEEP_ARFF_PATH = Path(__file__).resolve().parent.parent / "examples" / "j48_deep_test.arff"
+_ARFF_PATH = Path(__file__).resolve().parent / "fixtures" / "jrip_test.arff"
+_DEEP_ARFF_PATH = Path(__file__).resolve().parent / "fixtures" / "j48_deep_test.arff"
 
 # Captured verbatim from a real `weka.jar` 3.8.7 run:
 #   java -cp weka.jar weka.classifiers.trees.J48 -t jrip_test.arff -x 2
