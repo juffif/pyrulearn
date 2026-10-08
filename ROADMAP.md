@@ -136,8 +136,21 @@ the work below is worth doing for them too):
 
 1. *Data preparation*: a `representation=` choice where data is prepared
    (`pyrulearn.experiments.runner.run_cv`, the demos, the loading
-   helpers), with N-lists as the default. Build the N-list directly from
-   the binarized matrix, without a `BooleanDataRepresentation` in between.
+   helpers), with N-lists as the default. **The primitive this needs is
+   done (2026-10-08): `pyrulearn.data.io.encode`** (`binarize`'s
+   sparse-intermediate cousin) builds whichever `DataRepresentation` is
+   asked for -- default `NListRepresentation` -- directly from a
+   `scipy.sparse` matrix, never forming the dense `(n_samples,
+   n_features)` array `binarize` always does, even transiently;
+   `NListRepresentation.__init__` now also accepts a `scipy.sparse`
+   matrix directly (reading rows from its CSR structure instead of
+   `np.flatnonzero` on a dense row -- `BooleanDataRepresentation`/
+   `SparseDataRepresentation` already did). **Not done yet, on purpose,
+   done step by step**: `run_cv` and every demo still call `binarize` +
+   `BooleanDataRepresentation(...)` by hand, unchanged -- migrating them
+   onto `encode` is the deliberate next step, kept separate so each
+   demo's migration can be checked (identical rules/accuracy, not just
+   "didn't crash") on its own rather than in one sweeping change.
 2. *The three learners*: score candidate conditions through the
    representation's (weighted) coverage functions instead of matrix
    columns. Measure the speed on every representation -- numpy scores all

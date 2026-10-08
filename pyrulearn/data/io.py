@@ -4,7 +4,7 @@ pyrulearn.data.io
 
 Read external tabular data (ARFF, CSV) into a
 `pyrulearn.data.representation.BooleanDataRepresentation` (a `DataSpec` plus
-its Boolean feature matrix), in three ways:
+its Boolean feature matrix) via `read_arff`/`read_csv`, in three ways:
 
 1. **Validate** an already-built `DataSpec` against a file's header
    (`validate_dataspec`) -- report missing attributes, declared/inferred
@@ -17,6 +17,18 @@ its Boolean feature matrix), in three ways:
    build one attribute per column (nominal/numeric) from the file's own
    declared types (ARFF) or a cardinality-based heuristic (CSV), then
    binarize the same way.
+
+Both readers binarize via `binarize` (a `DataSpec` + a dataframe of raw
+values -> a dense Boolean matrix) and wrap the result in a
+`BooleanDataRepresentation` directly -- the two lower-level functions
+this module actually builds the matrix with. `encode` is `binarize`'s
+sparse-intermediate cousin: given the same `DataSpec` and dataframe, it
+builds whichever `DataRepresentation` you ask for (default
+`NListRepresentation`) straight from a `scipy.sparse` matrix, without
+ever forming the dense array `binarize` always does -- call it directly
+(not through `read_arff`/`read_csv`, which don't expose a
+`representation=` choice yet) when the representation choice matters
+enough to skip paying for a dense matrix even transiently.
 
 Numeric columns without pre-given thresholds are discretized via a
 single-feature decision tree
@@ -49,14 +61,14 @@ nominal/numeric/boolean attributes is supported end to end for those.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
 from .attributes import AttributeType, MissingStrategy, evaluate_feature
 from .spec import DataSpec, DataSpecBuilder
-from .representation import BooleanDataRepresentation
+from .representation import BooleanDataRepresentation, DataRepresentation, NListRepresentation
 
 # Default cap on the number of buckets a numeric column is discretized
 # into (`max_intervals` below) -- a ceiling passed to `tree_thresholds`,
@@ -301,6 +313,124 @@ def binarize(
             X[missing_mask.to_numpy(), missing_spec.index] = True
 
     return X
+
+
+def encode(
+    dataspec: DataSpec,
+    df: pd.DataFrame,
+    y: Optional[Any] = None,
+    representation: Optional[Type[DataRepresentation]] = None,
+    missing_strategy: Optional[MissingStrategy] = None,
+    random_state: Optional[int] = None,
+    weights: Optional[np.ndarray] = None,
+) -> DataRepresentation:
+    """Like `binarize`, but builds `representation` (default
+    `NListRepresentation` -- `pyrulearn.learners.base.REPRESENTATION_PREFERENCE_ORDER`'s
+    first choice) directly from a `scipy.sparse` intermediate instead of
+    writing into a dense `(n_samples, n_features)` array first.
+
+    `binarize` always allocates that array, even when the representation
+    actually wanted is `NListRepresentation` or `SparseDataRepresentation`
+    -- both of which build their own, more compact storage *from* it,
+    so the dense array was only ever a transient step, not something
+    either representation keeps. For data where `n_samples *
+    n_features` is the whole reason to prefer one of those
+    representations, paying for it anyway, even transiently, defeats
+    the point (`ROADMAP.md`'s 0.3.0 plan). This function evaluates every
+    `dataspec.feature_specs` entry exactly as `binarize` does (same
+    `missing_strategy` resolution, same per-column grouping, same
+    `evaluate_feature` calls) but accumulates each derived feature's
+    *true row indices* instead of writing into a dense column, then
+    builds one `scipy.sparse.csc_matrix` from all of them at once --
+    memory proportional to the number of true entries, never to
+    `n_samples * n_features`. `BooleanDataRepresentation.__init__` and
+    `SparseDataRepresentation.__init__` already accept a `scipy.sparse`
+    matrix directly; `NListRepresentation.__init__` now does too,
+    reading rows from its CSR structure instead of `np.flatnonzero` on a
+    dense row -- so whichever `representation` is requested, this
+    sparse intermediate is the only matrix ever built. Choosing
+    `BooleanDataRepresentation` still ends up with a dense array
+    eventually (that's its own storage), just built by its constructor
+    from this sparse intermediate's `.toarray()`, not filled in here.
+
+    `y`/`weights`, if given, are passed straight to `representation`'s
+    constructor alongside the encoded matrix -- the same one-line
+    `SomeRepresentation(spec, binarize(spec, df), df[target].to_numpy())`
+    every demo currently writes by hand, just with the matrix building
+    and the representation choice combined into one call.
+    """
+    from scipy import sparse
+
+    if representation is None:
+        representation = NListRepresentation
+    resolved = missing_strategy or dataspec.missing_strategy or DataSpec.DEFAULT_MISSING_STRATEGY
+    n = len(df)
+    rng = np.random.default_rng(random_state) if resolved == MissingStrategy.RANDOM else None
+
+    row_chunks: List[np.ndarray] = []
+    col_chunks: List[np.ndarray] = []
+
+    def _add(rows: np.ndarray, col: int) -> None:
+        if rows.size:
+            row_chunks.append(rows)
+            col_chunks.append(np.full(rows.size, col, dtype=np.int64))
+
+    specs_by_col: Dict[str, List] = {}
+    for spec in dataspec.feature_specs:
+        source_col = spec.attribute if spec.attribute is not None else spec.name
+        specs_by_col.setdefault(source_col, []).append(spec)
+
+    for source_col, specs in specs_by_col.items():
+        if source_col not in df.columns:
+            names = [s.name for s in specs]
+            raise ValueError(f"Column {source_col!r} (for feature(s) {names}) not found in data")
+        attr = dataspec.attributes.get(source_col)
+        raw = df[source_col]
+
+        if attr is not None and attr.missing_values:
+            missing_set = set(attr.missing_values)
+            raw = raw.apply(lambda v: None if v in missing_set else v)
+        if attr is not None and attr.type == AttributeType.NUMERIC:
+            raw = pd.to_numeric(raw, errors="coerce")
+        missing_mask = raw.isna()
+
+        if missing_mask.any() and resolved in (MissingStrategy.MAJORITY, MissingStrategy.RANDOM):
+            known = raw.dropna()
+            if known.empty:
+                raise ValueError(f"Column {source_col!r} has no non-missing values to impute from")
+            if resolved == MissingStrategy.MAJORITY:
+                numeric = attr is not None and attr.type == AttributeType.NUMERIC
+                fill = float(known.astype(float).median()) if numeric else known.mode().iloc[0]
+                raw = raw.fillna(fill)
+            else:  # RANDOM
+                raw = raw.copy()
+                idx = raw.index[missing_mask]
+                raw.loc[idx] = rng.choice(known.to_numpy(), size=len(idx))
+            missing_mask = raw.isna()  # now all False
+
+        for spec in specs:
+            results = raw.apply(lambda v: evaluate_feature(spec, v))
+            _add(np.flatnonzero(results.to_numpy(dtype=object) == True), spec.index)
+
+        if resolved == MissingStrategy.SEPARATE and missing_mask.any():
+            missing_spec = next(
+                (s for s in specs if attr is not None and attr.missing_name is not None
+                 and s.op == "==" and s.value == attr.missing_name),
+                None,
+            )
+            if missing_spec is None:
+                raise ValueError(
+                    f"missing_strategy=SEPARATE selected, but attribute {source_col!r} has no "
+                    "declared missing-value feature -- pass missing_name= to add_nominal/add_numeric "
+                    "when building this attribute, or choose a different missing_strategy."
+                )
+            _add(np.flatnonzero(missing_mask.to_numpy()), missing_spec.index)
+
+    rows = np.concatenate(row_chunks) if row_chunks else np.empty(0, dtype=np.int64)
+    cols = np.concatenate(col_chunks) if col_chunks else np.empty(0, dtype=np.int64)
+    data = np.ones(rows.shape[0], dtype=bool)
+    X = sparse.coo_matrix((data, (rows, cols)), shape=(n, dataspec.n_features), dtype=bool).tocsc()
+    return representation(dataspec, X, y, weights=weights)
 
 
 # -- readers -------------------------------------------------------------------

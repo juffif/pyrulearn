@@ -650,37 +650,60 @@ class NListRepresentation(DataRepresentation):
     `from_dataframe`, mirroring `BooleanDataRepresentation`.
     """
 
-    def __init__(self, spec: DataSpec, X: np.ndarray, y: Optional[np.ndarray] = None,
+    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
                  weights: Optional[np.ndarray] = None):
         super().__init__(spec)
-        X = np.asarray(X)
-        if X.dtype != bool:
-            X = X.astype(bool)
-        if X.shape[1] != spec.n_features:
-            raise ValueError(
-                f"X has {X.shape[1]} columns but this DataSpec has "
-                f"{spec.n_features} features"
-            )
-        self._n_samples: int = X.shape[0]
+        from scipy.sparse import issparse
+
+        if issparse(X):
+            csr = X.tocsr()
+            if csr.dtype != bool:
+                csr = csr.astype(bool)
+            n, k = csr.shape
+            if k != spec.n_features:
+                raise ValueError(f"X has {k} columns but this DataSpec has {spec.n_features} features")
+            # per-feature true-counts without ever forming a dense
+            # (n_samples, n_features) array: csr.indices lists every
+            # nonzero entry's column across all rows, so counting how
+            # often each column index appears *is* each feature's count
+            # -- the same number `X.sum(axis=0)` gives the dense path,
+            # from the sparse structure alone.
+            freq = np.bincount(csr.indices, minlength=k)
+            row_source: Any = csr
+        else:
+            X = np.asarray(X)
+            if X.dtype != bool:
+                X = X.astype(bool)
+            n, k = X.shape
+            if k != spec.n_features:
+                raise ValueError(f"X has {k} columns but this DataSpec has {spec.n_features} features")
+            freq = X.sum(axis=0)
+            row_source = X
+        self._n_samples: int = n
         self.y: Optional[np.ndarray] = None if y is None else np.asarray(y)
-        self._build(X)
+        self._build(n, k, freq, row_source)
         self._set_weights(weights)
 
     # -- construction ---------------------------------------------------
 
-    def _build(self, X: np.ndarray) -> "_PPCNode":
+    def _build(self, n: int, k: int, freq: np.ndarray, row_source: Any) -> "_PPCNode":
         """Builds the trie and every per-item array this class needs,
         and returns the finished root node -- not kept as `self._root`,
         since nothing here needs the node graph once the flat arrays
         exist; a subclass that does (e.g. to derive more structure from
         it, via `_prepare_extra_per_item`) gets it as the return value
-        instead, rather than paying to retain it unconditionally."""
-        n, k = X.shape
+        instead, rather than paying to retain it unconditionally.
+
+        `row_source` is either the dense `(n, k)` bool array itself, or
+        a CSR `scipy.sparse` matrix -- `__init__` already reduced both
+        to `n`/`k`/`freq` uniformly, so this never needs to branch on
+        which one it got except to read one row's own features out of
+        it (a plain slice either way: `row_source[i]`'s `flatnonzero`,
+        or `indices[indptr[i]:indptr[i+1]]`)."""
         self._n_features = k
         self._word_count = (k + 63) // 64 or 1
 
         # most-frequent feature first -> shared prefixes near the root
-        freq = X.sum(axis=0)
         order = np.argsort(-freq, kind="stable")
         rank = np.empty(k, dtype=np.int64)
         rank[order] = np.arange(k)
@@ -689,8 +712,11 @@ class NListRepresentation(DataRepresentation):
         root = _PPCNode(-1)
         row_feats: list = [None] * n          # per row: its features, ascending
         leaf_of: list = [root] * n            # per row: the node its path ends at
+        is_sparse = not isinstance(row_source, np.ndarray)
+        if is_sparse:
+            indptr, indices = row_source.indptr, row_source.indices
         for i in range(n):
-            feats = np.flatnonzero(X[i])
+            feats = indices[indptr[i]:indptr[i + 1]] if is_sparse else np.flatnonzero(row_source[i])
             row_feats[i] = feats
             node = root
             for f in sorted((int(v) for v in feats), key=lambda v: rank[v]):
@@ -966,10 +992,10 @@ class NListRepresentation(DataRepresentation):
     @classmethod
     def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "NListRepresentation":
         """Build the PPC-tree / N-list index from a `scipy.sparse` matrix
-        matching `spec`'s feature order (densified during the build)."""
-        from scipy.sparse import issparse
-
-        return cls(spec, matrix.toarray() if issparse(matrix) else matrix, y)
+        matching `spec`'s feature order -- the constructor now builds
+        directly from a sparse matrix's own CSR structure, no dense
+        `(n_samples, n_features)` array ever formed."""
+        return cls(spec, matrix, y)
 
     @classmethod
     def from_dataframe(

@@ -2,12 +2,20 @@ import io
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from pyrulearn.data.attributes import FeatureSpec, MissingStrategy, evaluate_feature
-from pyrulearn.data import DataSpec, DataSpecBuilder
-from pyrulearn.data.io import binarize, build_dataspec, read_arff, read_csv, validate_dataspec, write_arff, write_csv
+from pyrulearn.data import (
+    BooleanDataRepresentation, DataSpec, DataSpecBuilder, NListRepresentation, SparseDataRepresentation,
+)
+from pyrulearn.data.io import (
+    binarize, build_dataspec, encode, read_arff, read_csv, validate_dataspec, write_arff, write_csv,
+)
 from pyrulearn.rule import Rule
+
+_ENCODE_REPS = [BooleanDataRepresentation, NListRepresentation, SparseDataRepresentation]
 
 
 CSV_TEXT = """color,age,label
@@ -245,6 +253,102 @@ def test_missing_values_sentinel_recognition():
     assert list(X[:, red_idx]) == [True, False]
     assert list(X[:, blue_idx]) == [False, False]
     print("missing_values sentinel recognition: OK")
+
+
+# -- encode: binarize's sparse-intermediate cousin --------------------------
+# Same scenarios as the binarize missing-strategy tests above, but checked
+# against encode() for every representation -- encode must agree with
+# binarize(...) + rep_cls(...) exactly, not just "look plausible", since
+# the whole point is dropping in as a replacement.
+
+@pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
+def test_encode_defaults_to_nlist_and_matches_binarize(rep_cls):
+    text = "color,age,label\nred,20,neg\nblue,30,neg\n,25,pos\n"
+    boolean_rep = read_csv(io.StringIO(text), target="label")
+    spec = boolean_rep.spec
+    df = pd.DataFrame({"color": ["red", "blue", None], "age": [20, 30, 25]})
+    y = np.array(["neg", "neg", "pos"])
+    expected = rep_cls(spec, binarize(spec, df), y)
+    got = encode(spec, df, y=y, representation=rep_cls)
+    assert isinstance(got, rep_cls)
+    assert np.array_equal(got.X, expected.X)
+    assert np.array_equal(got.y, expected.y)
+    print(f"encode matches binarize+{rep_cls.__name__} (NEVER_COVERS default): OK")
+
+
+def test_encode_with_no_representation_arg_defaults_to_nlist():
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"])
+    ds = b.build()
+    df = pd.DataFrame({"color": ["red", "blue", "red"]})
+    got = encode(ds, df)
+    assert isinstance(got, NListRepresentation)
+    print("encode defaults to NListRepresentation with no representation=: OK")
+
+
+@pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
+def test_encode_matches_binarize_majority_imputation(rep_cls):
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"])
+    b.add_numeric("age", [30])
+    ds = b.build()
+    df = pd.DataFrame({
+        "color": ["red", "red", "blue", None],
+        "age": [20.0, 40.0, 50.0, None],
+    })
+    expected = rep_cls(ds, binarize(ds, df, missing_strategy=MissingStrategy.MAJORITY))
+    got = encode(ds, df, representation=rep_cls, missing_strategy=MissingStrategy.MAJORITY)
+    assert np.array_equal(got.X, expected.X)
+    print(f"encode matches binarize+{rep_cls.__name__} (MAJORITY imputation): OK")
+
+
+@pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
+def test_encode_matches_binarize_random_imputation_reproducible(rep_cls):
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"])
+    ds = b.build()
+    df = pd.DataFrame({"color": ["red", "blue", "red", "blue", None]})
+    expected = rep_cls(ds, binarize(ds, df, missing_strategy=MissingStrategy.RANDOM, random_state=0))
+    got1 = encode(ds, df, representation=rep_cls, missing_strategy=MissingStrategy.RANDOM, random_state=0)
+    got2 = encode(ds, df, representation=rep_cls, missing_strategy=MissingStrategy.RANDOM, random_state=0)
+    assert np.array_equal(got1.X, expected.X)
+    assert np.array_equal(got1.X, got2.X)  # same seed -> reproducible
+    print(f"encode matches binarize+{rep_cls.__name__} (RANDOM imputation, reproducible): OK")
+
+
+@pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
+def test_encode_matches_binarize_separate_nominal_and_numeric(rep_cls):
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"], missing_name="<missing>")
+    b.add_numeric("age", [30], missing_name="<missing>")
+    ds = b.build()
+    df = pd.DataFrame({"color": ["red", None], "age": [40.0, None]})
+    expected = rep_cls(ds, binarize(ds, df, missing_strategy=MissingStrategy.SEPARATE))
+    got = encode(ds, df, representation=rep_cls, missing_strategy=MissingStrategy.SEPARATE)
+    assert np.array_equal(got.X, expected.X)
+    print(f"encode matches binarize+{rep_cls.__name__} (SEPARATE, nominal + numeric): OK")
+
+
+def test_encode_separate_without_declared_feature_raises():
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"])  # no missing_name declared
+    ds = b.build()
+    df = pd.DataFrame({"color": ["red", None]})
+    with pytest.raises(ValueError, match="missing_name|missing-value feature"):
+        encode(ds, df, missing_strategy=MissingStrategy.SEPARATE)
+    print("encode SEPARATE without declared feature raises, same as binarize: OK")
+
+
+@pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
+def test_encode_passes_weights_through(rep_cls):
+    b = DataSpecBuilder()
+    b.add_nominal("color", ["red", "blue"])
+    ds = b.build()
+    df = pd.DataFrame({"color": ["red", "blue", "red"]})
+    w = np.array([1.0, 2.0, 3.0])
+    got = encode(ds, df, representation=rep_cls, weights=w)
+    assert np.array_equal(got.weights, w)
+    print(f"encode passes weights= through to {rep_cls.__name__}: OK")
 
 
 def test_dataspec_missing_strategy_default_resolution():
