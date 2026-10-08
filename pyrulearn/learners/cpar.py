@@ -33,7 +33,8 @@ from ..rule import Rule
 from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
 from .seco import (
     CoveringState, MultiplicativeReweighting, PositiveWeightBelow,
-    count_open_children, handle_for, materialize_child, parent_closure, stats_from_handle,
+    count_open_children, handle_for, materialize_child, parent_closure, rank_best_first,
+    stats_from_handle,
 )
 
 
@@ -308,28 +309,26 @@ class PropagatingCPAR(NativeRuleLearner):
             if stats.tp <= 0:
                 return
             features, tps, fps, fns, tns = count_open_children(weighted, target_class, mask, handle, stats)
+            features = np.asarray(features, dtype=np.int64)
+            tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
+            alive = tps != 0
+            dead: Set[int] = set(features[~alive].tolist())
+            features, tps, fps, fns, tns = features[alive], tps[alive], fps[alive], fns[alive], tns[alive]
             length = rule.length() + 1
-            dead: Set[int] = set()
-            scored = []
-            for f, tp, fp, fn, tn in zip(features, tps, fps, fns, tns):
-                if tp == 0:
-                    dead.add(f)
-                    continue
-                cstats = RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=length)
-                scored.append((heuristic.score(cstats, stats), f, cstats))
-            scored.sort(key=lambda s: s[0], reverse=True)  # stable: ties stay in feature order
+            gains = heuristic.batch_score(RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats)
             closure = parent_closure(dataspec, rule)
             chosen = []
             threshold = None
-            for gain, f, cstats in scored:
+            for i in rank_best_first(gains).tolist():                 # stable: ties stay in feature order
+                gain = float(gains[i])
                 if gain < (self.min_gain if threshold is None else threshold):
                     break
-                built = materialize_child(weighted, dataspec, rule, closure, mask, f, handle)
+                built = materialize_child(weighted, dataspec, rule, closure, mask, int(features[i]), handle)
                 if built is None:
                     continue  # contradicts the rule: never a candidate
                 if threshold is None:
                     threshold = max(gain * self.gain_similarity, self.min_gain)
-                chosen.append((built, cstats))
+                chosen.append((built, RuleStats(tp=tps[i], fp=fps[i], fn=fns[i], tn=tns[i], length=length)))
             if not chosen:
                 if rule.length() > 0:
                     results.append(rule)

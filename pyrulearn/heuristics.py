@@ -122,6 +122,41 @@ from .rule import Rule
 Score = Union[float, Tuple[float, ...]]
 
 
+def _counts(stats: RuleStats):
+    """`stats`' tp, fp, fn, tn and length as float arrays broadcast to one
+    shape -- what the built-in `batch_score`s compute on. Float, not the
+    counts' own int dtype: the scalar `score`s multiply Python ints, which
+    never overflow, but e.g. `Correlation`'s four-way product overflows
+    int64 at around a million rows."""
+    return np.broadcast_arrays(*(
+        np.asarray(v, dtype=float) for v in (stats.tp, stats.fp, stats.fn, stats.tn, stats.length)
+    ))
+
+
+def _div(num, den, default: float = 0.0):
+    """``num / den`` where ``den > 0``, `default` elsewhere -- elementwise,
+    without the divide-by-zero warnings `np.where` would raise by
+    computing both branches."""
+    num, den = np.broadcast_arrays(num, den)
+    out = np.full(num.shape, default, dtype=float)
+    np.divide(num, den, out=out, where=den > 0)
+    return out
+
+
+def _loop(score_one, stats: RuleStats):
+    """`batch_score`'s default: `score_one` (a scalar `score`) applied to
+    every element of `stats`' arrays, as plain Python numbers. A tuple
+    score (`LEF`-shaped) comes back as one row per element."""
+    arrs = np.broadcast_arrays(*(np.asarray(v) for v in (stats.tp, stats.fp, stats.fn, stats.tn, stats.length)))
+    shape = arrs[0].shape
+    results = [
+        score_one(RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=length))
+        for tp, fp, fn, tn, length in zip(*(a.ravel().tolist() for a in arrs))
+    ]
+    out = np.asarray(results, dtype=float)
+    return out.reshape(shape + out.shape[1:])
+
+
 class RuleHeuristic(ABC):
     """Base for rule-evaluation heuristics. Higher `score(...)` = more
     preferred, uniformly across every concrete heuristic. `score(...)`
@@ -141,6 +176,22 @@ class RuleHeuristic(ABC):
     (`MinimalLength`, which reads `stats.length` alone), letting callers
     like `pyrulearn.evaluation.sort_rules` score them from the `Rule`
     with no data on hand.
+
+    **Two versions of the same formula.** `score` scores one rule
+    (`stats` holding plain numbers) in plain Python; `batch_score` scores
+    many at once (`stats` holding numpy arrays, e.g. every open child of
+    a search node) and returns an array. They exist separately for
+    speed: plain Python arithmetic is fast for one value and slow for a
+    thousand, numpy the other way round. The default `batch_score` just
+    calls `score` once per element -- correct for any heuristic, so a new
+    heuristic only *needs* `score`; every built-in also overrides
+    `batch_score` with the same formula in numpy. The two must agree
+    (`tests/test_heuristics.py` checks every built-in on a grid that
+    includes the zero-denominator cases); they can differ in the last
+    bit only where numpy's `log2`/`log` rounds differently from `math`'s.
+    A search must therefore compare `batch_score` values only with other
+    `batch_score` values, never with a `score` -- otherwise a child with
+    exactly its parent's stats could come out one bit "better".
     """
 
     needs_data: bool = True
@@ -148,6 +199,12 @@ class RuleHeuristic(ABC):
     @abstractmethod
     def score(self, stats: RuleStats) -> Score:
         raise NotImplementedError
+
+    def batch_score(self, stats: RuleStats) -> Any:
+        """`score` for every element of `stats`' arrays at once -- an
+        array (a tuple of arrays for `LEF`), one entry per element. See
+        the class docstring for why this exists next to `score`."""
+        return _loop(self.score, stats)
 
     def __repr__(self) -> str:
         """The class name plus every constructor argument that differs
@@ -369,6 +426,11 @@ class GainHeuristic(RuleHeuristic):
     def score(self, stats: RuleStats, parent_stats: RuleStats) -> Score:
         raise NotImplementedError
 
+    def batch_score(self, stats: RuleStats, parent_stats: RuleStats) -> Any:
+        """`score` for every element of `stats`' arrays against the one
+        `parent_stats` (plain numbers) -- see `RuleHeuristic.batch_score`."""
+        return _loop(lambda s: self.score(s, parent_stats), stats)
+
     def score_rule(
         self, rule: Rule, data: DataRepresentation,
         positive_class: Optional[Any] = None, parent_rule: Optional[Rule] = None,
@@ -395,6 +457,10 @@ class Precision(RuleHeuristic):
         total = stats.tp + stats.fp
         return stats.tp / total if total > 0 else 0.0
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return _div(tp, tp + fp)
+
 
 class Recall(RuleHeuristic):
     """h = tp / n_pos -- the true positive rate (a.k.a. sensitivity or
@@ -409,6 +475,10 @@ class Recall(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return stats.tp / stats.n_pos if stats.n_pos > 0 else 0.0
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, _, fn, _, _ = _counts(stats)
+        return _div(tp, tp + fn)
 
 
 class FBeta(RuleHeuristic):
@@ -440,6 +510,12 @@ class FBeta(RuleHeuristic):
         denom = b2 * p + r
         return (1 + b2) * p * r / denom if denom > 0 else 0.0
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        p = Precision().batch_score(stats)
+        r = Recall().batch_score(stats)
+        b2 = self.beta ** 2
+        return _div((1 + b2) * p * r, b2 * p + r)
+
 
 class CoveredPositives(RuleHeuristic):
     """h = tp -- maximizes covered positives alone; a rule's covered
@@ -466,6 +542,9 @@ class CoveredPositives(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return stats.tp
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return _counts(stats)[0].copy()
+
 
 class CoveredNegatives(RuleHeuristic):
     """h = -fp -- minimizes covered negatives alone (negated, to keep
@@ -479,6 +558,9 @@ class CoveredNegatives(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return -stats.fp
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return -_counts(stats)[1]
 
 
 class UncoveredPositives(RuleHeuristic):
@@ -499,6 +581,9 @@ class UncoveredPositives(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return -stats.fn
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return -_counts(stats)[2]
+
 
 class UncoveredNegatives(RuleHeuristic):
     """h = tn -- negatives this rule correctly leaves uncovered (a
@@ -512,6 +597,9 @@ class UncoveredNegatives(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return stats.tn
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return _counts(stats)[3].copy()
+
 
 class Laplace(RuleHeuristic):
     """h = (tp+1) / (tp+fp+2). Precision with its pivot moved to
@@ -519,6 +607,10 @@ class Laplace(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return (stats.tp + 1) / (stats.tp + stats.fp + 2)
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return (tp + 1) / (tp + fp + 2)
 
 
 class MEstimate(RuleHeuristic):
@@ -540,6 +632,12 @@ class MEstimate(RuleHeuristic):
         p0 = stats.n_pos / total if total > 0 else 0.0
         return (stats.tp + self.m * p0) / (stats.tp + stats.fp + self.m)
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        p0 = _div(tp + fn, (tp + fn) + (fp + tn))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return (tp + self.m * p0) / (tp + fp + self.m)
+
 
 class GeneralizedMEstimate(RuleHeuristic):
     """Generalizes `MEstimate` by replacing its prior positive rate p0
@@ -559,6 +657,11 @@ class GeneralizedMEstimate(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return (stats.tp + self.m * self.cost) / (stats.tp + stats.fp + self.m)
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return (tp + self.m * self.cost) / (tp + fp + self.m)
 
 
 class GHeuristic(RuleHeuristic):
@@ -582,6 +685,10 @@ class GHeuristic(RuleHeuristic):
         denom = stats.fp + self.g
         return stats.tp / denom if denom > 0 else 0.0
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return _div(tp, fp + self.g)
+
 
 class WRAcc(RuleHeuristic):
     """Weighted relative accuracy: coverage-weighted improvement over
@@ -596,6 +703,14 @@ class WRAcc(RuleHeuristic):
             return 0.0
         p0 = stats.n_pos / total
         return (covered / total) * (stats.tp / covered - p0)
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        total = (tp + fn) + (fp + tn)
+        covered = tp + fp
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = (covered / total) * (tp / covered - (tp + fn) / total)
+        return np.where((total == 0) | (covered == 0), 0.0, h)
 
 
 class YoudenJ(RuleHeuristic):
@@ -617,6 +732,13 @@ class YoudenJ(RuleHeuristic):
             return 0.0
         return stats.tp / stats.n_pos - stats.fp / stats.n_neg
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        n_pos, n_neg = tp + fn, fp + tn
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = tp / n_pos - fp / n_neg
+        return np.where((n_pos == 0) | (n_neg == 0), 0.0, h)
+
 
 class LinearCostRates(RuleHeuristic):
     """h = tpr - cost_ratio*fpr -- the rate-space counterpart to
@@ -636,6 +758,13 @@ class LinearCostRates(RuleHeuristic):
             return 0.0
         return stats.tp / stats.n_pos - self.cost_ratio * (stats.fp / stats.n_neg)
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        n_pos, n_neg = tp + fn, fp + tn
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = tp / n_pos - self.cost_ratio * (fp / n_neg)
+        return np.where((n_pos == 0) | (n_neg == 0), 0.0, h)
+
 
 class Accuracy(RuleHeuristic):
     """h = (tp+tn) / (n_pos+n_neg) -- fraction correctly classified if
@@ -650,6 +779,10 @@ class Accuracy(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         total = stats.n_pos + stats.n_neg
         return (stats.tp + stats.tn) / total if total > 0 else 0.0
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        return _div(tp + tn, (tp + fn) + (fp + tn))
 
 
 class CoverageDifference(RuleHeuristic):
@@ -668,6 +801,10 @@ class CoverageDifference(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return stats.tp - stats.fp
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return tp - fp
+
 
 class SlipperZ(RuleHeuristic):
     """h = sqrt(tp) - sqrt(fp): Slipper's rule-growing objective (Cohen &
@@ -680,6 +817,10 @@ class SlipperZ(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return math.sqrt(max(stats.tp, 0)) - math.sqrt(max(stats.fp, 0))
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return np.sqrt(np.maximum(tp, 0)) - np.sqrt(np.maximum(fp, 0))
+
 
 class Support(RuleHeuristic):
     """h = (tp+fp) / (n_pos+n_neg) -- fraction of all examples covered,
@@ -691,6 +832,10 @@ class Support(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         total = stats.n_pos + stats.n_neg
         return (stats.tp + stats.fp) / total if total > 0 else 0.0
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        return _div(tp + fp, (tp + fn) + (fp + tn))
 
 
 class Coverage(RuleHeuristic):
@@ -705,6 +850,10 @@ class Coverage(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return stats.tp + stats.fp
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return tp + fp
 
 
 class LinearCost(RuleHeuristic):
@@ -721,6 +870,10 @@ class LinearCost(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         return stats.tp - self.cost_ratio * stats.fp
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        return tp - self.cost_ratio * fp
+
 
 class LengthPenalized(RuleHeuristic):
     """Wraps another heuristic, subtracting a per-condition penalty --
@@ -734,6 +887,9 @@ class LengthPenalized(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return self.base.score(stats) - self.penalty * stats.length
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return self.base.batch_score(stats) - self.penalty * _counts(stats)[4]
 
 
 class MinimalLength(RuleHeuristic):
@@ -754,6 +910,9 @@ class MinimalLength(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> float:
         return -stats.length
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        return -_counts(stats)[4]
 
 
 class Correlation(RuleHeuristic):
@@ -776,6 +935,11 @@ class Correlation(RuleHeuristic):
         if denom == 0.0:
             return 0.0
         return (stats.tp * stats.tn - stats.fp * stats.fn) / denom
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        denom = np.sqrt((tp + fp) * (tp + fn) * (fp + tn) * (fn + tn))
+        return _div(tp * tn - fp * fn, denom)
 
 
 class ChiSquare(RuleHeuristic):
@@ -822,6 +986,15 @@ class ChiSquare(RuleHeuristic):
             diff = max(0.0, diff - n / 2)
         return n * diff * diff / denom
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        n = tp + fp + fn + tn
+        denom = (tp + fp) * (tp + fn) * (fp + tn) * (fn + tn)
+        diff = np.abs(tp * tn - fp * fn)
+        if self.yates_correction:
+            diff = np.maximum(0.0, diff - n / 2)
+        return np.where(n == 0, 0.0, _div(n * diff * diff, denom))
+
 
 class Entropy(RuleHeuristic):
     """CN2's original search heuristic (Clark & Niblett, 1989): the
@@ -851,6 +1024,15 @@ class Entropy(RuleHeuristic):
         if p == 0.0 or p == 1.0:
             return 0.0
         return p * math.log2(p) + (1 - p) * math.log2(1 - p)
+
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        covered = tp + fp
+        p = _div(tp, covered)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = p * np.log2(p) + (1 - p) * np.log2(1 - p)
+        h = np.where((p == 0.0) | (p == 1.0), 0.0, h)
+        return np.where(covered == 0, -1.0, h)
 
 
 class LikelihoodRatio(RuleHeuristic):
@@ -884,6 +1066,19 @@ class LikelihoodRatio(RuleHeuristic):
         term_fp = stats.fp * math.log(stats.fp / e_fp) if stats.fp > 0 else 0.0
         return 2 * (term_tp + term_fp)
 
+    def batch_score(self, stats: RuleStats) -> np.ndarray:
+        tp, fp, fn, tn, _ = _counts(stats)
+        covered = tp + fp
+        total = (tp + fn) + (fp + tn)
+        p0 = _div(tp + fn, total)
+        e_tp = covered * p0
+        e_fp = covered * (1 - p0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            term_tp = np.where(tp > 0, tp * np.log(tp / e_tp), 0.0)
+            term_fp = np.where(fp > 0, fp * np.log(fp / e_fp), 0.0)
+        valid = (covered != 0) & (total != 0) & (p0 > 0.0) & (p0 < 1.0)
+        return np.where(valid, 2 * (term_tp + term_fp), 0.0)
+
 
 class FoilGain(GainHeuristic):
     """FOIL's information gain (Quinlan, 1990): rewards a refinement by
@@ -911,6 +1106,13 @@ class FoilGain(GainHeuristic):
             - math.log2(parent_stats.tp / (parent_stats.tp + parent_stats.fp))
         )
 
+    def batch_score(self, stats: RuleStats, parent_stats: RuleStats) -> np.ndarray:
+        tp, fp, _, _, _ = _counts(stats)
+        ptp, pfp, _, _, _ = _counts(parent_stats)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            gain = tp * (np.log2(tp / (tp + fp)) - np.log2(ptp / (ptp + pfp)))
+        return np.where((tp == 0) | (ptp == 0), 0.0, gain)
+
 
 class DeltaGain(GainHeuristic):
     """Turns any ordinary `RuleHeuristic` into a `GainHeuristic`: scores
@@ -937,6 +1139,11 @@ class DeltaGain(GainHeuristic):
 
     def score(self, stats: RuleStats, parent_stats: RuleStats) -> float:
         return self.base.score(stats) - self.base.score(parent_stats)
+
+    def batch_score(self, stats: RuleStats, parent_stats: RuleStats) -> np.ndarray:
+        # the parent through batch_score too, so a child with its parent's
+        # exact stats gains exactly 0
+        return self.base.batch_score(stats) - self.base.batch_score(parent_stats)
 
 
 class LEF(RuleHeuristic):
@@ -971,3 +1178,6 @@ class LEF(RuleHeuristic):
 
     def score(self, stats: RuleStats) -> Tuple[float, ...]:
         return tuple(h.score(stats) for h in self.heuristics)
+
+    def batch_score(self, stats: RuleStats) -> Tuple[np.ndarray, ...]:
+        return tuple(h.batch_score(stats) for h in self.heuristics)

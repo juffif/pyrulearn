@@ -133,9 +133,28 @@ something else dominates it -- not yet profiled. `batch_cover_counts`
 multiplies against a boolean slice of `X`, so every call copies and
 converts the open columns to float, where `CPAR` converts `X` once; the
 parent's closure is recomputed from scratch at every node although
-`materialize_child` already computed it; and each candidate is scored by
-a Python-level `heuristic.score` call (a vectorized `score_array` on
-heuristics, with the scalar loop as fallback, would remove that).
+`materialize_child` already computed it.
+
+**Batch scoring (done, 2026-10-08).** Each candidate used to be scored by
+its own Python-level `heuristic.score` call. Every heuristic now also has
+`batch_score`, which scores arrays of stats at once: the base class's
+default loops over `score` (so a heuristic only *needs* `score`), every
+built-in overrides it with the same formula in numpy. Two versions rather
+than one array-safe `score` because numpy is slow for a single value,
+and `score` stays the fast path for that; `tests/test_heuristics.py`
+checks they agree (bit-identical for the arithmetic heuristics, to
+rounding for the log-based ones and `Correlation`/`ChiSquare`, whose
+scalar versions multiply exact Python ints). The searches score a node's
+children with one `batch_score` call and rank them with one `lexsort`,
+and compute everything they compare against those scores (a parent's
+own score, the running best, the optimistic bound) through
+`batch_score` too -- mixing the two could let a child with its parent's
+exact stats win by a rounding difference. Same models in every case
+measured; best of 3 fits, old vs. new, same machine: `sonar` (1080
+features) 1.5-2.3x (`PropagatingCPAR` 1.84x, now 7x behind `CPAR`
+instead of 14x), `diabetes` (112) 1.2-1.6x, `kr-vs-kp` (76) ~1.0x --
+the gain follows the number of open features per node. AQR unchanged
+(~1.0x everywhere), so its time is elsewhere.
 
 ## 0.3.0: every native learner on any data representation
 

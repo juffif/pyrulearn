@@ -580,6 +580,102 @@ def test_delta_gain_zero_for_a_rule_scored_against_itself():
     print("DeltaGain of a rule against itself is exactly zero: OK")
 
 
+# -------------------------------------------------- batch_score vs. score
+
+import itertools  # noqa: E402
+import warnings  # noqa: E402
+
+import pytest  # noqa: E402
+from pyrulearn import heuristics as H  # noqa: E402
+
+
+def _grid():
+    """Every combination of small counts -- zeros included, so each
+    heuristic's zero-denominator guards are hit -- plus weighted (float)
+    counts, as flat arrays, and the same points as scalar RuleStats."""
+    values = [0, 1, 2, 5, 13, 0.5, 2.25]
+    rows = list(itertools.product(values, values, [0, 1, 7, 0.75], [0, 1, 7, 0.75], [0, 3]))
+    cols = [np.array(c) for c in zip(*rows)]
+    batch = H.RuleStats(tp=cols[0], fp=cols[1], fn=cols[2], tn=cols[3], length=cols[4].astype(int))
+    single = [H.RuleStats(tp=r[0], fp=r[1], fn=r[2], tn=r[3], length=r[4]) for r in rows]
+    return batch, single
+
+
+#: arithmetic only (division, products of floats below 2**53): bit-identical
+EXACT = [
+    H.Precision(), H.Recall(), H.FBeta(), H.FBeta(beta=0.5), H.CoveredPositives(),
+    H.CoveredNegatives(), H.UncoveredPositives(), H.UncoveredNegatives(), H.Laplace(),
+    H.MEstimate(m=2.0), H.GeneralizedMEstimate(m=2.0, cost=0.3), H.GHeuristic(g=1.0),
+    H.WRAcc(), H.YoudenJ(), H.LinearCostRates(cost_ratio=2.0), H.Accuracy(),
+    H.CoverageDifference(), H.SlipperZ(), H.Support(), H.Coverage(), H.LinearCost(cost_ratio=0.5),
+    H.LengthPenalized(H.Laplace(), penalty=0.1), H.MinimalLength(),
+]
+#: logs (numpy's may round differently from math's), or products the scalar
+#: version computes in exact Python ints: equal up to rounding
+CLOSE = [H.Correlation(), H.ChiSquare(), H.ChiSquare(yates_correction=False), H.Entropy(), H.LikelihoodRatio()]
+
+
+def _no_warnings(fn):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        return fn()
+
+
+@pytest.mark.parametrize("h", EXACT + CLOSE, ids=lambda h: repr(h))
+def test_batch_score_agrees_with_score(h):
+    batch, single = _grid()
+    got = _no_warnings(lambda: h.batch_score(batch))
+    want = np.array([h.score(s) for s in single], dtype=float)
+    assert got.shape == want.shape
+    if any(h is e for e in EXACT):
+        np.testing.assert_array_equal(got, want)
+    else:
+        np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("h", [H.FoilGain(), H.DeltaGain(H.Laplace()), H.DeltaGain(H.Entropy())],
+                         ids=lambda h: repr(h))
+def test_gain_batch_score_agrees_with_score(h):
+    batch, single = _grid()
+    for parent in [H.RuleStats(tp=13, fp=5, fn=0, tn=7), H.RuleStats(tp=0, fp=5, fn=2, tn=1),
+                   H.RuleStats(tp=2.25, fp=0.5, fn=1, tn=0.75)]:
+        got = _no_warnings(lambda: h.batch_score(batch, parent))
+        want = np.array([h.score(s, parent) for s in single], dtype=float)
+        np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-12)
+
+
+def test_lef_batch_score_is_one_array_per_criterion():
+    batch, single = _grid()
+    lef = H.LEF(H.Laplace(), H.MinimalLength())
+    got = lef.batch_score(batch)
+    assert isinstance(got, tuple) and len(got) == 2
+    for k, column in enumerate(got):
+        np.testing.assert_array_equal(column, [lef.score(s)[k] for s in single])
+
+
+def test_default_batch_score_loops_over_a_custom_score():
+    class Custom(H.RuleHeuristic):          # plain Python branches: not array-safe
+        def score(self, stats):
+            return stats.tp - 2 * stats.fp if stats.tp > stats.fp else -1.0
+
+    class CustomPair(H.RuleHeuristic):      # a LEF-shaped tuple score
+        def score(self, stats):
+            return (stats.tp, -stats.length)
+
+    batch, single = _grid()
+    np.testing.assert_array_equal(Custom().batch_score(batch), [Custom().score(s) for s in single])
+    pairs = CustomPair().batch_score(batch)
+    assert pairs.shape == (len(single), 2)
+    np.testing.assert_array_equal(pairs, [CustomPair().score(s) for s in single])
+
+
+def test_batch_score_of_one_scalar_stats_is_zero_dimensional():
+    s = H.RuleStats(tp=3, fp=1, fn=2, tn=4, length=2)
+    for h in [H.Laplace(), H.Entropy(), H.MinimalLength()]:
+        v = h.batch_score(s)
+        assert np.ndim(v) == 0 and float(v) == pytest.approx(h.score(s), rel=1e-12)
+
+
 if __name__ == "__main__":
     test_precision_and_laplace_and_support_and_accuracy()
     test_precision_handles_zero_coverage()

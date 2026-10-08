@@ -383,6 +383,41 @@ def count_open_children(
     return features, tp, fp, fn, tn
 
 
+def rank_best_first(scores: Any, *ties: Any) -> np.ndarray:
+    """Indices ordering candidates best-first: by `scores` (a
+    `batch_score` result) descending -- compared lexicographically when
+    `LEF`-shaped (a tuple of arrays, or a 2-D array's columns) -- then by
+    each of `ties` ascending, then in their original order (stable)."""
+    if isinstance(scores, tuple):
+        cols = [np.asarray(c, dtype=float) for c in scores]
+    else:
+        s = np.asarray(scores, dtype=float)
+        cols = [s] if s.ndim == 1 else list(s.T)
+    # np.lexsort's *last* key is the primary one
+    return np.lexsort([np.asarray(t) for t in reversed(ties)] + [-c for c in reversed(cols)])
+
+
+def score_at(scores: Any, i: int) -> Score:
+    """Candidate `i`'s score out of a `batch_score` result, as a plain
+    float (a tuple of floats when `LEF`-shaped)."""
+    if isinstance(scores, tuple):
+        return tuple(float(c[i]) for c in scores)
+    s = np.asarray(scores)
+    return float(s[i]) if s.ndim == 1 else tuple(float(x) for x in s[i])
+
+
+def batch_score_one(heuristic: RuleHeuristic, stats: RuleStats, *parent_stats: RuleStats) -> Score:
+    """`heuristic`'s score for the one rule `stats`, computed through
+    `batch_score` -- for anything a search compares against `batch_score`
+    values (a parent's own score, the running best), so both sides are
+    computed by the same code (see `RuleHeuristic`'s docstring)."""
+    v = heuristic.batch_score(stats, *parent_stats)
+    if isinstance(v, tuple):
+        return tuple(float(np.asarray(c).reshape(-1)[0]) for c in v)
+    a = np.asarray(v)
+    return float(a) if a.ndim == 0 else tuple(float(x) for x in a.reshape(-1))
+
+
 def parent_closure(dataspec, rule: Rule):
     """`rule`'s own closure under `dataspec`'s constraints, for
     `materialize_child` to extend -- None when there are no constraints.
@@ -569,7 +604,8 @@ class BeamSearch(RuleSearch):
             # class's docstring.
             if not self.optimistic_pruning or threshold is None:
                 return True
-            return heuristic.score(_optimistic_stats(stats)) > threshold
+            # batch_score_one: `threshold` came from batch_score
+            return batch_score_one(heuristic, _optimistic_stats(stats)) > threshold
 
         def is_eligible(rule: Rule, stats: RuleStats) -> bool:
             if stats.tp == 0:
@@ -600,7 +636,7 @@ class BeamSearch(RuleSearch):
         for rule, mask, handle, stats in beam:
             if rule.length() == 0:
                 continue
-            s = heuristic.score(stats)
+            s = batch_score_one(heuristic, stats)  # compared with batch_score values below
             if is_eligible(rule, stats) and (best_score is None or s > best_score):
                 best_rule, best_score = rule, s
 
@@ -654,30 +690,40 @@ class BeamSearch(RuleSearch):
             # exactly when the first arrival is (contradiction is a property
             # of the condition set), so deduplicating before that check is
             # sound too.
-            proposals: Dict[int, Tuple[int, int, RuleStats]] = {}
+            seen_keys: Set[int] = set()
             dead_by_parent: List[Set[int]] = []
+            parts: List[Tuple[np.ndarray, ...]] = []
             for pi, (rule, mask, handle, stats) in enumerate(refinable):
                 features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
+                features = np.asarray(features, dtype=np.int64)
+                tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
+                alive = tps != 0
+                dead_by_parent.append(set(features[~alive].tolist()))
                 bits = 0
                 for lit in rule.conditions:
                     bits |= 1 << lit.feature
-                length = rule.length() + 1
-                dead: Set[int] = set()
-                for f, tp, fp, fn, tn in zip(features, tps, fps, fns, tns):
-                    if tp == 0:
-                        dead.add(f)
-                        continue
+                keep: List[int] = []
+                for j, f in zip(np.flatnonzero(alive).tolist(), features[alive].tolist()):
                     key = bits | (1 << f)
-                    if key not in proposals:
-                        proposals[key] = (pi, f, RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=length))
-                dead_by_parent.append(dead)
-
-            scored = [(heuristic.score(st), st.length, pi, f, st) for pi, f, st in proposals.values()]
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        keep.append(j)
+                k = np.asarray(keep, dtype=np.intp)
+                parts.append((np.full(len(k), pi), features[k], tps[k], fps[k], fns[k], tns[k],
+                              np.full(len(k), rule.length() + 1)))
+            c_parent, c_feature, c_tp, c_fp, c_fn, c_tn, c_length = (
+                np.concatenate([p[j] for p in parts]) for j in range(7)
+            )
+            scores = heuristic.batch_score(RuleStats(tp=c_tp, fp=c_fp, fn=c_fn, tn=c_tn, length=c_length))
             # ties broken toward the shorter (more general) rule -- otherwise
             # an arbitrary, sort-order-dependent longer duplicate could win a
             # beam slot over an equally-good shorter one; equal keys stay in
-            # arrival order (stable sort)
-            scored.sort(key=lambda t: (t[0], -t[1]), reverse=True)
+            # arrival order (stable)
+            order = rank_best_first(scores, c_length).tolist()
+
+            def candidate(i: int) -> Tuple[Score, int, int, RuleStats]:
+                st = RuleStats(tp=c_tp[i], fp=c_fp[i], fn=c_fn[i], tn=c_tn[i], length=int(c_length[i]))
+                return score_at(scores, i), int(c_parent[i]), int(c_feature[i]), st
 
             closures: Dict[int, Any] = {}
             contradictory = object()
@@ -698,8 +744,8 @@ class BeamSearch(RuleSearch):
             new_beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
             built: List[Tuple[Score, Rule, RuleStats]] = []
             walked = 0
-            while walked < len(scored) and len(new_beam) < self.beam_width:
-                s, _, pi, f, st = scored[walked]
+            while walked < len(order) and len(new_beam) < self.beam_width:
+                s, pi, f, st = candidate(order[walked])
                 walked += 1
                 child = build(pi, f, with_handle=True)
                 if child is None:
@@ -734,8 +780,8 @@ class BeamSearch(RuleSearch):
             # candidate (walking past any that fail `filtering` -- past the
             # beam, if need be), not necessarily the top one
             eligible = next(((s, rule) for s, rule, st in built if is_eligible(rule, st)), None)
-            while eligible is None and walked < len(scored):
-                s, _, pi, f, st = scored[walked]
+            while eligible is None and walked < len(order):
+                s, pi, f, st = candidate(order[walked])
                 walked += 1
                 child = build(pi, f, with_handle=False)
                 if child is not None and is_eligible(child[0], st):
@@ -840,15 +886,17 @@ class HillClimbing(RuleSearch):
                 f"{type(heuristic).__name__} -- use GainAscentHillClimbing for a GainHeuristic"
             )
 
-    def _child_score(
-        self, heuristic: RuleHeuristic, child_stats: RuleStats, parent_stats: RuleStats
-    ) -> Score:
-        return heuristic.score(child_stats)
+    def _child_scores(
+        self, heuristic: RuleHeuristic, children: RuleStats, parent_stats: RuleStats
+    ) -> Any:
+        return heuristic.batch_score(children)
 
     def _improvement_threshold(self, heuristic: RuleHeuristic, parent_stats: RuleStats) -> Score:
         # the best child must strictly beat this to be worth moving to:
-        # the current rule's own score (a local maximum of the heuristic).
-        return heuristic.score(parent_stats)
+        # the current rule's own score (a local maximum of the heuristic),
+        # computed the way the children's are -- a child with the parent's
+        # exact stats must tie, not win by a rounding difference
+        return batch_score_one(heuristic, parent_stats)
 
     def _optimistic_stop(
         self, heuristic: RuleHeuristic, stats: RuleStats, best_stats: Optional[RuleStats],
@@ -921,30 +969,30 @@ class HillClimbing(RuleSearch):
 
             threshold = self._improvement_threshold(heuristic, stats)
 
-            # score every child from counts alone, build only the one moved to
+            # score every child from counts alone, in one batch_score call;
+            # build only the one moved to
             features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
+            features = np.asarray(features, dtype=np.int64)
+            tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
+            alive = tps != 0
+            dead: Set[int] = set(features[~alive].tolist())
+            features, tps, fps, fns, tns = features[alive], tps[alive], fps[alive], fns[alive], tns[alive]
             length = rule.length() + 1
-            dead: Set[int] = set()
-            candidates: List[Tuple[Score, int, RuleStats]] = []
-            for f, tp, fp, fn, tn in zip(features, tps, fps, fns, tns):
-                if tp == 0:
-                    dead.add(f)
-                    continue
-                child_stats = RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=length)
-                candidates.append((self._child_score(heuristic, child_stats, stats), f, child_stats))
-            # stable: equal scores stay in feature order, the child a strict `>` scan keeps
-            candidates.sort(key=lambda c: c[0], reverse=True)
+            values = self._child_scores(
+                heuristic, RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats,
+            )
             try:
                 closure = parent_closure(dataspec, rule)
             except ValueError:
                 break  # the rule itself is contradictory: no consistent child
             best_child: Optional[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = None
-            for value, f, child_stats in candidates:
-                if self.stop_at_local_optimum and value <= threshold:
+            # stable: equal scores stay in feature order, the child a strict `>` scan keeps
+            for i in rank_best_first(values).tolist():
+                if self.stop_at_local_optimum and score_at(values, i) <= threshold:
                     break  # local optimum -- no child beats the current rule
-                built = materialize_child(data, dataspec, rule, closure, mask, f, handle)
+                built = materialize_child(data, dataspec, rule, closure, mask, int(features[i]), handle)
                 if built is not None:
-                    best_child = (*built, child_stats)
+                    best_child = (*built, RuleStats(tp=tps[i], fp=fps[i], fn=fns[i], tn=tns[i], length=length))
                     break
             if best_child is None:
                 break  # nothing left to move to, or a local optimum
@@ -1008,10 +1056,10 @@ class GainAscentHillClimbing(HillClimbing):
                 f"{type(heuristic).__name__} -- use HillClimbing for a plain RuleHeuristic"
             )
 
-    def _child_score(
-        self, heuristic: RuleHeuristic, child_stats: RuleStats, parent_stats: RuleStats
-    ) -> Score:
-        return heuristic.score(child_stats, parent_stats)
+    def _child_scores(
+        self, heuristic: RuleHeuristic, children: RuleStats, parent_stats: RuleStats
+    ) -> Any:
+        return heuristic.batch_score(children, parent_stats)
 
     def _improvement_threshold(self, heuristic: RuleHeuristic, parent_stats: RuleStats) -> Score:
         return 0.0  # a gain's own shared reference point
