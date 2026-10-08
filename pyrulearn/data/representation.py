@@ -426,32 +426,33 @@ class BooleanDataRepresentation(DataRepresentation):
         `pyrulearn.learners.seco.count_open_children` -- and so every
         rule search -- counts with on this representation.
 
-        Slices `self.X[:, feature_indices]` before the matmul -- that's
-        fancy indexing (`feature_indices` is a list/array), which numpy
-        always copies, measured 26x slower than matmul-against-the-whole-
-        matrix-then-select for a case where *almost all* features were
-        still open (`ROADMAP.md`'s "Design decisions" has the numbers,
-        and why that case isn't representative -- a real search's open
-        set shrinks round over round, so most calls happen with far
-        fewer features open than that; matmul-then-select was tried as
-        a "fix" on exactly that reasoning and measured *worse* in every
-        real case checked, beam search and hill-climbing alike, because
-        it always pays for the full-width matmul regardless of how
-        narrow the open set actually is at that point in the search).
-        Those checks predate the lazy searches, so they're worth
-        repeating.
+        Multiplies only the covered rows of the open columns,
+        ``X[covered][:, feature_indices]`` -- one copy, which numpy's
+        fancy indexing always makes, of a block that shrinks with every
+        condition the rule gains (uncovered rows would only add zero
+        weights). Measured 1.9-6x faster than all rows on `spambase`
+        (4601 rows), 1.2-2.3x on `sonar`/`kr-vs-kp`, same models
+        (`ROADMAP.md`). Earlier, matmul-ing against the *whole* matrix
+        and selecting `feature_indices` from the result (no copy at all)
+        was tried and measured worse than slicing the open columns in
+        every real search -- it pays the full width however narrow the
+        open set is (`ROADMAP.md`'s "Design decisions").
         """
         if self.y is None:
             raise ValueError("batch_cover_counts needs labels (self.y)")
         cov, scope, w = handle
-        pos_mask = self.y == positive_class
+        # only the covered rows: uncovered ones would only contribute zero
+        # weights, and a deeper rule covers fewer and fewer of them
+        rows = np.flatnonzero(cov)
+        pos = (self.y == positive_class)[rows]
         if w is not None:
-            pos_w = np.where(cov & pos_mask, w, 0.0)
-            neg_w = np.where(cov & ~pos_mask, w, 0.0)
+            wr = w[rows]
+            pos_w = np.where(pos, wr, 0.0)
+            neg_w = np.where(pos, 0.0, wr)
         else:
-            pos_w = (cov & pos_mask).astype(float)
-            neg_w = (cov & ~pos_mask).astype(float)
-        cols = self.X[:, feature_indices]
+            pos_w = pos.astype(float)
+            neg_w = (~pos).astype(float)
+        cols = self.X[np.ix_(rows, np.asarray(feature_indices, dtype=np.intp))]
         tp = pos_w @ cols
         fp = neg_w @ cols
         if w is None:

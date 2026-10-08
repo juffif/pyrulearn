@@ -84,7 +84,7 @@ class CPAR(NativeRuleLearner):
     `spambase` (`ROADMAP.md`'s "Design decisions" has the numbers and
     why this is the *opposite* regime from `BeamSearch`/`HillClimbing`,
     where the same trick regresses). `PropagatingCPAR`, below, is the
-    same algorithm with constraint propagation: same models, 4-14x
+    same algorithm with constraint propagation: same models, 2.4-4.4x
     slower.
     """
 
@@ -219,9 +219,9 @@ class PropagatingCPAR(NativeRuleLearner):
     condition never changes coverage, so its FOIL gain is 0, below
     `min_gain`, and `CPAR` never picks one either -- propagation only
     saves `CPAR` from scoring it. Measured identical models on
-    `diabetes`, `sonar` and `kr-vs-kp`; 4-14x slower than `CPAR`, for
-    the reasons `ROADMAP.md`'s "Build only the children a search
-    follows" lists as still open.
+    `diabetes`, `sonar` and `kr-vs-kp`; 2.4-4.4x slower than `CPAR`
+    (`ROADMAP.md`'s "Build only the children a search follows" has the
+    history: 350x on `sonar` when every child was built eagerly).
     """
 
     def __init__(

@@ -123,15 +123,16 @@ never picks one; checked on `diabetes`, `sonar`, `kr-vs-kp` and in
 3.6x (`diabetes`) to 350x (`sonar`) slower than `CPAR`; lazy, 6-34x
 faster than that, but still 4x (`diabetes`: 1.54s vs. 0.40s), 14x
 (`sonar`: 0.82s vs. 0.06s) and 8x (`kr-vs-kp`: 1.07s vs. 0.14s) slower
-than `CPAR`. Profiled on `sonar`, the gap is three overheads, none
+than `CPAR`. Profiled on `sonar`, the gap was three overheads, none
 intrinsic to propagation: per-candidate Python scoring ~55%,
 `batch_cover_counts`'s bool-to-float slice ~22%, recomputing the parent
-closure ~21%.
+closure ~21% (cProfile's estimates; see below for what fixing each one
+actually measured). After all three: 2.4x (`diabetes`: 0.92s vs.
+0.38s), 2.8x (`sonar`: 0.16s vs. 0.06s), 4.4x (`kr-vs-kp`: 0.56s vs.
+0.13s).
 
 Still open: AQR gains far less than CN2 on `sonar` (4x vs. 42x), so
-something else dominates it -- not yet profiled. `batch_cover_counts`
-multiplies against a boolean slice of `X`, so every call copies and
-converts the open columns to float, where `CPAR` converts `X` once.
+something else dominates it -- not yet profiled.
 
 **Closures passed down (done, 2026-10-08).** Every expanded node used to
 recompute its rule's constraint closure from scratch (`parent_closure`),
@@ -141,6 +142,17 @@ cover handle; only a seed's is still computed. Same models, but no
 measurable speedup (within +-10% everywhere) -- the profile's ~21% for
 it was cProfile's per-call overhead on `propagate`'s many small Python
 calls, not real time.
+
+**Covered rows only (done, 2026-10-08).** `batch_cover_counts`
+multiplied the weights of *all* rows against the open columns, copying
+(and converting to float) an `n_rows x n_open` block per call, though
+uncovered rows only contribute zeros. It now takes only the covered rows
+(`X[covered][:, open]`, one copy), a block that shrinks with every
+condition. Rejected instead: a cached float copy of `X` (8x the boolean
+matrix's memory). Same models; best of 3 vs. the previous version, same
+machine: `spambase` (4601 rows) 1.9-6x (CN2 23.9s -> 4.0s, PyLORD 277s
+-> 145s), `kr-vs-kp` 1.2-2.3x, `sonar` 1.2-2.3x (`PropagatingCPAR`
+2.3x, now 2.8x behind `CPAR`), `diabetes` ~1.1x.
 
 **Batch scoring (done, 2026-10-08).** Each candidate used to be scored by
 its own Python-level `heuristic.score` call. Every heuristic now also has
