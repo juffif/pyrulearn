@@ -280,6 +280,51 @@ they aren't reopened by accident.
     matrix-matrix product *and* keeping data device-resident across a
     whole search to plausibly pay off -- a real redesign, not a backend
     swap, not attempted.
+  - **`batch_cover_counts`'s own fancy-indexing cost, found and then
+    un-fixed (2026-10-08).** It slices `self.X[:, feature_indices]`
+    before the matmul -- `feature_indices` is a list/array, so that's
+    fancy indexing, which numpy always copies. Measured in isolation:
+    26x slower than matmul-ing against the *whole* `self.X` and
+    selecting `feature_indices` out of the small `(n_features,)` result
+    afterward instead -- the same "score everything, mask the result"
+    trick `pyrulearn.learners.cpar.CPAR`'s own native code already uses
+    (see the CPAR entry below). Tried as a fix, measured *worse* in
+    every real case re-checked (`spambase`, CN2/`BeamSearch` at
+    `beam_width` 1/3/5/10, and `PFossil`/`HillClimbing` -- previously
+    matmul's cleanest win at 1.07x, now 0.90x): the isolated benchmark
+    used a case with ~98% of features still open, which is *not*
+    representative of `BeamSearch`/`HillClimbing`'s own open set -- a
+    `SeCo` search's open set shrinks fast, not slowly: `Rule.specialize`'s
+    constraint-aware closure means fixing *one* numeric threshold forces
+    every other threshold (and negation) of that same attribute out of
+    the open set in one step, so most calls happen far narrower than
+    98% open, where slicing-then-matmul's smaller FLOP count beats
+    matmul-then-select's constant full-width cost despite the slice's
+    own overhead. Reverted back to slicing; the 26x number is real and
+    not wrong, just measured on a case unrepresentative of *this*
+    caller, generalized from without checking the real workload first
+    -- the exact mistake the "verify, don't assume" discipline elsewhere
+    in this file is supposed to catch, caught here one step too late
+    (after proposing the fix, not before).
+
+    Checked directly *why* this doesn't contradict `CPAR`'s own native
+    code using the identical "score everything, mask after" trick
+    successfully (prompted by a direct question, not found
+    unprompted): on `spambase` (n=4601, k=998), `CPAR`'s real
+    full-matrix `_grow` is **15x faster** than a slice-first variant of
+    the exact same search (102ms vs. 1547ms, identical 27 bodies) --
+    the opposite result from `BeamSearch`. The difference isn't
+    single-lineage-vs-branching or small-n-vs-large-n (both were
+    candidate explanations, both wrong) -- it's *how fast the open set
+    shrinks*. `CPAR` works directly on `data.X` with no constraint
+    propagation at all: each condition removes exactly the one feature
+    just used from consideration, nothing else, so with `max_length`
+    typically ~5, its open set stays at roughly `k - 5` -- essentially
+    full width -- for the entire search. That's genuinely the ~98%-open
+    regime the isolated benchmark measured; it just isn't `SeCo`'s
+    regime, where one condition can remove a dozen+ features at once.
+    Same trick, opposite verdict, because the two callers' open sets
+    behave completely differently -- not a property of the trick itself.
   - **Decision**: keep `chain_cover_counts` as `BooleanDataRepresentation`'s
     shipped default (safe across beam widths); keep `batch_cover_counts`/
     `_score_children_matmul` in the codebase as a validated-but-not-wired-in

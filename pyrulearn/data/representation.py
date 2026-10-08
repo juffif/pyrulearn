@@ -425,6 +425,19 @@ class BooleanDataRepresentation(DataRepresentation):
         `ROADMAP.md`'s numeric-threshold-counting item) -- a tentative
         alternative to `chain_cover_counts`, benchmarked against it
         rather than assumed better.
+
+        Slices `self.X[:, feature_indices]` before the matmul -- that's
+        fancy indexing (`feature_indices` is a list/array), which numpy
+        always copies, measured 26x slower than matmul-against-the-whole-
+        matrix-then-select for a case where *almost all* features were
+        still open (`ROADMAP.md`'s "Design decisions" has the numbers,
+        and why that case isn't representative -- a real search's open
+        set shrinks round over round, so most calls happen with far
+        fewer features open than that; matmul-then-select was tried as
+        a "fix" on exactly that reasoning and measured *worse* in every
+        real case checked, beam search and hill-climbing alike, because
+        it always pays for the full-width matmul regardless of how
+        narrow the open set actually is at that point in the search).
         """
         if self.y is None:
             raise ValueError("batch_cover_counts needs labels (self.y)")
