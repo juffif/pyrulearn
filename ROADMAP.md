@@ -113,6 +113,21 @@ described in the previous section (Slipper's counts are weighted sums; a
 matmul sums them in a different order) -- not yet confirmed, since the
 stored run also predates `chain_cover_counts`.
 
+**`PropagatingCPAR`** (`pyrulearn.learners.cpar`) is `CPAR` grown through
+this machinery instead of `CPAR`'s own ``(wp * cov) @ Xf`` over every
+feature not yet in the rule -- built to test whether constraint
+propagation (fewer open features) pays for itself there. Same models as
+`CPAR` (an implied condition has FOIL gain 0, below `min_gain`, so `CPAR`
+never picks one; checked on `diabetes`, `sonar`, `kr-vs-kp` and in
+`tests/test_cpar.py`). Built eagerly through `specialize` first, it was
+3.6x (`diabetes`) to 350x (`sonar`) slower than `CPAR`; lazy, 6-34x
+faster than that, but still 4x (`diabetes`: 1.54s vs. 0.40s), 14x
+(`sonar`: 0.82s vs. 0.06s) and 8x (`kr-vs-kp`: 1.07s vs. 0.14s) slower
+than `CPAR`. Profiled on `sonar`, the gap is the three overheads below,
+none intrinsic to propagation: per-candidate Python scoring ~55%,
+`batch_cover_counts`'s bool-to-float slice ~22%, recomputing the parent
+closure ~21%.
+
 Still open: AQR gains far less than CN2 on `sonar` (4x vs. 42x), so
 something else dominates it -- not yet profiled. `batch_cover_counts`
 multiplies against a boolean slice of `X`, so every call copies and

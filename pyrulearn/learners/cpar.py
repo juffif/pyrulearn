@@ -12,6 +12,10 @@ by the mean expected accuracy of its best `k` rules covering the example.
 It reuses the weighted covering components of `pyrulearn.learners.seco`
 (`MultiplicativeReweighting` for the weight decay, `PositiveWeightBelow`
 as the stop) and `pyrulearn.combiners.TopKMeanCombiner` for prediction.
+
+`PropagatingCPAR`, below, is the same algorithm grown through the SeCo
+searches' constraint-aware machinery instead of a dense `data.X` matrix
+-- see its own docstring and `CPAR`'s "Data representation" note.
 """
 
 from __future__ import annotations
@@ -22,11 +26,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 
 from ..combiners import TopKMeanCombiner
-from ..heuristics import GeneralizedMEstimate
+from ..data import BooleanDataRepresentation
+from ..heuristics import FoilGain, GeneralizedMEstimate, RuleStats
 from ..models import ConceptModel, ConceptSet, MajorityClass, annotate_default_rule, annotate_rules
 from ..rule import Rule
-from .base import NativeRuleLearner, produces
-from .seco import CoveringState, MultiplicativeReweighting, PositiveWeightBelow
+from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
+from .seco import (
+    CoveringState, MultiplicativeReweighting, PositiveWeightBelow,
+    count_open_children, handle_for, materialize_child, parent_closure, stats_from_handle,
+)
 
 
 class CPAR(NativeRuleLearner):
@@ -62,7 +70,25 @@ class CPAR(NativeRuleLearner):
     (`pyrulearn.data.io.build_dataspec`); the data's row weights multiply
     with the covering weights. `max_length` (default none) caps rule
     length, `max_rounds` the number of search rounds per class.
+
+    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
+    -- `_fit_native` converts anything else via
+    `NativeRuleLearner.ensure_representation`, same as `ENDER`. `_grow`
+    never removes an *implied* feature from consideration, only the one
+    literally just added to the rule (no constraint propagation), so
+    its open set stays close to full width the whole search -- exactly
+    the regime where `(wp * cov) @ Xf` (score every feature in one
+    matmul, mask already-used ones out of the *result*) wins: measured
+    15x faster than slicing to just the open features first, on
+    `spambase` (`ROADMAP.md`'s "Design decisions" has the numbers and
+    why this is the *opposite* regime from `BeamSearch`/`HillClimbing`,
+    where the same trick regresses). `PropagatingCPAR`, below, is the
+    same algorithm with constraint propagation: same models, 4-14x
+    slower.
     """
+
+    #: see the "Data representation" paragraph above
+    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
 
     def __init__(
         self,
@@ -73,6 +99,7 @@ class CPAR(NativeRuleLearner):
         k: int = 5,
         max_length: Optional[int] = None,
         max_rounds: int = 1000,
+        max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         if not 0.0 < gain_similarity <= 1.0:
             raise ValueError(f"gain_similarity must be in (0, 1], got {gain_similarity}")
@@ -83,12 +110,14 @@ class CPAR(NativeRuleLearner):
         self.k = k
         self.max_length = max_length
         self.max_rounds = max_rounds
+        self.max_auto_convert_cells = max_auto_convert_cells
 
     def _default_model(self, data: Any) -> type:
         return ConceptSet
 
     @produces(ConceptSet)
     def _fit_native(self, data: Any, **kw) -> ConceptSet:
+        data = self.ensure_representation(data, self.max_auto_convert_cells, purpose="CPAR's dense-matrix scoring")
         if data.y is None:
             raise ValueError("CPAR needs data.y")
         y = np.asarray(data.y)
@@ -169,3 +198,149 @@ class CPAR(NativeRuleLearner):
 
         grow([], np.ones(len(w), dtype=bool))
         return [tuple(sorted(b)) for b in results]
+
+
+class PropagatingCPAR(NativeRuleLearner):
+    """`CPAR` (Yin & Han 2003), grown through the SeCo searches'
+    constraint-aware machinery instead of a dense `data.X` matrix --
+    everywhere `CPAR`-specific (the weighted FOIL-gain growing
+    criterion, branching into several rules at near-ties, the outer
+    weighted-covering loop) is unchanged; the growth step scores from
+    `seco.count_open_children`, builds only the children it follows via
+    `seco.materialize_child`, and threads the constraint-closed mask
+    (`dataspec.extend_closure`: fixing one numeric threshold removes the
+    attribute's other thresholds too) instead of ``(wp * cov) @ Xf``
+    over every feature not yet in the rule.
+
+    Exists to test `CPAR`'s own design choice (see its "Data
+    representation" note and `ROADMAP.md`) rather than assume it. Same
+    parameters, same model, same prediction as `CPAR`: an implied
+    condition never changes coverage, so its FOIL gain is 0, below
+    `min_gain`, and `CPAR` never picks one either -- propagation only
+    saves `CPAR` from scoring it. Measured identical models on
+    `diabetes`, `sonar` and `kr-vs-kp`; 4-14x slower than `CPAR`, for
+    the reasons `ROADMAP.md`'s "Build only the children a search
+    follows" lists as still open.
+    """
+
+    def __init__(
+        self,
+        decay: float = 2.0 / 3.0,
+        min_total_weight: float = 0.05,
+        min_gain: float = 0.7,
+        gain_similarity: float = 0.99,
+        k: int = 5,
+        max_length: Optional[int] = None,
+        max_rounds: int = 1000,
+    ):
+        if not 0.0 < gain_similarity <= 1.0:
+            raise ValueError(f"gain_similarity must be in (0, 1], got {gain_similarity}")
+        self.decay = decay
+        self.min_total_weight = min_total_weight
+        self.min_gain = min_gain
+        self.gain_similarity = gain_similarity
+        self.k = k
+        self.max_length = max_length
+        self.max_rounds = max_rounds
+
+    def _default_model(self, data: Any) -> type:
+        return ConceptSet
+
+    @produces(ConceptSet)
+    def _fit_native(self, data: Any, **kw) -> ConceptSet:
+        if data.y is None:
+            raise ValueError("PropagatingCPAR needs data.y")
+        y = np.asarray(data.y)
+        classes = [c.item() if isinstance(c, np.generic) else c for c in np.unique(y)]
+        if len(classes) < 2:
+            raise ValueError("PropagatingCPAR needs at least two classes")
+        base_w = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
+        concepts = []
+        for c in classes:
+            rules = self._rules_for(data, c, base_w)
+            concepts.append(ConceptModel(annotate_rules(rules, data), label=c))
+        n_classes = len(classes)
+        combiner = TopKMeanCombiner(GeneralizedMEstimate(m=n_classes, cost=1.0 / n_classes), k=self.k)
+        model = ConceptSet(concepts, default_prediction=MajorityClass(data), combiner=combiner)
+        return annotate_default_rule(model, data)
+
+    # -- one class -----------------------------------------------------------
+
+    def _rules_for(self, data: Any, target_class: Any, base_w: np.ndarray) -> List[Rule]:
+        positive = np.asarray(data.y) == target_class
+        state = CoveringState(base_w.copy(), positive)
+        reweighting = MultiplicativeReweighting(self.decay)
+        stop = PositiveWeightBelow(self.min_total_weight)
+        found: Dict[Rule, None] = {}
+        for _ in range(self.max_rounds):
+            if stop.done(state):
+                break
+            rules = self._grow(data, target_class, state.scope)
+            if not rules:
+                break
+            for rule in rules:
+                found.setdefault(rule, None)
+                covered = data.coverage(rule)
+                state.record(covered)
+                state.scope = base_w * reweighting.weights(state, covered)
+        return list(found)
+
+    def _grow(self, data: Any, target_class: Any, w: np.ndarray) -> List[Rule]:
+        """The rules one search yields on the weights `w`: the best-gain
+        lineage and every copy branched off at a nearly-as-good
+        condition -- same as `CPAR._grow`, scored from
+        `count_open_children` instead of ``(wp * cov) @ Xf``, with only
+        the children actually followed built (and their closure
+        propagated) via `materialize_child`."""
+        weighted = data.with_weights(w)
+        dataspec = weighted.spec
+        heuristic = FoilGain()
+        results: List[Rule] = []
+        seen: Set[Rule] = set()
+
+        def grow(rule: Rule, mask, handle, stats: RuleStats) -> None:
+            if rule in seen:
+                return
+            seen.add(rule)
+            if self.max_length is not None and rule.length() >= self.max_length:
+                results.append(rule)
+                return
+            if stats.tp <= 0:
+                return
+            features, tps, fps, fns, tns = count_open_children(weighted, target_class, mask, handle, stats)
+            length = rule.length() + 1
+            dead: Set[int] = set()
+            scored = []
+            for f, tp, fp, fn, tn in zip(features, tps, fps, fns, tns):
+                if tp == 0:
+                    dead.add(f)
+                    continue
+                cstats = RuleStats(tp=tp, fp=fp, fn=fn, tn=tn, length=length)
+                scored.append((heuristic.score(cstats, stats), f, cstats))
+            scored.sort(key=lambda s: s[0], reverse=True)  # stable: ties stay in feature order
+            closure = parent_closure(dataspec, rule)
+            chosen = []
+            threshold = None
+            for gain, f, cstats in scored:
+                if gain < (self.min_gain if threshold is None else threshold):
+                    break
+                built = materialize_child(weighted, dataspec, rule, closure, mask, f, handle)
+                if built is None:
+                    continue  # contradicts the rule: never a candidate
+                if threshold is None:
+                    threshold = max(gain * self.gain_similarity, self.min_gain)
+                chosen.append((built, cstats))
+            if not chosen:
+                if rule.length() > 0:
+                    results.append(rule)
+                return
+            for (crule, cmask, chandle), cstats in chosen[1:]:          # the copies
+                grow(crule, cmask - dead, chandle, cstats)
+            (crule, cmask, chandle), cstats = chosen[0]
+            grow(crule, cmask - dead, chandle, cstats)
+
+        seed = Rule([], target=target_class, dataspec=dataspec)
+        handle0 = handle_for(weighted, seed, None)
+        stats0 = stats_from_handle(weighted, target_class, seed, handle0)
+        grow(seed, frozenset(range(seed.n_features)), handle0, stats0)
+        return results

@@ -1,10 +1,12 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from pyrulearn.combiners import TopKMeanCombiner
 from pyrulearn.data import BooleanDataRepresentation, DataSpec
+from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.heuristics import CoveredPositives, GeneralizedMEstimate
-from pyrulearn.learners.cpar import CPAR
+from pyrulearn.learners.cpar import CPAR, PropagatingCPAR
 from pyrulearn.models import ConceptSet, FlatRuleSet, annotate_rules
 from pyrulearn.rule import Rule
 
@@ -114,3 +116,40 @@ def test_cpar_rejects_bad_arguments():
     one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
         CPAR().fit(one)
+
+
+# ------------------------------------------------------------ PropagatingCPAR
+
+def _numeric_data(n=300, seed=3):
+    # numeric thresholds: fixing one closes the attribute's others (propagation)
+    rng = np.random.default_rng(seed)
+    df = pd.DataFrame({"x": rng.normal(size=n), "z": rng.normal(size=n), "c": rng.choice(list("pqr"), n)})
+    y = np.where((df["x"] > 0.3) & (df["c"] != "q") | (df["z"] < -0.8), "pos", "neg")
+    df["y"] = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
+    spec = build_dataspec(df, target="y", max_intervals=6).build()
+    return BooleanDataRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
+
+
+@pytest.mark.parametrize("make", [
+    _data,
+    _numeric_data,
+    lambda: _data(noise=0.0).with_weights(np.linspace(0.5, 2.0, 600)),
+])
+def test_propagating_cpar_learns_cpars_model(make):
+    # an implied condition has FOIL gain 0 < min_gain, so CPAR never picks one;
+    # propagation only spares PropagatingCPAR from scoring it
+    data = make()
+    assert PropagatingCPAR().fit(data).to_string() == CPAR().fit(data).to_string()
+
+
+def test_propagating_cpar_multiclass_and_bad_arguments():
+    rng = np.random.default_rng(2)
+    raw = rng.random((300, 4)) < 0.5
+    y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
+    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    assert PropagatingCPAR().fit(data).to_string() == CPAR().fit(data).to_string()
+    with pytest.raises(ValueError):
+        PropagatingCPAR(gain_similarity=0.0)
+    one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
+    with pytest.raises(ValueError, match="two classes"):
+        PropagatingCPAR().fit(one)
