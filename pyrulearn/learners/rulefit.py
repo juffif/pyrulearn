@@ -88,7 +88,7 @@ class RuleFit(RuleDistiller, NativeRuleLearner):
         include_features: bool = False,
         solver: str = "auto",
         max_iter: int = 5000,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         super().__init__(rules, min_support, min_confidence, max_len, max_auto_convert_cells)

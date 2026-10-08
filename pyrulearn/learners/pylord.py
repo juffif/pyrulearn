@@ -160,7 +160,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
         prune: bool = True,
         prune_fraction: Optional[float] = None,
         max_conditions: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         skip_covered: bool = False,
         target_class: Optional[Any] = None,
         metric: Optional[RuleHeuristic] = None,
@@ -331,7 +331,7 @@ def pylord_candidates(
     prune: bool = True,
     prune_fraction: Optional[float] = None,
     max_conditions: Optional[int] = None,
-    random_state: Optional[int] = None,
+    random_state: Optional[int] = 0,
     target_class: Optional[Any] = None,
     metric: Optional[RuleHeuristic] = None,
 ) -> FlatRuleSet:

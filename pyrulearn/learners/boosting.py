@@ -86,7 +86,7 @@ class Slipper(NativeRuleLearner):
         target_class: Any = None,
         max_conditions: Optional[int] = None,
         eps: Optional[float] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
     ):
         if n_rounds < 1:
             raise ValueError(f"n_rounds must be at least 1, got {n_rounds}")
@@ -407,7 +407,7 @@ class ENDER(NativeRuleLearner):
         l2_regularization: float = 0.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
     ):
         if n_rules < 1:
             raise ValueError(f"n_rules must be at least 1, got {n_rules}")
@@ -621,7 +621,7 @@ class Boomer(ENDER):
         subsample: float = 1.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
     ):
         super().__init__(
             n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
