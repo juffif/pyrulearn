@@ -1002,7 +1002,7 @@ class SeedExample(SearchSpaceInit):
     """
 
     def __init__(
-        self, strategy: str = "first", random_state: Optional[int] = None, index: Optional[int] = None,
+        self, strategy: str = "first", random_state: Optional[int] = 0, index: Optional[int] = None,
     ):
         if strategy not in ("first", "random", "index"):
             raise ValueError(f"strategy must be 'first', 'random' or 'index', got {strategy!r}")
@@ -1092,7 +1092,7 @@ class GrowPruneSplit(SingleRulePreparation):
     positive weight), and both halves keep their rows' weights.
     """
 
-    def __init__(self, prune_fraction: float = 0.33, random_state: Optional[int] = None):
+    def __init__(self, prune_fraction: float = 0.33, random_state: Optional[int] = 0):
         self.prune_fraction = prune_fraction
         self.random_state = random_state
 
@@ -1383,7 +1383,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
         self,
         passes: int = 2,
         prune_fraction: float = 1.0 / 3.0,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
     ):
         self.passes = passes
         self.prune_fraction = prune_fraction
@@ -1875,7 +1875,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         target_class: Any = None,
         stop_covering: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         optimization: Optional[RuleSetOptimizer] = None,
         covering: Optional[CoveringStrategy] = None,
     ):
@@ -2152,7 +2152,7 @@ class CN2(SeCo):
         filtering: Optional[PrePruningCriterion] = None,
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
@@ -2283,7 +2283,7 @@ class AQR(SeCo):
         heuristic: Optional[RuleHeuristic] = None,
         maxstar: int = 5,
         seed_strategy: str = "first",
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         require_consistency: bool = True,
         search: Optional[RuleSearch] = None,
         preparation: Optional[SingleRulePreparation] = None,
@@ -2371,7 +2371,7 @@ class PFoil(SeCo):
         filtering: Optional[PrePruningCriterion] = None,
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
     ):
         heuristic = heuristic if heuristic is not None else FoilGain()
@@ -2469,7 +2469,7 @@ class PFossil(SeCo):
         filtering: Optional[PrePruningCriterion] = None,
         stopping: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
     ):
         if mode not in ("stopping", "filtering"):
@@ -2564,7 +2564,7 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         self,
         k: int = 2,
         prune_fraction: float = 1.0 / 3.0,
-        random_state: Optional[int] = None,
+        random_state: Optional[int] = 0,
         max_rules: Optional[int] = None,
         grow_heuristic: Optional[RuleHeuristic] = None,
         search: Optional[RuleSearch] = None,
