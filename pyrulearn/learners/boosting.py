@@ -29,10 +29,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from ..data import BooleanDataRepresentation
 from ..heuristics import SlipperZ
 from ..models import LinearRuleModel, annotate_rules
 from ..rule import Rule, WeightedRule
-from .base import NativeRuleLearner, produces
+from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
 from .seco import AdaBoostReweighting, CoveringState, EmptyRuleAllFeatures, GrowPruneSplit, HillClimbing
 
 
@@ -395,26 +396,31 @@ class ENDER(NativeRuleLearner):
     (`pyrulearn.data.io.build_dataspec`) instead of being thresholded
     during the search; the data's row weights weight the loss.
 
-    **Data representation.** Runs on any `DataRepresentation` (accepts
-    `data.X`/`data.y`/`data.weights`/`data.spec`, like every native
-    learner), but always converts to a dense Boolean matrix once at the
-    start of fitting -- `_grow`'s per-round scoring (`ROADMAP.md`'s
-    "every native learner on any data representation") needs vectorized
-    matrix-column access, not a representation's own coverage
-    primitives. `NListRepresentation`/`SparseDataRepresentation` rebuild
-    that matrix from their own storage the same way `data.X` always has,
-    so this is correct everywhere, just never faster on them than on
-    `BooleanDataRepresentation` to begin with -- a representation-generic
-    rewrite (through `initial_cover`/`refine_cover`) was prototyped and
-    measured 10-500x slower, even before batching, with no plausible fix:
-    unlike a `SeCo` search's fixed class labels, `_grow`'s weight vector
-    (the loss's gradient) changes every boosting round, so N-list's own
-    per-search node-count caching never gets the chance to pay for
-    itself. See `ROADMAP.md`'s "Design decisions" section for the
-    measurements. Pass a `BooleanDataRepresentation` directly if the data
-    isn't needed in another form for other learners, to skip paying for
-    an N-list/sparse structure this class never uses.
+    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
+    -- `_fit_native` converts anything else via
+    `NativeRuleLearner.ensure_representation` (`max_auto_convert_cells=`),
+    the same mechanism `pyrulearn.learners.associative.CARMiner` uses in
+    the opposite direction (toward `NListRepresentation`, for mining).
+    `_grow`'s per-round scoring needs vectorized matrix-column access,
+    not a representation's own coverage primitives (`ROADMAP.md`'s
+    "every native learner on any data representation"), so unlike
+    `CARMiner`'s conversion (a speed preference -- `generate_cars` would
+    work, just slower, on anything), this one is not optional: there is
+    no slower-but-correct path for `_grow` on `NListRepresentation`/
+    `SparseDataRepresentation` as given. A representation-generic
+    rewrite (through `initial_cover`/`refine_cover`) was prototyped
+    anyway and measured 10-500x slower, even before batching, with no
+    plausible fix: unlike a `SeCo` search's fixed class labels, `_grow`'s
+    weight vector (the loss's gradient) changes every boosting round, so
+    N-list's own per-search node-count caching never gets the chance to
+    pay for itself. See `ROADMAP.md`'s "Design decisions" section for
+    the measurements. Pass a `BooleanDataRepresentation` directly if the
+    data isn't needed in another form for other learners, to skip
+    paying for an N-list/sparse structure this class never uses.
     """
+
+    #: see the "Data representation" paragraph above
+    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
 
     def __init__(
         self,
@@ -428,6 +434,7 @@ class ENDER(NativeRuleLearner):
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = None,
+        max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         if n_rules < 1:
             raise ValueError(f"n_rules must be at least 1, got {n_rules}")
@@ -456,12 +463,17 @@ class ENDER(NativeRuleLearner):
         self.early_stopping = early_stopping
         self.max_length = max_length
         self.random_state = random_state
+        self.max_auto_convert_cells = max_auto_convert_cells
 
     def _default_model(self, data: Any) -> type:
         return LinearRuleModel
 
     @produces(LinearRuleModel)
     def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
+        # see the class docstring's "Data representation" paragraph
+        data = self.ensure_representation(
+            data, self.max_auto_convert_cells, purpose="ENDER's dense-matrix scoring",
+        )
         if data.y is None:
             raise ValueError("ENDER needs data.y")
         y = np.asarray(data.y)
@@ -475,17 +487,6 @@ class ENDER(NativeRuleLearner):
         n = len(y)
         Y = np.zeros((n, K))
         Y[np.arange(n), y_idx] = 1.0
-        # Deliberate, one-time dense conversion -- see the class docstring's
-        # "Data representation" paragraph: _grow's vectorized scoring needs
-        # matrix columns, and a representation-generic rewrite (going
-        # through initial_cover/refine_cover instead) was prototyped and
-        # found 10-500x slower even unbatched, with no plausible fix -- the
-        # per-round gradient vector changes every round, unlike a SeCo
-        # search's fixed class labels, so N-list's own per-search node-count
-        # caching never gets to pay for itself here. `data.X` already does
-        # this correctly for every representation (`NListRepresentation`/
-        # `SparseDataRepresentation` rebuild it from their own storage), so
-        # this works -- just always at dense-matrix cost, never at N-list's.
         X = np.asarray(data.X, dtype=bool)
         Xf = X.astype(float)
         d = np.ones(n) if data.weights is None else data.weights.astype(float)
@@ -653,11 +654,12 @@ class Boomer(ENDER):
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = None,
+        max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         super().__init__(
             n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
             l2_regularization=l2_regularization, early_stopping=early_stopping, max_length=max_length,
-            random_state=random_state,
+            random_state=random_state, max_auto_convert_cells=max_auto_convert_cells,
         )
 
 

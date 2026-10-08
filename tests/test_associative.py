@@ -10,7 +10,6 @@ from pyrulearn.data import (
 from pyrulearn.learners.associative import (
     CARMiner,
     coverage_select,
-    ensure_nlist,
     generate_cars,
     sort_by_measured_precedence,
 )
@@ -24,39 +23,50 @@ def _rep(X, y, names=None):
     return BooleanDataRepresentation(ds, X, np.asarray(y))
 
 
-# -- ensure_nlist: the shared representation gate ---------------------------
+# -- CARMiner.ensure_representation: the shared representation gate --------
+# (pyrulearn.learners.base.NativeRuleLearner.ensure_representation,
+# exercised here through CARMiner.NATIVE_REPRESENTATIONS = (NListRepresentation,))
 
-def test_ensure_nlist_passes_through_an_already_nlist_representation_unchanged():
+def test_ensure_representation_passes_through_an_already_nlist_representation_unchanged():
     rep = NListRepresentation.from_boolean(_rep([[1, 0], [0, 1]], ["a", "b"]))
-    assert ensure_nlist(rep, max_auto_convert_cells=1_000_000) is rep
-    print("ensure_nlist: NListRepresentation passes through by identity: OK")
+    miner = CARMiner(max_auto_convert_cells=1_000_000)
+    assert miner.ensure_representation(rep, miner.max_auto_convert_cells) is rep
+    print("ensure_representation: NListRepresentation passes through by identity: OK")
 
 
-def test_ensure_nlist_auto_converts_a_small_boolean_representation():
+def test_ensure_representation_auto_converts_a_small_boolean_representation():
     rep = _rep([[1, 0], [0, 1], [1, 1]], ["a", "b", "a"])
-    out = ensure_nlist(rep, max_auto_convert_cells=1_000_000)
+    miner = CARMiner(max_auto_convert_cells=1_000_000)
+    out = miner.ensure_representation(rep, miner.max_auto_convert_cells)
     assert isinstance(out, NListRepresentation)
     assert out.n_samples == rep.n_samples
-    print("ensure_nlist: auto-converts a BooleanDataRepresentation below the threshold: OK")
+    print("ensure_representation: auto-converts a BooleanDataRepresentation below the threshold: OK")
 
 
-def test_ensure_nlist_raises_past_the_size_threshold():
+def test_ensure_representation_raises_past_the_size_threshold():
     rep = _rep([[1, 0], [0, 1], [1, 1]], ["a", "b", "a"])
+    miner = CARMiner(max_auto_convert_cells=1)
     with pytest.raises(ValueError, match="max_auto_convert_cells"):
-        ensure_nlist(rep, max_auto_convert_cells=1)
-    print("ensure_nlist: raises ValueError past max_auto_convert_cells, names the threshold: OK")
+        miner.ensure_representation(rep, miner.max_auto_convert_cells)
+    print("ensure_representation: raises ValueError past max_auto_convert_cells, names the threshold: OK")
 
 
-def test_ensure_nlist_passes_a_non_boolean_non_nlist_representation_through_unchanged(capsys):
-    # Relaxed on purpose: mining only ever calls the universal
-    # data.coverage(rule), so a SparseDataRepresentation (or any other
-    # representation) is no longer refused outright -- just slower.
+def test_ensure_representation_converts_a_non_boolean_non_nlist_representation_too(capsys):
+    # Changed on purpose (2026-10-08): CARMiner used to run directly on
+    # an unrecognized representation (correct, just slower, since
+    # generate_cars only calls the universal data.coverage(rule)).
+    # NativeRuleLearner.ensure_representation (shared with ENDER, in the
+    # opposite direction) doesn't distinguish "needed for correctness"
+    # from "just much faster", so a SparseDataRepresentation now gets
+    # converted too, below the size threshold, like a Boolean one would.
     rep = _rep([[1, 0], [0, 1]], ["a", "b"])
     sparse = SparseDataRepresentation.from_boolean(rep)
-    out = ensure_nlist(sparse, max_auto_convert_cells=1_000_000)
-    assert out is sparse
-    assert "considerably slower" in capsys.readouterr().out
-    print("ensure_nlist: passes an unrecognized representation through as-is, with a note: OK")
+    miner = CARMiner(max_auto_convert_cells=1_000_000)
+    out = miner.ensure_representation(sparse, miner.max_auto_convert_cells, purpose="itemset mining")
+    assert isinstance(out, NListRepresentation)
+    assert out.n_samples == sparse.n_samples
+    assert "auto-converting" in capsys.readouterr().out
+    print("ensure_representation: converts a SparseDataRepresentation too, not just Boolean: OK")
 
 
 def test_generate_cars_gives_the_same_cars_on_a_sparse_representation_as_on_nlist():
@@ -230,7 +240,7 @@ def test_carminer_returns_the_raw_car_pool_as_a_flat_rule_set():
     model = miner.fit(rep)
     assert isinstance(model, FlatRuleSet)
 
-    nlist = ensure_nlist(rep, miner.max_auto_convert_cells)
+    nlist = miner.ensure_representation(rep, miner.max_auto_convert_cells)
     cars = generate_cars(nlist, miner.min_support, miner.min_confidence, miner.max_len)
     assert len(model.rules) == len(cars)  # every mined CAR survives, unpruned
     print(f"CARMiner returns the full unpruned CAR pool ({len(cars)} rules): OK")
@@ -248,8 +258,8 @@ def test_carminer_defaults_to_the_same_combiner_as_a_random_forest_import():
 
 
 def test_carminer_runs_end_to_end_on_a_sparse_representation():
-    # Confirms the *relaxed* ensure_nlist gate works through the whole
-    # fit() pipeline, not just generate_cars in isolation.
+    # Confirms ensure_representation's auto-conversion works through the
+    # whole fit() pipeline, not just generate_cars in isolation.
     rep, raw, y = _separable_multiclass()
     sparse = SparseDataRepresentation.from_boolean(rep)
     model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(sparse)

@@ -32,11 +32,13 @@ customise, or set it to `None` to disable just that one.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
 import numpy as np
 
-from ..data import DataRepresentation
+from ..data import (
+    BooleanDataRepresentation, DataRepresentation, NListRepresentation, SparseDataRepresentation,
+)
 from ..interfaces.base import ObjectRuleImporter
 from ..models import (
     ConceptCascade, ConceptModel, ConceptSet, MajorityClass, PairwiseModel,
@@ -233,10 +235,97 @@ class ExternalRuleLearner(RuleLearner):
         return getattr(self.IMPORTER, "SOURCE", None)
 
 
+#: Representation types, most to least generally preferred, used to
+#: break ties in `NativeRuleLearner.ensure_representation` when a
+#: learner's `NATIVE_REPRESENTATIONS` names more than one and the data
+#: it's given matches none of them. `NListRepresentation` first: the
+#: native learners that can use it directly are substantially faster on
+#: it than on `BooleanDataRepresentation` (`demos/representations.py`),
+#: and converting *to* it from anything else costs little extra -- so,
+#: absent a more specific reason, it's this library's default target.
+#: `PrePostNListRepresentation` isn't listed separately: it's covered by
+#: `NListRepresentation` via `isinstance` wherever that's checked.
+REPRESENTATION_PREFERENCE_ORDER: Tuple[type, ...] = (
+    NListRepresentation, BooleanDataRepresentation, SparseDataRepresentation,
+)
+
+#: `n_samples * n_features` above which `ensure_representation` refuses
+#: to auto-convert rather than risk an unbounded-memory rebuild the
+#: caller didn't ask for. No existing memory-footprint helper anywhere
+#: in this codebase to anchor this on, so it's a fresh, tunable
+#: constant -- a learner that sets `NATIVE_REPRESENTATIONS` is expected
+#: to expose its own `max_auto_convert_cells=` constructor parameter
+#: defaulting to this.
+DEFAULT_MAX_AUTO_CONVERT_CELLS = 5_000_000
+
+
 class NativeRuleLearner(RuleLearner):
     """Base for learners that induce rules directly against a
     `DataRepresentation` -- they use the `fit` switcher and register
-    `@produces` methods."""
+    `@produces` methods.
+
+    `NATIVE_REPRESENTATIONS` (`None` by default) declares which
+    representation type(s) this learner's native fit needs its own
+    storage from, instead of going through the universal
+    `coverage`/`initial_cover`/`refine_cover` interface every
+    representation implements identically. `None` means "any
+    representation works as given, unconverted" -- the common case
+    (every `pyrulearn.learners.seco` learner, `PyLORD`): nothing about
+    them is specific to one representation's storage, so there's
+    nothing to convert. Set it when a learner instead commits to one (or
+    several) representations' own storage -- a dense matrix
+    (`pyrulearn.learners.boosting.ENDER`), an N-list's vertical index
+    (`pyrulearn.learners.associative.CARMiner`) -- and call
+    `ensure_representation` at the top of the native fit method to
+    convert anything else, bounded by `max_auto_convert_cells`.
+    """
+
+    #: see the class docstring; checked via `isinstance`, so a subclass
+    #: (`PrePostNListRepresentation` for `NListRepresentation`) is
+    #: covered automatically without listing it separately.
+    NATIVE_REPRESENTATIONS: Optional[Tuple[type, ...]] = None
+
+    def ensure_representation(
+        self, data: DataRepresentation, max_auto_convert_cells: int, *, purpose: str = "",
+    ) -> DataRepresentation:
+        """`data` if it's already one of `NATIVE_REPRESENTATIONS` (or
+        that's `None`, meaning anything goes); else converted to
+        whichever of `NATIVE_REPRESENTATIONS` sorts first in
+        `REPRESENTATION_PREFERENCE_ORDER`, as long as that's within
+        `max_auto_convert_cells` (`n_samples * n_features`) -- every
+        `DataRepresentation` subclass's constructor accepts another's
+        `spec`/`X`/`y`/`weights` directly (`NListRepresentation.from_boolean`
+        is exactly this, for one specific pair), so the conversion is
+        always the same call regardless of source or target.
+
+        Past the bound, raises: a learner that sets
+        `NATIVE_REPRESENTATIONS` has committed to needing one of those
+        types for correctness or for the speed the whole point of
+        setting it is to get, so there's no slower-but-still-adequate
+        fallback to offer instead of refusing -- unlike, say, retrying
+        at a smaller batch size, silently running on the wrong
+        representation would either be wrong or defeat the reason this
+        was set in the first place.
+        """
+        native = self.NATIVE_REPRESENTATIONS
+        if native is None or isinstance(data, native):
+            return data
+        target = next(t for t in REPRESENTATION_PREFERENCE_ORDER if t in native)
+        cells = data.n_samples * data.spec.n_features
+        if cells > max_auto_convert_cells:
+            raise ValueError(
+                f"refusing to silently auto-convert a {data.n_samples}x{data.spec.n_features} "
+                f"({cells}-cell) {type(data).__name__} to {target.__name__} past "
+                f"max_auto_convert_cells={max_auto_convert_cells} -- convert explicitly via "
+                f"{target.__name__}(data.spec, data.X, data.y, weights=data.weights), or raise "
+                "max_auto_convert_cells= if you know this fits in memory."
+            )
+        print(
+            f"{type(self).__module__}: auto-converting a {data.n_samples}x{data.spec.n_features} "
+            f"({cells} cells) {type(data).__name__} to {target.__name__}"
+            + (f" for {purpose}" if purpose else "") + "."
+        )
+        return target(data.spec, data.X, data.y, weights=data.weights)
 
 
 # ============================================== decomposition mixin ==========

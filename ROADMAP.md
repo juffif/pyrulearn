@@ -93,16 +93,42 @@ evaluation. Four implementations turn the data into a dense matrix
   even before batching, with no plausible fix -- see the "Design
   decisions" section below for the numbers and why N-list's own
   per-search caching doesn't transfer to boosting's per-round-changing
-  gradient. `ENDER`'s class docstring ("Data representation") now
-  documents this directly; still correct on every representation (just
-  always at dense-matrix cost), still tested for identical rules across
-  them.
+  gradient. Converts explicitly instead, via the shared mechanism below;
+  still correct on every representation (just always at dense-matrix
+  cost), still tested for identical rules across them.
 - `OptimalRuleBoosting`,
 - `CPAR`,
 - `LRI`.
 
 External learners reading `data.X` is fine: the external tools need a
 matrix anyway.
+
+**Shared mechanism (2026-10-08).** A learner that commits to one (or
+more) representations' own storage instead of the universal
+`coverage`/`initial_cover`/`refine_cover` interface declares
+`NativeRuleLearner.NATIVE_REPRESENTATIONS` (`None`: any representation
+works as given, unconverted -- the default, true of everything above
+except the four listed here); its native fit method calls
+`self.ensure_representation(data, self.max_auto_convert_cells,
+purpose=...)` to convert anything else, bounded by
+`max_auto_convert_cells` (raises past it -- no silent unbounded-memory
+rebuild). Ties, when a learner's native set names more than one
+representation and the data given matches none of them, break toward
+`REPRESENTATION_PREFERENCE_ORDER` (`NListRepresentation` first, then
+`BooleanDataRepresentation`, then `SparseDataRepresentation`) -- so
+absent a more specific reason, N-list is this library's default
+conversion target, the same preference item 1 below gives data
+*preparation*. `ENDER`/`Boomer` (`NATIVE_REPRESENTATIONS =
+(BooleanDataRepresentation,)`) and `pyrulearn.learners.associative.CARMiner`
+(`(NListRepresentation,)`, converting in the *opposite* direction, for
+mining's speed rather than `_grow`'s correctness) are the two current
+users; `CARMiner`'s own `ensure_nlist` (which used to accept any other
+representation as-is, just slower, since `generate_cars` only needs the
+universal `coverage()`) was folded into this shared mechanism too, which
+means that leniency is gone -- a `SparseDataRepresentation` now also
+gets converted rather than used directly, since the mechanism doesn't
+distinguish "needed" from "just much faster" and CARMiner no longer has
+its own bespoke gate to make that distinction in.
 
 **Work**, for the three remaining learners (`ENDER`/`Boomer` excluded,
 see above -- expect them to need the same investigation before assuming

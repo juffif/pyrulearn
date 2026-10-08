@@ -42,14 +42,17 @@ ever does, so which representation you bring matters more here than for
 `seco`/`pyrulearn.learners.pylord.PyLORD`:
 `pyrulearn.data.representation.NListRepresentation.coverage` computes
 support of an arbitrary conjunction with one vectorized word-AND over the
-rarest literal's own N-list, never an `O(n_samples)` scan. `fit` therefore
-*recommends* (and auto-converts to, below a size threshold) an
-`NListRepresentation` -- see `ensure_nlist` -- but doesn't *require* one:
-`generate_cars` only ever calls the universal `data.coverage(rule)`,
-nothing about mining is algorithmically specific to `NListRepresentation`,
-so `ensure_nlist` passes any other representation through as-is (with a
-printed note) rather than refusing it outright -- correct, just
-considerably slower without NList's near-O(1) coverage.
+rarest literal's own N-list, never an `O(n_samples)` scan. `generate_cars`
+itself only ever calls the universal `data.coverage(rule)` -- nothing
+about mining is algorithmically specific to `NListRepresentation` -- but
+`CARMiner.fit` auto-converts to one anyway (`NATIVE_REPRESENTATIONS`,
+`pyrulearn.learners.base.NativeRuleLearner.ensure_representation`, below
+a size threshold; past it, raises) rather than running directly on
+whatever it was given: nothing here *needs* correctness-wise to hold out
+for NList, but mining issues far more `coverage()` calls per fit than a
+greedy search ever does, so the speed difference is large enough that
+auto-converting is the better default, not just a recommendation left to
+the caller.
 
 **Pruning** (`coverage_select`) is the shared database-coverage primitive
 both CBA-CB and CMAR's own pruning are variations of: walk a
@@ -88,7 +91,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tupl
 
 import numpy as np
 
-from .base import DecomposingLearner, NativeRuleLearner, produces
+from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, DecomposingLearner, NativeRuleLearner, produces
 from ..combiners import HeuristicVoteCombiner, _rule_stats
 from ..data import BooleanDataRepresentation, DataRepresentation, NListRepresentation
 from ..heuristics import ChiSquare
@@ -102,66 +105,10 @@ from ..rule import Rule
 if TYPE_CHECKING:
     from ..heuristics import RuleHeuristic
 
-#: `n_samples * n_features` above which `ensure_nlist` refuses to
-#: silently build an `NListRepresentation` from a `BooleanDataRepresentation`
-#: -- no existing memory-footprint helper anywhere in this codebase to
-#: anchor this on, so it's a fresh, tunable constant (`max_auto_convert_cells=`).
-DEFAULT_MAX_AUTO_CONVERT_CELLS = 5_000_000
-
-
-def ensure_nlist(data: Any, max_auto_convert_cells: int) -> Any:
-    """`data`, converted to an `NListRepresentation` where that's cheap,
-    else passed through unchanged -- mining is *recommended* to run on
-    an `NListRepresentation` for speed, not *required* to for
-    correctness (see below), so this no longer refuses other
-    representations outright.
-
-    An already-`NListRepresentation` (covers `PrePostNListRepresentation`
-    too, via `isinstance`) passes through unchanged (`is` identity, no
-    rebuild). A `BooleanDataRepresentation` auto-converts via
-    `NListRepresentation.from_boolean` -- exactly as expensive as building
-    one directly, so this is cheap and safe -- *below*
-    `max_auto_convert_cells` (`n_samples * n_features`); past it, still
-    raises rather than risk an unbounded-memory rebuild the caller didn't
-    ask for (e.g. someone deliberately chose `SparseDataRepresentation`
-    for a huge, sparse dataset specifically to avoid this
-    representation's memory profile -- that memory concern is about the
-    *conversion*, not about using the representation as given, so it
-    doesn't apply to the case below).
-
-    Anything else (a `SparseDataRepresentation`, or a custom subclass) is
-    returned as-is, with a printed note: `generate_cars` only ever calls
-    the universal `data.coverage(rule)` -- nothing about mining is
-    algorithmically specific to `NListRepresentation` -- but mining
-    issues far more `coverage()` calls per fit than a greedy search ever
-    does, so a representation without `NListRepresentation`'s
-    near-O(1) vectorized coverage will make mining considerably slower,
-    never incorrect. Convert explicitly first if that matters.
-    """
-    if isinstance(data, NListRepresentation):
-        return data
-    if isinstance(data, BooleanDataRepresentation):
-        cells = data.n_samples * data.spec.n_features
-        if cells <= max_auto_convert_cells:
-            print(
-                f"{__name__}: auto-converting a {data.n_samples}x{data.spec.n_features} "
-                f"({cells} cells) BooleanDataRepresentation to NListRepresentation "
-                "for itemset mining."
-            )
-            return NListRepresentation.from_boolean(data)
-        raise ValueError(
-            f"refusing to silently auto-convert a {data.n_samples}x{data.spec.n_features} "
-            f"({cells}-cell) BooleanDataRepresentation to NListRepresentation past "
-            f"max_auto_convert_cells={max_auto_convert_cells} -- convert explicitly via "
-            "NListRepresentation.from_boolean(data), or raise max_auto_convert_cells= if "
-            "you know this fits in memory."
-        )
-    print(
-        f"{__name__}: mining directly on a {type(data).__name__}, not NListRepresentation -- "
-        "this will be considerably slower (mining issues far more coverage() calls per fit "
-        "than a greedy search ever does); convert to NListRepresentation first if that matters."
-    )
-    return data
+#: Re-exported so existing `from .associative import DEFAULT_MAX_AUTO_CONVERT_CELLS`
+#: callers (`ids.py`, `rulefit.py`) keep working -- the constant itself,
+#: and the conversion mechanism it bounds (`NativeRuleLearner.ensure_representation`,
+#: `CARMiner.NATIVE_REPRESENTATIONS`), now live in `.base`.
 
 
 @dataclass(frozen=True)
@@ -234,8 +181,9 @@ def generate_cars(
     Only ever calls the universal `data.coverage(rule)` -- `data` can be
     any `DataRepresentation`, not just `NListRepresentation`, though
     mining issues far more `coverage` calls per fit than a greedy search
-    ever does, so `NListRepresentation` (see `ensure_nlist`) matters more
-    for speed here than elsewhere.
+    ever does, so `NListRepresentation` (`CARMiner.fit` auto-converts to
+    it, see `NativeRuleLearner.ensure_representation`) matters more for
+    speed here than elsewhere.
     """
     y = np.asarray(data.y)
     classes, codes = np.unique(y, return_inverse=True)
@@ -401,8 +349,17 @@ class CARMiner(DecomposingLearner, NativeRuleLearner):
     - `target_class` (default `None`) -- mine CARs for one class only
       (`fit(data)` then returns a `ConceptModel`) -- a one-vs-rest
       decomposition knob, not part of mining itself.
-    - `max_auto_convert_cells` -- see `ensure_nlist`.
+    - `max_auto_convert_cells` -- see `NativeRuleLearner.ensure_representation`.
     """
+
+    #: mining is recommended to run on an NListRepresentation for speed
+    #: (near-O(1) vectorized coverage vs. an O(n_samples) scan, and
+    #: mining issues far more coverage() calls per fit than a greedy
+    #: search ever does), not required to for correctness -- generate_cars
+    #: only ever calls the universal data.coverage(rule) -- but
+    #: NativeRuleLearner.ensure_representation doesn't distinguish "needed"
+    #: from "just much faster", so anything else still gets converted.
+    NATIVE_REPRESENTATIONS = (NListRepresentation,)
 
     def __init__(
         self,
@@ -421,18 +378,18 @@ class CARMiner(DecomposingLearner, NativeRuleLearner):
     def _mine_pool(
         self, data: Any, only_class: Optional[Any] = None, default_prediction: Any = None,
     ) -> Tuple[PooledRuleSet, Any]:
-        """`ensure_nlist` + `generate_cars`, held as a `PooledRuleSet`: the
-        mined pool as flat columns (~35 B/rule instead of ~1.1 KB), each
-        rule built -- with its measured stats stamped from the CAR's own
-        per-class counts, identical to what `annotate_rules` would predict
-        over the data, but free -- only when it is first looked at (see
-        `pyrulearn.pool`). Also returns the resolved representation
-        (converted to `NListRepresentation` where that's cheap, else `data`
-        unchanged -- see `ensure_nlist`) so a caller that goes on to do its
-        own coverage-based pruning (`coverage_select`) never pays for -- or
-        prints the auto-convert notice for -- a second conversion of the
-        same `data`."""
-        resolved = ensure_nlist(data, self.max_auto_convert_cells)
+        """`ensure_representation` + `generate_cars`, held as a
+        `PooledRuleSet`: the mined pool as flat columns (~35 B/rule
+        instead of ~1.1 KB), each rule built -- with its measured stats
+        stamped from the CAR's own per-class counts, identical to what
+        `annotate_rules` would predict over the data, but free -- only
+        when it is first looked at (see `pyrulearn.pool`). Also returns
+        the resolved representation (converted to `NListRepresentation`
+        where that's cheap, else raises -- see `ensure_representation`)
+        so a caller that goes on to do its own coverage-based pruning
+        (`coverage_select`) never pays for -- or prints the auto-convert
+        notice for -- a second conversion of the same `data`."""
+        resolved = self.ensure_representation(data, self.max_auto_convert_cells, purpose="itemset mining")
         target = only_class if only_class is not None else self.target_class
         cars = generate_cars(resolved, self.min_support, self.min_confidence, self.max_len,
                              only_class=target)
