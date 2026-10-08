@@ -23,29 +23,31 @@ from pyrulearn.learners.seco import (
     SeCo, SeedExample, SingleRuleLearner, rule_set_description_length,
 )
 from pyrulearn.heuristics import Precision
+from pyrulearn.learners import seco
 
 from _negation_helpers import make_rule, neg_spec, neg_X
 
 
 @contextmanager
-def _counting_specialize():
-    """Counts calls to Rule.specialize while active -- used to directly
+def _counting_expansions():
+    """Counts node expansions (calls to seco.count_open_children, made
+    once per rule a search expands) while active -- used to directly
     verify the tp==0 floor / optimistic-value pruning actually prevents
-    BeamSearch from calling specialize() at all, not just that it doesn't
+    a search from expanding a rule at all, not just that it doesn't
     change the final answer (which, for those conditions, it mathematically
     can't -- see seco.py's PrePruningCriterion docstring)."""
     count = [0]
-    original = Rule.specialize
+    original = seco.count_open_children
 
-    def wrapper(self, *args, **kwargs):
+    def wrapper(*args, **kwargs):
         count[0] += 1
-        return original(self, *args, **kwargs)
+        return original(*args, **kwargs)
 
-    Rule.specialize = wrapper
+    seco.count_open_children = wrapper
     try:
         yield count
     finally:
-        Rule.specialize = original
+        seco.count_open_children = original
 
 
 def _conjunction_dataset():
@@ -189,22 +191,26 @@ def test_beam_search_deduplicates_rules_reached_by_different_orders():
     empty_rule = Rule([], target="pos", dataspec=ds)
     initial = [(empty_rule, frozenset(range(5)))]
 
+    # duplicates are collapsed before any child is built, so (one seed, no
+    # filtering) "never expanded twice" == "never built twice"
     seen = []
-    original = Rule.specialize
+    original = seco.materialize_child
 
-    def wrapper(self, *args, **kwargs):
-        seen.append(self.pos)
-        return original(self, *args, **kwargs)
+    def wrapper(*args, **kwargs):
+        built = original(*args, **kwargs)
+        if built is not None:
+            seen.append(built[0].pos)
+        return built
 
-    Rule.specialize = wrapper
+    seco.materialize_child = wrapper
     try:
         BeamSearch(beam_width=4).search(rep, "pos", Accuracy(), initial)
     finally:
-        Rule.specialize = original
+        seco.materialize_child = original
 
     assert len(seen) == len(set(seen)), \
-        f"specialize() was called on the same rule content more than once: {seen}"
-    print("BeamSearch never calls specialize() twice on rules with identical content: OK")
+        f"a child with the same rule content was built more than once: {seen}"
+    print("BeamSearch never builds two children with identical content: OK")
 
 
 def test_beam_search_respects_example_mask():
@@ -445,7 +451,7 @@ def test_beam_search_tp_zero_floor_stops_specializing():
     assert stats.tp == 0 and stats.fp > 0  # covers negatives only -- useless for "pos"
 
     initial = [(useless_rule, frozenset({ds.feature_index("c")}))]  # "c" still open
-    with _counting_specialize() as count:
+    with _counting_expansions() as count:
         best = BeamSearch(beam_width=3).search(rep, "pos", Accuracy(), initial)
     assert count[0] == 0  # tp==0 floor stopped it before specialize() was ever called
     assert best is None  # a rule covering no positives is never returned
@@ -485,7 +491,7 @@ def test_beam_search_optimistic_pruning_skips_an_already_pure_seed():
     assert stats.fp == 0 and stats.tp > 0
 
     initial = [(pure_rule, frozenset({2}))]  # "c" still open
-    with _counting_specialize() as count:
+    with _counting_expansions() as count:
         best = BeamSearch(beam_width=3).search(rep, "pos", Accuracy(), initial)
     # a pure rule's optimistic (tp, 0) bound is just its own score, which is
     # already the running best -- so it never promises improvement and is
@@ -495,7 +501,7 @@ def test_beam_search_optimistic_pruning_skips_an_already_pure_seed():
 
     # ...but turning optimistic pruning off removes that floor entirely:
     # the pure rule now does get specialized (fruitlessly)
-    with _counting_specialize() as count_off:
+    with _counting_expansions() as count_off:
         BeamSearch(beam_width=3, optimistic_pruning=False).search(rep, "pos", Accuracy(), initial)
     assert count_off[0] > 0
     print("BeamSearch optimistic pruning skips specializing an already-pure rule; off, it doesn't: OK")
@@ -516,9 +522,9 @@ def test_beam_search_optimistic_pruning_halts_the_whole_search_early():
     rep = BooleanDataRepresentation(ds, X, y)
     initial = [(Rule([], target="pos", dataspec=ds), frozenset(range(5)))]
 
-    with _counting_specialize() as on:
+    with _counting_expansions() as on:
         best_on = BeamSearch(beam_width=4).search(rep, "pos", Correlation(), initial)
-    with _counting_specialize() as off:
+    with _counting_expansions() as off:
         best_off = BeamSearch(beam_width=4, optimistic_pruning=False).search(
             rep, "pos", Correlation(), initial
         )
@@ -534,12 +540,12 @@ def test_gain_ascent_optimistic_pruning_stops_at_a_pure_rule():
     pure_rule = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # a AND b: fp == 0
     initial = [(pure_rule, frozenset({2}))]  # "c" still open
 
-    with _counting_specialize() as on:
+    with _counting_expansions() as on:
         best_on = GainAscentHillClimbing().search(rep, "pos", FoilGain(), initial)
     assert on[0] == 0  # optimistic (tp, 0) bound == the rule itself -> gain 0 -> stop
     assert best_on == pure_rule
 
-    with _counting_specialize() as off:
+    with _counting_expansions() as off:
         best_off = GainAscentHillClimbing(optimistic_pruning=False).search(rep, "pos", FoilGain(), initial)
     assert off[0] > 0             # no bound -> it does specialize once
     assert best_off == pure_rule  # ...but the gain floor still stops it at the same rule
@@ -555,12 +561,12 @@ def test_hill_climbing_optimistic_pruning_skips_an_already_pure_rule():
     pure_rule = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # a AND b: fp == 0
     initial = [(pure_rule, frozenset({2}))]  # "c" still open
 
-    with _counting_specialize() as on:
+    with _counting_expansions() as on:
         best_on = HillClimbing().search(rep, "pos", Accuracy(), initial)
     assert on[0] == 0
     assert best_on == pure_rule
 
-    with _counting_specialize() as off:
+    with _counting_expansions() as off:
         best_off = HillClimbing(optimistic_pruning=False).search(rep, "pos", Accuracy(), initial)
     assert off[0] > 0             # no bound -> it specializes once
     assert best_off == pure_rule  # ...but the local-maximum stop lands on the same rule
@@ -575,9 +581,9 @@ def test_hill_climbing_matches_beam_search_width_one_on_a_unimodal_landscape():
     rep, y = _wide_noisy_disjunction_dataset(d=12, seed=3)
     initial = [(Rule([], target="pos", dataspec=rep.spec), frozenset(range(12)))]
 
-    with _counting_specialize() as hc:
+    with _counting_expansions() as hc:
         hc_rule = HillClimbing().search(rep, "pos", Laplace(), initial)
-    with _counting_specialize() as beam:
+    with _counting_expansions() as beam:
         beam_rule = BeamSearch(beam_width=1).search(rep, "pos", Laplace(), initial)
 
     assert hc_rule.pos == beam_rule.pos
@@ -722,9 +728,9 @@ def test_filtering_does_not_reorder_the_beam_and_only_relaxes_optimistic_pruning
 
     # with optimistic pruning OFF, filtering has literally no effect on the
     # search: same beam every round, same rules specialized, same count
-    with _counting_specialize() as off_without:
+    with _counting_expansions() as off_without:
         BeamSearch(beam_width=2, optimistic_pruning=False).search(rep, "pos", Accuracy(), initial)
-    with _counting_specialize() as off_with:
+    with _counting_expansions() as off_with:
         BeamSearch(beam_width=2, optimistic_pruning=False).search(
             rep, "pos", Accuracy(), initial, filtering=reject_everything,
         )
@@ -733,9 +739,9 @@ def test_filtering_does_not_reorder_the_beam_and_only_relaxes_optimistic_pruning
     # with optimistic pruning ON, the bound is the best *filter-passing*
     # score -- so a reject-everything filter leaves no bound, and the
     # search explores at least as much as it would unfiltered, never less
-    with _counting_specialize() as on_without:
+    with _counting_expansions() as on_without:
         result_without = BeamSearch(beam_width=2).search(rep, "pos", Accuracy(), initial)
-    with _counting_specialize() as on_with:
+    with _counting_expansions() as on_with:
         result_with = BeamSearch(beam_width=2).search(
             rep, "pos", Accuracy(), initial, filtering=reject_everything,
         )
@@ -777,7 +783,7 @@ def test_stopping_never_fires_on_the_seed_candidate():
     # round 1, nothing acceptable preceded it, so the search returns None
     # -- NOT the empty seed and NOT round 1's own (rejected) top rule.
     always_true = ThresholdPrePruning(Accuracy(), threshold=2.0, operator="<")
-    with _counting_specialize() as count:
+    with _counting_expansions() as count:
         best = BeamSearch(beam_width=3).search(rep, "pos", Accuracy(), initial, stopping=always_true)
     assert best is None
     assert count[0] == 1  # the seed WAS specialized (round 1 ran); it just wasn't stopping-checked

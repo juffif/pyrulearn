@@ -377,7 +377,7 @@ class BooleanDataRepresentation(DataRepresentation):
         """``(tp, fp)`` arrays, one entry per feature in `feature_indices`
         -- a numeric attribute's ``attr>=t`` thresholds, ascending, all
         still open under `handle`'s rule (`pyrulearn.learners.seco`'s
-        `_score_children` only ever calls this with such a list; see
+        `score_children` only ever calls this with such a list; see
         `ThresholdChain`/`NumericGroup` in `pyrulearn.data.attributes`).
         Computed in one pass over `handle`'s covered rows instead of one
         `refine_cover` + `cover_counts` per threshold: because the chain
@@ -387,8 +387,10 @@ class BooleanDataRepresentation(DataRepresentation):
         class and summed from the top down, gives every threshold's
         tp/fp at once. Opt-in: this method doesn't exist on
         `DataRepresentation` or the other representations, so
-        `_score_children` falls back to the plain per-threshold path
-        wherever it's absent.
+        `score_children` falls back to the plain per-threshold path
+        wherever it's absent. No search calls `score_children` any more
+        (they count via `batch_cover_counts` -- `ROADMAP.md`'s "Build
+        only the children a search follows").
         """
         if self.y is None:
             raise ValueError("chain_cover_counts needs labels (self.y)")
@@ -420,11 +422,9 @@ class BooleanDataRepresentation(DataRepresentation):
         assumed) -- computed for every one of them in a single matrix
         multiply, the way `pyrulearn.learners.boosting.ENDER`'s `_grow`
         scores every candidate feature at once (``(t * c).T @ Xf``)
-        instead of counting one at a time. Experimental: not wired into
-        `pyrulearn.learners.seco._score_children` by default (see
-        `ROADMAP.md`'s numeric-threshold-counting item) -- a tentative
-        alternative to `chain_cover_counts`, benchmarked against it
-        rather than assumed better.
+        instead of counting one at a time. What
+        `pyrulearn.learners.seco.count_open_children` -- and so every
+        rule search -- counts with on this representation.
 
         Slices `self.X[:, feature_indices]` before the matmul -- that's
         fancy indexing (`feature_indices` is a list/array), which numpy
@@ -438,6 +438,8 @@ class BooleanDataRepresentation(DataRepresentation):
         real case checked, beam search and hill-climbing alike, because
         it always pays for the full-width matmul regardless of how
         narrow the open set actually is at that point in the search).
+        Those checks predate the lazy searches, so they're worth
+        repeating.
         """
         if self.y is None:
             raise ValueError("batch_cover_counts needs labels (self.y)")

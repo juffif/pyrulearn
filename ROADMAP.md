@@ -20,8 +20,8 @@ the same shape). `BooleanDataRepresentation.chain_cover_counts` (approach
 2 of the two once sketched here) counts a whole open run of one
 attribute's chain in a single pass -- per-row count of satisfied
 thresholds, histogrammed by class and summed from the top down -- instead
-of one pass per threshold; `pyrulearn.learners.seco._score_children`
-(shared by `BeamSearch`/`HillClimbing`) groups `rule.specialize`'s
+of one pass per threshold; `pyrulearn.learners.seco.score_children`
+(shared by `BeamSearch`/`HillClimbing` until the next section) groups `rule.specialize`'s
 children by chain and calls it, falling back to the original per-child
 path for anything not groupable (a lone open threshold, a non-numeric
 feature, or a representation without `chain_cover_counts` -- an opt-in
@@ -61,7 +61,66 @@ are the net of both.
 Still open: N-list, PrePostNList and Sparse representations (each needs
 its own one-pass counting primitive suited to its storage -- see the
 0.3.0 plan below for why this can't be one shared implementation);
-nominal-attribute batching; deferring handle construction past scoring.
+nominal-attribute batching.
+
+**No longer on the search path (2026-10-08).** The next section's lazy
+searches count every open child with one `batch_cover_counts` matmul
+instead, so `chain_cover_counts` and `score_children`'s chain grouping
+currently have no callers; kept, not deleted,
+until it's decided whether they come back (e.g. for representations
+without a matmul).
+
+## Build only the children a search follows
+
+**Done (2026-10-08).** `HillClimbing` (and `GainAscentHillClimbing`)
+and `BeamSearch` used to call `rule.specialize`, which
+builds *every* child of a node -- a `Rule`, its constraint closure
+(`extend_closure`) and its mask -- and then move to one of them (or
+`beam_width`). Profiled on `sonar` (1080 features), that was ~95% of a
+search's time; the counting itself ~2%. Hence also why the earlier
+matmul experiment (`_score_children_matmul`, below) barely moved the
+needle: it sped up the 2%.
+
+Now `count_open_children` gives `(tp, fp, fn, tn)` for every open
+feature without building anything (one `batch_cover_counts` matmul on
+`BooleanDataRepresentation`, one `refine_cover` + `cover_counts` per
+feature on any other representation), the search scores and sorts from
+those counts, and `materialize_child` builds -- closure, mask, handle --
+only the child(ren) it actually follows, skipping one that turns out
+contradictory exactly as `specialize` would. `BeamSearch` deduplicates
+children reached from different parents by a bitmask of their condition
+features (Rule equality is its condition set) before building any.
+Tie-breaking is unchanged (stable sorts over `specialize`'s feature
+order).
+
+**Measured** (old eager vs. new lazy, one fit each, same machine; every
+model identical except as noted):
+
+| dataset (rows x features) | PFoil | PFossil | Pypper | Slipper | CN2 | AQR | PyLORD |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| diabetes (768 x 112) | 5.3x | 4.1x | 2.8x | 4.0x | 7.4x | 4.5x | 3.1x |
+| sonar (208 x 1080) | 19x | 17x | 15x | 22x | 42x | 4.1x | 10x |
+| kr-vs-kp (3196 x 76) | 3.0x | 2.2x | 1.5x | 2.7x | 2.7x | 3.0x | 3.2x |
+| spambase (4601 x 998) | 1.6x | 1.7x | 1.4x | 1.7x | -- | -- | -- |
+
+The gain is largest with many features and few rows: building a child
+cost the same per feature at every node, while the remaining counting
+scales with the rows -- on `spambase` counting is now most of the time.
+Full `demos/ripper_comparison.py --full` re-run (44 datasets, 10-fold):
+Pypper's 440 fold results identical to the stored run; Slipper's differ
+in 13 of 452, consistent with the weighted float-reordering noise
+described in the previous section (Slipper's counts are weighted sums; a
+matmul sums them in a different order) -- not yet confirmed, since the
+stored run also predates `chain_cover_counts`.
+
+Still open: AQR gains far less than CN2 on `sonar` (4x vs. 42x), so
+something else dominates it -- not yet profiled. `batch_cover_counts`
+multiplies against a boolean slice of `X`, so every call copies and
+converts the open columns to float, where `CPAR` converts `X` once; the
+parent's closure is recomputed from scratch at every node although
+`materialize_child` already computed it; and each candidate is scored by
+a Python-level `heuristic.score` call (a vectorized `score_array` on
+heuristics, with the scalar loop as fallback, would remove that).
 
 ## 0.3.0: every native learner on any data representation
 
@@ -331,6 +390,10 @@ they aren't reopened by accident.
     alternative, not deleted -- revisit if a beam-width/feature-count-aware
     dispatch between the two (or restricting matmul to `HillClimbing`-based
     learners specifically) turns out to be worth the complexity.
+    **Superseded (2026-10-08)**: all searches now count through
+    `batch_cover_counts` after all, once they stopped building every
+    child eagerly -- see "Build only the children a search follows".
+    These measurements were taken on top of that eager construction.
 - **A `chain_cover_counts` for `NListRepresentation`: first attempt was
   wrong, reverted before being committed (2026-10-07).** Tried porting
   the Boolean trick directly: scan the loosest (shallowest) open
