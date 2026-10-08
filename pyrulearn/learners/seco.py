@@ -418,10 +418,17 @@ def batch_score_one(heuristic: RuleHeuristic, stats: RuleStats, *parent_stats: R
     return float(a) if a.ndim == 0 else tuple(float(x) for x in a.reshape(-1))
 
 
+#: "closure not computed yet" -- distinct from None, which is a computed
+#: closure under no constraints
+_UNSET = object()
+
+
 def parent_closure(dataspec, rule: Rule):
     """`rule`'s own closure under `dataspec`'s constraints, for
     `materialize_child` to extend -- None when there are no constraints.
-    Raises `ValueError` if `rule` is itself contradictory."""
+    Raises `ValueError` if `rule` is itself contradictory. Only needed
+    for a search's seed: every child `materialize_child` builds comes
+    with its own closure, which the search passes on instead."""
     if dataspec is None or not dataspec.constraints:
         return None
     return dataspec.propagate({lit.feature: True for lit in rule.conditions})
@@ -429,24 +436,27 @@ def parent_closure(dataspec, rule: Rule):
 
 def materialize_child(
     data, dataspec, rule: Rule, closure, mask: FrozenSet[int], feature: int, handle,
-) -> Optional[Tuple[Rule, FrozenSet[int], Any]]:
-    """The ``(child_rule, child_mask, child_handle)`` `Rule.specialize`
-    would yield for adding `feature` to `rule` (`closure` from
-    `parent_closure`), or None where `specialize` would skip it as
+) -> Optional[Tuple[Rule, FrozenSet[int], Any, Any]]:
+    """The ``(child_rule, child_mask, child_handle, child_closure)``
+    `Rule.specialize` would yield for adding `feature` to `rule`
+    (`closure`: `rule`'s own, from `parent_closure` or an earlier
+    `materialize_child`), or None where `specialize` would skip it as
     contradicting `dataspec`'s constraints. ``handle=None`` skips the
     cover refinement (``child_handle`` is then None too)."""
     if closure is not None:
         try:
-            determined = set(dataspec.extend_closure(closure, {feature: True}))
+            child_closure = dataspec.extend_closure(closure, {feature: True})
         except ValueError:
             return None
+        determined = set(child_closure)
     else:
-        determined = {feature}
+        child_closure, determined = None, {feature}
     child = Rule(
         rule.conditions + (Literal(feature),), target=rule.target, dataspec=dataspec,
         n_features=rule.n_features, default_fmt=rule.default_fmt,
     )
-    return child, mask - determined, None if handle is None else data.refine_cover(handle, feature)
+    child_handle = None if handle is None else data.refine_cover(handle, feature)
+    return child, mask - determined, child_handle, child_closure
 
 
 def _optimistic_stats(stats: RuleStats) -> RuleStats:
@@ -616,11 +626,13 @@ class BeamSearch(RuleSearch):
         # the handle so the next round's specialize step can call
         # `refine_cover` on it instead of recomputing coverage for the
         # grown rule from scratch, the stats so scoring, the tp == 0
-        # floor and the optimistic bound never need a second pass either
-        beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
+        # floor and the optimistic bound never need a second pass either --
+        # and their constraint closure (`_UNSET` for the seeds, computed on
+        # first use), which each child extends instead of recomputing
+        beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any]] = []
         for rule, mask in initial_candidates:
             handle = handle_for(data, rule, example_mask)
-            beam.append((rule, mask, handle, stats_from_handle(data, target_class, rule, handle)))
+            beam.append((rule, mask, handle, stats_from_handle(data, target_class, rule, handle), _UNSET))
         # best_rule tracks the best filtering-eligible rule seen *strictly
         # before* the round currently being evaluated (see the stopping
         # block below for why the timing matters) -- if none is ever seen
@@ -633,7 +645,7 @@ class BeamSearch(RuleSearch):
         # before refining anywhere should return None, not the seed.
         best_rule: Optional[Rule] = None
         best_score: Optional[Score] = None
-        for rule, mask, handle, stats in beam:
+        for rule, mask, handle, stats, _ in beam:
             if rule.length() == 0:
                 continue
             s = batch_score_one(heuristic, stats)  # compared with batch_score values below
@@ -658,9 +670,8 @@ class BeamSearch(RuleSearch):
             # numeric features), the job the old "some beam member has
             # fp == 0" break used to do.
             refinable = [
-                (rule, mask, handle, stats)
-                for rule, mask, handle, stats in beam
-                if stats.tp > 0 and promises_improvement(stats, best_score)
+                entry for entry in beam
+                if entry[3].tp > 0 and promises_improvement(entry[3], best_score)
             ]
             if not refinable:
                 break
@@ -693,7 +704,7 @@ class BeamSearch(RuleSearch):
             seen_keys: Set[int] = set()
             dead_by_parent: List[Set[int]] = []
             parts: List[Tuple[np.ndarray, ...]] = []
-            for pi, (rule, mask, handle, stats) in enumerate(refinable):
+            for pi, (rule, mask, handle, stats, _) in enumerate(refinable):
                 features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
                 features = np.asarray(features, dtype=np.int64)
                 tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
@@ -725,12 +736,12 @@ class BeamSearch(RuleSearch):
                 st = RuleStats(tp=c_tp[i], fp=c_fp[i], fn=c_fn[i], tn=c_tn[i], length=int(c_length[i]))
                 return score_at(scores, i), int(c_parent[i]), int(c_feature[i]), st
 
-            closures: Dict[int, Any] = {}
             contradictory = object()
+            closures: Dict[int, Any] = {pi: entry[4] for pi, entry in enumerate(refinable)}
 
             def build(pi: int, f: int, with_handle: bool):
-                prule, pmask, phandle, _ = refinable[pi]
-                if pi not in closures:
+                prule, pmask, phandle, _, _ = refinable[pi]
+                if closures[pi] is _UNSET:  # a seed's: computed on first use
                     try:
                         closures[pi] = parent_closure(dataspec, prule)
                     except ValueError:
@@ -741,7 +752,7 @@ class BeamSearch(RuleSearch):
                     data, dataspec, prule, closures[pi], pmask, f, phandle if with_handle else None,
                 )
 
-            new_beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = []
+            new_beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any]] = []
             built: List[Tuple[Score, Rule, RuleStats]] = []
             walked = 0
             while walked < len(order) and len(new_beam) < self.beam_width:
@@ -750,8 +761,8 @@ class BeamSearch(RuleSearch):
                 child = build(pi, f, with_handle=True)
                 if child is None:
                     continue  # contradicts its parent: never a candidate
-                crule, cmask, chandle = child
-                new_beam.append((crule, cmask - dead_by_parent[pi], chandle, st))
+                crule, cmask, chandle, cclosure = child
+                new_beam.append((crule, cmask - dead_by_parent[pi], chandle, st, cclosure))
                 built.append((s, crule, st))
             if not new_beam:
                 break
@@ -953,6 +964,7 @@ class HillClimbing(RuleSearch):
         last_eligible: Optional[Tuple[Rule, RuleStats]] = (
             (rule, stats) if rule.length() > 0 and is_eligible(rule, stats) else None
         )
+        closure: Any = _UNSET
 
         depth = 0
         while mask and (self.max_conditions is None or depth < self.max_conditions):
@@ -981,11 +993,12 @@ class HillClimbing(RuleSearch):
             values = self._child_scores(
                 heuristic, RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats,
             )
-            try:
-                closure = parent_closure(dataspec, rule)
-            except ValueError:
-                break  # the rule itself is contradictory: no consistent child
-            best_child: Optional[Tuple[Rule, FrozenSet[int], Any, RuleStats]] = None
+            if closure is _UNSET:  # only the seed's: every child brings its own
+                try:
+                    closure = parent_closure(dataspec, rule)
+                except ValueError:
+                    break  # the rule itself is contradictory: no consistent child
+            best_child: Optional[Tuple[Rule, FrozenSet[int], Any, Any, RuleStats]] = None
             # stable: equal scores stay in feature order, the child a strict `>` scan keeps
             for i in rank_best_first(values).tolist():
                 if self.stop_at_local_optimum and score_at(values, i) <= threshold:
@@ -997,7 +1010,7 @@ class HillClimbing(RuleSearch):
             if best_child is None:
                 break  # nothing left to move to, or a local optimum
 
-            rule, mask, handle, stats = best_child
+            rule, mask, handle, closure, stats = best_child
             mask = mask - dead
             depth += 1
 

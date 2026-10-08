@@ -299,7 +299,7 @@ class PropagatingCPAR(NativeRuleLearner):
         results: List[Rule] = []
         seen: Set[Rule] = set()
 
-        def grow(rule: Rule, mask, handle, stats: RuleStats) -> None:
+        def grow(rule: Rule, mask, handle, closure, stats: RuleStats) -> None:
             if rule in seen:
                 return
             seen.add(rule)
@@ -316,7 +316,6 @@ class PropagatingCPAR(NativeRuleLearner):
             features, tps, fps, fns, tns = features[alive], tps[alive], fps[alive], fns[alive], tns[alive]
             length = rule.length() + 1
             gains = heuristic.batch_score(RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats)
-            closure = parent_closure(dataspec, rule)
             chosen = []
             threshold = None
             for i in rank_best_first(gains).tolist():                 # stable: ties stay in feature order
@@ -333,13 +332,13 @@ class PropagatingCPAR(NativeRuleLearner):
                 if rule.length() > 0:
                     results.append(rule)
                 return
-            for (crule, cmask, chandle), cstats in chosen[1:]:          # the copies
-                grow(crule, cmask - dead, chandle, cstats)
-            (crule, cmask, chandle), cstats = chosen[0]
-            grow(crule, cmask - dead, chandle, cstats)
+            for (crule, cmask, chandle, cclosure), cstats in chosen[1:]:          # the copies
+                grow(crule, cmask - dead, chandle, cclosure, cstats)
+            (crule, cmask, chandle, cclosure), cstats = chosen[0]
+            grow(crule, cmask - dead, chandle, cclosure, cstats)
 
         seed = Rule([], target=target_class, dataspec=dataspec)
         handle0 = handle_for(weighted, seed, None)
         stats0 = stats_from_handle(weighted, target_class, seed, handle0)
-        grow(seed, frozenset(range(seed.n_features)), handle0, stats0)
+        grow(seed, frozenset(range(seed.n_features)), handle0, parent_closure(dataspec, seed), stats0)
         return results

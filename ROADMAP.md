@@ -123,17 +123,24 @@ never picks one; checked on `diabetes`, `sonar`, `kr-vs-kp` and in
 3.6x (`diabetes`) to 350x (`sonar`) slower than `CPAR`; lazy, 6-34x
 faster than that, but still 4x (`diabetes`: 1.54s vs. 0.40s), 14x
 (`sonar`: 0.82s vs. 0.06s) and 8x (`kr-vs-kp`: 1.07s vs. 0.14s) slower
-than `CPAR`. Profiled on `sonar`, the gap is the three overheads below,
-none intrinsic to propagation: per-candidate Python scoring ~55%,
+than `CPAR`. Profiled on `sonar`, the gap is three overheads, none
+intrinsic to propagation: per-candidate Python scoring ~55%,
 `batch_cover_counts`'s bool-to-float slice ~22%, recomputing the parent
 closure ~21%.
 
 Still open: AQR gains far less than CN2 on `sonar` (4x vs. 42x), so
 something else dominates it -- not yet profiled. `batch_cover_counts`
 multiplies against a boolean slice of `X`, so every call copies and
-converts the open columns to float, where `CPAR` converts `X` once; the
-parent's closure is recomputed from scratch at every node although
-`materialize_child` already computed it.
+converts the open columns to float, where `CPAR` converts `X` once.
+
+**Closures passed down (done, 2026-10-08).** Every expanded node used to
+recompute its rule's constraint closure from scratch (`parent_closure`),
+although `materialize_child` had just computed it to build the child's
+mask. It now returns it, and the searches carry it alongside mask and
+cover handle; only a seed's is still computed. Same models, but no
+measurable speedup (within +-10% everywhere) -- the profile's ~21% for
+it was cProfile's per-call overhead on `propagate`'s many small Python
+calls, not real time.
 
 **Batch scoring (done, 2026-10-08).** Each candidate used to be scored by
 its own Python-level `heuristic.score` call. Every heuristic now also has
