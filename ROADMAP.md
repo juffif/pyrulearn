@@ -299,6 +299,49 @@ test (a demo).
 Open: that demo; a `BeamSearch` counterpart (return the final beam
 rather than its best rule).
 
+## Optimal rules: branch and bound, OPUS
+
+**Done (2026-10-09).** `seco.BranchAndBoundSearch(max_conditions, k)`:
+the optimal rule (or the `k` best, distinct coverage) by the heuristic
+among all conjunctions, after OPUS (Webb 1995) -- set-enumeration tree,
+best-first by the `(tp, 0)` bound, OPUS's removal of a condition from
+the whole subtree once it is bounded out, dead or changes nothing,
+constraint propagation, one batched count per node (every
+representation). Checked against brute-force enumeration (96 cases:
+several heuristics, `k` 1 and 5, weighted data, threshold chains,
+Boolean and N-lists). Learners in `learners.opus`: `Opus` (`SeCo` with
+it; `Laplace(n_classes=c)` by default -- CN2's and Webb's Laplace, with
+the number of classes in the denominator; `Laplace()` keeps 2 -- as in
+Webb's experiments, Section 6 of the OPUS paper; `CN2` now defaults to
+it too, as Clark & Boswell's)
+and `OpusTopK` (the `k` best rules per class by `WRAcc`, no covering,
+Magnum Opus style).
+
+First observations (Titanic): `Opus` with `Laplace` is slow (40s, 142
+rules) -- its optimum is a narrow pure rule and the bound prunes little;
+with `WRAcc` 0.65s, 8 rules. `OpusTopK`'s top rules include near
+duplicates (`sex = male` and `sex = male, parch != 6`, one row apart):
+Webb's *cannotImprove* pruning (`dominance_pruning`, for `k = 1`
+without filtering): conditions dropping no covered negative, and
+conditions whose child a sibling dominates, leave the subtree.
+Checked against brute force (120 cases) and against the search without
+it.
+
+Webb's filter for *productive* rules drops them: `pruning.ProductiveRule`
+(precision strictly higher than every generalization, the empty rule
+included), a `filtering=` criterion so that the top-k search finds `k`
+productive rules -- on by default in `OpusTopK` (Titanic, k=5: 3.3s
+instead of 1.4s). Still in the top-k: several negated values of one
+attribute (`sibsp != 4, sibsp != 5, sibsp != 8`), each productive --
+a set-valued condition would fold them into one.
+
+Next, deferred: `OptimalRuleBoosting`'s two searches as configurations
+of `BranchAndBoundSearch` and a greedy search. Its objective (sums of
+the loss derivatives `g`, `h`, with a bound over the covered rows
+themselves) is no `RuleHeuristic`; it needs an objective component on
+sums of per-row values (as ENDER's `ImpurityCriterion` already is), with
+a heuristic adapter -- decision (a) of 2026-10-09, open.
+
 ## 0.3.0: every native learner on any data representation
 
 **Principle.** Learners are written against the `DataRepresentation`

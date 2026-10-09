@@ -1938,3 +1938,23 @@ if __name__ == "__main__":
     test_covering_loop_rules_and_default_rule_carry_their_own_training_stats()
     test_seed_covering_rules_carry_their_own_training_stats()
     print("\nAll tests passed.")
+
+
+def test_cn2_laplace_counts_the_classes_of_the_data():
+    from pyrulearn.heuristics import Laplace, WRAcc
+    from pyrulearn.learners.seco import CN2
+    rng = np.random.default_rng(0)
+    raw = rng.random((90, 4)) < 0.5
+    spec = neg_spec([f"f{i}" for i in range(4)])
+    three = BooleanDataRepresentation(spec, neg_X(raw), np.array(["a", "b", "c"] * 30))
+    cn2 = CN2()
+    cn2.fit(three)
+    assert cn2.single_rule_learner.heuristic.n_classes == 3
+    cn2.fit(BooleanDataRepresentation(spec, neg_X(raw), np.array(["a", "b"] * 45)))
+    assert cn2.single_rule_learner.heuristic.n_classes == 2
+    fixed = CN2(heuristic=Laplace())
+    fixed.fit(three)
+    assert fixed.single_rule_learner.heuristic.n_classes == 2
+    other = CN2(heuristic=WRAcc())
+    other.fit(three)
+    assert isinstance(other.single_rule_learner.heuristic, WRAcc)

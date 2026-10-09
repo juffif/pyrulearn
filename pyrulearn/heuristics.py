@@ -602,15 +602,28 @@ class UncoveredNegatives(RuleHeuristic):
 
 
 class Laplace(RuleHeuristic):
-    """h = (tp+1) / (tp+fp+2). Precision with its pivot moved to
-    (-1, -1) -- regularizes toward 0.5 for low-coverage rules."""
+    """h = (tp+1) / (tp+fp+n_classes). Precision with its pivot moved to
+    (-1, -(n_classes-1)) -- regularizes toward 1/n_classes, the accuracy
+    expected of a rule on a problem with `n_classes` evenly distributed
+    classes, for low-coverage rules.
+
+    `n_classes` defaults to 2 (a rule's covered/not-covered split,
+    toward 0.5) -- the usual form in rule learning. The Laplace estimate
+    of CN2 (Clark & Boswell 1991) and of Webb's OPUS experiments counts
+    the problem's classes, and gives more weight to coverage when there
+    are more than two."""
+
+    def __init__(self, n_classes: int = 2):
+        if n_classes < 1:
+            raise ValueError(f"n_classes must be at least 1, got {n_classes}")
+        self.n_classes = n_classes
 
     def score(self, stats: RuleStats) -> float:
-        return (stats.tp + 1) / (stats.tp + stats.fp + 2)
+        return (stats.tp + 1) / (stats.tp + stats.fp + self.n_classes)
 
     def batch_score(self, stats: RuleStats) -> np.ndarray:
         tp, fp, _, _, _ = _counts(stats)
-        return (tp + 1) / (tp + fp + 2)
+        return (tp + 1) / (tp + fp + self.n_classes)
 
 
 class MEstimate(RuleHeuristic):

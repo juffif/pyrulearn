@@ -22,7 +22,8 @@ pool, and the `CBA` and `CMAR` classifiers built on it),
 `pyrulearn.learners.ids` (`IDS`), `pyrulearn.learners.rulefit`
 (`RuleFit`, a sparse linear model over a rule pool),
 `pyrulearn.learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `OptimalRuleBoosting`), `pyrulearn.learners.lri`
-(`LRI`), `pyrulearn.learners.cpar` (`CPAR`, `DenseCPAR`), and
+(`LRI`), `pyrulearn.learners.cpar` (`CPAR`, `DenseCPAR`), `pyrulearn.learners.opus`
+(`Opus`, `OpusTopK`), and
 `pyrulearn.learners.multiclass` (`OneVsRest`/`OrderedOneVsRest`/
 `Pairwise` -- thin sugar over `DecomposingLearner`). External-tool
 learners (sklearn/wittgenstein/imodels/Weka/LORD) live next to their

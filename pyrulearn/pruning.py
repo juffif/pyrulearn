@@ -43,6 +43,7 @@ This module only defines the criteria themselves; every consumer
 
 from __future__ import annotations
 
+import itertools
 import math
 import operator as _operator
 from abc import ABC, abstractmethod
@@ -336,3 +337,66 @@ class AllOf(PrePruningCriterion):
         example_mask: Optional[np.ndarray] = None,
     ) -> bool:
         return all(c.reject(rule, stats, data, target_class, example_mask) for c in self.criteria)
+
+
+class ProductiveRule(PrePruningCriterion):
+    """Webb's filter for *productive* rules (Webb, "Discovering
+    significant patterns", Machine Learning 2007; Magnum Opus): a rule is
+    productive if it scores strictly higher than every generalization --
+    every proper subset of its conditions, the empty rule (the class's
+    prior) included. An unproductive rule adds conditions that don't
+    improve on a simpler rule, like ``sex = male, parch != 6`` next to
+    ``sex = male``. `evaluate()` is "unproductive", so with the default
+    `polarity` a search's `filtering=` keeps only productive rules.
+
+    `heuristic` is what "scores higher" means: `Precision` (the rule's
+    confidence) by default, as in Webb's definition. Checking all
+    ``2**length - 1`` generalizations makes it a filter for short rules
+    (a top-k or branch-and-bound search with `max_conditions`); the
+    generalizations' stats are cached for as long as `data`, the target
+    and the example mask stay the same. As a `stopping=` criterion it
+    would stop a lineage at its first unproductive rule -- use it for
+    filtering.
+    """
+
+    def __init__(self, heuristic: Optional[RuleHeuristic] = None, polarity: bool = True):
+        self.heuristic = heuristic
+        self.polarity = polarity
+        self._context: Optional[tuple] = None
+        self._scores: dict = {}
+
+    def _score_of(self, features: frozenset, data, target_class: Any, example_mask) -> Any:
+        if (self._context is None or self._context[0] is not data or self._context[1] != target_class
+                or self._context[2] is not example_mask):
+            self._context = (data, target_class, example_mask)
+            self._scores = {}
+        score = self._scores.get(features)
+        if score is None:
+            rule = Rule(sorted(features), target=target_class, dataspec=data.spec)
+            stats = RuleStats.from_rule(rule, data, target_class, example_mask=example_mask)
+            score = self._scores[features] = self._heuristic().score(stats)
+        return score
+
+    def _heuristic(self) -> RuleHeuristic:
+        if self.heuristic is not None:
+            return self.heuristic
+        from .heuristics import Precision
+        return Precision()
+
+    def evaluate(
+        self,
+        rule: Rule,
+        stats: RuleStats,
+        data: BooleanDataRepresentation,
+        target_class: Any,
+        example_mask: Optional[np.ndarray] = None,
+    ) -> bool:
+        features = [lit.feature for lit in rule.conditions]
+        if not features:
+            return False
+        own = self._heuristic().score(stats)
+        for size in range(len(features)):
+            for subset in itertools.combinations(features, size):
+                if not own > self._score_of(frozenset(subset), data, target_class, example_mask):
+                    return True
+        return False

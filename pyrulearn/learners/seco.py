@@ -95,6 +95,8 @@ classic "separate") or `WeightedCovering`.
 
 from __future__ import annotations
 
+import heapq
+import itertools
 import math
 from abc import ABC, abstractmethod
 from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, Union
@@ -1275,6 +1277,211 @@ class GainAscentHillClimbing(HillClimbing):
         self, heuristic: RuleHeuristic, stats: RuleStats, best_stats: Optional[RuleStats],
     ) -> bool:
         return not self._improves(heuristic.score(_optimistic_stats(stats), stats), 0.0)
+
+
+class _Descending:
+    """Heap key ordering scores from highest to lowest -- for floats and for
+    `LEF`'s tuples alike, which can't simply be negated."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Score):
+        self.value = value
+
+    def __lt__(self, other: "_Descending") -> bool:
+        return other.value < self.value
+
+
+class BranchAndBoundSearch(RuleSearch):
+    """Exhaustive search for the best rule -- with `k`, the `k` best -- by
+    branch and bound, after OPUS (Webb, "OPUS: An efficient admissible
+    algorithm for unordered search", JAIR 1995). Unlike `BeamSearch` and
+    the hill climbers, the rule it returns is optimal: no conjunction of
+    the open conditions (up to `max_conditions` of them) scores higher.
+
+    The search space is the set-enumeration tree over the open
+    conditions: a rule is only ever extended by conditions after its last
+    one in feature order, so every condition set is generated at most
+    once. Nodes are expanded best-first, by their *bound* -- the score of
+    the best refinement conceivable, every covered positive kept and every
+    covered negative dropped (the ``(tp, 0)`` projection `BeamSearch`'s
+    `optimistic_pruning` uses). A node whose bound can't beat the `k`-th
+    best rule found so far is never expanded, and the search ends as soon
+    as no node left can. The bound is only admissible for a heuristic that
+    rewards covering more positives and fewer negatives (`Laplace`,
+    `WRAcc`, `Precision`, `Accuracy`, ...; not e.g. `Entropy`); the
+    heuristic must also score each rule on its own -- a `GainHeuristic`
+    is refused.
+
+    As in OPUS, a condition is removed from the whole subtree below a
+    node (not just from its own branch) once it can't help there: when
+    the child adding it is bounded out (any rule containing that child
+    is bounded by it, too), when it covers no positive (nor does any
+    refinement), or when it drops no covered row (it changes nothing).
+    Constraint propagation does the rest (`Rule.specialize`): conditions
+    implied by the rule, or contradicting it, are never offered.
+
+    With `dominance_pruning` (default), Webb's *cannotImprove* rule
+    removes more: a condition that drops no covered negative (the same
+    rule without it covers the same negatives and at least the same
+    positives, so it scores at least as high), and a condition whose
+    child is dominated by a sibling's -- the sibling covers every
+    positive it covers and none of the negatives it drops -- since
+    swapping the condition for the sibling's never lowers a score.
+    Dominated rules aren't worse, only no better, so this is only sound
+    for the single best rule: it is skipped with `k > 1` and with a
+    `filtering`/`stopping` criterion (the dominating rule might be one
+    they reject).
+
+    The `k` best rules (`search_all`; `search` returns the best) have
+    pairwise different coverage -- a rule covering exactly the same rows
+    as one already kept is skipped; among equal scores, the one found
+    first is kept. `filtering` restricts which rules may be kept;
+    `stopping` also stops expanding a rule it fires on. One batched count
+    per expanded node, so it runs on every data representation.
+
+    Exhaustive means exponential in the worst case: `max_conditions`
+    bounds the depth, and pruning keeps typical searches far from it.
+    """
+
+    def __init__(self, max_conditions: Optional[int] = None, k: int = 1, dominance_pruning: bool = True):
+        if k < 1:
+            raise ValueError(f"k must be at least 1, got {k}")
+        self.max_conditions = max_conditions
+        self.k = k
+        self.dominance_pruning = dominance_pruning
+
+    def search(self, data, target_class, heuristic, initial_candidates, example_mask=None,
+               filtering=None, stopping=None) -> Optional[Rule]:
+        rules = self._search(data, target_class, heuristic, initial_candidates, example_mask, filtering, stopping)
+        return rules[0] if rules else None
+
+    def search_all(self, data, target_class, heuristic, initial_candidates, example_mask=None,
+                   filtering=None, stopping=None) -> List[Rule]:
+        return self._search(data, target_class, heuristic, initial_candidates, example_mask, filtering, stopping)
+
+    def _search(self, data, target_class, heuristic, initial_candidates, example_mask, filtering, stopping) -> List[Rule]:
+        if isinstance(heuristic, GainHeuristic):
+            raise ValueError(f"BranchAndBoundSearch needs a heuristic scoring each rule on its own, got "
+                             f"{type(heuristic).__name__} (a gain is only meaningful against its parent)")
+        if len(initial_candidates) != 1:
+            raise ValueError("BranchAndBoundSearch needs exactly one initial candidate")
+        dataspec = data.spec
+        dominance = self.dominance_pruning and self.k == 1 and filtering is None and stopping is None
+        positive = np.asarray(data.y) == target_class if dominance else None
+        best: List[Tuple[Score, int, Rule, bytes]] = []        # the k best, highest first
+        found = itertools.count()
+
+        def eligible(rule: Rule, stats: RuleStats) -> bool:
+            if stats.tp == 0 or rule.length() == 0:
+                return False
+            return all(crit is None or crit.accept(rule, stats, data, target_class, example_mask)
+                       for crit in (filtering, stopping))
+
+        def threshold() -> Optional[Score]:
+            return best[-1][0] if len(best) == self.k else None
+
+        def offer(score: Score, rule: Rule, handle) -> None:
+            th = threshold()
+            if th is not None and not score > th:
+                return
+            key = np.packbits(data.cover_rows(handle)).tobytes() if self.k > 1 else b""
+            if self.k > 1 and any(key == kept[3] for kept in best):
+                return                                         # same rows as a rule already kept
+            position = next((i for i, kept in enumerate(best) if score > kept[0]), len(best))
+            best.insert(position, (score, next(found), rule, key))
+            del best[self.k:]
+
+        rule, mask = initial_candidates[0]
+        handle = handle_for(data, rule, example_mask)
+        stats = stats_from_handle(data, target_class, rule, handle)
+        if eligible(rule, stats):
+            offer(batch_score_one(heuristic, stats), rule, handle)
+        last = max((lit.feature for lit in rule.conditions), default=-1)
+        queue = [(None, 0, rule, mask, handle, _UNSET, stats, last)]   # the seed is always expanded
+        pushed = itertools.count(1)
+
+        while queue:
+            bound, _, rule, mask, handle, closure, stats, last = heapq.heappop(queue)
+            th = threshold()
+            if bound is not None and th is not None and not bound.value > th:
+                break                                          # best-first: nothing left can enter the k best
+            if self.max_conditions is not None and rule.length() >= self.max_conditions:
+                continue
+            if stopping is not None and rule.length() > 0 and stopping.evaluate(
+                    rule, stats, data, target_class, example_mask):
+                continue
+            open_later = frozenset(f for f in mask if f > last)
+            if not open_later:
+                continue
+            features, tps, fps, fns, tns, same, dead = live_open_children(data, target_class, open_later, handle, stats)
+            length = rule.length() + 1
+            scores = heuristic.batch_score(RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length))
+            bounds = heuristic.batch_score(RuleStats(tp=tps, fp=np.zeros_like(fps), fn=fns, tn=fps + tns,
+                                                     length=length))
+            if closure is _UNSET:
+                try:
+                    closure = parent_closure(dataspec, rule)
+                except ValueError:
+                    continue                                   # contradictory: no consistent refinement
+            removed: Set[int] = set(dead) | set(features[same].tolist())
+            children = []
+            for i in np.flatnonzero(~same).tolist():
+                f = int(features[i])
+                score, child_bound = score_at(scores, i), score_at(bounds, i)
+                th = threshold()
+                if th is not None and not score > th and not child_bound > th:
+                    removed.add(f)                             # neither it nor any refinement can enter
+                    continue
+                built = materialize_child(data, dataspec, rule, closure, mask, f, handle)
+                if built is None:
+                    removed.add(f)                             # contradicts the rule
+                    continue
+                child, child_mask, child_handle, child_closure = built
+                child_stats = RuleStats(tp=tps[i], fp=fps[i], fn=fns[i], tn=tns[i], length=length)
+                if eligible(child, child_stats):
+                    offer(score, child, child_handle)
+                children.append((child_bound, f, child, child_mask, child_handle, child_closure, child_stats))
+            if dominance and children:
+                removed |= self._dominated(data, positive, handle, stats, children)
+            th = threshold()
+            if th is not None:
+                removed |= {c[1] for c in children if not c[0] > th}
+            if self.max_conditions is not None and length >= self.max_conditions:
+                continue                                       # the children can't be refined further
+            for child_bound, f, child, child_mask, child_handle, child_closure, child_stats in children:
+                if f in removed:
+                    continue
+                heapq.heappush(queue, (_Descending(child_bound), next(pushed), child, child_mask - removed,
+                                       child_handle, child_closure, child_stats, f))
+        return [kept[2] for kept in best]
+
+    @staticmethod
+    def _dominated(data, positive: np.ndarray, handle, stats: RuleStats, children: list) -> Set[int]:
+        """The conditions OPUS's *cannotImprove* removes below a node:
+        those dropping no covered negative, and those whose child a
+        sibling dominates (covers a superset of its positives and a
+        subset of its negatives). Of children covering exactly the same
+        positives and negatives, the first stays. Counts preselect the
+        candidate pairs; the covered rows decide."""
+        rows = np.flatnonzero(data.cover_rows(handle))
+        pos = positive[rows]
+        covers = np.array([data.cover_rows(child[4])[rows] for child in children])
+        P = np.packbits(covers & pos, axis=1)
+        N = np.packbits(covers & ~pos, axis=1)
+        features = np.array([child[1] for child in children])
+        removed = set(features[~(np.packbits(~pos) & ~N).any(axis=1)].tolist())   # no negative dropped
+        tp = np.array([float(child[6].tp) for child in children])
+        fp = np.array([float(child[6].fp) for child in children])
+        tol = 1e-9 * (1.0 + float(stats.tp) + float(stats.fp))
+        I, J = np.nonzero((tp[:, None] >= tp[None, :] - tol) & (fp[:, None] <= fp[None, :] + tol))
+        I, J = I[I != J], J[I != J]
+        dominates = ~(P[J] & ~P[I]).any(axis=1) & ~(N[I] & ~N[J]).any(axis=1)
+        pairs = set(zip(I[dominates].tolist(), J[dominates].tolist()))
+        for i, j in pairs:
+            if not ((j, i) in pairs and j < i):            # identical twins: only the later one goes
+                removed.add(int(features[j]))
+        return removed
 
 
 class SearchSpaceInit(ABC):
@@ -2468,7 +2675,22 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         return annotate_default_rule(model, data)
 
 
-class CN2(SeCo):
+class _ClassCountLaplace:
+    """Mixin for a `SeCo` whose default heuristic is the Laplace estimate
+    over the problem's classes, ``(tp+1)/(tp+fp+c)`` (Clark & Boswell's
+    CN2, Webb's OPUS experiments): unless a heuristic was passed
+    (`self._default_laplace` false), each `fit` sets
+    `Laplace(n_classes=c)` with ``c`` the number of classes in the
+    data."""
+
+    def fit(self, data, model: Optional[type] = None, **model_kwargs):
+        if getattr(self, "_default_laplace", False) and data.y is not None:
+            n_classes = max(2, len(np.unique(np.asarray(data.y))))
+            self.single_rule_learner.heuristic = Laplace(n_classes=n_classes)
+        return super().fit(data, model, **model_kwargs)
+
+
+class CN2(_ClassCountLaplace, SeCo):
     """CN2 (Clark & Niblett, 1989), in the Laplace-heuristic form from
     Clark & Boswell, 1991, as a `SeCo` instantiation -- a first example
     of the pattern this module is meant to support: a named algorithm is
@@ -2478,7 +2700,10 @@ class CN2(SeCo):
 
     Two choices define CN2 here:
     - **search heuristic**: `Laplace` -- Clark & Boswell's replacement
-      for original CN2's entropy-based one.
+      for original CN2's entropy-based one, with their number of classes
+      in the denominator: each `fit` sets `Laplace(n_classes=c)` for the
+      data's ``c`` classes unless `heuristic` is given (`Laplace()` for
+      the two-class form whatever the data).
     - **significance test, as a *stopping* criterion**: CN2's own
       description (Clark & Boswell) checks, inside the search itself,
       whether the round's best candidate is still statistically
@@ -2556,6 +2781,7 @@ class CN2(SeCo):
     ):
         if mode not in ("stopping", "filtering"):
             raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
+        self._default_laplace = heuristic is None
         heuristic = heuristic if heuristic is not None else Laplace()
         search = search if search is not None else BeamSearch(beam_width=beam_width)
         if stopping is None and filtering is None and significance_threshold is not None:

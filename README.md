@@ -136,6 +136,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`) and impurity criterion (`ImpurityCriterion`); a `LinearRuleModel`; runs on every data representation. `boosting.DenseENDER`: the faster dense-matrix version, same models | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
+| **OPUS** | `opus.Opus`, `opus.OpusTopK` | optimal rules by exhaustive branch-and-bound search (`seco.BranchAndBoundSearch`): `Opus` covers with the best rule by the heuristic in every step (a `SeCo` configuration); `OpusTopK` finds the `k` best rules per class (k-optimal rule discovery in the manner of Magnum Opus) | Webb 1995 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
@@ -188,7 +189,7 @@ details.
 | `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold binarization, a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `Boomer`, `OptimalRuleBoosting`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `OptimalRuleBoosting`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -1308,12 +1309,12 @@ exchangeable building blocks:
 
 | building block | options |
 |---|---|
-| search | `BeamSearch(beam_width)` (keeps the best `beam_width` candidates, returns the best rule seen); `HillClimbing` (one candidate, stops at a local optimum of the heuristic); `GainAscentHillClimbing` (the only search for a gain heuristic such as `FoilGain`, which scores a refinement relative to its parent; `min_gain=` raises the bar from any positive gain, and `branch_similarity=` makes it yield several rules, see below) |
+| search | `BranchAndBoundSearch(max_conditions, k)` (exhaustive: the optimal rule, or the `k` best, by branch and bound, after OPUS); `BeamSearch(beam_width)` (keeps the best `beam_width` candidates, returns the best rule seen); `HillClimbing` (one candidate, stops at a local optimum of the heuristic); `GainAscentHillClimbing` (the only search for a gain heuristic such as `FoilGain`, which scores a refinement relative to its parent; `min_gain=` raises the bar from any positive gain, and `branch_similarity=` makes it yield several rules, see below) |
 | heuristic | any `RuleHeuristic` -- see *Rule-evaluation heuristics* |
 | where the search starts | `EmptyRuleAllFeatures` (the empty rule, all features open -- default); `FeatureSubset`; `SeedExample` (a rule that must keep covering one chosen example, as in AQ) |
 | data preparation | `NoSplit` (default); `GrowPruneSplit` (grow on one part, prune on a held-out part -- IREP, RIPPER) |
 | post-processing | `NoPostProcessing` (default); `ReducedErrorPruning` (drop trailing conditions while that improves the rule on the pruning data) |
-| `filtering` / `stopping` | pre-pruning criteria from `pyrulearn.pruning` (`ThresholdPrePruning(heuristic, threshold)`, `EncodingLengthRestriction`, combinable with `AllOf`/`AnyOf`) |
+| `filtering` / `stopping` | pre-pruning criteria from `pyrulearn.pruning` (`ThresholdPrePruning(heuristic, threshold)`, `EncodingLengthRestriction`, `ProductiveRule`, combinable with `AllOf`/`AnyOf`) |
 
 `filtering` and `stopping` take the same criteria but act differently: a
 **filtering** criterion only decides which rules may be returned -- the
@@ -1332,6 +1333,7 @@ can still be overridden through the constructor:
 | `PFoil` (Mooney 1995; Quinlan 1990) | `GainAscentHillClimbing` | `FoilGain` | Quinlan's encoding-length restriction, `stopping` | |
 | `PFossil` (Fürnkranz 1994) | `HillClimbing` | `Correlation` | correlation below 0.3, `filtering` | |
 | `Pypper` (Cohen 1995) | `GainAscentHillClimbing`, not stopping at a gain peak | `FoilGain` | at least two covered positives | `GrowPruneSplit` (2/3 grow, 1/3 prune) + `ReducedErrorPruning`; covering stops on the encoding-length restriction or a pruned rule below 0.5 precision; then `ReplaceReviseOptimization` (`k=2` passes) |
+| `Opus` (Webb 1995) | `BranchAndBoundSearch`: the optimal rule | `Laplace(n_classes=c)` | | in `learners.opus` |
 | `CPAR` (Yin & Han 2003) | `GainAscentHillClimbing(min_gain=0.7, branch_similarity=0.99)`: several rules per search | `FoilGain` | | `WeightedCovering(MultiplicativeReweighting(2/3), PositiveWeightBelow(0.05))`; predicts with `TopKMeanCombiner` -- see *Weighted covering* |
 
 ```python
@@ -1356,6 +1358,46 @@ and the branching usable with any of them:
 from pyrulearn.learners.seco import GainAscentHillClimbing, PFoil
 
 PFoil(search=GainAscentHillClimbing(branch_similarity=0.9)).fit(train_rep)   # FOIL with copies
+```
+
+**Optimal rules.** `BranchAndBoundSearch` finds the rule with the
+highest score among *all* conjunctions of the open conditions (up to
+`max_conditions`), not just the best one a beam or a hill climber
+reaches -- after OPUS (Webb 1995). It walks the set-enumeration tree
+(a rule is only extended by conditions after its last one, so every
+condition set comes up once), best-first by an optimistic bound -- the
+score if every covered positive were kept and every covered negative
+dropped -- and never expands a rule whose bound can't beat the best (or
+`k`-th best) found. Like OPUS, it removes a condition from a whole
+subtree once that condition can't help there (bounded out, covering no
+positive, or changing nothing); for the single best rule it also
+applies Webb's *cannotImprove* rule (`dominance_pruning`): a condition
+that drops no covered negative, or whose child a sibling dominates
+(covering all its positives and none of the negatives it drops), can't
+lead to a better rule. The bound needs a heuristic that rewards
+covered positives and penalizes covered negatives (`Laplace`, `WRAcc`,
+`Precision`, ...). With `k`, `search_all` yields the `k` best rules of
+distinct coverage. Two learners use it, in `pyrulearn.learners.opus`:
+`Opus`, separate-and-conquer with the optimal rule in every step (a
+`SeCo` configuration; by default with the Laplace estimate over the
+data's classes, `Laplace(n_classes=c)`, as in Webb's experiments), and
+`OpusTopK`, k-optimal rule discovery in the manner of Webb's Magnum Opus -- the `k` best rules per class by `WRAcc`
+(leverage), on all the data, no covering. Like Magnum Opus, it keeps
+only *productive* rules by default (`pyrulearn.pruning.ProductiveRule`,
+a `filtering=` criterion: a rule's precision must be strictly higher
+than that of every generalization, the empty rule included), so the `k`
+rules aren't padded with variants of a better, simpler rule such as
+`sex = male, parch != 6` next to `sex = male`; `productive=False` turns
+it off. Exhaustive search can be slow: with `Laplace`, whose optimum is a narrow, pure rule, the bound
+prunes little and covering needs many rules -- `max_conditions` and a
+coarser heuristic help.
+
+```python
+from pyrulearn.learners.opus import Opus, OpusTopK
+from pyrulearn.heuristics import WRAcc
+
+Opus(heuristic=WRAcc(), max_conditions=3).fit(train_rep)   # covering with optimal WRAcc rules
+OpusTopK(k=10).fit(train_rep)                               # the 10 best rules per class
 ```
 
 A new variant is just a `SeCo` with its own blocks -- here the plain
