@@ -505,7 +505,15 @@ condition list. `fmt` is optional: omitted, `to_string` (and `__repr__`,
 so this is also what you see printed) falls back to that rule's own
 `default_fmt` if set at construction (`Rule(..., default_fmt="logic")`),
 else the class-wide `Rule.DEFAULT_FORMAT` (`"prolog"`) -- an explicit
-`fmt=` always overrides both. `reorder`/`generalize` carry a rule's
+`fmt=` always overrides both. Plain printing shows every condition;
+`pretty=True` (on a rule or a whole model) also compresses the conditions
+on one attribute: two or more `≠` on a nominal attribute become one value
+set, in the shorter of its two forms -- `sibsp ∉ {4, 5, 8}`, or `color ∈
+{green, white}` when fewer values remain than are excluded
+(`\+ member(V, [...])`/`member(V, [...])` in Prolog) -- and two or more
+thresholds on a numeric attribute one interval, `20 <= age < 40`. A
+single condition stays as it is. Only the display changes: the rule
+keeps its conditions and `length()` counts each one. `reorder`/`generalize` carry a rule's
 `default_fmt` over to the result. A bare `Rule` carries no weight or
 free-form metadata; measured per-rule statistics live on `SingleRule.stats()`,
 and what built a rule on `SingleRule.provenance`.
