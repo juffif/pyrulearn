@@ -239,6 +239,40 @@ against plain horizontal counting through a CSR built from `_row_feats`.
 Weighted counts on those representations get no `same` marks yet. A
 dense vs. modular demo.
 
+## Several rules per search: CPAR as a SeCo configuration
+
+**Done (2026-10-09).** A `RuleSearch` can yield several rules
+(`search_all`; default: `search`'s one), `SingleRuleLearner.learn_rules`
+post-processes each, and `SeCo`'s covering loop accepts them in turn --
+all judged on the scope they were found in, each updating the covering.
+`GainAscentHillClimbing` got `min_gain=` (a gain of at least this,
+instead of any positive gain) and `branch_similarity=` (also follow
+every child within that factor of the best gain, as a copy grown on the
+same way: CPAR's search). With those, `CPAR` is a `SeCo` preset --
+`FoilGain`, the branching gain ascent, `WeightedCovering`, a top-k
+combiner -- with no search or covering code of its own, and the
+branching is available to every SeCo learner (e.g. `PFoil` with copies).
+Same models as before (`CPAR` == `DenseCPAR` in `tests/test_cpar.py`;
+the other SeCo learners unchanged). `max_rounds` now caps rules per
+class, as `WeightedCovering` counts, not searches; `DenseCPAR` counts the
+same way.
+
+**First experiment** (3-fold CV, the 10 small datasets of the RIPPER
+quick run): no accuracy effect anywhere -- every variant within about a
+point (0.830-0.841 mean accuracy), well inside the noise of so few
+folds. Branching mostly adds rules: `PFoil` 28 -> 67 (similarity 0.99)
+-> 201 (0.9), since removal covering still accepts copies whose
+examples the first rule already removed; in `CPAR`, branching at 0.99
+rarely triggers (126 rules without, 135 with) and `CPAR` without it was
+no worse (0.841 vs. 0.837); `Pypper` hardly changes, grow-then-prune
+absorbs the copies (one outlier: `tic-tac-toe` 0.932 -> 0.981). So: a
+clean generalization `CPAR` needs, no reason yet to make branching a
+default anywhere -- a 10-fold run over many datasets would be the real
+test (a demo).
+
+Open: that demo; a `BeamSearch` counterpart (return the final beam
+rather than its best rule).
+
 ## 0.3.0: every native learner on any data representation
 
 **Principle.** Learners are written against the `DataRepresentation`

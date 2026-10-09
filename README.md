@@ -1257,11 +1257,17 @@ representation, since only the components touch the data. Where an
 algorithm also has a much faster implementation in one piece, that is
 kept as a separate learner under its own name, learning the same models.
 
-CPAR is the example. `CPAR` is assembled from `FoilGain`,
-`WeightedCovering(MultiplicativeReweighting, PositiveWeightBelow)`, the
-SeCo searches' search primitives (count every open condition at once,
-score them with one `batch_score` call, build only the rules followed,
-with constraint propagation) and `TopKMeanCombiner`. `DenseCPAR` scores
+CPAR is the example. `CPAR` is a configuration of the SeCo framework
+(see *Separate-and-conquer*): `FoilGain` as the heuristic, a gain ascent
+that branches into copies of the rule at nearly-as-good conditions
+(`GainAscentHillClimbing(min_gain=0.7, branch_similarity=0.99)`, which
+yields several rules per search), `WeightedCovering(MultiplicativeReweighting,
+PositiveWeightBelow)` as the covering, and `TopKMeanCombiner` to predict;
+the search counts every open condition at once, scores them with one
+`batch_score` call and builds only the rules followed, with constraint
+propagation. Nothing CPAR-specific is left in the class but that choice
+of parts -- and the branching search is now a part any SeCo learner can
+use. `DenseCPAR` scores
 every feature of a search node in one matrix product over a dense copy
 of the data, with no propagation. Both learn the same models (tested);
 `DenseCPAR` is 2-4x faster, but needs a `BooleanDataRepresentation`
@@ -1302,7 +1308,7 @@ exchangeable building blocks:
 
 | building block | options |
 |---|---|
-| search | `BeamSearch(beam_width)` (keeps the best `beam_width` candidates, returns the best rule seen); `HillClimbing` (one candidate, stops at a local optimum of the heuristic); `GainAscentHillClimbing` (the only search for a gain heuristic such as `FoilGain`, which scores a refinement relative to its parent) |
+| search | `BeamSearch(beam_width)` (keeps the best `beam_width` candidates, returns the best rule seen); `HillClimbing` (one candidate, stops at a local optimum of the heuristic); `GainAscentHillClimbing` (the only search for a gain heuristic such as `FoilGain`, which scores a refinement relative to its parent; `min_gain=` raises the bar from any positive gain, and `branch_similarity=` makes it yield several rules, see below) |
 | heuristic | any `RuleHeuristic` -- see *Rule-evaluation heuristics* |
 | where the search starts | `EmptyRuleAllFeatures` (the empty rule, all features open -- default); `FeatureSubset`; `SeedExample` (a rule that must keep covering one chosen example, as in AQ) |
 | data preparation | `NoSplit` (default); `GrowPruneSplit` (grow on one part, prune on a held-out part -- IREP, RIPPER) |
@@ -1326,12 +1332,30 @@ can still be overridden through the constructor:
 | `PFoil` (Mooney 1995; Quinlan 1990) | `GainAscentHillClimbing` | `FoilGain` | Quinlan's encoding-length restriction, `stopping` | |
 | `PFossil` (Fürnkranz 1994) | `HillClimbing` | `Correlation` | correlation below 0.3, `filtering` | |
 | `Pypper` (Cohen 1995) | `GainAscentHillClimbing`, not stopping at a gain peak | `FoilGain` | at least two covered positives | `GrowPruneSplit` (2/3 grow, 1/3 prune) + `ReducedErrorPruning`; covering stops on the encoding-length restriction or a pruned rule below 0.5 precision; then `ReplaceReviseOptimization` (`k=2` passes) |
+| `CPAR` (Yin & Han 2003) | `GainAscentHillClimbing(min_gain=0.7, branch_similarity=0.99)`: several rules per search | `FoilGain` | | `WeightedCovering(MultiplicativeReweighting(2/3), PositiveWeightBelow(0.05))`; predicts with `TopKMeanCombiner` -- see *Weighted covering* |
 
 ```python
 from pyrulearn.learners.seco import CN2, PFossil
 
 CN2(beam_width=1).fit(train_rep)                  # CN2 with a greedy search
 PFossil(correlation_threshold=None).fit(train_rep)   # FOSSIL without its cutoff
+```
+
+**Several rules per search.** A search can also yield several rules at
+once (`RuleSearch.search_all`; by default just the one `search` returns),
+and the covering loop then accepts each in turn -- judged on the scope
+they were all found in, each reweighting or removing the examples it
+covers. `GainAscentHillClimbing(branch_similarity=s)` is such a search:
+at every step it also follows each condition whose gain is at least `s`
+times the best one, as a copy of the rule grown on the same way, and
+yields every copy's final rule. That's CPAR's search (Yin & Han 2003),
+which makes `CPAR` a configuration of `SeCo` like the learners above --
+and the branching usable with any of them:
+
+```python
+from pyrulearn.learners.seco import GainAscentHillClimbing, PFoil
+
+PFoil(search=GainAscentHillClimbing(branch_similarity=0.9)).fit(train_rep)   # FOIL with copies
 ```
 
 A new variant is just a `SeCo` with its own blocks -- here the plain
@@ -1438,13 +1462,16 @@ the positives it covers are multiplied by `decay` (2/3,
 predicted by `TopKMeanCombiner`: the class whose best `k` (5) covering
 rules have the highest mean expected accuracy `(nc + 1) / (n + K)`
 (`GeneralizedMEstimate(m=K, cost=1/K)` for `K` classes). The combiner is
-usable with any rule set: `TopKMeanCombiner(heuristic, k)`. Each part is a
-constructor argument: `heuristic=` (a `GainHeuristic`, default
-`FoilGain()`; `DeltaGain(h)` turns any heuristic into one), `covering=`
-(default `WeightedCovering(MultiplicativeReweighting(decay),
-PositiveWeightBelow(min_total_weight))`) and `combiner=`.
-`model=ConceptCascade` and `model=PairwiseModel` decompose the classes
-differently, as for the SeCo learners.
+usable with any rule set: `TopKMeanCombiner(heuristic, k)`. `CPAR` is a
+`SeCo` configuration (see *Separate-and-conquer*: the search is
+`GainAscentHillClimbing(min_gain, branch_similarity=gain_similarity)`),
+and each part is a constructor argument: `heuristic=` (a
+`GainHeuristic`, default `FoilGain()`; `DeltaGain(h)` turns any heuristic
+into one), `covering=` (default
+`WeightedCovering(MultiplicativeReweighting(decay),
+PositiveWeightBelow(min_total_weight))`) and `combiner=`. Like every
+SeCo learner it also decomposes the classes differently on request
+(`model=ConceptCascade`, `model=PairwiseModel`).
 
 ```python
 from pyrulearn.learners.cpar import CPAR

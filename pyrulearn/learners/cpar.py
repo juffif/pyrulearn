@@ -11,14 +11,14 @@ by the mean expected accuracy of its best `k` rules covering the example.
 
 Two implementations of the same algorithm, learning the same models:
 
-- `CPAR` is assembled from the package's components -- the growing
-  criterion is a `GainHeuristic` (`FoilGain`), the covering loop a
-  `pyrulearn.learners.seco.CoveringStrategy` (`WeightedCovering` with
-  `MultiplicativeReweighting` and `PositiveWeightBelow`), the search the
-  SeCo searches' lazy, constraint-aware primitives, the prediction a
-  `pyrulearn.combiners.TopKMeanCombiner`, multi-class handling
-  `DecomposingLearner`. Any of them can be exchanged, and it runs on
-  every data representation.
+- `CPAR` is a configuration of the separate-and-conquer framework
+  `pyrulearn.learners.seco.SeCo`: `FoilGain` as the heuristic,
+  `GainAscentHillClimbing(min_gain=..., branch_similarity=...)` as the
+  search (the branching is what yields several rules per search),
+  `WeightedCovering(MultiplicativeReweighting, PositiveWeightBelow)` as
+  the covering, and `pyrulearn.combiners.TopKMeanCombiner` for
+  prediction. Every part can be exchanged, and it runs on every data
+  representation.
 - `DenseCPAR` is the same algorithm specialized for speed: it scores
   every feature of a search node in one matrix product over a dense
   float copy of `data.X`, without constraint propagation, so it needs a
@@ -32,7 +32,7 @@ the two off.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 
@@ -41,32 +41,33 @@ from ..data import BooleanDataRepresentation
 from ..heuristics import FoilGain, GainHeuristic, GeneralizedMEstimate, RuleStats
 from ..models import ConceptModel, ConceptSet, MajorityClass, annotate_default_rule, annotate_rules
 from ..rule import Rule
-from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, DecomposingLearner, NativeRuleLearner, produces
+from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
 from .seco import (
-    CoveringStrategy, MultiplicativeReweighting, PositiveWeightBelow, WeightedCovering,
-    handle_for, live_open_children, materialize_child, parent_closure, rank_best_first,
-    stats_from_handle,
+    CoveringStrategy, GainAscentHillClimbing, MultiplicativeReweighting, PositiveWeightBelow, SeCo,
+    SingleRuleLearner, WeightedCovering,
 )
 
 
 class _CPARParameters:
     """The parameters and the parts both implementations share."""
 
-    def __init__(
+    def _set_cpar_params(
         self,
-        decay: float = 2.0 / 3.0,
-        min_total_weight: float = 0.05,
-        min_gain: float = 0.7,
-        gain_similarity: float = 0.99,
-        k: int = 5,
-        max_length: Optional[int] = None,
-        max_rounds: int = 1000,
-        heuristic: Optional[GainHeuristic] = None,
-        covering: Optional[CoveringStrategy] = None,
-        combiner: Union[str, RuleCombiner, None] = None,
-    ):
+        decay: float,
+        min_total_weight: float,
+        min_gain: float,
+        gain_similarity: float,
+        k: int,
+        max_length: Optional[int],
+        max_rounds: int,
+        heuristic: Optional[GainHeuristic],
+        covering: Optional[CoveringStrategy],
+        combiner: Union[str, RuleCombiner, None],
+    ) -> None:
         if not 0.0 < gain_similarity <= 1.0:
             raise ValueError(f"gain_similarity must be in (0, 1], got {gain_similarity}")
+        if not min_gain > 0:
+            raise ValueError(f"min_gain must be positive (a condition changing nothing gains 0), got {min_gain}")
         if heuristic is not None and not isinstance(heuristic, GainHeuristic):
             raise ValueError(
                 f"CPAR needs a GainHeuristic (scored against the rule before the new condition), got "
@@ -91,36 +92,18 @@ class _CPARParameters:
         return self.heuristic if self.heuristic is not None else FoilGain()
 
     def _covering(self) -> CoveringStrategy:
+        """`covering`, or by default the paper's: positives covered by `k`
+        rules weigh ``decay ** k``, until the positives' weight is below
+        `min_total_weight` of the start, at most `max_rounds` rules."""
         if self.covering is not None:
             return self.covering
         return WeightedCovering(MultiplicativeReweighting(self.decay), PositiveWeightBelow(self.min_total_weight),
-                                max_rounds=None)
+                                max_rounds=self.max_rounds)
 
     def _combiner(self, n_classes: int) -> Union[str, RuleCombiner]:
         if self.combiner is not None:
             return self.combiner
         return TopKMeanCombiner(GeneralizedMEstimate(m=n_classes, cost=1.0 / n_classes), k=self.k)
-
-    def _covering_rounds(self, data: Any, positive: np.ndarray, base_w: np.ndarray,
-                         grow: Callable[[np.ndarray], list], covers: Callable[[Any], np.ndarray]) -> list:
-        """The outer loop for one class: until the covering strategy is
-        done, one search (`grow`, on the data's row weights times the
-        covering weights) and, for every rule it yields, one covering
-        update. `max_rounds` caps the searches, not the rules. A rule
-        found again still reweights but is kept once."""
-        covering = self._covering()
-        state = covering.start(data, positive)
-        found: Dict[Any, None] = {}
-        for _ in range(self.max_rounds):
-            if covering.exhausted(state):
-                break
-            rules = grow(base_w * state.scope)
-            if not rules:
-                break
-            for rule in rules:
-                found.setdefault(rule, None)
-                covering.update(state, covers(rule))
-        return list(found)
 
     def _admits(self, gain: float, threshold: Optional[float]) -> bool:
         """Whether a child with this `gain` is followed: at least
@@ -131,8 +114,16 @@ class _CPARParameters:
     def _threshold(self, best: float) -> float:
         return max(best * self.gain_similarity, self.min_gain)
 
+    def _check_classes(self, data: Any) -> int:
+        if data.y is None:
+            raise ValueError(f"{type(self).__name__} needs data.y")
+        n_classes = len(np.unique(np.asarray(data.y)))
+        if n_classes < 2:
+            raise ValueError(f"{type(self).__name__} needs at least two classes")
+        return n_classes
 
-class CPAR(_CPARParameters, DecomposingLearner, NativeRuleLearner):
+
+class CPAR(_CPARParameters, SeCo):
     """CPAR (Yin & Han 2003). For each class `c` against the rest:
 
     1. Grow rules on the current example weights, FOIL-style: starting
@@ -156,8 +147,7 @@ class CPAR(_CPARParameters, DecomposingLearner, NativeRuleLearner):
     expected accuracy ``(nc + 1) / (n + K)`` (``K`` classes; the rules'
     training stats) of its best `k` rules covering the example
     (`TopKMeanCombiner` with `GeneralizedMEstimate(m=K, cost=1/K)`); rows
-    no rule covers get the majority class. `model=ConceptCascade` and
-    `model=PairwiseModel` (`DecomposingLearner`) decompose differently.
+    no rule covers get the majority class.
 
     Defaults are the paper's: ``decay = 2/3``, ``min_total_weight =
     0.05``, ``min_gain = 0.7``, ``gain_similarity = 0.99``, ``k = 5``.
@@ -165,114 +155,66 @@ class CPAR(_CPARParameters, DecomposingLearner, NativeRuleLearner):
     copying. Numeric attributes come already binarized
     (`pyrulearn.data.io.build_dataspec`); the data's row weights multiply
     with the covering weights. `max_length` (default none) caps rule
-    length, `max_rounds` the number of searches per class.
+    length, `max_rounds` the number of rules per class.
 
-    **Components.** Each step is a part that can be exchanged:
+    **A configuration of `SeCo`.** CPAR is the separate-and-conquer
+    framework with these building blocks -- nothing CPAR-specific is left
+    in this class but the choice of them:
 
-    - `heuristic` (default `FoilGain()`): the growing criterion. A
-      `GainHeuristic`, since `min_gain` and `gain_similarity` are
-      thresholds on an improvement over the rule before the condition;
-      `DeltaGain(h)` makes one from any plain heuristic `h`.
-    - `covering` (default ``WeightedCovering(MultiplicativeReweighting(
-      decay), PositiveWeightBelow(min_total_weight))``, which is what
-      `decay` and `min_total_weight` configure): how covered examples
-      are reweighted, and when a class is done -- e.g.
+    - heuristic: `heuristic` (default `FoilGain()`), a `GainHeuristic`,
+      since `min_gain` and `gain_similarity` are thresholds on an
+      improvement over the rule before the condition; `DeltaGain(h)`
+      makes one from any plain heuristic `h`;
+    - search: `GainAscentHillClimbing(max_conditions=max_length,
+      min_gain=min_gain, branch_similarity=gain_similarity)` -- step 1;
+      its `search_all` yields every lineage's rule, and `SeCo`'s covering
+      loop accepts each;
+    - covering: `covering` (default ``WeightedCovering(
+      MultiplicativeReweighting(decay), PositiveWeightBelow(
+      min_total_weight), max_rounds=max_rounds)``) -- steps 2 and 3; e.g.
       `AdditiveReweighting` (CN2-SD), or `RemovalCovering` for plain
-      separate-and-conquer.
-    - `combiner` (default the top-`k` mean above): how a prediction is
-      made from the covering rules.
-    - The search is built from `pyrulearn.learners.seco`'s primitives:
-      `live_open_children` counts every open condition of a node at once,
-      the heuristic's `batch_score` scores them in one call, and
-      `materialize_child` builds only the children followed, with the
-      constraint closure that removes everything a condition implies
-      (fixing one numeric threshold removes the attribute's other
-      thresholds too). That's why it works on every data representation.
+      separate-and-conquer;
+    - prediction: `combiner` (default the top-`k` mean above).
+
+    So the same parts combine differently elsewhere: `PFoil` with a
+    branching search, or `CPAR` with another covering. As a `SeCo` it also
+    decomposes classes like the other SeCo learners (`model=ConceptCascade`,
+    `model=PairwiseModel`), and runs on every data representation.
 
     `DenseCPAR` is the same algorithm specialized for speed on a
     `BooleanDataRepresentation`: same parameters, same models, 2-4x
     faster. An implied condition never changes coverage, so its FOIL
     gain is 0, below `min_gain` -- `DenseCPAR` never picks one either,
-    propagation only spares this version from scoring it.
+    the search's constraint propagation only spares `CPAR` from scoring it.
     """
 
-    def _default_model(self, data: Any) -> type:
-        return ConceptSet
-
-    def _fit_binary(self, data: Any, positive: Any, negative: Any = None) -> ConceptModel:
-        """The rules for `positive` against the rest of `data` (a pair
-        sub-problem: `data` holds only the two classes)."""
-        if data.y is None:
-            raise ValueError("CPAR needs data.y")
-        y = np.asarray(data.y)
-        base_w = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
-        rules = self._covering_rounds(
-            data, y == positive, base_w,
-            grow=lambda w: self._grow(data, positive, w),
-            covers=data.coverage,
-        )
-        return ConceptModel(annotate_rules(rules, data), label=positive, default_prediction=negative)
+    def __init__(
+        self,
+        decay: float = 2.0 / 3.0,
+        min_total_weight: float = 0.05,
+        min_gain: float = 0.7,
+        gain_similarity: float = 0.99,
+        k: int = 5,
+        max_length: Optional[int] = None,
+        max_rounds: int = 1000,
+        heuristic: Optional[GainHeuristic] = None,
+        covering: Optional[CoveringStrategy] = None,
+        combiner: Union[str, RuleCombiner, None] = None,
+        target_class: Any = None,
+    ):
+        self._set_cpar_params(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,
+                              heuristic, covering, combiner)
+        search = GainAscentHillClimbing(max_conditions=max_length, optimistic_pruning=False,
+                                        min_gain=min_gain, branch_similarity=gain_similarity)
+        SeCo.__init__(self, SingleRuleLearner(self._heuristic(), search=search),
+                      target_class=target_class, covering=self._covering())
 
     @produces(ConceptSet)
     def _fit_one_vs_rest(self, data: Any, **kw) -> ConceptSet:
-        if data.y is None:
-            raise ValueError("CPAR needs data.y")
-        n_classes = len(np.unique(np.asarray(data.y)))
-        if n_classes < 2:
-            raise ValueError("CPAR needs at least two classes")
+        n_classes = self._check_classes(data)
         model = super()._fit_one_vs_rest(data, **kw)
         model.combiner = self._combiner(n_classes)
         return model
-
-    def _grow(self, data: Any, target_class: Any, w: np.ndarray) -> List[Rule]:
-        """The rules one search yields on the weights `w`: the best-gain
-        lineage and every copy branched off at a nearly-as-good
-        condition."""
-        weighted = data.with_weights(w)
-        dataspec = weighted.spec
-        heuristic = self._heuristic()
-        results: List[Rule] = []
-        seen: Set[Rule] = set()
-
-        def grow(rule: Rule, mask, handle, closure, stats: RuleStats) -> None:
-            if rule in seen:
-                return
-            seen.add(rule)
-            if self.max_length is not None and rule.length() >= self.max_length:
-                results.append(rule)
-                return
-            if stats.tp <= 0:
-                return
-            features, tps, fps, fns, tns, same, dead = live_open_children(weighted, target_class, mask, handle, stats)
-            length = rule.length() + 1
-            gains = heuristic.batch_score(RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats)
-            gains[same] = 0.0           # changes nothing: no gain over the rule itself
-            chosen = []
-            threshold = None
-            for i in rank_best_first(gains).tolist():                 # stable: ties stay in feature order
-                gain = float(gains[i])
-                if not self._admits(gain, threshold):
-                    break
-                built = materialize_child(weighted, dataspec, rule, closure, mask, int(features[i]), handle)
-                if built is None:
-                    continue  # contradicts the rule: never a candidate
-                if threshold is None:
-                    threshold = self._threshold(gain)
-                chosen.append((built, RuleStats(tp=tps[i], fp=fps[i], fn=fns[i], tn=tns[i], length=length)))
-            if not chosen:
-                if rule.length() > 0:
-                    results.append(rule)
-                return
-            for (crule, cmask, chandle, cclosure), cstats in chosen[1:]:          # the copies
-                grow(crule, cmask - dead, chandle, cclosure, cstats)
-            (crule, cmask, chandle, cclosure), cstats = chosen[0]
-            grow(crule, cmask - dead, chandle, cclosure, cstats)
-
-        seed = Rule([], target=target_class, dataspec=dataspec)
-        handle0 = handle_for(weighted, seed, None)
-        stats0 = stats_from_handle(weighted, target_class, seed, handle0)
-        grow(seed, frozenset(range(seed.n_features)), handle0, parent_closure(dataspec, seed), stats0)
-        return results
 
 
 class DenseCPAR(_CPARParameters, NativeRuleLearner):
@@ -312,8 +254,8 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
         combiner: Union[str, RuleCombiner, None] = None,
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
-        super().__init__(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,
-                         heuristic, covering, combiner)
+        self._set_cpar_params(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,
+                              heuristic, covering, combiner)
         self.max_auto_convert_cells = max_auto_convert_cells
 
     def _default_model(self, data: Any) -> type:
@@ -322,12 +264,9 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
     @produces(ConceptSet)
     def _fit_native(self, data: Any, **kw) -> ConceptSet:
         data = self.ensure_representation(data, self.max_auto_convert_cells, purpose="DenseCPAR's dense-matrix scoring")
-        if data.y is None:
-            raise ValueError("DenseCPAR needs data.y")
+        self._check_classes(data)
         y = np.asarray(data.y)
         classes = [c.item() if isinstance(c, np.generic) else c for c in np.unique(y)]
-        if len(classes) < 2:
-            raise ValueError("DenseCPAR needs at least two classes")
         X = np.asarray(data.X, dtype=bool)
         Xf = X.astype(float)
         base_w = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
@@ -343,11 +282,21 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
 
     def _rules_for(self, X: np.ndarray, Xf: np.ndarray, positive: np.ndarray,
                    base_w: np.ndarray) -> List[Tuple[int, ...]]:
-        return self._covering_rounds(
-            None, positive, base_w,
-            grow=lambda w: self._grow(X, Xf, positive, w),
-            covers=lambda body: np.all(X[:, list(body)], axis=1),
-        )
+        """The covering loop for one class -- `SeCo`'s, for `CPAR`: until
+        the covering strategy is done, one search on the data's row weights
+        times the covering weights, then one covering update for every rule
+        it yields. A rule found again still reweights but is kept once."""
+        covering = self._covering()
+        state = covering.start(None, positive)
+        found: Dict[Tuple[int, ...], None] = {}
+        while not covering.exhausted(state):
+            bodies = self._grow(X, Xf, positive, base_w * state.scope)
+            if not bodies:
+                break
+            for body in bodies:
+                found.setdefault(body, None)
+                covering.update(state, np.all(X[:, list(body)], axis=1))
+        return list(found)
 
     def _grow(self, X: np.ndarray, Xf: np.ndarray, positive: np.ndarray,
               w: np.ndarray) -> List[Tuple[int, ...]]:

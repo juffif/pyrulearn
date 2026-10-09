@@ -1802,6 +1802,70 @@ def test_seed_covering_rules_carry_their_own_training_stats():
     print("AQR's seed-covering rules carry stats matching RuleStats.from_rule: OK")
 
 
+# ----------------------------------------------- several rules per search
+
+def _either_dataset(n=400, seed=0):
+    # y = a OR b: a and b are (about) equally good first conditions
+    rng = np.random.default_rng(seed)
+    raw = rng.random((n, 3)) < 0.5
+    y = np.where(raw[:, 0] | raw[:, 1], "pos", "neg")
+    return BooleanDataRepresentation(DataSpec(["a", "b", "c"]), raw, y)
+
+
+def test_search_all_is_search_without_branching():
+    rep = _either_dataset()
+    initial = EmptyRuleAllFeatures().initial_candidates(rep, "pos")
+    for search, heuristic in [(GainAscentHillClimbing(), FoilGain()), (HillClimbing(), Laplace()),
+                              (BeamSearch(beam_width=3), Laplace())]:
+        one = search.search(rep, "pos", heuristic, initial)
+        assert search.search_all(rep, "pos", heuristic, initial) == ([] if one is None else [one])
+    print("search_all without branching is search's one rule: OK")
+
+
+def test_branching_gain_ascent_yields_a_copy_at_each_near_tie():
+    rep = _either_dataset()
+    initial = EmptyRuleAllFeatures().initial_candidates(rep, "pos")
+    plain = GainAscentHillClimbing(branch_similarity=1.0).search_all(rep, "pos", FoilGain(), initial)
+    both = GainAscentHillClimbing(branch_similarity=0.5).search_all(rep, "pos", FoilGain(), initial)
+    assert len(plain) == 1
+    assert {r.pos for r in both} == {(0,), (1,)}                  # a and b, from one search
+    # search still returns the best-gain lineage alone
+    best = GainAscentHillClimbing(branch_similarity=0.5).search(rep, "pos", FoilGain(), initial)
+    assert best in both and len([best]) == 1
+    # min_gain: a gain of at least this, not just any positive gain
+    stuck = GainAscentHillClimbing(min_gain=1e9).search_all(rep, "pos", FoilGain(), initial)
+    assert [r.length() for r in stuck] == [0]                     # no move: the seed, as `search` returns
+    assert GainAscentHillClimbing(min_gain=1e9, branch_similarity=0.5).search_all(
+        rep, "pos", FoilGain(), initial) == []                    # branching never yields the empty seed
+    with pytest.raises(ValueError):
+        GainAscentHillClimbing(min_gain=0.0)
+    with pytest.raises(ValueError):
+        GainAscentHillClimbing(branch_similarity=1.5)
+    print("branching gain ascent yields a copy at each near-tie: OK")
+
+
+def test_seco_accepts_every_rule_of_a_branching_search():
+    rep = _either_dataset()
+    plain = PFoil(target_class="pos").fit(rep)
+    branching = PFoil(target_class="pos", search=GainAscentHillClimbing(branch_similarity=0.5)).fit(rep)
+    assert len(branching.rules) >= len(plain.rules)
+    assert all(r.target == "pos" and r.length() > 0 for r in branching.rules)
+    # PFoil's stopping criterion still applies per lineage
+    assert np.mean(np.asarray(branching.predict(rep)) == rep.y) >= np.mean(np.asarray(plain.predict(rep)) == rep.y) - 0.05
+    print("SeCo accepts every rule a branching search yields: OK")
+
+
+def test_cpar_is_a_seco_configuration():
+    from pyrulearn.learners.cpar import CPAR
+    cpar = CPAR()
+    assert isinstance(cpar, SeCo)
+    search = cpar.single_rule_learner.search
+    assert type(search) is GainAscentHillClimbing
+    assert (search.min_gain, search.branch_similarity) == (0.7, 0.99)
+    assert isinstance(cpar.single_rule_learner.heuristic, FoilGain)
+    print("CPAR is a SeCo configuration: OK")
+
+
 if __name__ == "__main__":
     test_beam_search_finds_perfect_conjunction()
     test_hill_climbing_finds_the_perfect_conjunction_with_foilgain()

@@ -154,6 +154,24 @@ class RuleSearch(ABC):
     ) -> Optional[Rule]:
         raise NotImplementedError
 
+    def search_all(
+        self,
+        data: BooleanDataRepresentation,
+        target_class: Any,
+        heuristic: RuleHeuristic,
+        initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
+        example_mask: Optional[np.ndarray] = None,
+        filtering: Optional[PrePruningCriterion] = None,
+        stopping: Optional[PrePruningCriterion] = None,
+    ) -> List[Rule]:
+        """Every rule one search yields -- for a search that can yield
+        several (`GainAscentHillClimbing` with `branch_similarity`, CPAR's),
+        in the order they were found; `SeCo`'s covering loop accepts each.
+        Default: just `search`'s rule (none if it found nothing)."""
+        rule = self.search(data, target_class, heuristic, initial_candidates,
+                           example_mask=example_mask, filtering=filtering, stopping=stopping)
+        return [] if rule is None else [rule]
+
 
 def handle_for(data, rule: Rule, example_mask: Optional[np.ndarray]):
     """The `data` cover handle for `rule`: `initial_cover`
@@ -951,6 +969,10 @@ class HillClimbing(RuleSearch):
         # exact stats must tie, not win by a rounding difference
         return batch_score_one(heuristic, parent_stats)
 
+    def _improves(self, value: Score, threshold: Score) -> bool:
+        """Whether a child scoring `value` is worth moving to."""
+        return value > threshold
+
     def _optimistic_stop(
         self, heuristic: RuleHeuristic, stats: RuleStats, best_stats: Optional[RuleStats],
     ) -> bool:
@@ -1040,7 +1062,7 @@ class HillClimbing(RuleSearch):
             best_child: Optional[Tuple[Rule, FrozenSet[int], Any, Any, RuleStats]] = None
             # stable: equal scores stay in feature order, the child a strict `>` scan keeps
             for i in rank_best_first(values).tolist():
-                if self.stop_at_local_optimum and score_at(values, i) <= threshold:
+                if self.stop_at_local_optimum and not self._improves(score_at(values, i), threshold):
                     break  # local optimum -- no child beats the current rule
                 built = materialize_child(data, dataspec, rule, closure, mask, int(features[i]), handle)
                 if built is not None:
@@ -1064,6 +1086,108 @@ class HillClimbing(RuleSearch):
         if is_eligible(rule, stats):
             return rule
         return last_eligible[0] if last_eligible is not None else None
+
+    def search_all(
+        self,
+        data: BooleanDataRepresentation,
+        target_class: Any,
+        heuristic: RuleHeuristic,
+        initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
+        example_mask: Optional[np.ndarray] = None,
+        filtering: Optional[PrePruningCriterion] = None,
+        stopping: Optional[PrePruningCriterion] = None,
+    ) -> List[Rule]:
+        """With `branch_similarity` (`GainAscentHillClimbing`): every
+        lineage's rule, see `_branching_walk`. Otherwise `search`'s."""
+        if getattr(self, "branch_similarity", None) is None:
+            return super().search_all(data, target_class, heuristic, initial_candidates,
+                                      example_mask=example_mask, filtering=filtering, stopping=stopping)
+        if len(initial_candidates) != 1:
+            raise ValueError(f"{type(self).__name__}.search_all needs exactly one initial candidate")
+        self._reject_heuristic(heuristic)
+        return self._branching_walk(data, target_class, heuristic, initial_candidates[0],
+                                    example_mask, filtering, stopping)
+
+    def _branching_walk(self, data, target_class, heuristic, initial, example_mask, filtering, stopping) -> List[Rule]:
+        """The single-lineage walk of `search`, except that at every step
+        it also follows each child scoring at least ``best *
+        branch_similarity`` (and worth moving to at all) -- a copy of the
+        lineage, grown on the same way. CPAR's search (Yin & Han 2003).
+        Copies are grown before the best child, depth first, and a rule
+        reached a second time isn't grown again. Each lineage ends where
+        `search`'s walk would, with the same `filtering`/`stopping`
+        fallback, and yields that rule (not the length-0 seed); the result
+        is every lineage's rule, in the order found, without repeats."""
+        dataspec = data.spec
+        results: Dict[Rule, None] = {}
+        seen: Set[Rule] = set()
+
+        def is_eligible(rule: Rule, stats: RuleStats) -> bool:
+            if stats.tp == 0:
+                return False
+            return all(crit is None or crit.accept(rule, stats, data, target_class, example_mask)
+                       for crit in (filtering, stopping))
+
+        def end(rule: Optional[Rule]) -> None:
+            if rule is not None and rule.length() > 0:
+                results.setdefault(rule, None)
+
+        def walk(rule, mask, handle, closure, stats, last_eligible, depth) -> None:
+            if rule in seen:
+                return
+            seen.add(rule)
+            fallback = last_eligible[0] if last_eligible is not None else None
+            natural_end = rule if is_eligible(rule, stats) else fallback
+            if not mask or (self.max_conditions is not None and depth >= self.max_conditions):
+                return end(natural_end)
+            if stats.tp == 0:
+                return end(natural_end)
+            if not self.stop_at_local_optimum and stats.fp == 0:
+                return end(natural_end)
+            if self.stop_at_local_optimum and self.optimistic_pruning and self._optimistic_stop(
+                heuristic, stats, last_eligible[1] if last_eligible is not None else None
+            ):
+                return end(natural_end)
+            threshold = self._improvement_threshold(heuristic, stats)
+            features, tps, fps, fns, tns, same, dead = live_open_children(data, target_class, mask, handle, stats)
+            length = rule.length() + 1
+            values = self._child_scores(heuristic, RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats)
+            for i in np.flatnonzero(same).tolist():
+                set_score(values, i, threshold)
+            if closure is _UNSET:
+                try:
+                    closure = parent_closure(dataspec, rule)
+                except ValueError:
+                    return end(natural_end)
+            chosen = []
+            cut = None
+            for i in rank_best_first(values).tolist():
+                value = score_at(values, i)
+                if self.stop_at_local_optimum and not self._improves(value, threshold):
+                    break
+                if cut is not None and value < cut:
+                    break
+                built = materialize_child(data, dataspec, rule, closure, mask, int(features[i]), handle)
+                if built is None:
+                    continue  # contradicts the rule: never a candidate
+                if cut is None:  # the best child: copies must come within branch_similarity of it
+                    cut = value * self.branch_similarity if value > 0 else value
+                chosen.append((built, RuleStats(tp=tps[i], fp=fps[i], fn=fns[i], tn=tns[i], length=length)))
+            if not chosen:
+                return end(natural_end)
+            for (child, cmask, chandle, cclosure), cstats in chosen[1:] + chosen[:1]:   # copies first
+                if stopping is not None and stopping.evaluate(child, cstats, data, target_class, example_mask):
+                    end(child if stopping.accept(child, cstats, data, target_class, example_mask) else fallback)
+                    continue
+                child_last = (child, cstats) if is_eligible(child, cstats) else last_eligible
+                walk(child, cmask - dead, chandle, cclosure, cstats, child_last, depth + 1)
+
+        rule, mask = initial
+        handle = handle_for(data, rule, example_mask)
+        stats = stats_from_handle(data, target_class, rule, handle)
+        last_eligible = (rule, stats) if rule.length() > 0 and is_eligible(rule, stats) else None
+        walk(rule, mask, handle, _UNSET, stats, last_eligible, 0)
+        return list(results)
 
 
 class GainAscentHillClimbing(HillClimbing):
@@ -1099,7 +1223,38 @@ class GainAscentHillClimbing(HillClimbing):
     point gain goes non-positive -- toward consistency (`max_conditions`
     and a `stopping` criterion still bound it). Only useful feeding a
     `ReducedErrorPruning` post-processor; see `HillClimbing`'s docstring.
+
+    `min_gain` (default none) raises the bar from "any positive gain" to
+    "a gain of at least `min_gain`" (CPAR's 0.7). It must be positive: a
+    condition that changes nothing gains exactly 0.
+
+    `branch_similarity` (default none) makes the search yield several
+    rules (`search_all`; `search` still returns the best-gain lineage's
+    rule alone): at every step it also follows each child whose gain is
+    at least ``branch_similarity`` times the best one (and worth moving to
+    at all), as a copy of the rule that is grown on the same way -- CPAR's
+    search (Yin & Han 2003), usable in any `SeCo` learner. See
+    `HillClimbing._branching_walk`.
     """
+
+    def __init__(
+        self,
+        max_conditions: Optional[int] = None,
+        optimistic_pruning: bool = True,
+        stop_at_local_optimum: bool = True,
+        min_gain: Optional[float] = None,
+        branch_similarity: Optional[float] = None,
+    ):
+        super().__init__(max_conditions, optimistic_pruning, stop_at_local_optimum)
+        if min_gain is not None and not min_gain > 0:
+            raise ValueError(f"min_gain must be positive (a condition changing nothing gains 0), got {min_gain}")
+        if branch_similarity is not None and not 0.0 < branch_similarity <= 1.0:
+            raise ValueError(f"branch_similarity must be in (0, 1], got {branch_similarity}")
+        self.min_gain = min_gain
+        self.branch_similarity = branch_similarity
+
+    def _improves(self, value: Score, threshold: Score) -> bool:
+        return value > threshold if self.min_gain is None else value >= self.min_gain
 
     def _reject_heuristic(self, heuristic: RuleHeuristic) -> None:
         if not isinstance(heuristic, GainHeuristic):
@@ -1119,7 +1274,7 @@ class GainAscentHillClimbing(HillClimbing):
     def _optimistic_stop(
         self, heuristic: RuleHeuristic, stats: RuleStats, best_stats: Optional[RuleStats],
     ) -> bool:
-        return heuristic.score(_optimistic_stats(stats), stats) <= 0
+        return not self._improves(heuristic.score(_optimistic_stats(stats), stats), 0.0)
 
 
 class SearchSpaceInit(ABC):
@@ -1476,6 +1631,24 @@ class SingleRuleLearner:
         if rule is None:
             return None
         return self.postprocessing.postprocess(rule, data, target_class, context)
+
+    def learn_rules(
+        self, data: BooleanDataRepresentation, target_class: Any,
+        example_mask: Optional[np.ndarray] = None,
+        space_init: Optional[SearchSpaceInit] = None,
+    ) -> List[Rule]:
+        """Every rule one search yields (`RuleSearch.search_all`), each
+        post-processed -- one rule, or none, unless the search branches.
+        What `SeCo`'s covering loop calls; same preparation and search
+        space as `learn_one_rule`."""
+        si = space_init if space_init is not None else self.space_init
+        search_mask, context = self.preparation.prepare(data, target_class, example_mask)
+        initial = si.initial_candidates(data, target_class, search_mask)
+        rules = self.search.search_all(
+            data, target_class, self.heuristic, initial,
+            example_mask=search_mask, filtering=self.filtering, stopping=self.stopping,
+        )
+        return [self.postprocessing.postprocess(rule, data, target_class, context) for rule in rules]
 
 
 class RuleSetOptimizer(ABC):
@@ -2195,29 +2368,35 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
 
             if seeded:
                 seed = space_init.pick_seed(data, target, remaining)
-                rule = self.single_rule_learner.learn_one_rule(
-                    data, target, remaining, space_init=SeedExample(strategy="index", index=seed),
-                )
+                found = self._learn_rules(data, target, remaining, SeedExample(strategy="index", index=seed))
             else:
-                rule = self.single_rule_learner.learn_one_rule(data, target, remaining)
-            stats = (RuleStats.from_rule(rule, data, target, example_mask=remaining)
-                     if rule is not None else None)
-            if rule is not None and stats.tp > 0 and rule.length() == 0:
-                break  # unconditional -- the default-rule mechanism covers this
-            acceptable = (rule is not None and stats.tp > 0 and not (
-                self.stop_covering is not None
-                and self.stop_covering.evaluate(rule, stats, data, target, remaining)
-            ))
-            if not acceptable:
-                # nothing acceptable found (no rule, one covering nothing
-                # new, or one `stop_covering` rejects)
+                found = self._learn_rules(data, target, remaining)
+            # one rule per search, unless the search branches (CPAR's): then
+            # each, judged on the scope it was found in, then reweighting
+            outcome = "next" if found else "unacceptable"
+            for rule in found:
+                if self.max_rules is not None and len(rules) >= self.max_rules:
+                    outcome = "stop"
+                    break
+                stats = RuleStats.from_rule(rule, data, target, example_mask=remaining)
+                if stats.tp > 0 and rule.length() == 0:
+                    outcome = "stop"  # unconditional -- the default-rule mechanism covers this
+                    break
+                if stats.tp == 0 or (self.stop_covering is not None
+                                     and self.stop_covering.evaluate(rule, stats, data, target, remaining)):
+                    outcome = "unacceptable"
+                    break
+                rules.append(rule)
+                covering.update(state, rule.covers_data_packed(data))
+            if outcome == "stop":
+                break
+            if outcome == "unacceptable":
+                # nothing (more) acceptable found (no rule, one covering
+                # nothing new, or one `stop_covering` rejects)
                 if seeded:
                     covering.drop(state, seed)
                     continue
                 break
-
-            rules.append(rule)
-            covering.update(state, rule.covers_data_packed(data))
 
         rules = list(dict.fromkeys(rules))   # a rule found again (weighted covering) counts once
         if self.optimization is not None:
@@ -2225,6 +2404,17 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
                 rules, data, target, self.single_rule_learner, example_mask=None,
             )
         return rules
+
+    def _learn_rules(self, data: BooleanDataRepresentation, target: Any, remaining: np.ndarray,
+                     space_init: Optional[SearchSpaceInit] = None) -> List[Rule]:
+        """`single_rule_learner.learn_rules` -- or, for a single-rule
+        learner of one's own with only `learn_one_rule`, its rule."""
+        learner = self.single_rule_learner
+        if hasattr(learner, "learn_rules"):
+            return learner.learn_rules(data, target, remaining, space_init=space_init)
+        rule = (learner.learn_one_rule(data, target, remaining) if space_init is None
+                else learner.learn_one_rule(data, target, remaining, space_init=space_init))
+        return [] if rule is None else [rule]
 
     @produces(ConceptModel)
     def _fit_covering(self, data: BooleanDataRepresentation, *,
