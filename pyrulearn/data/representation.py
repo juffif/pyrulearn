@@ -198,6 +198,21 @@ class DataRepresentation(ABC):
         than something every refinement step pays for."""
         raise NotImplementedError
 
+    def batch_cover_sums(self, handle: Any, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
+        """``values`` (``(n_samples, m)``, any per-row numbers -- e.g. a
+        boosting loss's gradients) summed over the rows covered by
+        `handle` refined by each feature in `feature_indices`: an ``(m,
+        len(feature_indices))`` array. The generalization of class
+        counting a boosting learner's search needs. This default refines
+        and sums once per feature, so it works on every representation;
+        a representation can override it with a batched version
+        (`BooleanDataRepresentation` does, as one matrix product)."""
+        values = np.asarray(values, dtype=float)
+        out = np.zeros((values.shape[1], len(feature_indices)))
+        for j, f in enumerate(feature_indices):
+            out[:, j] = values[self.cover_rows(self.refine_cover(handle, f))].sum(axis=0)
+        return out
+
     # -- negation-feature toggling -----------------------------------
 
     def without_negations(self) -> "DataRepresentation":
@@ -371,6 +386,15 @@ class BooleanDataRepresentation(DataRepresentation):
     def cover_rows(self, handle) -> np.ndarray:
         return handle[0]
 
+    def batch_cover_sums(self, handle, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
+        """`DataRepresentation.batch_cover_sums` as one matrix product over
+        the covered rows with a nonzero value only -- with a subsample,
+        the rows outside it carry zeros and are skipped."""
+        values = np.asarray(values, dtype=float)
+        rows = np.flatnonzero(handle[0] & (values != 0).any(axis=1))
+        cols = self.X[np.ix_(rows, np.asarray(feature_indices, dtype=np.intp))]
+        return values[rows].T @ cols
+
     def chain_cover_counts(
         self, handle, positive_class: Any, feature_indices: Sequence[int]
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -420,7 +444,7 @@ class BooleanDataRepresentation(DataRepresentation):
         -- *any* open features, not necessarily from the same attribute
         or even numeric (unlike `chain_cover_counts`, no monotonic chain
         assumed) -- computed for every one of them in a single matrix
-        multiply, the way `pyrulearn.learners.boosting.ENDER`'s `_grow`
+        multiply, the way `pyrulearn.learners.boosting.DenseENDER`'s `_grow`
         scores every candidate feature at once (``(t * c).T @ Xf``)
         instead of counting one at a time. What
         `pyrulearn.learners.seco.count_open_children` -- and so every

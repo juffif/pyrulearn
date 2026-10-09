@@ -181,6 +181,64 @@ instead of 14x), `diabetes` (112) 1.2-1.6x, `kr-vs-kp` (76) ~1.0x --
 the gain follows the number of open features per node. AQR unchanged
 (~1.0x everywhere), so its time is elsewhere.
 
+## ENDER on the representation's primitives
+
+**Done (2026-10-09).** `ENDER` (and `Boomer`) grow a rule the way the
+lazy searches do: walk a cover handle, sum every open condition's
+impurity terms with one `DataRepresentation.batch_cover_sums` call per
+step (generic: one refinement per condition; `BooleanDataRepresentation`:
+one matrix product over the covered rows with a nonzero term), and build
+only the condition added, with constraint propagation. The impurity
+criterion is a component (`ImpurityCriterion`: `ConstantStep`,
+`Gradient`, `GradientBoosting`, `Simultaneous`, `Newton`), like the loss.
+The dense implementation stays as `DenseENDER`/`DenseBoomer`. Same
+models (tested on 24 configurations, and on every representation).
+
+**Measured** (dense vs. modular on Boolean, 100 rules, best of 3, same
+machine):
+
+| dataset (rows x features) | constant step (default, 25% subsample) | Newton, all rows |
+|---|--:|--:|
+| diabetes (768 x 112) | 1.1x | 1.1x |
+| sonar (208 x 1080) | 1.5x | 2.9x |
+| kr-vs-kp (3196 x 76) | 0.9x | 4.4x |
+| spambase (4601 x 998) | 3.3x (15.1s vs. 4.6s) | 7.7x (45.2s vs. 5.9s) |
+
+With a subsample, the rows outside it carry zero terms and are skipped
+(spambase's default went from 27.6x to 3.3x with that). Newton steps on
+all rows are the expensive case: every step copies the covered rows of
+the open conditions, where `DenseENDER` multiplies its precomputed float
+matrix.
+
+**Rounding could add conditions that change nothing -- fixed, in both
+versions and in the searches.** A condition that drops no row carrying
+weight has exactly the rule's own impurity (or tp/fp), but summing a
+different set of rows -- the covered rows only, as `batch_cover_counts`
+and `batch_cover_sums` do -- can round it a few ulp lower, and a search
+then takes it for a strict improvement. Seen in `ENDER` on `kr-vs-kp`
+and, more surprisingly, in `DenseENDER` on `spambase`, whose sums always
+run over all rows: a matrix product can round different output columns
+differently, and `capital_run_length_total < 693.5` was added (by 4e-15)
+to a rule already holding a stricter threshold on the same attribute.
+Now every search counts the contributing rows exactly (integers): a
+condition keeping all of them gets exactly the rule's own score
+(`count_open_children`'s `same`, `batch_cover_counts`' `keeps_all`, an
+indicator column in `ENDER`'s sums). Unweighted counts were always exact;
+the SeCo learners and `CPAR` learned the same models as before the fix,
+a few percent slower.
+
+Still open: batched `batch_cover_counts`/`batch_cover_sums` for sparse
+data and N-lists -- sparse: slice the covered rows out of the CSR it
+already keeps and `bincount` their column indices with the rows' values
+(cost: the nonzeros of the covered rows); N-list: group the covered rows
+by the tree node their path ends at (its path mask is the row's whole
+feature set, so the depth problem that broke both `chain_cover_counts`
+attempts doesn't arise), one `bincount` per node and one product over
+the nodes' path bits (cost: distinct row patterns, not rows), measured
+against plain horizontal counting through a CSR built from `_row_feats`.
+Weighted counts on those representations get no `same` marks yet. A
+dense vs. modular demo.
+
 ## 0.3.0: every native learner on any data representation
 
 **Principle.** Learners are written against the `DataRepresentation`
@@ -203,24 +261,18 @@ PFoil, PFossil and Pypper, PyLORD, the rule models, pruning and
 evaluation. Four implementations turn the data into a dense matrix
 (`data.X`) and work on its columns with numpy instead:
 
-- `ENDER` (and with it `Boomer`) -- **investigated and decided to stay
-  this way (2026-10-07/08), not an open item any more.** A
-  representation-generic rewrite (`_grow` scoring through
-  `initial_cover`/`refine_cover` instead of matrix columns, the way
-  `WeightedCovering` does) was prototyped and measured 10-500x slower
-  even before batching, with no plausible fix -- see the "Design
-  decisions" section below for the numbers and why N-list's own
-  per-search caching doesn't transfer to boosting's per-round-changing
-  gradient. Converts explicitly instead, via the shared mechanism below;
-  still correct on every representation (just always at dense-matrix
-  cost), still tested for identical rules across them.
 - `OptimalRuleBoosting`,
 - `LRI`.
 
-`CPAR` was on this list; it now runs on every representation, built from
-the SeCo search primitives, and the dense-matrix version stays on purpose
-as `DenseCPAR`, for speed (same models, 2-4x faster) -- see "Build
-only the children a search follows" below.
+`CPAR` and `ENDER` (with `Boomer`) were on this list; both now run on
+every representation, built from the SeCo search primitives, and the
+dense-matrix versions stay on purpose as `DenseCPAR` (same models, 2-4x
+faster) and `DenseENDER`/`DenseBoomer` (same models, 1-8x faster) -- see
+"Build only the children a search follows" and "ENDER on the
+representation's primitives" below. (`ENDER` had been investigated on
+2026-10-07/08 and kept dense: a representation-generic rewrite measured
+10-500x slower -- before the lazy search, batch counting and the
+primitives below existed.)
 
 External learners reading `data.X` is fine: the external tools need a
 matrix anyway.

@@ -19,7 +19,7 @@ from pyrulearn import (
 from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data import DataSpecBuilder
 from pyrulearn.heuristics import RuleStats
-from pyrulearn.learners.boosting import ENDER
+from pyrulearn.learners.boosting import DenseENDER, ENDER
 from pyrulearn.learners.pylord import PyLORD
 from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil
 
@@ -119,15 +119,13 @@ def test_seco_learners_identical_across_representations(negation):
           f"(negation={negation}): OK")
 
 
-def test_ender_identical_across_representations():
-    """`ENDER` converts every representation to a dense matrix (`data.X`)
-    rather than searching through `initial_cover`/`refine_cover` --
-    deliberately, not yet (see `ROADMAP.md`'s "Design decisions" and
-    `ENDER`'s own "Data representation" docstring paragraph). That
-    conversion must still be correct on every representation, same as
-    the SeCo learners' real representation-independence is checked just
-    above -- this is the gap `ROADMAP.md`'s 0.3.0 "Tests" item flagged as
-    still open for `ENDER` specifically."""
+@pytest.mark.parametrize("cls", [ENDER, DenseENDER])
+def test_ender_identical_across_representations(cls):
+    """`ENDER` grows its rules through the representation's own primitives
+    (`initial_cover`/`refine_cover`/`batch_cover_sums`); `DenseENDER`
+    converts every representation to a dense matrix first. Both must
+    learn the same model on every representation -- and the same as each
+    other (`tests/test_boosting.py`)."""
     brep, ds = _dataset(n=300, k=12, seed=11)
     nrep = NListRepresentation.from_boolean(brep)
     pprep = PrePostNListRepresentation.from_boolean(brep)
@@ -137,7 +135,7 @@ def test_ender_identical_across_representations():
         return {(r.target, frozenset(l.feature for l in r.conditions), round(float(r.weight), 9))
                 for r in model.rules}
 
-    make = lambda: ENDER(n_rules=30, random_state=0)
+    make = lambda: cls(n_rules=30, random_state=0)
     mb, mn, mp, ms = make().fit(brep), make().fit(nrep), make().fit(pprep), make().fit(srep)
     kb = rules_of(mb)
     assert kb == rules_of(mn)

@@ -274,7 +274,7 @@ class NativeRuleLearner(RuleLearner):
     them is specific to one representation's storage, so there's
     nothing to convert. Set it when a learner instead commits to one (or
     several) representations' own storage -- a dense matrix
-    (`pyrulearn.learners.boosting.ENDER`), an N-list's vertical index
+    (`pyrulearn.learners.boosting.DenseENDER`), an N-list's vertical index
     (`pyrulearn.learners.associative.CARMiner`) -- and call
     `ensure_representation` at the top of the native fit method to
     convert anything else, bounded by `max_auto_convert_cells`.

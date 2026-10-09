@@ -279,3 +279,65 @@ def test_boomer_is_ender_with_boomers_defaults():
     model = Boomer(n_rules=50).fit(data)
     test = _data(seed=1)
     assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
+
+
+# ------------------------------------------------- ENDER vs. DenseENDER
+
+from pyrulearn.learners.boosting import (  # noqa: E402
+    Boomer, ConstantStep, DenseBoomer, DenseENDER, Gradient, GradientBoosting, Newton, Simultaneous,
+)
+
+
+def _numeric_data(n=300, seed=3):
+    import pandas as pd
+    from pyrulearn.data.io import binarize, build_dataspec
+    rng = np.random.default_rng(seed)
+    df = pd.DataFrame({"x": rng.normal(size=n), "z": rng.normal(size=n), "c": rng.choice(list("pqr"), n)})
+    y = np.where((df["x"] > 0.3) & (df["c"] != "q") | (df["z"] < -0.8), "pos", "neg")
+    df["y"] = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
+    spec = build_dataspec(df, target="y", max_intervals=6).build()
+    return BooleanDataRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
+
+
+ENDER_CONFIGS = [
+    dict(),
+    dict(method="gradient"),
+    dict(method="gradient_boosting"),
+    dict(method="newton", l2_regularization=1.0, subsample=1.0),
+    dict(method="simultaneous", loss="exponential"),
+    dict(loss="exponential"),
+    dict(loss="sigmoid"),
+    dict(max_length=2, early_stopping=True),
+]
+
+
+@pytest.mark.parametrize("kw", ENDER_CONFIGS, ids=lambda kw: ",".join(f"{k}={v}" for k, v in kw.items()) or "default")
+@pytest.mark.parametrize("make", [_data, _numeric_data, lambda: _data().with_weights(np.linspace(0.5, 2, 600))],
+                         ids=["boolean", "numeric", "weighted"])
+def test_ender_and_dense_ender_learn_the_same_model(kw, make):
+    # an implied condition never lowers the impurity strictly, so DenseENDER
+    # never picks one either; constraint propagation only spares ENDER from scoring it
+    data = make()
+    assert str(ENDER(n_rules=40, **kw).fit(data)) == str(DenseENDER(n_rules=40, **kw).fit(data))
+
+
+def test_impurity_criteria_are_components():
+    data = _numeric_data()
+    for name, criterion in [("constant_step", ConstantStep(0.2)), ("gradient", Gradient()),
+                            ("gradient_boosting", GradientBoosting()), ("newton", Newton())]:
+        assert str(ENDER(n_rules=30, method=criterion).fit(data)) == str(ENDER(n_rules=30, method=name).fit(data))
+    assert str(ENDER(n_rules=30, method=Simultaneous(), loss=ExponentialLoss()).fit(data)) == \
+        str(ENDER(n_rules=30, method="simultaneous", loss="exponential").fit(data))
+    other_beta = ENDER(n_rules=30, method=ConstantStep(1.0)).fit(data)
+    assert str(other_beta) != str(ENDER(n_rules=30).fit(data))       # the criterion's own beta is used
+    with pytest.raises(ValueError, match="exponential"):
+        ENDER(method=Simultaneous())
+    with pytest.raises(ValueError, match="convex"):
+        DenseENDER(method=Newton(), loss=SigmoidLoss())
+
+
+def test_boomer_and_dense_boomer_learn_the_same_model():
+    data = _numeric_data()
+    assert str(Boomer(n_rules=40).fit(data)) == str(DenseBoomer(n_rules=40).fit(data))
+    assert DenseBoomer().NATIVE_REPRESENTATIONS == (BooleanDataRepresentation,)
+    assert Boomer().NATIVE_REPRESENTATIONS is None

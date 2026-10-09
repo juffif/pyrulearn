@@ -55,7 +55,7 @@ def test_ensure_representation_converts_a_non_boolean_non_nlist_representation_t
     # Changed on purpose (2026-10-08): CARMiner used to run directly on
     # an unrecognized representation (correct, just slower, since
     # generate_cars only calls the universal data.coverage(rule)).
-    # NativeRuleLearner.ensure_representation (shared with ENDER, in the
+    # NativeRuleLearner.ensure_representation (shared with DenseENDER, in the
     # opposite direction) doesn't distinguish "needed for correctness"
     # from "just much faster", so a SparseDataRepresentation now gets
     # converted too, below the size threshold, like a Boolean one would.

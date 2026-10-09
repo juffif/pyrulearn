@@ -34,7 +34,10 @@ from ..heuristics import SlipperZ
 from ..models import LinearRuleModel, annotate_rules
 from ..rule import Rule, WeightedRule
 from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
-from .seco import AdaBoostReweighting, CoveringState, EmptyRuleAllFeatures, GrowPruneSplit, HillClimbing
+from .seco import (
+    AdaBoostReweighting, CoveringState, EmptyRuleAllFeatures, GrowPruneSplit, HillClimbing,
+    materialize_child, parent_closure,
+)
 
 
 class Slipper(NativeRuleLearner):
@@ -331,96 +334,134 @@ class SigmoidLoss(BoostingLoss):
 
 
 _LOSSES = {"logistic": LogisticLoss, "exponential": ExponentialLoss, "sigmoid": SigmoidLoss}
-_METHODS = ("constant_step", "gradient", "gradient_boosting", "simultaneous", "newton")
 
 
-class ENDER(NativeRuleLearner):
-    """ENDER: boosting of decision rules by forward stagewise minimization
-    of a loss (Dembczyński, Kotłowski & Słowiński, DMKD 2010; its MLRules
-    instance, ICML 2008), with a pluggable `BoostingLoss`.
+class ImpurityCriterion(ABC):
+    """How `ENDER` scores a candidate rule while growing it -- its
+    counterpart of a rule-evaluation heuristic, called the impurity
+    ``L(rule)`` in the paper (lower is better; a rule is kept only if
+    negative). Every criterion is a function of sums over the rule's
+    covered rows, so it has two parts:
 
-    The model keeps a score per class; each rule votes for one class with
-    a positive weight, and the class with the highest total wins. It
-    starts from a default rule (covering everything) for one class, with
-    the weight minimizing the loss. Then, for `n_rules` rounds:
+    - `terms` -- per-row, per-class quantities (``n x K`` arrays), zero
+      outside the subsample `in_sample`, computed once per boosting round
+      from the scores ``F``, the one-hot classes ``Y``, the row weights
+      ``d`` and the loss's derivatives ``G``/``H``;
+    - `impurity` -- the criterion from those terms summed over the
+      covered rows (one ``K x n_conditions`` array per term), for every
+      class and candidate condition at once.
 
-    1. Draw a subsample (`subsample` of the rows, without replacement).
-    2. Grow a rule on it: starting from the empty rule (impurity 0), add
-       the condition, and choose the class, that minimize the impurity
-       ``L(rule)`` of `method`, until no condition lowers it; the rule is
-       kept only if its impurity is negative. With ``g``/``h`` the loss's
-       first/second derivatives for a vote for the class, summed over the
-       covered rows:
+    `check` refuses a loss the criterion doesn't fit."""
 
-       - ``"constant_step"`` (CS, the default) -- the change of the loss
-         if the covered rows' score for the class rose by `beta`: works
-         for any loss, and `beta` trades off coverage against purity
-         (larger: smaller, purer rules);
-       - ``"gradient"`` (GD) -- ``g``: the most general rules (``beta ->
-         0`` of constant-step);
-       - ``"gradient_boosting"`` (GB) -- ``g / sqrt(covered weight)``;
-       - ``"simultaneous"`` (SM, `ExponentialLoss` only) -- the loss with
-         the rule's exact weight: ``-sqrt(W+) + sqrt(W-)``, ``W+``/``W-``
-         the weights of the covered examples of the voted/other class;
-       - ``"newton"`` -- ``g / sqrt(h)``, MLRules' criterion (convex
-         losses).
-    3. Give it the loss's weight (`BoostingLoss.response`: a Newton step
-       for `LogisticLoss`, the exact minimizer for `ExponentialLoss`,
-       `beta` for `SigmoidLoss`) computed on *all* rows -- which also
-       regularizes it -- shrink it by `shrinkage` (``nu``), and add it to
-       the scores.
+    def check(self, loss: BoostingLoss) -> None:
+        pass
 
-    Defaults are the paper's constant-step logit setting (CS-Log: ``beta
-    = 0.2``, ``nu = 0.1``, subsample 0.25, 500 rules), among its best and
-    usable for any number of classes; its best-ranked, CS-Exp, is
-    ``ENDER(loss="exponential")`` with the same settings. MLRules is
-    ``ENDER(method="newton", subsample=0.5)``. `LogisticLoss` handles any
-    number of classes; `ExponentialLoss` and `SigmoidLoss` two (as in the
-    paper, which also covers regression -- not here).
+    @abstractmethod
+    def terms(self, F, Y, d, G, H, loss: BoostingLoss, in_sample: np.ndarray) -> Tuple[np.ndarray, ...]:
+        raise NotImplementedError
 
-    `l2_regularization` (``lambda``, default 0) adds an L2 penalty on the
-    rule weights to the Newton steps -- ``-sum g / (sum h + lambda)`` for
-    the Newton-step weights (`LogisticLoss`, and the default rule) and
-    ``sum g / sqrt(sum h + lambda)`` for `method="newton"` -- as in
-    BOOMER (Rapp et al. 2020), whose single-output case is then
-    ``ENDER(method="newton", l2_regularization=...)``.
+    @abstractmethod
+    def impurity(self, sums: Tuple[np.ndarray, ...], l2_regularization: float) -> np.ndarray:
+        raise NotImplementedError
 
-    `early_stopping` is MLRules': the rows left out of each subsample are
-    a holdout set; a rule is acceptable if its error on the holdout rows
-    it covers is below that of guessing among the classes (``1 - 1/K``),
-    and growth stops once 8 of the last 10 rules weren't.
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{type(self).__name__}({params})"
 
-    The result is a `LinearRuleModel`; a rule found in several rounds
-    appears once, its weights summed, and the default rule is the
-    intercept of its class. Numeric attributes come already binarized
-    (`pyrulearn.data.io.build_dataspec`) instead of being thresholded
-    during the search; the data's row weights weight the loss.
 
-    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
-    -- `_fit_native` converts anything else via
-    `NativeRuleLearner.ensure_representation` (`max_auto_convert_cells=`),
-    the same mechanism `pyrulearn.learners.associative.CARMiner` uses in
-    the opposite direction (toward `NListRepresentation`, for mining).
-    `_grow`'s per-round scoring needs vectorized matrix-column access,
-    not a representation's own coverage primitives (`ROADMAP.md`'s
-    "every native learner on any data representation"), so unlike
-    `CARMiner`'s conversion (a speed preference -- `generate_cars` would
-    work, just slower, on anything), this one is not optional: there is
-    no slower-but-correct path for `_grow` on `NListRepresentation`/
-    `SparseDataRepresentation` as given. A representation-generic
-    rewrite (through `initial_cover`/`refine_cover`) was prototyped
-    anyway and measured 10-500x slower, even before batching, with no
-    plausible fix: unlike a `SeCo` search's fixed class labels, `_grow`'s
-    weight vector (the loss's gradient) changes every boosting round, so
-    N-list's own per-search node-count caching never gets the chance to
-    pay for itself. See `ROADMAP.md`'s "Design decisions" section for
-    the measurements. Pass a `BooleanDataRepresentation` directly if the
-    data isn't needed in another form for other learners, to skip
-    paying for an N-list/sparse structure this class never uses.
-    """
+class ConstantStep(ImpurityCriterion):
+    """CS: the change of the loss if the covered rows' score for the
+    class rose by `beta`. Works for any loss; `beta` trades off coverage
+    against purity (larger: smaller, purer rules)."""
 
-    #: see the "Data representation" paragraph above
-    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
+    def __init__(self, beta: float = 0.2):
+        if beta <= 0:
+            raise ValueError(f"beta must be positive, got {beta}")
+        self.beta = beta
+
+    def terms(self, F, Y, d, G, H, loss, in_sample):
+        base = loss.values(F, Y, d)
+        D = np.empty_like(F)
+        for k in range(F.shape[1]):
+            Fk = F.copy()
+            Fk[:, k] += self.beta
+            D[:, k] = loss.values(Fk, Y, d) - base
+        return (D * in_sample[:, None],)
+
+    def impurity(self, sums, l2_regularization):
+        return sums[0]
+
+
+class Gradient(ImpurityCriterion):
+    """GD: the summed first derivative ``g`` -- the most general rules
+    (`ConstantStep` as ``beta -> 0``)."""
+
+    def terms(self, F, Y, d, G, H, loss, in_sample):
+        return (G * in_sample[:, None],)
+
+    def impurity(self, sums, l2_regularization):
+        return sums[0]
+
+
+class GradientBoosting(ImpurityCriterion):
+    """GB: ``g / sqrt(covered weight)``."""
+
+    def terms(self, F, Y, d, G, H, loss, in_sample):
+        s = in_sample[:, None]
+        return (G * s, (d[:, None] * s) * np.ones_like(G))
+
+    def impurity(self, sums, l2_regularization):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(sums[1] > 0, sums[0] / np.sqrt(sums[1]), 0.0)
+
+
+class Simultaneous(ImpurityCriterion):
+    """SM, for `ExponentialLoss` only: the loss with the rule's exact
+    weight, ``-sqrt(W+) + sqrt(W-)`` (``W+``/``W-`` the weights of the
+    covered examples of the voted/the other class)."""
+
+    def check(self, loss):
+        if not isinstance(loss, ExponentialLoss):
+            raise ValueError("Simultaneous (method='simultaneous') needs the exponential loss")
+
+    def terms(self, F, Y, d, G, H, loss, in_sample):
+        w = H * in_sample[:, None]            # both columns carry the exponential weight
+        return (w * Y, w * (1.0 - Y))
+
+    def impurity(self, sums, l2_regularization):
+        with np.errstate(invalid="ignore"):
+            return -np.sqrt(sums[0]) + np.sqrt(sums[1])
+
+
+class Newton(ImpurityCriterion):
+    """MLRules' criterion ``g / sqrt(h + lambda)`` (``lambda``: the
+    learner's `l2_regularization`), for convex losses."""
+
+    def check(self, loss):
+        if not loss.convex:
+            raise ValueError(f"Newton (method='newton') needs a convex loss, not {loss!r}")
+
+    def terms(self, F, Y, d, G, H, loss, in_sample):
+        s = in_sample[:, None]
+        return (G * s, H * s)
+
+    def impurity(self, sums, l2_regularization):
+        denom = sums[1] + l2_regularization
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(denom > 0, sums[0] / np.sqrt(denom), 0.0)
+
+
+#: `ENDER`'s `method=` shorthands -- `"constant_step"` takes the learner's `beta`
+_METHODS = {
+    "constant_step": ConstantStep, "gradient": Gradient, "gradient_boosting": GradientBoosting,
+    "simultaneous": Simultaneous, "newton": Newton,
+}
+
+
+class _ENDERBase(NativeRuleLearner):
+    """What `ENDER` and `DenseENDER` share: the boosting loop, the losses,
+    the impurity criteria and the default rule. They differ only in how
+    one rule is grown (`_grower`)."""
 
     def __init__(
         self,
@@ -428,13 +469,12 @@ class ENDER(NativeRuleLearner):
         shrinkage: float = 0.1,
         subsample: float = 0.25,
         loss: Union[str, BoostingLoss] = "logistic",
-        method: str = "constant_step",
+        method: Union[str, ImpurityCriterion] = "constant_step",
         beta: float = 0.2,
         l2_regularization: float = 0.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = 0,
-        max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         if n_rules < 1:
             raise ValueError(f"n_rules must be at least 1, got {n_rules}")
@@ -442,17 +482,13 @@ class ENDER(NativeRuleLearner):
             raise ValueError(f"shrinkage must be in (0, 1], got {shrinkage}")
         if not 0.0 < subsample <= 1.0:
             raise ValueError(f"subsample must be in (0, 1], got {subsample}")
-        if method not in _METHODS:
-            raise ValueError(f"method must be one of {_METHODS}, got {method!r}")
+        if not isinstance(method, ImpurityCriterion) and method not in _METHODS:
+            raise ValueError(f"method must be an ImpurityCriterion or one of {tuple(_METHODS)}, got {method!r}")
         if beta <= 0:
             raise ValueError(f"beta must be positive, got {beta}")
         if l2_regularization < 0:
             raise ValueError(f"l2_regularization must be non-negative, got {l2_regularization}")
         loss = _LOSSES[loss]() if isinstance(loss, str) else loss
-        if method == "simultaneous" and not isinstance(loss, ExponentialLoss):
-            raise ValueError("method='simultaneous' needs the exponential loss")
-        if method == "newton" and not loss.convex:
-            raise ValueError(f"method='newton' needs a convex loss, not {loss!r}")
         self.n_rules = n_rules
         self.shrinkage = shrinkage
         self.subsample = subsample
@@ -463,16 +499,24 @@ class ENDER(NativeRuleLearner):
         self.early_stopping = early_stopping
         self.max_length = max_length
         self.random_state = random_state
-        self.max_auto_convert_cells = max_auto_convert_cells
+        self._criterion().check(loss)
+
+    def _criterion(self) -> ImpurityCriterion:
+        """`method` as an `ImpurityCriterion` -- a string is a shorthand,
+        ``"constant_step"`` taking this learner's `beta`."""
+        if isinstance(self.method, ImpurityCriterion):
+            return self.method
+        return ConstantStep(self.beta) if self.method == "constant_step" else _METHODS[self.method]()
 
     def _default_model(self, data: Any) -> type:
         return LinearRuleModel
 
     @produces(LinearRuleModel)
     def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
-        # see the class docstring's "Data representation" paragraph
+        # a no-op for ENDER; DenseENDER converts to its dense matrix here
         data = self.ensure_representation(
-            data, self.max_auto_convert_cells, purpose="ENDER's dense-matrix scoring",
+            data, getattr(self, "max_auto_convert_cells", DEFAULT_MAX_AUTO_CONVERT_CELLS),
+            purpose=f"{type(self).__name__}'s dense-matrix scoring",
         )
         if data.y is None:
             raise ValueError("ENDER needs data.y")
@@ -487,8 +531,7 @@ class ENDER(NativeRuleLearner):
         n = len(y)
         Y = np.zeros((n, K))
         Y[np.arange(n), y_idx] = 1.0
-        X = np.asarray(data.X, dtype=bool)
-        Xf = X.astype(float)
+        grow = self._grower(data)
         d = np.ones(n) if data.weights is None else data.weights.astype(float)
         rng = np.random.default_rng(self.random_state)
 
@@ -503,11 +546,10 @@ class ENDER(NativeRuleLearner):
             G, H = self.loss.derivatives(F, Y, d)
             in_sample = np.zeros(n, dtype=bool)
             in_sample[rng.choice(n, size=size, replace=False)] = True
-            found = self._grow(X, Xf, self._impurity_terms(F, Y, d, G, H, in_sample))
+            found = grow(self._impurity_terms(F, Y, d, G, H, in_sample))
             if found is None:
                 continue
-            body, k = found
-            cov = np.all(X[:, list(body)], axis=1)
+            body, k, cov = found
             alpha = self._response(float(G[cov, k].sum()), float(H[cov, k].sum()))
             if not alpha > 0:
                 continue
@@ -564,55 +606,16 @@ class ENDER(NativeRuleLearner):
 
     def _impurity_terms(self, F, Y, d, G, H, in_sample):
         """Per-row quantities whose sums over the covered rows give the
-        impurity of `method` (see `_impurity`), restricted to the subsample."""
-        s = in_sample[:, None]
-        if self.method == "constant_step":
-            base = self.loss.values(F, Y, d)
-            D = np.empty_like(F)
-            for k in range(F.shape[1]):
-                Fk = F.copy()
-                Fk[:, k] += self.beta
-                D[:, k] = self.loss.values(Fk, Y, d) - base
-            return (D * s,)
-        if self.method == "simultaneous":         # exponential: W+ / W- per class
-            w = H * s                              # both columns carry w
-            return (w * Y, w * (1.0 - Y))
-        if self.method == "gradient_boosting":
-            return (G * s, (d[:, None] * s) * np.ones_like(G))
-        if self.method == "newton":
-            return (G * s, H * s)                  # lambda is added in _impurity
-        return (G * s,)                            # gradient
+        criterion's impurity (see `_impurity`), restricted to the subsample."""
+        return self._criterion().terms(F, Y, d, G, H, self.loss, in_sample)
 
     def _impurity(self, sums: Tuple[np.ndarray, ...]) -> np.ndarray:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            if self.method in ("constant_step", "gradient"):
-                return sums[0]
-            if self.method == "simultaneous":
-                return -np.sqrt(sums[0]) + np.sqrt(sums[1])
-            # gradient_boosting / newton: g / sqrt(weight or h [+ lambda])
-            denom = sums[1] + self.l2_regularization if self.method == "newton" else sums[1]
-            return np.where(denom > 0, sums[0] / np.sqrt(denom), 0.0)
+        return self._criterion().impurity(sums, self.l2_regularization)
 
-    def _grow(self, X: np.ndarray, Xf: np.ndarray,
-              terms: Tuple[np.ndarray, ...]) -> Optional[Tuple[Tuple[int, ...], int]]:
-        """The rule (body, class) minimizing the impurity, grown greedily
-        from the empty rule; `None` if no condition makes it negative."""
-        cov = np.ones(X.shape[0], dtype=bool)
-        body: List[int] = []
-        best_k, current = -1, 0.0
-        while self.max_length is None or len(body) < self.max_length:
-            c = cov[:, None]
-            crit = self._impurity(tuple((t * c).T @ Xf for t in terms))     # K x n_features
-            if body:
-                crit[:, body] = np.inf
-            k, f = np.unravel_index(int(np.argmin(crit)), crit.shape)
-            value = float(crit[k, f])
-            if not value < current:
-                break
-            current, best_k = value, int(k)
-            body.append(int(f))
-            cov = cov & X[:, f]
-        return (tuple(body), best_k) if body and current < 0 else None
+    def _grower(self, data: Any):
+        """The step growing one rule: ``grow(terms) -> (body, class,
+        covered rows)`` or None -- what `ENDER` and `DenseENDER` differ in."""
+        raise NotImplementedError
 
     @staticmethod
     def _acceptable(holdout_cov: np.ndarray, y_idx: np.ndarray, k: int, d: np.ndarray, K: int) -> bool:
@@ -621,6 +624,227 @@ class ENDER(NativeRuleLearner):
             return False
         error = float(w[y_idx[holdout_cov] != k].sum() / w.sum())
         return error < 1.0 - 1.0 / K
+
+
+class ENDER(_ENDERBase):
+    """ENDER: boosting of decision rules by forward stagewise minimization
+    of a loss (Dembczyński, Kotłowski & Słowiński, DMKD 2010; its MLRules
+    instance, ICML 2008), with a pluggable `BoostingLoss`.
+
+    The model keeps a score per class; each rule votes for one class with
+    a positive weight, and the class with the highest total wins. It
+    starts from a default rule (covering everything) for one class, with
+    the weight minimizing the loss. Then, for `n_rules` rounds:
+
+    1. Draw a subsample (`subsample` of the rows, without replacement).
+    2. Grow a rule on it: starting from the empty rule (impurity 0), add
+       the condition, and choose the class, that minimize the impurity
+       ``L(rule)`` of `method` -- an `ImpurityCriterion`, ENDER's
+       counterpart of a rule-evaluation heuristic, or its shorthand
+       string -- until no condition lowers it; the rule is kept only if
+       its impurity is negative. With ``g``/``h`` the loss's first/second
+       derivatives for a vote for the class, summed over the covered
+       rows:
+
+       - `ConstantStep(beta)` / ``"constant_step"`` (CS, the default,
+         with this learner's `beta`) -- the change of the loss if the
+         covered rows' score for the class rose by `beta`: works for any
+         loss, and `beta` trades off coverage against purity (larger:
+         smaller, purer rules);
+       - `Gradient()` / ``"gradient"`` (GD) -- ``g``: the most general
+         rules (``beta -> 0`` of constant-step);
+       - `GradientBoosting()` / ``"gradient_boosting"`` (GB) -- ``g /
+         sqrt(covered weight)``;
+       - `Simultaneous()` / ``"simultaneous"`` (SM, `ExponentialLoss`
+         only) -- the loss with the rule's exact weight: ``-sqrt(W+) +
+         sqrt(W-)``, ``W+``/``W-`` the weights of the covered examples of
+         the voted/other class;
+       - `Newton()` / ``"newton"`` -- ``g / sqrt(h)``, MLRules' criterion
+         (convex losses).
+
+       The loss is a component too: `loss` takes a `BoostingLoss`
+       (`LogisticLoss()`, `ExponentialLoss()`, `SigmoidLoss()`) or its
+       name.
+    3. Give it the loss's weight (`BoostingLoss.response`: a Newton step
+       for `LogisticLoss`, the exact minimizer for `ExponentialLoss`,
+       `beta` for `SigmoidLoss`) computed on *all* rows -- which also
+       regularizes it -- shrink it by `shrinkage` (``nu``), and add it to
+       the scores.
+
+    Defaults are the paper's constant-step logit setting (CS-Log: ``beta
+    = 0.2``, ``nu = 0.1``, subsample 0.25, 500 rules), among its best and
+    usable for any number of classes; its best-ranked, CS-Exp, is
+    ``ENDER(loss="exponential")`` with the same settings. MLRules is
+    ``ENDER(method="newton", subsample=0.5)``. `LogisticLoss` handles any
+    number of classes; `ExponentialLoss` and `SigmoidLoss` two (as in the
+    paper, which also covers regression -- not here).
+
+    `l2_regularization` (``lambda``, default 0) adds an L2 penalty on the
+    rule weights to the Newton steps -- ``-sum g / (sum h + lambda)`` for
+    the Newton-step weights (`LogisticLoss`, and the default rule) and
+    ``sum g / sqrt(sum h + lambda)`` for `method="newton"` -- as in
+    BOOMER (Rapp et al. 2020), whose single-output case is then
+    ``ENDER(method="newton", l2_regularization=...)``.
+
+    `early_stopping` is MLRules': the rows left out of each subsample are
+    a holdout set; a rule is acceptable if its error on the holdout rows
+    it covers is below that of guessing among the classes (``1 - 1/K``),
+    and growth stops once 8 of the last 10 rules weren't.
+
+    The result is a `LinearRuleModel`; a rule found in several rounds
+    appears once, its weights summed, and the default rule is the
+    intercept of its class. Numeric attributes come already binarized
+    (`pyrulearn.data.io.build_dataspec`) instead of being thresholded
+    during the search; the data's row weights weight the loss.
+
+    **Components and data representation.** The loss (`loss=`, a
+    `BoostingLoss`) and the impurity criterion (`method=`, an
+    `ImpurityCriterion`) are exchangeable parts. A rule is grown through
+    the representation's own primitives, so `ENDER` runs on every data
+    representation: the search walks a cover handle
+    (`initial_cover`/`refine_cover`), sums the impurity terms of every
+    open condition with one `batch_cover_sums` call per step, and builds
+    only the condition it adds (`pyrulearn.learners.seco.materialize_child`),
+    propagating constraints so that what a condition implies is never
+    scored again. `DenseENDER` is the same algorithm specialized for speed
+    on a dense matrix: same parameters, same models, 1-8x faster on
+    `BooleanDataRepresentation` (most with Newton steps on all rows; see
+    `ROADMAP.md`). A condition that drops no row with a nonzero impurity
+    term changes nothing; both count those rows exactly and never take
+    such a condition for an improvement, which rounding could otherwise
+    suggest.
+    """
+
+    def _grower(self, data: Any):
+        dataspec = data.spec
+        all_features = frozenset(range(dataspec.n_features))
+
+        def grow(terms):
+            n_terms, K = len(terms), terms[0].shape[1]
+            contributing = (np.concatenate(terms, axis=1) != 0).any(axis=1)
+            # n x (terms * K + 1): the last column counts covered contributing
+            # rows -- an exact integer, unlike the other sums
+            values = np.column_stack([np.concatenate(terms, axis=1), contributing.astype(float)])
+            current_count = float(contributing.sum())
+            rule = Rule([], dataspec=dataspec)
+            handle = data.initial_cover(None)
+            closure = parent_closure(dataspec, rule)
+            mask = all_features
+            body: List[int] = []
+            best_k, current = -1, 0.0
+            while mask and (self.max_length is None or len(body) < self.max_length):
+                feats = sorted(mask)
+                sums = data.batch_cover_sums(handle, values, feats)
+                counts = sums[-1]
+                crit = self._impurity(tuple(sums[t * K:(t + 1) * K] for t in range(n_terms)))
+                if body:
+                    # a condition dropping no contributing row changes nothing:
+                    # exactly the current impurity, though summed over other rows
+                    # it can round lower -- ENDER's dense sums can't, they always
+                    # run over the same rows. (Not for the first condition, which
+                    # ENDER compares with 0, not with the empty rule's impurity.)
+                    crit[:, counts == current_count] = current
+                while True:   # best (class, condition); same tie-break as ENDER: lowest class, then feature
+                    k, j = np.unravel_index(int(np.argmin(crit)), crit.shape)
+                    value = float(crit[k, j])
+                    if not value < current:
+                        built = None
+                        break
+                    built = materialize_child(data, dataspec, rule, closure, mask, feats[j], handle)
+                    if built is not None:
+                        break
+                    crit[:, j] = np.inf                          # contradicts the rule
+                if built is None:
+                    break
+                rule, mask, handle, closure = built
+                current, best_k, current_count = value, int(k), counts[j]
+                body.append(feats[j])
+            if body and current < 0:
+                return tuple(body), best_k, data.cover_rows(handle)
+            return None
+        return grow
+
+
+class DenseENDER(_ENDERBase):
+    """`ENDER`, specialized for speed: same algorithm, same parameters,
+    same models (see `ENDER` for both) -- at the price of a dense float
+    copy of the data.
+
+    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
+    -- `_fit_native` converts anything else via
+    `NativeRuleLearner.ensure_representation` (`max_auto_convert_cells=`).
+    Each step scores every class and condition at once, ``(t * c).T @
+    Xf`` over a float copy of the whole matrix, with no constraint
+    propagation; `ENDER` instead copies only the covered rows of the open
+    conditions at every step, which costs it most where all rows count
+    (Newton steps without subsampling: up to 8x on `spambase`).
+    """
+
+    #: see the "Data representation" paragraph above
+    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
+
+    def __init__(
+        self,
+        n_rules: int = 500,
+        shrinkage: float = 0.1,
+        subsample: float = 0.25,
+        loss: Union[str, BoostingLoss] = "logistic",
+        method: Union[str, ImpurityCriterion] = "constant_step",
+        beta: float = 0.2,
+        l2_regularization: float = 0.0,
+        early_stopping: bool = False,
+        max_length: Optional[int] = None,
+        random_state: Optional[int] = 0,
+        max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
+    ):
+        super().__init__(n_rules, shrinkage, subsample, loss, method, beta, l2_regularization,
+                         early_stopping, max_length, random_state)
+        self.max_auto_convert_cells = max_auto_convert_cells
+
+    def _grower(self, data: Any):
+        """The step growing one rule: ``grow(terms) -> (body, class,
+        covered rows)`` or None. Here, `_grow` on a dense float copy of
+        the matrix."""
+        X = np.asarray(data.X, dtype=bool)
+        Xf = X.astype(float)
+
+        def grow(terms):
+            found = self._grow(X, Xf, terms)
+            if found is None:
+                return None
+            body, k = found
+            return body, k, np.all(X[:, list(body)], axis=1)
+        return grow
+
+    def _grow(self, X: np.ndarray, Xf: np.ndarray,
+              terms: Tuple[np.ndarray, ...]) -> Optional[Tuple[Tuple[int, ...], int]]:
+        """The rule (body, class) minimizing the impurity, grown greedily
+        from the empty rule; `None` if no condition makes it negative."""
+        cov = np.ones(X.shape[0], dtype=bool)
+        body: List[int] = []
+        best_k, current = -1, 0.0
+        contributing = np.any([(t != 0).any(axis=1) for t in terms], axis=0).astype(float)
+        current_count = float(contributing.sum())
+        while self.max_length is None or len(body) < self.max_length:
+            c = cov[:, None]
+            crit = self._impurity(tuple((t * c).T @ Xf for t in terms))     # K x n_features
+            counts = (contributing * cov) @ Xf                               # exact integers
+            if body:
+                # a condition dropping no contributing row changes nothing -- exactly
+                # the current impurity, though the matrix product can round its
+                # column differently (seen: a threshold implied by one already in
+                # the rule winning by 4e-15). The first condition is compared with
+                # 0, not with the empty rule's impurity, so it's left alone.
+                crit[:, counts == current_count] = current
+                crit[:, body] = np.inf
+            k, f = np.unravel_index(int(np.argmin(crit)), crit.shape)
+            value = float(crit[k, f])
+            if not value < current:
+                break
+            current, best_k, current_count = value, int(k), counts[f]
+            body.append(int(f))
+            cov = cov & X[:, f]
+        return (tuple(body), best_k) if body and current < 0 else None
 
 
 class Boomer(ENDER):
@@ -642,8 +866,31 @@ class Boomer(ENDER):
     classes as labels. The original is interfaced as
     `pyrulearn.interfaces.boomer.MLRLBoomer` (binary classification),
     whose rule induction differs in details (e.g. its feature sampling),
-    so the two don't produce identical models.
+    so the two don't produce identical models. `DenseBoomer` is the same
+    on `DenseENDER`: same models, faster on a `BooleanDataRepresentation`.
     """
+
+    def __init__(
+        self,
+        n_rules: int = 1000,
+        shrinkage: float = 0.3,
+        l2_regularization: float = 1.0,
+        subsample: float = 1.0,
+        early_stopping: bool = False,
+        max_length: Optional[int] = None,
+        random_state: Optional[int] = 0,
+    ):
+        super().__init__(
+            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
+            l2_regularization=l2_regularization, early_stopping=early_stopping, max_length=max_length,
+            random_state=random_state,
+        )
+
+
+class DenseBoomer(DenseENDER):
+    """`Boomer` on `DenseENDER`: same parameters, same models, faster on a
+    `BooleanDataRepresentation` (Newton steps on all rows are where
+    `ENDER`'s modular search costs most) -- see `Boomer` and `DenseENDER`."""
 
     def __init__(
         self,

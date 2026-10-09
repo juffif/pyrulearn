@@ -283,7 +283,7 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
 
     **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
     -- `_fit_native` converts anything else via
-    `NativeRuleLearner.ensure_representation`, same as `ENDER`. `_grow`
+    `NativeRuleLearner.ensure_representation`, same as `DenseENDER`. `_grow`
     scores every feature of a node at once, ``(wp * cov) @ Xf`` over a
     float copy of the whole matrix, and masks the ones already in the
     rule out of the *result*. It never removes an *implied* feature from

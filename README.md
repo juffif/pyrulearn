@@ -131,9 +131,9 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
-| **BOOMER** (single-label) | `boosting.Boomer` | `ENDER` with BOOMER's settings: logistic loss, L2-regularized Newton steps (λ = 1), shrinkage 0.3, up to 1000 rules; predicts like the original on binary data (see *Interfaced*); multi-label BOOMER is not done | Rapp et al. 2020 |
+| **BOOMER** (single-label) | `boosting.Boomer` | `ENDER` with BOOMER's settings: logistic loss, L2-regularized Newton steps (λ = 1), shrinkage 0.3, up to 1000 rules; predicts like the original on binary data (see *Interfaced*); multi-label BOOMER is not done. `boosting.DenseBoomer`: the faster dense-matrix version, same models | Rapp et al. 2020 |
 | **Optimal rule boosting** | `boosting.OptimalRuleBoosting` | gradient boosting of rules that each maximize the XGBoost-style gain `(Σg)² / (λ + Σh)`, found exactly by branch-and-bound with the paper's prefix/suffix bound (or greedily); cross-checked rule-for-rule against `realkd` | Boley, Teshuva, Le Bodic & Webb 2021 |
-| **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`); a `LinearRuleModel` | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
+| **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`) and impurity criterion (`ImpurityCriterion`); a `LinearRuleModel`; runs on every data representation. `boosting.DenseENDER`: the faster dense-matrix version, same models | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
@@ -1278,6 +1278,11 @@ DenseCPAR(covering=WeightedCovering(AdditiveReweighting(), PositiveWeightBelow(0
                                     max_rounds=None))       # CN2-SD's additive reweighting
 ```
 
+`ENDER`/`DenseENDER` and `Boomer`/`DenseBoomer` are paired the same way:
+`ENDER`'s loss and impurity criterion are components, its search runs on
+every representation, and `DenseENDER` learns the same models 1-8x
+faster on a dense matrix.
+
 #### Separate-and-conquer (SeCo)
 
 `pyrulearn.learners.seco.SeCo` is the separate-and-conquer (covering)
@@ -1529,14 +1534,18 @@ pruning.
   step), `ExponentialLoss` (AdaBoost's, two classes; weight: the exact
   minimizer, smoothed as in Slipper), `SigmoidLoss` (a bounded, non-convex
   approximation of the 0-1 loss, two classes; weight: the constant step).
-- **Impurities** (`method`), with `g`/`h` the loss's first/second
-  derivatives for a vote for the class, summed over the covered rows:
-  `"constant_step"` (the change of the loss for a step of `beta`; any
-  loss; `beta` controls coverage -- larger, smaller and purer rules),
-  `"gradient"` (`g`; the most general rules), `"gradient_boosting"` (`g /
-  sqrt(covered weight)`), `"simultaneous"` (exponential loss: `-sqrt(W+)
-  + sqrt(W-)`, the loss with the rule's exact weight), `"newton"` (`g /
-  sqrt(h)`, MLRules').
+- **Impurities** (`method`: a pluggable `ImpurityCriterion`, ENDER's
+  counterpart of a rule-evaluation heuristic, or its name), with `g`/`h`
+  the loss's first/second derivatives for a vote for the class, summed
+  over the covered rows: `ConstantStep(beta)` / `"constant_step"` (the
+  change of the loss for a step of `beta`; any loss; `beta` controls
+  coverage -- larger, smaller and purer rules), `Gradient()` /
+  `"gradient"` (`g`; the most general rules), `GradientBoosting()` /
+  `"gradient_boosting"` (`g / sqrt(covered weight)`), `Simultaneous()` /
+  `"simultaneous"` (exponential loss: `-sqrt(W+) + sqrt(W-)`, the loss
+  with the rule's exact weight), `Newton()` / `"newton"` (`g / sqrt(h)`,
+  MLRules'). A criterion implements `terms` (per-row quantities) and
+  `impurity` (the criterion from their sums over the covered rows).
 - **Defaults** are the paper's constant-step logit setting (`beta = 0.2`,
   `shrinkage = 0.1`, `subsample = 0.25`, 500 rules), among its best and
   usable with any number of classes. Its best-ranked setting, CS-Exp, is
@@ -1551,6 +1560,14 @@ pruning.
 The result is a `LinearRuleModel`; repeated rules are merged by summing
 their weights. The paper also covers regression (squared-error loss),
 which pyrulearn doesn't.
+
+`ENDER` grows its rules through the data representation's own primitives
+(summing every open condition's impurity terms with one
+`batch_cover_sums` call per step, with constraint propagation), so it
+runs on every representation. `DenseENDER` is the same algorithm on a
+dense float matrix: same parameters, same models, 1-8x faster on a
+`BooleanDataRepresentation` -- most with Newton steps on all rows (see
+*Native learning algorithms* for this pairing).
 
 ```python
 from pyrulearn.learners.boosting import ENDER
@@ -1568,6 +1585,7 @@ shrinkage 0.3, L2 weight 1.0, no subsampling. BOOMER itself is a
 multi-label learner, which pyrulearn doesn't support yet; the original
 is interfaced as `MLRLBoomer` (see *BOOMER and realkd: boosted rule
 ensembles*), and the two differ in details such as feature sampling.
+`DenseBoomer` is the same on `DenseENDER`: same models, faster.
 
 **Optimal rule boosting.** `pyrulearn.learners.boosting.OptimalRuleBoosting`
 (Boley, Teshuva, Le Bodic & Webb 2021; the `realkd` package) adds, in
@@ -2214,9 +2232,9 @@ feature / the feature. A rule with a positive score votes for the positive
 class, one with a negative score for the other class with the absolute
 score. BOOMER's single-output case -- logistic loss with L2-regularized
 Newton steps -- is natively `learners.boosting.Boomer`, `ENDER` with
-BOOMER's defaults; on binary data it predicts like `MLRLBoomer` and runs
-about ten times faster, though BOOMER's feature sampling gives it
-somewhat different rules. BOOMER's multi-label learning isn't supported
+BOOMER's defaults; on binary data it predicts like `MLRLBoomer`, and its
+dense version `DenseBoomer` runs about ten times faster, though BOOMER's
+feature sampling gives it somewhat different rules. BOOMER's multi-label learning isn't supported
 yet (see *Not yet implemented*).
 
 `pyrulearn.interfaces.realkd.RKDRuleBoosting` fits Mario Boley's
@@ -2502,11 +2520,12 @@ Development plans, with the reasons behind them, are in
 - **Every native learner on any data representation.** The SeCo learners
   and `PyLORD` run unchanged on all four representations, and on
   N-lists take about half the time (see `demos/representations_report.md`).
-  `ENDER`, `Boomer`, `OptimalRuleBoosting` and `LRI` still work on
-  a dense matrix of the data, so they gain nothing from the other
-  representations; they should use the representation's coverage
-  functions instead (as `CPAR` does; `DenseCPAR` keeps the dense matrix
-  on purpose, for speed). The representation would then be chosen once, when
+  `OptimalRuleBoosting` and `LRI` still work on a dense matrix of the
+  data, so they gain nothing from the other representations; they should
+  use the representation's coverage functions instead (as `CPAR` and
+  `ENDER` do; `DenseCPAR` and `DenseENDER` keep the dense matrix on
+  purpose, for speed). N-lists and sparse data don't have a batched
+  `batch_cover_sums` yet, so `ENDER` is slow on them. The representation would then be chosen once, when
   the data is prepared (e.g. in `run_cv`), with N-lists as the default.
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 
