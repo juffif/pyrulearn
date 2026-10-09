@@ -634,6 +634,27 @@ class _NListMaskContext:
         return cached
 
 
+def _class_value_columns(y: np.ndarray, positive_class: Any, w: Optional[np.ndarray]) -> np.ndarray:
+    """Per row: (weight if positive, weight if negative, 1) -- summed over
+    the rows that have a feature, the feature's tp, fp and how many of the
+    rows it keeps (exact: a sum of ones). ``w=None``: every row weighs 1."""
+    pos = (y == positive_class).astype(float)
+    wr = np.ones(len(y)) if w is None else np.asarray(w, dtype=float)
+    return np.column_stack([wr * pos, wr * (1.0 - pos), np.ones(len(y))])
+
+
+def _counts_from_sums(sums: np.ndarray, n_rows: int, feature_indices: Sequence[int],
+                      weighted: bool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`batch_cover_counts`' ``(tp, fp, keeps_all)`` from the per-feature
+    sums of `_class_value_columns` (``(n_features, 3)``) over `n_rows`
+    contributing rows."""
+    f = np.asarray(feature_indices, dtype=np.intp)
+    tp, fp, kept = sums[f, 0], sums[f, 1], sums[f, 2]
+    if not weighted:
+        tp, fp = np.rint(tp).astype(int), np.rint(fp).astype(int)
+    return tp, fp, kept == n_rows
+
+
 class NListRepresentation(DataRepresentation):
     """A PPC-tree / N-list encoding of a Boolean dataset -- the vertical
     index Huynh, Fürnkranz & Beck's LORD builds before learning -- exposed
@@ -1012,6 +1033,73 @@ class NListRepresentation(DataRepresentation):
             out &= ctx.mask
         return out
 
+    # -- batched counting ----------------------------------------------
+    #
+    # Rows with the same feature set end at the same tree node, so the
+    # covered rows' values are first summed per distinct row pattern, and
+    # only the patterns that occur are multiplied with the pattern matrix
+    # (CSR: per pattern, its features): cost grows with the distinct
+    # patterns covered, not the rows -- the compression the PPC-tree
+    # stands for. Reading feature counts off a tree node's path instead
+    # would need the node at which a row's path *ends*: an ancestor's path
+    # misses the features below it, the depth trap that broke both
+    # `chain_cover_counts` attempts (`ROADMAP.md`).
+
+    @functools.cached_property
+    def _row_patterns(self):
+        """``(pattern of every row, CSR of the distinct patterns)``, built
+        once, on first use, from the stored per-row feature sets."""
+        from scipy import sparse
+
+        ids: dict = {}
+        pattern_of = np.empty(self._n_samples, dtype=np.int64)
+        patterns: list = []
+        for i, feats in enumerate(self._row_feats):
+            feats = np.asarray(feats, dtype=np.int64)
+            key = feats.tobytes()
+            j = ids.get(key)
+            if j is None:
+                j = ids[key] = len(patterns)
+                patterns.append(feats)
+            pattern_of[i] = j
+        indptr = np.concatenate(([0], np.cumsum([len(p) for p in patterns])))
+        indices = np.concatenate(patterns) if patterns else np.empty(0, dtype=np.int64)
+        matrix = sparse.csr_matrix((np.ones(len(indices)), indices, indptr),
+                                   shape=(len(patterns), self._n_features))
+        return pattern_of, matrix
+
+    def _pattern_sums(self, rows: np.ndarray, values: np.ndarray) -> np.ndarray:
+        """``values`` (one row per entry of `rows`) summed per feature over
+        `rows`, through the distinct row patterns: ``(n_features, m)``."""
+        pattern_of, matrix = self._row_patterns
+        p = pattern_of[rows]
+        n_patterns = matrix.shape[0]
+        hit = np.flatnonzero(np.bincount(p, minlength=n_patterns))
+        per_pattern = np.column_stack([np.bincount(p, weights=values[:, j], minlength=n_patterns)[hit]
+                                       for j in range(values.shape[1])])
+        return np.asarray(matrix[hit].T @ per_pattern)
+
+    def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
+        """`BooleanDataRepresentation.batch_cover_counts` for N-lists: tp,
+        fp and ``keeps_all`` of every feature in `feature_indices`, from
+        one pass over the covered rows' distinct patterns."""
+        if self.y is None:
+            raise ValueError("batch_cover_counts needs labels (self.y)")
+        ctx = handle[3]
+        w = ctx.weights
+        cov = self.cover_rows(handle)
+        rows = np.flatnonzero(cov if w is None else cov & (w != 0))
+        values = _class_value_columns(self.y[rows], positive_class, None if w is None else w[rows])
+        return _counts_from_sums(self._pattern_sums(rows, values), len(rows), feature_indices, w is not None)
+
+    def batch_cover_sums(self, handle, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
+        """`DataRepresentation.batch_cover_sums` through the covered rows'
+        distinct patterns (covered rows with a nonzero value only)."""
+        values = np.asarray(values, dtype=float)
+        rows = np.flatnonzero(self.cover_rows(handle) & (values != 0).any(axis=1))
+        sums = self._pattern_sums(rows, values[rows])
+        return sums[np.asarray(feature_indices, dtype=np.intp)].T
+
     # -- parity with BooleanDataRepresentation ------------------------
 
     @property
@@ -1357,6 +1445,34 @@ class SparseDataRepresentation(DataRepresentation):
         out = np.zeros(self._n_samples, dtype=bool)
         out[rows] = True
         return out
+
+    # -- batched counting: the covered rows of the CSR, in one product --
+
+    def _row_sums(self, rows: np.ndarray, values: np.ndarray) -> np.ndarray:
+        """``values`` (one row per entry of `rows`) summed per feature over
+        `rows`: ``(n_features, m)``, one sparse product over their CSR rows
+        -- cost grows with the covered rows' nonzeros."""
+        return np.asarray(self._csr[rows].T @ values)
+
+    def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
+        """`BooleanDataRepresentation.batch_cover_counts` for sparse data:
+        tp, fp and ``keeps_all`` of every feature in `feature_indices`, from
+        one product over the covered rows (with a nonzero weight)."""
+        if self.y is None:
+            raise ValueError("batch_cover_counts needs labels (self.y)")
+        rows, mask, w = handle
+        if w is not None:
+            rows = rows[w[rows] != 0]
+        values = _class_value_columns(self.y[rows], positive_class, None if w is None else w[rows])
+        return _counts_from_sums(self._row_sums(rows, values), len(rows), feature_indices, w is not None)
+
+    def batch_cover_sums(self, handle, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
+        """`DataRepresentation.batch_cover_sums` as one product over the
+        covered rows with a nonzero value."""
+        values = np.asarray(values, dtype=float)
+        rows = handle[0]
+        rows = rows[(values[rows] != 0).any(axis=1)]
+        return self._row_sums(rows, values[rows])[np.asarray(feature_indices, dtype=np.intp)].T
 
     def _reindexed(self, new_spec, source, is_complement):
         from scipy import sparse

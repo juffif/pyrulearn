@@ -2551,8 +2551,7 @@ Development plans, with the reasons behind them, are in
   data, so they gain nothing from the other representations; they should
   use the representation's coverage functions instead (as `CPAR` and
   `ENDER` do; `DenseCPAR` and `DenseENDER` keep the dense matrix on
-  purpose, for speed). N-lists and sparse data don't have a batched
-  `batch_cover_sums` yet, so `ENDER` is slow on them. The representation would then be chosen once, when
+  purpose, for speed). The representation would then be chosen once, when
   the data is prepared (e.g. in `run_cv`), with N-lists as the default.
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 

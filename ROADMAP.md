@@ -58,10 +58,9 @@ counting step alone; `refine_cover`'s handle construction for every live
 child (unchanged here) is the rest of a round's cost, and these numbers
 are the net of both.
 
-Still open: N-list, PrePostNList and Sparse representations (each needs
-its own one-pass counting primitive suited to its storage -- see the
-0.3.0 plan below for why this can't be one shared implementation);
-nominal-attribute batching.
+Still open: nominal-attribute batching. (N-list, PrePostNList and
+Sparse got their own batched counting instead -- see "Batched counting
+on every representation" below.)
 
 **No longer on the search path (2026-10-08).** The next section's lazy
 searches count every open child with one `batch_cover_counts` matmul
@@ -227,17 +226,43 @@ indicator column in `ENDER`'s sums). Unweighted counts were always exact;
 the SeCo learners and `CPAR` learned the same models as before the fix,
 a few percent slower.
 
-Still open: batched `batch_cover_counts`/`batch_cover_sums` for sparse
-data and N-lists -- sparse: slice the covered rows out of the CSR it
-already keeps and `bincount` their column indices with the rows' values
-(cost: the nonzeros of the covered rows); N-list: group the covered rows
-by the tree node their path ends at (its path mask is the row's whole
-feature set, so the depth problem that broke both `chain_cover_counts`
-attempts doesn't arise), one `bincount` per node and one product over
-the nodes' path bits (cost: distinct row patterns, not rows), measured
-against plain horizontal counting through a CSR built from `_row_feats`.
-Weighted counts on those representations get no `same` marks yet. A
-dense vs. modular demo.
+Still open: a dense vs. modular demo.
+
+## Batched counting on every representation
+
+**Done (2026-10-09).** `batch_cover_counts` and `batch_cover_sums` --
+which every rule search, `CPAR` and `ENDER` count with -- now exist for
+all four representations, so none falls back to one `refine_cover` +
+`cover_counts` per open condition any more. All count horizontally,
+from the rows a rule covers to the features they have, with one sparse
+product (CSR: Compressed Sparse Row, per row the features it has):
+
+- `SparseDataRepresentation`: the covered rows (with a nonzero weight)
+  of the CSR it already keeps; cost: their nonzeros.
+- `NListRepresentation`/`PrePostNListRepresentation`: rows with the same
+  feature set end at the same tree node, so the covered rows' values are
+  first summed per distinct row pattern (`bincount`), and only the
+  patterns that occur are multiplied, through a CSR of the distinct
+  patterns built once from `_row_feats`; cost: distinct patterns, not
+  rows. Reading counts off an ancestor node's path instead would miss
+  the features below it -- the depth trap of both `chain_cover_counts`
+  attempts.
+
+A count column gives `keeps_all` exactly, so the rounding guard works on
+every representation. Checked against the per-feature path on 8856
+counts (every feature, dead ones included; weighted, masked) with no
+mismatch. Every learner learns the same model on every representation
+as on Boolean, and as before. **Measured** (best of 3, old vs. new, same
+machine): NList 1.5-10x on `diabetes`, 1.8-7x on `kr-vs-kp`, 9-88x on
+`sonar` (`ENDER` most); Sparse 3-8x, 3-8x, 9-35x; Boolean unchanged.
+Now the other representations are as fast as Boolean or faster:
+`kr-vs-kp`'s `CPAR` 0.27s on N-lists vs. 0.50s on Boolean, `Pypper`
+0.17s vs. 0.43s, and on `sonar` every learner is faster than on
+Boolean -- whose batch copies a dense block of covered rows x open
+conditions at every step, where the CSR products touch only the true
+entries. Worth trying for Boolean too (count through a CSR copy of `X`
+rather than dense slices), and worth re-running the representations
+demo for.
 
 ## Several rules per search: CPAR as a SeCo configuration
 
