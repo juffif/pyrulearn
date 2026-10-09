@@ -260,9 +260,10 @@ Now the other representations are as fast as Boolean or faster:
 0.17s vs. 0.43s, and on `sonar` every learner is faster than on
 Boolean -- whose batch copies a dense block of covered rows x open
 conditions at every step, where the CSR products touch only the true
-entries. Worth trying for Boolean too (count through a CSR copy of `X`
-rather than dense slices), and worth re-running the representations
-demo for.
+entries. Decided (2026-10-09) not to do the same for Boolean: it is
+the dense representation, N-lists and sparse data are the sparse ones,
+and a CSR copy next to `X` would cost memory for what they already
+offer. Worth re-running the representations demo for.
 
 ## Several rules per search: CPAR as a SeCo configuration
 
