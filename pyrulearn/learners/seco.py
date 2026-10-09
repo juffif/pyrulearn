@@ -383,6 +383,22 @@ def count_open_children(
     return features, tp, fp, fn, tn
 
 
+def live_open_children(
+    data, target_class: Any, mask: FrozenSet[int], handle, stats: RuleStats,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, Set[int]]:
+    """`count_open_children` as arrays, without the dead children: the
+    ``(features, tp, fp, fn, tn)`` of every open child covering at least
+    one positive, plus the set of `dead` features (``tp == 0``). A dead
+    feature stays dead in every descendant -- coverage only shrinks -- so
+    a search masks it out of the child it moves to."""
+    features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
+    features = np.asarray(features, dtype=np.int64)
+    tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
+    alive = tps != 0
+    dead = set(features[~alive].tolist())
+    return features[alive], tps[alive], fps[alive], fns[alive], tns[alive], dead
+
+
 def rank_best_first(scores: Any, *ties: Any) -> np.ndarray:
     """Indices ordering candidates best-first: by `scores` (a
     `batch_score` result) descending -- compared lexicographically when
@@ -705,16 +721,13 @@ class BeamSearch(RuleSearch):
             dead_by_parent: List[Set[int]] = []
             parts: List[Tuple[np.ndarray, ...]] = []
             for pi, (rule, mask, handle, stats, _) in enumerate(refinable):
-                features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
-                features = np.asarray(features, dtype=np.int64)
-                tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
-                alive = tps != 0
-                dead_by_parent.append(set(features[~alive].tolist()))
+                features, tps, fps, fns, tns, dead = live_open_children(data, target_class, mask, handle, stats)
+                dead_by_parent.append(dead)
                 bits = 0
                 for lit in rule.conditions:
                     bits |= 1 << lit.feature
                 keep: List[int] = []
-                for j, f in zip(np.flatnonzero(alive).tolist(), features[alive].tolist()):
+                for j, f in enumerate(features.tolist()):
                     key = bits | (1 << f)
                     if key not in seen_keys:
                         seen_keys.add(key)
@@ -983,12 +996,7 @@ class HillClimbing(RuleSearch):
 
             # score every child from counts alone, in one batch_score call;
             # build only the one moved to
-            features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
-            features = np.asarray(features, dtype=np.int64)
-            tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
-            alive = tps != 0
-            dead: Set[int] = set(features[~alive].tolist())
-            features, tps, fps, fns, tns = features[alive], tps[alive], fps[alive], fns[alive], tns[alive]
+            features, tps, fps, fns, tns, dead = live_open_children(data, target_class, mask, handle, stats)
             length = rule.length() + 1
             values = self._child_scores(
                 heuristic, RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats,

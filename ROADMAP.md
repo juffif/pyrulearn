@@ -113,17 +113,23 @@ described in the previous section (Slipper's counts are weighted sums; a
 matmul sums them in a different order) -- not yet confirmed, since the
 stored run also predates `chain_cover_counts`.
 
-**`PropagatingCPAR`** (`pyrulearn.learners.cpar`) is `CPAR` grown through
-this machinery instead of `CPAR`'s own ``(wp * cov) @ Xf`` over every
-feature not yet in the rule -- built to test whether constraint
-propagation (fewer open features) pays for itself there. Same models as
-`CPAR` (an implied condition has FOIL gain 0, below `min_gain`, so `CPAR`
-never picks one; checked on `diabetes`, `sonar`, `kr-vs-kp` and in
-`tests/test_cpar.py`). Built eagerly through `specialize` first, it was
-3.6x (`diabetes`) to 350x (`sonar`) slower than `CPAR`; lazy, 6-34x
+**`CPAR` on this machinery** (`pyrulearn.learners.cpar`). `CPAR` used to
+score ``(wp * cov) @ Xf`` over every feature not yet in the rule, on a
+dense matrix; that version is now `DenseCPAR`. The modular `CPAR` grows
+through this machinery instead -- first built (as `PropagatingCPAR`) to
+test whether constraint propagation (fewer open features) pays for
+itself there, and made the main `CPAR` on 2026-10-09, following the
+package's components-first approach (README, *Native learning
+algorithms*), with the growing heuristic, the covering strategy and the
+combiner as parameters and `DecomposingLearner` for multi-class. Same
+models as `DenseCPAR` (an implied condition has FOIL gain 0, below
+`min_gain`, so `DenseCPAR` never picks one; checked on `diabetes`,
+`sonar`, `kr-vs-kp` and in `tests/test_cpar.py`, also with exchanged
+components). Built eagerly through `specialize` first, it was
+3.6x (`diabetes`) to 350x (`sonar`) slower than `DenseCPAR`; lazy, 6-34x
 faster than that, but still 4x (`diabetes`: 1.54s vs. 0.40s), 14x
 (`sonar`: 0.82s vs. 0.06s) and 8x (`kr-vs-kp`: 1.07s vs. 0.14s) slower
-than `CPAR`. Profiled on `sonar`, the gap was three overheads, none
+than `DenseCPAR`. Profiled on `sonar`, the gap was three overheads, none
 intrinsic to propagation: per-candidate Python scoring ~55%,
 `batch_cover_counts`'s bool-to-float slice ~22%, recomputing the parent
 closure ~21% (cProfile's estimates; see below for what fixing each one
@@ -151,8 +157,8 @@ uncovered rows only contribute zeros. It now takes only the covered rows
 condition. Rejected instead: a cached float copy of `X` (8x the boolean
 matrix's memory). Same models; best of 3 vs. the previous version, same
 machine: `spambase` (4601 rows) 1.9-6x (CN2 23.9s -> 4.0s, PyLORD 277s
--> 145s), `kr-vs-kp` 1.2-2.3x, `sonar` 1.2-2.3x (`PropagatingCPAR`
-2.3x, now 2.8x behind `CPAR`), `diabetes` ~1.1x.
+-> 145s), `kr-vs-kp` 1.2-2.3x, `sonar` 1.2-2.3x (modular `CPAR`
+2.3x, now 2.8x behind `DenseCPAR`), `diabetes` ~1.1x.
 
 **Batch scoring (done, 2026-10-08).** Each candidate used to be scored by
 its own Python-level `heuristic.score` call. Every heuristic now also has
@@ -170,7 +176,7 @@ own score, the running best, the optimistic bound) through
 `batch_score` too -- mixing the two could let a child with its parent's
 exact stats win by a rounding difference. Same models in every case
 measured; best of 3 fits, old vs. new, same machine: `sonar` (1080
-features) 1.5-2.3x (`PropagatingCPAR` 1.84x, now 7x behind `CPAR`
+features) 1.5-2.3x (modular `CPAR` 1.84x, now 7x behind `DenseCPAR`
 instead of 14x), `diabetes` (112) 1.2-1.6x, `kr-vs-kp` (76) ~1.0x --
 the gain follows the number of open features per node. AQR unchanged
 (~1.0x everywhere), so its time is elsewhere.
@@ -209,8 +215,12 @@ evaluation. Four implementations turn the data into a dense matrix
   still correct on every representation (just always at dense-matrix
   cost), still tested for identical rules across them.
 - `OptimalRuleBoosting`,
-- `CPAR`,
 - `LRI`.
+
+`CPAR` was on this list; it now runs on every representation, built from
+the SeCo search primitives, and the dense-matrix version stays on purpose
+as `DenseCPAR`, for speed (same models, 2-4x faster) -- see "Build
+only the children a search follows" below.
 
 External learners reading `data.X` is fine: the external tools need a
 matrix anyway.
@@ -399,7 +409,7 @@ they aren't reopened by accident.
     26x slower than matmul-ing against the *whole* `self.X` and
     selecting `feature_indices` out of the small `(n_features,)` result
     afterward instead -- the same "score everything, mask the result"
-    trick `pyrulearn.learners.cpar.CPAR`'s own native code already uses
+    trick `pyrulearn.learners.cpar.DenseCPAR`'s (then `CPAR`'s) own native code already uses
     (see the CPAR entry below). Tried as a fix, measured *worse* in
     every real case re-checked (`spambase`, CN2/`BeamSearch` at
     `beam_width` 1/3/5/10, and `PFossil`/`HillClimbing` -- previously
@@ -419,7 +429,7 @@ they aren't reopened by accident.
     in this file is supposed to catch, caught here one step too late
     (after proposing the fix, not before).
 
-    Checked directly *why* this doesn't contradict `CPAR`'s own native
+    Checked directly *why* this doesn't contradict `CPAR`'s (now `DenseCPAR`'s) own native
     code using the identical "score everything, mask after" trick
     successfully (prompted by a direct question, not found
     unprompted): on `spambase` (n=4601, k=998), `CPAR`'s real

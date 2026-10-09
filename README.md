@@ -139,7 +139,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **Class association rule mining** | `associative.CARMiner` | Apriori-style CBA-RG; returns a compact, lazily materialized `PooledRuleSet` | Liu et al. 1998; Agrawal & Srikant 1994 |
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
-| **CPAR** | `cpar.CPAR` | FOIL-gain rule growing on weighted examples that also follows every nearly-as-good condition (several rules per search), covered positives decayed instead of removed; predicts by the mean expected accuracy of each class's best `k` covering rules (`TopKMeanCombiner`) | Yin & Han 2003 |
+| **CPAR** | `cpar.CPAR` | FOIL-gain rule growing on weighted examples that also follows every nearly-as-good condition (several rules per search), covered positives decayed instead of removed; predicts by the mean expected accuracy of each class's best `k` covering rules (`TopKMeanCombiner`). Built from exchangeable components; `cpar.DenseCPAR` is a faster, Boolean-only implementation learning the same models | Yin & Han 2003 |
 | **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
 | **RuleFit** (distiller) | `rulefit.RuleFit` | a sparse (L1 / elastic-net) logistic regression over a rule pool's coverage, multinomial for multiclass; returns a `LinearRuleModel`. Only RuleFit's fitting step: candidates come from the pool, not from a tree ensemble | Friedman & Popescu 2008 |
 | **Multiclass decomposition** | `multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
@@ -1248,6 +1248,36 @@ AQR, or `pyrulearn.learners.pylord.PyLORD`): `fit` induces straight against
 `data`, with no external algorithm call and no `RuleImporter`
 round-trip at all.
 
+**Components first, specialized versions second.** pyrulearn builds its
+learners from exchangeable components -- a search, a heuristic, a
+covering strategy, a combiner, a multi-class decomposition -- rather
+than implementing each algorithm in one piece. A variant is then one
+constructor argument away, and a learner runs on every data
+representation, since only the components touch the data. Where an
+algorithm also has a much faster implementation in one piece, that is
+kept as a separate learner under its own name, learning the same models.
+
+CPAR is the example. `CPAR` is assembled from `FoilGain`,
+`WeightedCovering(MultiplicativeReweighting, PositiveWeightBelow)`, the
+SeCo searches' search primitives (count every open condition at once,
+score them with one `batch_score` call, build only the rules followed,
+with constraint propagation) and `TopKMeanCombiner`. `DenseCPAR` scores
+every feature of a search node in one matrix product over a dense copy
+of the data, with no propagation. Both learn the same models (tested);
+`DenseCPAR` is 2-4x faster, but needs a `BooleanDataRepresentation`
+and only does one-vs-rest. Exchanging a component works the same for
+both:
+
+```python
+from pyrulearn.heuristics import DeltaGain, Laplace
+from pyrulearn.learners.cpar import CPAR, DenseCPAR
+from pyrulearn.learners.seco import AdditiveReweighting, PositiveWeightBelow, WeightedCovering
+
+CPAR(heuristic=DeltaGain(Laplace()), min_gain=0.01)          # grow by Laplace improvement
+DenseCPAR(covering=WeightedCovering(AdditiveReweighting(), PositiveWeightBelow(0.05),
+                                    max_rounds=None))       # CN2-SD's additive reweighting
+```
+
 #### Separate-and-conquer (SeCo)
 
 `pyrulearn.learners.seco.SeCo` is the separate-and-conquer (covering)
@@ -1390,7 +1420,8 @@ Two learners are built on this machinery, each with its own way of
 growing rules and of combining them in prediction; their rules carry
 no weights of their own:
 
-**CPAR.** `pyrulearn.learners.cpar.CPAR` (Yin & Han 2003) grows rules for each
+**CPAR.** `pyrulearn.learners.cpar.CPAR` (Yin & Han 2003; `DenseCPAR` is the
+faster implementation, see *Native learning algorithms*) grows rules for each
 class FOIL-style on weighted examples: starting from the empty rule, it
 adds the condition with the highest weighted FOIL gain until none gains
 at least `min_gain` (0.7). Every other condition whose gain is within
@@ -1402,7 +1433,13 @@ the positives it covers are multiplied by `decay` (2/3,
 predicted by `TopKMeanCombiner`: the class whose best `k` (5) covering
 rules have the highest mean expected accuracy `(nc + 1) / (n + K)`
 (`GeneralizedMEstimate(m=K, cost=1/K)` for `K` classes). The combiner is
-usable with any rule set: `TopKMeanCombiner(heuristic, k)`.
+usable with any rule set: `TopKMeanCombiner(heuristic, k)`. Each part is a
+constructor argument: `heuristic=` (a `GainHeuristic`, default
+`FoilGain()`; `DeltaGain(h)` turns any heuristic into one), `covering=`
+(default `WeightedCovering(MultiplicativeReweighting(decay),
+PositiveWeightBelow(min_total_weight))`) and `combiner=`.
+`model=ConceptCascade` and `model=PairwiseModel` decompose the classes
+differently, as for the SeCo learners.
 
 ```python
 from pyrulearn.learners.cpar import CPAR
@@ -2465,10 +2502,11 @@ Development plans, with the reasons behind them, are in
 - **Every native learner on any data representation.** The SeCo learners
   and `PyLORD` run unchanged on all four representations, and on
   N-lists take about half the time (see `demos/representations_report.md`).
-  `ENDER`, `Boomer`, `OptimalRuleBoosting`, `CPAR` and `LRI` still work on
+  `ENDER`, `Boomer`, `OptimalRuleBoosting` and `LRI` still work on
   a dense matrix of the data, so they gain nothing from the other
   representations; they should use the representation's coverage
-  functions instead. The representation would then be chosen once, when
+  functions instead (as `CPAR` does; `DenseCPAR` keeps the dense matrix
+  on purpose, for speed). The representation would then be chosen once, when
   the data is prepared (e.g. in `run_cv`), with N-lists as the default.
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 

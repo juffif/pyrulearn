@@ -3,11 +3,14 @@ import pandas as pd
 import pytest
 
 from pyrulearn.combiners import TopKMeanCombiner
-from pyrulearn.data import BooleanDataRepresentation, DataSpec
+from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec
-from pyrulearn.heuristics import CoveredPositives, GeneralizedMEstimate
-from pyrulearn.learners.cpar import CPAR, PropagatingCPAR
-from pyrulearn.models import ConceptSet, FlatRuleSet, annotate_rules
+from pyrulearn.heuristics import CoveredPositives, DeltaGain, GeneralizedMEstimate, Laplace
+from pyrulearn.learners.cpar import CPAR, DenseCPAR
+from pyrulearn.learners.seco import (
+    AdaBoostReweighting, AdditiveReweighting, PositiveWeightBelow, RemovalCovering, WeightedCovering,
+)
+from pyrulearn.models import ConceptCascade, ConceptSet, FlatRuleSet, annotate_rules
 from pyrulearn.rule import Rule
 
 from _negation_helpers import neg_spec, neg_X
@@ -79,8 +82,8 @@ def test_one_search_copies_the_rule_at_equally_good_conditions():
     X = data.X
     pos = y == "pos"
     w = np.ones(len(y))
-    copying = CPAR(gain_similarity=0.5)._grow(X, X.astype(float), pos, w)
-    single = CPAR(gain_similarity=1.0)._grow(X, X.astype(float), pos, w)
+    copying = DenseCPAR(gain_similarity=0.5)._grow(X, X.astype(float), pos, w)
+    single = DenseCPAR(gain_similarity=1.0)._grow(X, X.astype(float), pos, w)
     assert sorted(copying) == [(0,), (2,)]                     # f0 and f1, from one search
     assert single == [(2,)]                                    # f1 is slightly better on this sample
 
@@ -88,7 +91,7 @@ def test_one_search_copies_the_rule_at_equally_good_conditions():
 def test_cpar_stops_once_the_positive_weight_has_decayed():
     data = _data()
     X, pos = data.X, data.y == "pos"
-    bodies = CPAR()._rules_for(X, X.astype(float), pos, np.ones(len(pos)))
+    bodies = DenseCPAR()._rules_for(X, X.astype(float), pos, np.ones(len(pos)))
     covered = np.zeros(len(pos), dtype=int)
     for b in bodies:
         covered += np.all(X[:, list(b)], axis=1)
@@ -110,15 +113,20 @@ def test_cpar_multiclass_and_data_weights():
     assert isinstance(weighted.concepts[0].rules[0].stats().confusion.rule_stats("a").tp, float)
 
 
-def test_cpar_rejects_bad_arguments():
+@pytest.mark.parametrize("cls", [CPAR, DenseCPAR])
+def test_cpar_rejects_bad_arguments(cls):
     with pytest.raises(ValueError):
-        CPAR(gain_similarity=0.0)
+        cls(gain_similarity=0.0)
+    with pytest.raises(ValueError, match="GainHeuristic"):
+        cls(heuristic=Laplace())                       # not a gain: wrap it in DeltaGain
+    with pytest.raises(ValueError, match="rule weights"):
+        cls(covering=WeightedCovering(AdaBoostReweighting()))
     one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
-        CPAR().fit(one)
+        cls().fit(one)
 
 
-# ------------------------------------------------------------ PropagatingCPAR
+# ------------------------------------------------------------ CPAR vs. DenseCPAR
 
 def _numeric_data(n=300, seed=3):
     # numeric thresholds: fixing one closes the attribute's others (propagation)
@@ -130,26 +138,48 @@ def _numeric_data(n=300, seed=3):
     return BooleanDataRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
 
 
+def _multiclass_data():
+    rng = np.random.default_rng(2)
+    raw = rng.random((300, 4)) < 0.5
+    y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
+    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+
+
 @pytest.mark.parametrize("make", [
     _data,
     _numeric_data,
     lambda: _data(noise=0.0).with_weights(np.linspace(0.5, 2.0, 600)),
+    _multiclass_data,
 ])
-def test_propagating_cpar_learns_cpars_model(make):
-    # an implied condition has FOIL gain 0 < min_gain, so CPAR never picks one;
-    # propagation only spares PropagatingCPAR from scoring it
+def test_cpar_and_dense_cpar_learn_the_same_model(make):
+    # an implied condition has FOIL gain 0 < min_gain, so DenseCPAR never picks
+    # one; constraint propagation only spares CPAR from scoring it
     data = make()
-    assert PropagatingCPAR().fit(data).to_string() == CPAR().fit(data).to_string()
+    assert CPAR().fit(data).to_string() == DenseCPAR().fit(data).to_string()
 
 
-def test_propagating_cpar_multiclass_and_bad_arguments():
-    rng = np.random.default_rng(2)
-    raw = rng.random((300, 4)) < 0.5
-    y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
-    assert PropagatingCPAR().fit(data).to_string() == CPAR().fit(data).to_string()
-    with pytest.raises(ValueError):
-        PropagatingCPAR(gain_similarity=0.0)
-    one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
-    with pytest.raises(ValueError, match="two classes"):
-        PropagatingCPAR().fit(one)
+@pytest.mark.parametrize("params", [
+    dict(heuristic=DeltaGain(Laplace()), min_gain=0.01),
+    dict(covering=WeightedCovering(AdditiveReweighting(), PositiveWeightBelow(0.2), max_rounds=None)),
+    dict(covering=RemovalCovering()),
+    dict(combiner=TopKMeanCombiner(Laplace(), k=2)),
+])
+def test_cpar_components_are_exchangeable(params):
+    data = _numeric_data()
+    model = CPAR(**params).fit(data)
+    assert model.to_string() == DenseCPAR(**params).fit(data).to_string()
+    assert model.to_string() != CPAR().fit(data).to_string()       # the component actually changed something
+
+
+def test_cpar_runs_on_every_representation():
+    data = _numeric_data()
+    expected = CPAR().fit(data).to_string()
+    for rep in (NListRepresentation.from_boolean(data), SparseDataRepresentation.from_boolean(data)):
+        assert CPAR().fit(rep).to_string() == expected
+
+
+def test_cpar_decomposes_like_the_seco_learners():
+    data = _multiclass_data()
+    cascade = CPAR().fit(data, model=ConceptCascade)
+    assert isinstance(cascade, ConceptCascade) and len(cascade.concepts) == 2
+    assert np.mean(np.asarray(cascade.predict(data)) == data.y) > 0.9
