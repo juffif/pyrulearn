@@ -243,9 +243,10 @@ class CPAR(_CPARParameters, DecomposingLearner, NativeRuleLearner):
                 return
             if stats.tp <= 0:
                 return
-            features, tps, fps, fns, tns, dead = live_open_children(weighted, target_class, mask, handle, stats)
+            features, tps, fps, fns, tns, same, dead = live_open_children(weighted, target_class, mask, handle, stats)
             length = rule.length() + 1
             gains = heuristic.batch_score(RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats)
+            gains[same] = 0.0           # changes nothing: no gain over the rule itself
             chosen = []
             threshold = None
             for i in rank_best_first(gains).tolist():                 # stable: ties stay in feature order

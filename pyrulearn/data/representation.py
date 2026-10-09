@@ -415,8 +415,8 @@ class BooleanDataRepresentation(DataRepresentation):
 
     def batch_cover_counts(
         self, handle, positive_class: Any, feature_indices: Sequence[int]
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """``(tp, fp)`` arrays, one entry per feature in `feature_indices`
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """``(tp, fp, keeps_all)`` arrays, one entry per feature in `feature_indices`
         -- *any* open features, not necessarily from the same attribute
         or even numeric (unlike `chain_cover_counts`, no monotonic chain
         assumed) -- computed for every one of them in a single matrix
@@ -437,13 +437,20 @@ class BooleanDataRepresentation(DataRepresentation):
         was tried and measured worse than slicing the open columns in
         every real search -- it pays the full width however narrow the
         open set is (`ROADMAP.md`'s "Design decisions").
+
+        `keeps_all` marks the features that drop no covered row with a
+        nonzero weight: refining by one changes nothing, so its tp/fp
+        equal the rule's own. Summing a different set of rows can round
+        them differently, though -- weights are floats -- and a search
+        could then take such a child for a (tiny) improvement; it uses
+        `keeps_all` to give the child exactly its parent's score instead.
         """
         if self.y is None:
             raise ValueError("batch_cover_counts needs labels (self.y)")
         cov, scope, w = handle
-        # only the covered rows: uncovered ones would only contribute zero
-        # weights, and a deeper rule covers fewer and fewer of them
-        rows = np.flatnonzero(cov)
+        # only the covered rows that carry weight: the others would only
+        # contribute zeros, and a deeper rule covers fewer and fewer of them
+        rows = np.flatnonzero(cov if w is None else cov & (w != 0))
         pos = (self.y == positive_class)[rows]
         if w is not None:
             wr = w[rows]
@@ -458,7 +465,7 @@ class BooleanDataRepresentation(DataRepresentation):
         if w is None:
             tp = tp.astype(int)
             fp = fp.astype(int)
-        return tp, fp
+        return tp, fp, cols.all(axis=0)
 
     @classmethod
     def from_dataframe(

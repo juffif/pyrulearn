@@ -339,7 +339,7 @@ def _score_children_matmul(
         return children, dead
 
     features = list(by_feature.keys())
-    tp_arr, fp_arr = batch(handle, target_class, features)
+    tp_arr, fp_arr, _ = batch(handle, target_class, features)
     for f, tp, fp in zip(features, tp_arr, fp_arr):
         child_rule, child_mask = by_feature[f]
         if tp == 0:
@@ -353,8 +353,8 @@ def _score_children_matmul(
 
 def count_open_children(
     data, target_class: Any, mask: FrozenSet[int], handle, stats: RuleStats,
-) -> Tuple[List[int], Sequence[Any], Sequence[Any], Sequence[Any], Sequence[Any]]:
-    """``(features, tp, fp, fn, tn)`` for the one-literal child on every
+) -> Tuple[List[int], Sequence[Any], Sequence[Any], Sequence[Any], Sequence[Any], np.ndarray]:
+    """``(features, tp, fp, fn, tn, same)`` for the one-literal child on every
     feature in `mask`, in sorted feature order (`Rule.specialize`'s own),
     *without* building any child -- no `Rule`, no closure, no mask, no
     handle. The lazy counterpart of `score_children`: a search that only
@@ -368,35 +368,50 @@ def count_open_children(
     otherwise one `refine_cover` + `cover_counts` per feature. Features
     `Rule.specialize` would drop as contradictory are counted too; the
     caller skips them when `materialize_child` returns None.
+
+    `same` marks the children that cover exactly the rule's own rows
+    (those with a nonzero weight): their counts are set to the rule's
+    `stats` exactly, and a search must score them exactly as the rule
+    itself -- never better. Their weighted counts are mathematically
+    equal anyway, but summed over a different set of rows they can round
+    differently, and a search would then add a condition that changes
+    nothing. Known exactly from `batch_cover_counts`, and for unweighted
+    data (integer counts) from any representation; weighted data on a
+    representation without `batch_cover_counts` gets no marks yet.
     """
     features = sorted(mask)
     if not features:
-        return features, [], [], [], []
+        return features, [], [], [], [], np.zeros(0, dtype=bool)
     batch = getattr(data, "batch_cover_counts", None)
     if batch is not None:
-        tp, fp = batch(handle, target_class, features)
+        tp, fp, same = batch(handle, target_class, features)
         fn = (stats.tp + stats.fn) - tp
         tn = (stats.fp + stats.tn) - fp
-        return features, tp, fp, fn, tn
-    counts = [data.cover_counts(data.refine_cover(handle, f), target_class) for f in features]
-    tp, fp, fn, tn = (list(col) for col in zip(*counts))
-    return features, tp, fp, fn, tn
+    else:
+        counts = [data.cover_counts(data.refine_cover(handle, f), target_class) for f in features]
+        tp, fp, fn, tn = (np.asarray(col) for col in zip(*counts))
+        exact = all(isinstance(v, (int, np.integer)) for v in (stats.tp, stats.fp)) and tp.dtype.kind in "iu"
+        same = (tp + fp == stats.tp + stats.fp) if exact else np.zeros(len(features), dtype=bool)
+    if same.any():
+        tp, fp, fn, tn = (np.where(same, s, a).astype(np.result_type(a, s))
+                          for a, s in ((tp, stats.tp), (fp, stats.fp), (fn, stats.fn), (tn, stats.tn)))
+    return features, tp, fp, fn, tn, same
 
 
 def live_open_children(
     data, target_class: Any, mask: FrozenSet[int], handle, stats: RuleStats,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, Set[int]]:
     """`count_open_children` as arrays, without the dead children: the
-    ``(features, tp, fp, fn, tn)`` of every open child covering at least
-    one positive, plus the set of `dead` features (``tp == 0``). A dead
-    feature stays dead in every descendant -- coverage only shrinks -- so
-    a search masks it out of the child it moves to."""
-    features, tps, fps, fns, tns = count_open_children(data, target_class, mask, handle, stats)
+    ``(features, tp, fp, fn, tn, same)`` of every open child covering at
+    least one positive, plus the set of `dead` features (``tp == 0``). A
+    dead feature stays dead in every descendant -- coverage only shrinks
+    -- so a search masks it out of the child it moves to."""
+    features, tps, fps, fns, tns, same = count_open_children(data, target_class, mask, handle, stats)
     features = np.asarray(features, dtype=np.int64)
     tps, fps, fns, tns = (np.asarray(a) for a in (tps, fps, fns, tns))
     alive = tps != 0
     dead = set(features[~alive].tolist())
-    return features[alive], tps[alive], fps[alive], fns[alive], tns[alive], dead
+    return (features[alive], tps[alive], fps[alive], fns[alive], tns[alive], np.asarray(same)[alive], dead)
 
 
 def rank_best_first(scores: Any, *ties: Any) -> np.ndarray:
@@ -411,6 +426,17 @@ def rank_best_first(scores: Any, *ties: Any) -> np.ndarray:
         cols = [s] if s.ndim == 1 else list(s.T)
     # np.lexsort's *last* key is the primary one
     return np.lexsort([np.asarray(t) for t in reversed(ties)] + [-c for c in reversed(cols)])
+
+
+def set_score(scores: Any, i: int, score: Score) -> None:
+    """Set candidate `i`'s score in a `batch_score` result, in place --
+    for a child that keeps all its parent's rows (`count_open_children`'s
+    `same`), which must score exactly as the parent."""
+    if isinstance(scores, tuple):
+        for column, s in zip(scores, score):
+            column[i] = s
+    else:
+        scores[i] = score
 
 
 def score_at(scores: Any, i: int) -> Score:
@@ -644,11 +670,13 @@ class BeamSearch(RuleSearch):
         # grown rule from scratch, the stats so scoring, the tp == 0
         # floor and the optimistic bound never need a second pass either --
         # and their constraint closure (`_UNSET` for the seeds, computed on
-        # first use), which each child extends instead of recomputing
-        beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any]] = []
+        # first use), which each child extends instead of recomputing, and
+        # their score, which a child keeping all their rows inherits exactly
+        beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any, Score]] = []
         for rule, mask in initial_candidates:
             handle = handle_for(data, rule, example_mask)
-            beam.append((rule, mask, handle, stats_from_handle(data, target_class, rule, handle), _UNSET))
+            stats = stats_from_handle(data, target_class, rule, handle)
+            beam.append((rule, mask, handle, stats, _UNSET, batch_score_one(heuristic, stats)))
         # best_rule tracks the best filtering-eligible rule seen *strictly
         # before* the round currently being evaluated (see the stopping
         # block below for why the timing matters) -- if none is ever seen
@@ -661,10 +689,9 @@ class BeamSearch(RuleSearch):
         # before refining anywhere should return None, not the seed.
         best_rule: Optional[Rule] = None
         best_score: Optional[Score] = None
-        for rule, mask, handle, stats, _ in beam:
+        for rule, mask, handle, stats, _, s in beam:   # s: compared with batch_score values below
             if rule.length() == 0:
                 continue
-            s = batch_score_one(heuristic, stats)  # compared with batch_score values below
             if is_eligible(rule, stats) and (best_score is None or s > best_score):
                 best_rule, best_score = rule, s
 
@@ -720,8 +747,8 @@ class BeamSearch(RuleSearch):
             seen_keys: Set[int] = set()
             dead_by_parent: List[Set[int]] = []
             parts: List[Tuple[np.ndarray, ...]] = []
-            for pi, (rule, mask, handle, stats, _) in enumerate(refinable):
-                features, tps, fps, fns, tns, dead = live_open_children(data, target_class, mask, handle, stats)
+            for pi, (rule, mask, handle, stats, _, _) in enumerate(refinable):
+                features, tps, fps, fns, tns, same, dead = live_open_children(data, target_class, mask, handle, stats)
                 dead_by_parent.append(dead)
                 bits = 0
                 for lit in rule.conditions:
@@ -734,11 +761,13 @@ class BeamSearch(RuleSearch):
                         keep.append(j)
                 k = np.asarray(keep, dtype=np.intp)
                 parts.append((np.full(len(k), pi), features[k], tps[k], fps[k], fns[k], tns[k],
-                              np.full(len(k), rule.length() + 1)))
-            c_parent, c_feature, c_tp, c_fp, c_fn, c_tn, c_length = (
-                np.concatenate([p[j] for p in parts]) for j in range(7)
+                              np.full(len(k), rule.length() + 1), same[k]))
+            c_parent, c_feature, c_tp, c_fp, c_fn, c_tn, c_length, c_same = (
+                np.concatenate([p[j] for p in parts]) for j in range(8)
             )
             scores = heuristic.batch_score(RuleStats(tp=c_tp, fp=c_fp, fn=c_fn, tn=c_tn, length=c_length))
+            for i in np.flatnonzero(c_same).tolist():     # changes nothing: exactly its parent's score
+                set_score(scores, i, refinable[int(c_parent[i])][5])
             # ties broken toward the shorter (more general) rule -- otherwise
             # an arbitrary, sort-order-dependent longer duplicate could win a
             # beam slot over an equally-good shorter one; equal keys stay in
@@ -753,7 +782,7 @@ class BeamSearch(RuleSearch):
             closures: Dict[int, Any] = {pi: entry[4] for pi, entry in enumerate(refinable)}
 
             def build(pi: int, f: int, with_handle: bool):
-                prule, pmask, phandle, _, _ = refinable[pi]
+                prule, pmask, phandle, _, _, _ = refinable[pi]
                 if closures[pi] is _UNSET:  # a seed's: computed on first use
                     try:
                         closures[pi] = parent_closure(dataspec, prule)
@@ -765,7 +794,7 @@ class BeamSearch(RuleSearch):
                     data, dataspec, prule, closures[pi], pmask, f, phandle if with_handle else None,
                 )
 
-            new_beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any]] = []
+            new_beam: List[Tuple[Rule, FrozenSet[int], Any, RuleStats, Any, Score]] = []
             built: List[Tuple[Score, Rule, RuleStats]] = []
             walked = 0
             while walked < len(order) and len(new_beam) < self.beam_width:
@@ -775,7 +804,7 @@ class BeamSearch(RuleSearch):
                 if child is None:
                     continue  # contradicts its parent: never a candidate
                 crule, cmask, chandle, cclosure = child
-                new_beam.append((crule, cmask - dead_by_parent[pi], chandle, st, cclosure))
+                new_beam.append((crule, cmask - dead_by_parent[pi], chandle, st, cclosure, s))
                 built.append((s, crule, st))
             if not new_beam:
                 break
@@ -996,11 +1025,13 @@ class HillClimbing(RuleSearch):
 
             # score every child from counts alone, in one batch_score call;
             # build only the one moved to
-            features, tps, fps, fns, tns, dead = live_open_children(data, target_class, mask, handle, stats)
+            features, tps, fps, fns, tns, same, dead = live_open_children(data, target_class, mask, handle, stats)
             length = rule.length() + 1
             values = self._child_scores(
                 heuristic, RuleStats(tp=tps, fp=fps, fn=fns, tn=tns, length=length), stats,
             )
+            for i in np.flatnonzero(same).tolist():   # changes nothing: exactly the rule's own score
+                set_score(values, i, threshold)
             if closure is _UNSET:  # only the seed's: every child brings its own
                 try:
                     closure = parent_closure(dataspec, rule)
