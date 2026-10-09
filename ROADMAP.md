@@ -333,7 +333,11 @@ included), a `filtering=` criterion so that the top-k search finds `k`
 productive rules -- on by default in `OpusTopK` (Titanic, k=5: 3.3s
 instead of 1.4s). Still in the top-k: several negated values of one
 attribute (`sibsp != 4, sibsp != 5, sibsp != 8`), each productive --
-a set-valued condition would fold them into one.
+Webb's language of `≠` conditions is internal disjunction. Pretty
+printing now shows them as one condition (`sibsp ∉ {4, 5, 8}`, or `∈`
+the remaining values when that's shorter), and thresholds on one numeric
+attribute as one interval; open: a value-set *feature* that also counts
+as one condition, for rule-length measures and `max_conditions`.
 
 Next, deferred: `OptimalRuleBoosting`'s two searches as configurations
 of `BranchAndBoundSearch` and a greedy search. Its objective (sums of
