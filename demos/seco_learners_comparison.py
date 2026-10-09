@@ -24,6 +24,10 @@ handling several classes -- see `LEARNER_NOTES`):
                   correlation with a 0.3 correlation cutoff.
 - **Pypper**   -- `Pypper`: pyrulearn's RIPPER (IREP* grow/prune plus
                   `ReplaceReviseOptimization`).
+- **Opus(WRAcc)** -- `pyrulearn.learners.opus.Opus` (after Webb 1995):
+                  the optimal rule by `WRAcc` in every covering step, found
+                  by exhaustive branch-and-bound search
+                  (`BranchAndBoundSearch`), at most 3 conditions per rule.
 - **PyLORD**   -- `pyrulearn.learners.pylord.PyLORD`: a simplified
                   reimplementation of LORD (Huynh, Fürnkranz & Beck 2023),
                   one locally optimal rule per training example.
@@ -34,10 +38,11 @@ handling several classes -- see `LEARNER_NOTES`):
                   found (`LORD_CLASSPATH` below, or `$LORD_CLASSPATH`).
 
 **AQR** (Clark & Niblett 1989, the AQ baseline CN2 was designed to improve
-on) is *not* in the main comparison: `run_preliminary_aqr_check` fits it
-against CN2 on a few small datasets first, and its measured result --
-long, overfit rules and far higher fit times -- is the report's argument
-for leaving it out.
+on) and **Opus with the Laplace estimate** (Webb's own setting: the rule
+CN2's beam search approximates, found exactly) are *not* in the main
+comparison: `run_preliminary_aqr_check` fits them against CN2 on a few
+small datasets first, and their measured results -- many narrow rules and
+far higher fit times -- are the report's argument for leaving them out.
 
 Run: `python demos/seco_learners_comparison.py` with no arguments
 is the **quick** default (`QUICK_DATASETS_SPEC`, `QUICK_FOLDS`-fold); its
@@ -62,6 +67,8 @@ from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
 from pyrulearn.interfaces.lord import JavaLord
 from pyrulearn.interfaces.weka import WekaJRip
+from pyrulearn.heuristics import WRAcc
+from pyrulearn.learners.opus import Opus
 from pyrulearn.learners.pylord import PyLORD
 from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil, Pypper
 
@@ -121,12 +128,36 @@ def lord_available() -> bool:
     return os.path.exists(LORD_CLASSPATH.split(os.pathsep)[0])
 
 
+# exhaustive search is exponential in the rule length: at most 3 conditions
+# keeps every Opus fit on the quick datasets within seconds (WRAcc) or a
+# few minutes (Laplace); 4 costs up to 10x more for about the same rules
+OPUS_MAX_CONDITIONS = 3
+
+
+class LabeledOpus(Opus):
+    """`Opus` named by `label` in the results -- the main comparison and
+    the preliminary check run it with different heuristics."""
+
+    def __init__(self, label: str, heuristic=None, random_state: Optional[int] = None):
+        super().__init__(heuristic=heuristic, max_conditions=OPUS_MAX_CONDITIONS, random_state=random_state)
+        self.label = label
+
+    @property
+    def display_name(self) -> str:
+        return self.label
+
+    def _provenance_params(self):
+        return {"label": self.label, "heuristic": repr(self.heuristic) if self.heuristic else "Laplace(n_classes=c)",
+                "max_conditions": self.max_conditions}
+
+
 def build_learners():
     learners = [
         CN2(random_state=RANDOM_STATE),
         PFoil(random_state=RANDOM_STATE),
         PFossil(random_state=RANDOM_STATE),
         Pypper(random_state=RANDOM_STATE),
+        LabeledOpus("Opus(WRAcc)", heuristic=WRAcc(), random_state=RANDOM_STATE),
         PyLORD(random_state=RANDOM_STATE),
         WekaJRip(jar=WEKA_JAR, java=WEKA_JAVA),
     ]
@@ -135,25 +166,30 @@ def build_learners():
     return learners
 
 
-# AQR vs. CN2 preliminary check -- see run_preliminary_aqr_check(): small
-# datasets with class noise, one of them (credit-approval) with several
-# numeric attributes, where AQR's time blows up
+# AQR and Opus(Laplace) vs. CN2 preliminary check -- see
+# run_preliminary_aqr_check(): small datasets with class noise, one of them
+# (credit-approval) with several numeric attributes, where AQR's and
+# Opus(Laplace)'s fit times blow up
 PRELIM_DATASETS = ["breast-cancer", "hepatitis", "heart-statlog", "credit-approval"]
 PRELIM_FOLDS = 3
 
 
 def run_preliminary_aqr_check():
-    """Fits `AQR` against `CN2` -- the learner designed to improve on it --
-    on `PRELIM_DATASETS`, and returns `(results, verdict)`: the `run_cv`
-    table and a sentence built from the measured numbers."""
+    """Fits `AQR` -- the learner CN2 was designed to improve on -- and
+    `Opus` with the Laplace estimate -- the rule CN2's beam search
+    approximates, found exactly -- against `CN2` on `PRELIM_DATASETS`, and
+    returns `(results, verdict)`: the `run_cv` table and sentences built
+    from the measured numbers."""
     datasets = Catalog.default().select(names=PRELIM_DATASETS)
-    results = run_cv([CN2(random_state=RANDOM_STATE), AQR(random_state=RANDOM_STATE)], datasets,
+    learners = [CN2(random_state=RANDOM_STATE), AQR(random_state=RANDOM_STATE),
+                LabeledOpus("Opus(Laplace)", random_state=RANDOM_STATE)]
+    results = run_cv(learners, datasets,
                      n_folds=PRELIM_FOLDS, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
                      random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
     r = results.copy()
     r["conds_per_rule"] = r["n_conditions"] / r["n_rules"]
-    m = r.groupby("learner")[["accuracy", "n_conditions", "conds_per_rule", "fit_time"]].mean()
-    aqr, cn2 = m.loc["AQR"], m.loc["CN2"]
+    m = r.groupby("learner")[["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]].mean()
+    aqr, cn2, opus = m.loc["AQR"], m.loc["CN2"], m.loc["Opus(Laplace)"]
     verdict = (
         f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), AQR was "
         f"{'less' if aqr['accuracy'] < cn2['accuracy'] else 'not less'} accurate than CN2 "
@@ -164,7 +200,16 @@ def run_preliminary_aqr_check():
         f"{aqr['fit_time'] / cn2['fit_time']:.0f}x as long per fit ({aqr['fit_time']:.1f}s vs. "
         f"{cn2['fit_time']:.2f}s, mean) -- requiring every rule to be consistent overfits noisy "
         f"data, and on larger datasets with numeric attributes the fit times would dominate the "
-        f"whole comparison."
+        f"whole comparison. Opus with the Laplace estimate (at most {OPUS_MAX_CONDITIONS} "
+        f"conditions per rule), which finds the rule CN2's beam search only approximates, was "
+        f"{'less' if opus['accuracy'] < cn2['accuracy'] else 'not less'} accurate than CN2 "
+        f"(mean accuracy {opus['accuracy']:.3f}), learned "
+        f"{opus['n_rules'] / cn2['n_rules']:.1f}x as many rules ({opus['n_rules']:.0f} vs. "
+        f"{cn2['n_rules']:.0f}, mean) and took {opus['fit_time'] / cn2['fit_time']:.0f}x as long "
+        f"per fit ({opus['fit_time']:.1f}s, mean). Webb (1993) found classifiers that optimize "
+        f"the Laplace estimate exactly often less accurate than those of a heuristic search "
+        f"that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The "
+        f"main comparison runs Opus with WRAcc instead."
     )
     return results, verdict
 
@@ -182,6 +227,9 @@ LEARNER_NOTES = {
     "Pypper": "pyrulearn's RIPPER: grow on two thirds of the data, prune on the rest "
               "(IREP*), then optimize the rule set (replace/revise). Rules for the "
               "classes from least to most frequent, the most frequent one as default.",
+    "Opus(WRAcc)": "Opus: in every covering step the rule with the highest weighted relative "
+                   f"accuracy among all conjunctions of up to {OPUS_MAX_CONDITIONS} conditions, "
+                   "found by exhaustive branch-and-bound search (OPUS). Rules for every class.",
     "PyLORD": "A simplified LORD: for every training example, the best rule covering it "
               "(greedy m-estimate search, then pruning); a test example is classified by "
               "the best rule that covers it. Many overlapping rules.",
@@ -228,8 +276,9 @@ many classes (left for the multi-class demo) are not included.
 
 {learner_lines}
 {lord_note}
-AQR, the AQ baseline CN2 was designed to improve on, was checked
-separately and left out -- see "Why AQR isn't in the main comparison".
+AQR, the AQ baseline CN2 was designed to improve on, and Opus with the
+Laplace estimate were checked separately and left out -- see "Why AQR and
+Opus(Laplace) aren't in the main comparison".
 {aqr_verdict}
 
 Protocol: {folds_note}
@@ -278,7 +327,7 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
     lines.append(f"![fit time per dataset]({plots_dir}/{os.path.basename(plots['fit_time'])})\n\n")
     lines.append(f"![critical-difference diagram (accuracy)]({plots_dir}/{os.path.basename(plots['cd'])})\n\n")
 
-    lines.append("## Why AQR isn't in the main comparison\n\n")
+    lines.append("## Why AQR and Opus(Laplace) aren't in the main comparison\n\n")
     lines.append(f"{aqr_verdict}\n\n")
     aqr_results = aqr_results.copy()
     aqr_results["conds_per_rule"] = aqr_results["n_conditions"] / aqr_results["n_rules"]
@@ -424,7 +473,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
     datasets = Catalog.default().parse(spec, random_state=RANDOM_STATE)
     learners = build_learners()
     learner_names = [l.display_name for l in learners]
-    print("Preliminary check: AQR vs. CN2 ...")
+    print("Preliminary check: AQR and Opus(Laplace) vs. CN2 ...")
     aqr_results, aqr_verdict = run_preliminary_aqr_check()
     print(aqr_verdict)
 
