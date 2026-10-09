@@ -349,3 +349,58 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
     print("\nAll tests passed.")
+
+
+def _color_spec():
+    b = DataSpecBuilder(negation=True)
+    color = b.add_nominal("color", ["red", "green", "blue", "black", "white"])
+    smoker = b.add_boolean("smoker")
+    return b.build(), color.negative, smoker
+
+
+def test_pretty_shows_several_negations_on_one_attribute_as_a_value_set():
+    spec, neq, smoker = _color_spec()
+    two = Rule([smoker, neq["red"], neq["blue"]], target="t", dataspec=spec)
+    assert two.to_string(fmt="conditions") == "color ≠ red, color ≠ blue, smoker"   # plain: every condition
+    assert two.to_string(fmt="conditions", pretty=True) == "color ∉ {red, blue}, smoker"
+    assert two.to_string(fmt="conditions", ascii=True, pretty=True) == "color not in {red, blue}, smoker"
+    assert two.to_string(fmt="prolog", pretty=True) == (
+        "t(X) :-\n    color(X, V1), \+ member(V1, [red, blue]),\n    smoker(X).")
+    assert two.length() == 3                                   # only the display changes
+    three = Rule([neq["red"], neq["blue"], neq["black"]], target="t", dataspec=spec)
+    assert three.to_string(fmt="logic", pretty=True) == "color ∈ {green, white} → t"   # the shorter form
+    assert three.to_string(fmt="prolog", pretty=True) == "t(X) :-\n    color(X, V1), member(V1, [green, white])."
+    four = Rule([neq["red"], neq["blue"], neq["black"], neq["white"]], target="t", dataspec=spec)
+    assert four.to_string(fmt="conditions", pretty=True) == "color = green"
+    assert four.to_string(fmt="prolog", pretty=True) == "t(X) :-\n    color(X, green)."
+
+
+def test_a_single_negation_stays_a_negation():
+    spec, neq, smoker = _color_spec()
+    one = Rule([smoker, neq["red"]], target="t", dataspec=spec)
+    assert one.to_string(fmt="conditions", pretty=True) == "color ≠ red, smoker"
+    assert one.to_string(fmt="prolog") == r"t(X) :- color(X, V1), V1 \= red, smoker(X)."
+
+
+def test_pretty_shows_thresholds_on_one_numeric_attribute_as_an_interval():
+    b = DataSpecBuilder(negation=True)
+    age = b.add_numeric("age", ge_thresholds=[20, 30, 40])
+    smoker = b.add_boolean("smoker")
+    spec = b.build()
+    between = Rule([age[20], age.negative[40], smoker], target="t", dataspec=spec)
+    assert between.to_string(fmt="conditions") == "age >= 20, age < 40, smoker"
+    assert between.to_string(fmt="conditions", pretty=True) == "20 <= age < 40, smoker"
+    assert between.to_string(fmt="prolog", pretty=True) == "t(X) :-\n    age(X, V1), V1 >= 20, V1 < 40,\n    smoker(X)."
+    tightest = Rule([age[20], age[30]], target="t", dataspec=spec)
+    assert tightest.to_string(fmt="conditions", pretty=True) == "age >= 30"
+    single = Rule([age.negative[30]], target="t", dataspec=spec)
+    assert single.to_string(fmt="conditions", pretty=True) == "age < 30"
+
+
+def test_pretty_model_printing_compresses_too():
+    from pyrulearn.models import ConceptModel
+    spec, neq, smoker = _color_spec()
+    model = ConceptModel([Rule([neq["red"], neq["blue"], smoker], target="t", dataspec=spec)], label="t",
+                         default_prediction="f")
+    assert "color ∉ {red, blue}" in model.to_string(fmt="logic", pretty=True, show_stats=False)
+    assert "color ≠ red ∧ color ≠ blue" in model.to_string(fmt="logic", show_stats=False)

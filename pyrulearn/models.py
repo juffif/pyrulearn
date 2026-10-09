@@ -1071,7 +1071,8 @@ def _class_legend(class_order: Tuple[Any, ...]) -> str:
     return "% classes: [" + ", ".join(str(c) for c in class_order) + "]"
 
 
-def _dnf_lines(rules: Sequence[Rule], ascii: bool, dec: Callable[[Rule, str], str]) -> List[str]:
+def _dnf_lines(rules: Sequence[Rule], ascii: bool, dec: Callable[[Rule, str], str],
+               pretty: bool = False) -> List[str]:
     """One class's rules, collapsed into a single DNF expression for
     "logic"-format printing: each rule's `Rule.logic_body`, parenthesized
     and decorated via `dec`, on its own line (``∨``-prefixed after the
@@ -1079,7 +1080,7 @@ def _dnf_lines(rules: Sequence[Rule], ascii: bool, dec: Callable[[Rule, str], st
     trailing ``→ target`` line."""
     arrow_sym = "->" if ascii else "→"
     or_sym = "OR" if ascii else "∨"
-    parts = [dec(r, f"({r.logic_body(ascii=ascii)})") for r in rules]
+    parts = [dec(r, f"({r.logic_body(ascii=ascii, pretty=pretty)})") for r in rules]
     lines = [f"    {parts[0]}"] + [f"  {or_sym} {p}" for p in parts[1:]]
     target = rules[0].target if rules else None
     lines.append(f"  {arrow_sym} {target}")
@@ -1190,7 +1191,7 @@ class RuleSet(RuleModel):
             group = [r for r in self.rules if r.target == t]
             header = f"% class: {t}"
             if resolved == "logic" and self._LOGIC_AS_DNF:
-                body = "\n".join(_dnf_lines(group, ascii=ascii, dec=dec))
+                body = "\n".join(_dnf_lines(group, ascii=ascii, dec=dec, pretty=pretty))
             else:
                 body = "\n".join(dec(r, _bare(r, resolved, ascii, pretty, weight_format)) for r in group)
             sections.append(f"{header}\n{body}")
@@ -1292,7 +1293,7 @@ class RuleList(RuleModel):
             lines = []
             for i, r in enumerate(rules):
                 kw = "if  " if i == 0 else "elif"
-                text = dec(r, f"{r.logic_body(ascii=ascii)} {arrow_sym} {r.target}")
+                text = dec(r, f"{r.logic_body(ascii=ascii, pretty=pretty)} {arrow_sym} {r.target}")
                 lines.append(f"{kw} {text}")
             if self.default_rule is not None:
                 default_text = dec(self.default_rule, f"{arrow_sym} {self.default_rule.target}")

@@ -94,6 +94,29 @@ class Literal(NamedTuple):
 ConditionLike = Union[Literal, int, Tuple[int]]
 
 
+class _ValueSet(NamedTuple):
+    """Display-only (``pretty``): two or more ``attribute != v`` conditions
+    of one rule, shown as one condition -- ``attribute ∉ {excluded}``, or,
+    when shorter, ``attribute ∈ {the remaining values}`` (``attribute =
+    v`` for a single one). See `Rule._display_items`."""
+    attribute: str
+    values: Tuple[Any, ...]
+    member: bool
+
+
+class _Interval(NamedTuple):
+    """Display-only (``pretty``): two or more threshold conditions on one
+    numeric attribute, shown as one interval -- ``20 <= age < 30``, or a
+    single bound when all of them bound the same side (the tightest
+    one). `lower_op` is ``">="``/``">"`` (or `None`), `upper_op`
+    ``"<"``/``"<="`` (or `None`). See `Rule._display_items`."""
+    attribute: str
+    lower: Any
+    lower_op: Optional[str]
+    upper: Any
+    upper_op: Optional[str]
+
+
 class Rule:
     """A conjunction of Boolean literals, optionally ordered, optionally
     tied to a `DataSpec`.
@@ -289,6 +312,108 @@ class Rule:
 
     def _display_conditions(self) -> Tuple[Literal, ...]:
         return self.conditions if self.ordered else self.canonical_conditions()
+
+    def _display_items(self, pretty: bool = False) -> List[Union[Literal, _ValueSet, _Interval]]:
+        """`_display_conditions` -- with `pretty`, the conditions on one
+        attribute compressed into one, at the place of the first:
+
+        - two or more ``x != v`` on a NOMINAL attribute become a
+          `_ValueSet`: ``x ∉ {excluded}``, or ``x ∈ {remaining}`` when
+          fewer values remain than are excluded -- the shorter form; a
+          tie keeps ``∉``. A single ``x != v`` stays as it is. The
+          remaining values are the attribute's declared domain (and its
+          missing-value name, if declared): a value outside the domain --
+          never seen when the `DataSpec` was built -- satisfies every
+          ``x != v``, so the rule covers it although ``∈ {...}`` doesn't
+          list it. Missing values (`MissingStrategy.NEVER_COVERS`)
+          satisfy no condition on ``x`` either way.
+        - two or more thresholds on a NUMERIC attribute become an
+          `_Interval`: the tightest lower and the tightest upper bound,
+          ``20 <= age < 30``.
+
+        Without `pretty`, every condition is shown as it is. Either way
+        only the display changes: the rule keeps its conditions, and
+        `length()` counts each of them."""
+        conds = self._display_conditions()
+        if not pretty or self.dataspec is None:
+            return list(conds)
+        groups: dict = {}
+        for lit in conds:
+            key = self._merge_key(lit)
+            if key is not None:
+                groups.setdefault(key, []).append(self._feature_spec(lit.feature))
+        merged = {key: specs for key, specs in groups.items() if len(specs) > 1}
+        if not merged:
+            return list(conds)
+        items: List[Union[Literal, _ValueSet, _Interval]] = []
+        shown = set()
+        for lit in conds:
+            key = self._merge_key(lit)
+            if key not in merged:
+                items.append(lit)
+            elif key not in shown:                             # later ones are merged into the first
+                shown.add(key)
+                kind, attribute = key
+                if kind == "set":
+                    items.append(self._value_set(attribute, [spec.value for spec in merged[key]]))
+                else:
+                    items.append(self._interval(attribute, merged[key]))
+        return items
+
+    def _merge_key(self, lit: Literal) -> Optional[Tuple[str, str]]:
+        """``("set", attribute)`` for a ``!=`` on a NOMINAL attribute,
+        ``("interval", attribute)`` for a threshold on a NUMERIC one --
+        the conditions `_display_items` may merge -- else `None`."""
+        spec = self._feature_spec(lit.feature)
+        if spec is None or spec.attribute is None:
+            return None
+        attr = self.dataspec.attributes.get(spec.attribute)
+        if attr is None:
+            return None
+        if spec.op == "!=" and attr.type == AttributeType.NOMINAL and attr.domain is not None:
+            return ("set", spec.attribute)
+        if spec.op in (">=", ">", "<", "<=") and attr.type == AttributeType.NUMERIC:
+            return ("interval", spec.attribute)
+        return None
+
+    def _value_set(self, attribute: str, excluded: List[Any]) -> _ValueSet:
+        attr = self.dataspec.attributes[attribute]
+        universe = list(attr.domain)
+        if attr.missing_name is not None and attr.missing_name not in universe:
+            universe.append(attr.missing_name)
+        remaining = tuple(v for v in universe if v not in excluded)
+        if 0 < len(remaining) < len(excluded):
+            return _ValueSet(attribute, remaining, member=True)
+        ordered = tuple(v for v in universe if v in excluded) + tuple(v for v in excluded if v not in universe)
+        return _ValueSet(attribute, ordered, member=False)
+
+    @staticmethod
+    def _interval(attribute: str, specs: list) -> _Interval:
+        lower = lower_op = upper = upper_op = None
+        for spec in specs:
+            if spec.op in (">=", ">"):
+                if lower is None or spec.value > lower or (spec.value == lower and spec.op == ">"):
+                    lower, lower_op = spec.value, spec.op
+            elif upper is None or spec.value < upper or (spec.value == upper and spec.op == "<"):
+                upper, upper_op = spec.value, spec.op
+        return _Interval(attribute, lower, lower_op, upper, upper_op)
+
+    def _item_str(self, item: Union[Literal, _ValueSet, _Interval], ascii: bool = False) -> str:
+        if isinstance(item, _ValueSet):
+            if item.member and len(item.values) == 1:
+                return f"{item.attribute} = {item.values[0]}"
+            values = "{" + ", ".join(str(v) for v in item.values) + "}"
+            if item.member:
+                return f"{item.attribute} {'in' if ascii else '∈'} {values}"
+            return f"{item.attribute} {'not in' if ascii else '∉'} {values}"
+        if isinstance(item, _Interval):
+            if item.lower_op is None:
+                return f"{item.attribute} {item.upper_op} {item.upper}"
+            if item.upper_op is None:
+                return f"{item.attribute} {item.lower_op} {item.lower}"
+            flipped = "<=" if item.lower_op == ">=" else "<"
+            return f"{item.lower} {flipped} {item.attribute} {item.upper_op} {item.upper}"
+        return self._literal_str(item, ascii=ascii)
 
     def _rebuilt(
         self,
@@ -609,7 +734,11 @@ class Rule:
     #: their own distinct variable name at all).
     _PROLOG_VAR_OPS = ("!=", ">=", ">", "<", "<=")
 
-    def _prolog_needs_var(self, lit: Literal) -> bool:
+    def _prolog_needs_var(self, lit: Union[Literal, _ValueSet, _Interval]) -> bool:
+        if isinstance(lit, _Interval):
+            return True
+        if isinstance(lit, _ValueSet):
+            return not (lit.member and len(lit.values) == 1)
         spec = self._feature_spec(lit.feature)
         return spec is not None and spec.op in self._PROLOG_VAR_OPS
 
@@ -625,7 +754,20 @@ class Rule:
         rule* its own distinct `var` (see `to_string`'s "prolog" case):
         reusing ``V`` across two different attributes would force their
         values to unify, which is wrong -- they're unrelated quantities,
-        each only ever compared to its own literal constant."""
+        each only ever compared to its own literal constant. A merged
+        value set (`_display_items`, ``pretty``) renders as ``color(X,
+        V), member(V, [red, blue])`` or ``\\+ member(V, [...])``, a merged
+        interval as ``age(X, V), V >= 20, V < 30``."""
+        if isinstance(lit, _Interval):
+            bounds = [f"{var} {op} {value}" for op, value in ((lit.lower_op, lit.lower), (lit.upper_op, lit.upper))
+                      if op is not None]
+            return f"{lit.attribute}(X, {var}), " + ", ".join(bounds)
+        if isinstance(lit, _ValueSet):
+            if lit.member and len(lit.values) == 1:
+                return f"{lit.attribute}(X, {lit.values[0]})"
+            values = "[" + ", ".join(str(v) for v in lit.values) + "]"
+            test = f"member({var}, {values})" if lit.member else f"\\+ member({var}, {values})"
+            return f"{lit.attribute}(X, {var}), {test}"
         spec = self._feature_spec(lit.feature)
         if spec is not None:
             if spec.op in ("==", "has"):
@@ -640,16 +782,17 @@ class Rule:
                 return f"{spec.name.replace(' ', '_')}(X)"
         return f"{self._feature_name(lit.feature)}(X)"
 
-    def logic_body(self, ascii: bool = False) -> str:
+    def logic_body(self, ascii: bool = False, pretty: bool = False) -> str:
         """The "logic" format's conjunction, without the ``→ target``
         head -- e.g. ``"age_gt_30 ∧ smoker"``, or ``"TRUE"`` for an
         empty condition set. Used by `to_string(fmt="logic")` itself,
         and reused by `pyrulearn.models.RuleSet.to_string`/`RuleList.
         to_string` to build multi-rule DNF blocks (one disjunct per rule)
-        when printing a whole model.
+        when printing a whole model. `pretty` compresses the conditions on
+        one attribute (`_display_items`).
         """
         and_sym = " AND " if ascii else " ∧ "
-        lits = [self._literal_str(l, ascii=ascii) for l in self._display_conditions()]
+        lits = [self._item_str(item, ascii=ascii) for item in self._display_items(pretty)]
         return and_sym.join(lits) if lits else "TRUE"
 
     def to_string(self, fmt: Optional[str] = None, ascii: bool = False, pretty: bool = False,
@@ -706,13 +849,13 @@ class Rule:
             return " ".join(tokens)
 
         if fmt == "conditions":
-            return ", ".join(self._literal_str(l, ascii=ascii) for l in conds)
+            return ", ".join(self._item_str(item, ascii=ascii) for item in self._display_items(pretty))
 
         if fmt == "prolog":
             head_pred = self._prolog_atom(str(self.target)) if self.target is not None else "rule"
             var_count = 0
             body_lits = []
-            for l in conds:
+            for l in self._display_items(pretty):
                 if self._prolog_needs_var(l):
                     var_count += 1
                     body_lits.append(self._prolog_literal(l, f"V{var_count}"))
@@ -727,7 +870,7 @@ class Rule:
         if fmt == "logic":
             arrow_sym = "->" if ascii else "→"
             head = f" {arrow_sym} {self.target}" if self.target is not None else ""
-            return f"{self.logic_body(ascii=ascii)}{head}"
+            return f"{self.logic_body(ascii=ascii, pretty=pretty)}{head}"
 
         raise ValueError(f"Unknown format {fmt!r}; choose from logic/prolog/pattern/conditions")
 
