@@ -364,6 +364,7 @@ def write_plots(results, plots: dict, learner_names) -> None:
         return
     os.makedirs(PLOTS_DIR, exist_ok=True)
     colors = dict(zip(learner_names, plt.get_cmap("tab10").colors))
+    markers = dict(zip(learner_names, ["o", "s", "^", "D", "v", "P", "X", "<", ">", "*"]))
     per_pair = results.groupby(["dataset", "learner"], as_index=False).mean(numeric_only=True)
 
     fig, ax = plt.subplots(figsize=(7, 5.5))
@@ -371,7 +372,7 @@ def write_plots(results, plots: dict, learner_names) -> None:
         sub = per_pair[per_pair["learner"] == learner].dropna(subset=["accuracy"])
         if len(sub):
             ax.scatter(sub["n_conditions"], sub["accuracy"], label=learner,
-                       color=colors[learner], alpha=0.7, s=40)
+                       color=colors[learner], marker=markers[learner], alpha=0.7, s=40)
     ax.set_xscale("symlog")
     ax.set_xlabel("total conditions (rule set complexity)")
     ax.set_ylabel("test accuracy")

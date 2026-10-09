@@ -506,12 +506,17 @@ _COVERING_COLORS = {
 }
 _HEURISTIC_MARKERS = {"Laplace": "o", "WRAcc": "s", "MEstimate16": "^"}
 _COMPLETE_COLORS = {"CPAR": "tab:brown", "LRI": "tab:pink"}
+_COMPLETE_MARKERS = {"CPAR": "D", "LRI": "P"}
 # Section 2: one color per boosting family, its four budgets (10/20/
 # 50/100) connected by a line -- the accuracy-vs-cost curve the family
 # traces out, not four unrelated points.
 _FAMILY_COLORS = {
     "Slipper": "tab:orange", "ENDER-CSLog": "tab:cyan",
     "ENDER-CSExp": "tab:olive", "ENDER-Newton": "gold", "Boomer": "black",
+}
+# shapes unused by the heuristics (o s ^) and the complete algorithms (D P)
+_FAMILY_MARKERS = {
+    "Slipper": "v", "ENDER-CSLog": "<", "ENDER-CSExp": ">", "ENDER-Newton": "X", "Boomer": "*",
 }
 
 
@@ -540,7 +545,7 @@ def _accuracy_vs_time_plot(
             continue
         acc, t = s1_acc[name], s1_time[name]
         if name in _COMPLETE_COLORS:
-            ax.scatter(t, acc, color=_COMPLETE_COLORS[name], marker="D", s=55, zorder=3)
+            ax.scatter(t, acc, color=_COMPLETE_COLORS[name], marker=_COMPLETE_MARKERS[name], s=55, zorder=3)
             continue
         cov_name, heur_name = name.split("+")
         ax.scatter(t, acc, color=_COVERING_COLORS[cov_name], marker=_HEURISTIC_MARKERS[heur_name],
@@ -554,7 +559,7 @@ def _accuracy_vs_time_plot(
                 xs.append(s2_time[name])
                 ys.append(s2_acc[name])
         if xs:
-            ax.plot(xs, ys, "-o", color=_FAMILY_COLORS[family], markersize=4, zorder=2)
+            ax.plot(xs, ys, "-", marker=_FAMILY_MARKERS[family], color=_FAMILY_COLORS[family], markersize=5, zorder=2)
 
     ax.set_xscale("log")
     ax.set_xlabel("fit time (s, log scale)")
@@ -562,9 +567,17 @@ def _accuracy_vs_time_plot(
     ax.set_title("Accuracy vs. fit time: covering strategies and boosting")
     ax.grid(alpha=0.3, which="both")
 
+    # covering strategies: color only (their shape is the heuristic, legend 2);
+    # complete algorithms and boosting families: the marker they're drawn with
     algorithm_handles = [
         Line2D([0], [0], marker="o", color=c, linestyle="", markersize=7, label=n)
-        for n, c in {**_COVERING_COLORS, **_COMPLETE_COLORS, **_FAMILY_COLORS}.items()
+        for n, c in _COVERING_COLORS.items()
+    ] + [
+        Line2D([0], [0], marker=_COMPLETE_MARKERS[n], color=c, linestyle="", markersize=7, label=n)
+        for n, c in _COMPLETE_COLORS.items()
+    ] + [
+        Line2D([0], [0], marker=_FAMILY_MARKERS[n], color=c, linestyle="-", markersize=5, label=n)
+        for n, c in _FAMILY_COLORS.items()
     ]
     heuristic_handles = [
         Line2D([0], [0], marker=m, color="gray", linestyle="", markersize=7, label=h)

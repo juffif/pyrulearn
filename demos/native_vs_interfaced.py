@@ -457,6 +457,8 @@ def write_plots(results: pd.DataFrame, learner_names, quick: bool) -> dict:
     stem = f"{NAME}_{'quick_' if quick else ''}"
     os.makedirs(PLOTS_DIR, exist_ok=True)
     colors = dict(zip(PAIRS, plt.get_cmap("tab10").colors))
+    # one shape per pair as well as one color; filled = native, open = interfaced
+    markers = dict(zip(PAIRS, ["o", "s", "^", "D", "v", "P", "X", "<", ">", "*"]))
     per_pair = results.groupby(["dataset", "learner"], as_index=False).mean(numeric_only=True)
     paths = {}
 
@@ -478,7 +480,7 @@ def write_plots(results: pd.DataFrame, learner_names, quick: bool) -> dict:
         sub = per_pair[per_pair["learner"] == learner].dropna(subset=["accuracy"])
         if len(sub):
             ax.scatter(sub["n_conditions"], sub["accuracy"], label=learner, color=colors[key],
-                      marker="o" if native else "^", facecolors=colors[key] if native else "none",
+                      marker=markers[key], facecolors=colors[key] if native else "none",
                       edgecolors=colors[key], s=45, alpha=0.8, zorder=2)
     ax.set_xscale("symlog")
     ax.set_xlabel("total conditions (rule set complexity)")

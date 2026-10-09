@@ -265,7 +265,7 @@ def write_plots(results, tradeoff_plot_path: str, m_sweep_plot_path: str) -> Non
         elif _m_of(learner) is not None:
             color, marker = "tab:blue", "o"
         else:
-            color, marker = "tab:gray", "o"
+            color, marker = "tab:gray", "^"
         ax.scatter(row["n_conditions"], row["accuracy"], color=color, marker=marker, s=50)
         ax.annotate(learner, (row["n_conditions"], row["accuracy"]), fontsize=7,
                     xytext=(4, 3), textcoords="offset points")

@@ -209,6 +209,7 @@ def build_learners():
 
 LEARNER_ORDER = ["Weka:JRip", "Witt:RIPPER", "Pypper", "Slipper"]
 COLORS = dict(zip(LEARNER_ORDER, ["tab:blue", "tab:orange", "tab:green", "tab:red"]))
+MARKERS = dict(zip(LEARNER_ORDER, ["o", "s", "^", "D"]))
 
 
 def select_datasets(spec: str):
@@ -317,7 +318,7 @@ def write_plots(results, accuracy_plot_path: str, fit_time_plot_path: str, cd_pl
         sub = per_pair[per_pair["learner"] == learner].dropna(subset=["accuracy"])
         if len(sub):
             ax1.scatter(sub["n_conditions"], sub["accuracy"], label=learner,
-                       color=COLORS[learner], alpha=0.7, s=45)
+                       color=COLORS[learner], marker=MARKERS[learner], alpha=0.7, s=45)
     ax1.set_xlabel("total conditions (rule set complexity)")
     ax1.set_ylabel("test accuracy")
     ax1.set_title("accuracy vs. rule-set complexity")
