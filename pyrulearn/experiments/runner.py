@@ -40,12 +40,12 @@ import queue
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 
 import numpy as np
 
-from ..data import BooleanDataRepresentation, DataRepresentation
-from ..data.io import binarize, build_dataspec
+from ..data import DataRepresentation, default_representation
+from ..data.io import build_dataspec, encode
 from ..learners.base import RuleLearner
 from .catalog import CatalogEntry
 
@@ -215,13 +215,14 @@ def _stable_params(value, depth: int = 0):
 
 
 def _cache_key(dataset: CatalogEntry, n_folds: int, fold: int, random_state: int,
-              learner: RuleLearner) -> str:
-    """A stable hash identifying one (dataset, fold split, learner
-    configuration) cell -- see `run_cv`'s "Fold caching" paragraph."""
+              learner: RuleLearner, representation: Type[DataRepresentation]) -> str:
+    """A stable hash identifying one (dataset, fold split, representation,
+    learner configuration) cell -- see `run_cv`'s "Fold caching"
+    paragraph."""
     params_repr = json.dumps(_stable_params(learner._provenance_params()), sort_keys=True)
     payload = "|".join([
         dataset.name, str(dataset.openml_id), str(dataset.openml_version),
-        str(n_folds), str(fold), str(random_state),
+        str(n_folds), str(fold), str(random_state), representation.__name__,
         learner.display_name, params_repr,
     ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -285,6 +286,7 @@ def run_cv(
     cache_dir: Optional[str] = None,
     measure_fn: Optional[Callable[[Any, DataRepresentation], dict]] = None,
     verbose: bool = True,
+    representation: Optional[Type[DataRepresentation]] = None,
 ):
     """Run every learner in `learners` against every dataset in
     `datasets`, `n_folds`-fold cross-validation, and return one
@@ -309,12 +311,18 @@ def run_cv(
 
     Per dataset: `entry.load()`, then `StratifiedKFold(n_splits=n_folds,
     shuffle=True, random_state=random_state)`, falling back to plain
-    `KFold` for a class too small to stratify. Per fold, `build_dataspec`/
-    `binarize` run **on the training split only** (`skip_unusable=True`,
-    since a column can turn constant or entirely missing within one
-    fold), and the test split is binarized against that same fold's
-    `DataSpec` -- this avoids leaking test-set discretization thresholds
-    into training.
+    `KFold` for a class too small to stratify. Per fold, `build_dataspec`
+    runs **on the training split only** (`skip_unusable=True`, since a
+    column can turn constant or entirely missing within one fold), and
+    both splits are then `encode`d into `representation` (default
+    `pyrulearn.data.representation.default_representation()`, the first
+    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `NListRepresentation`,
+    the fastest for every native learner measured, see
+    `demos/representations_report.md`) against that same fold's `DataSpec` --
+    a learner that needs another representation (an external tool's
+    dense matrix, say) converts on its own, see
+    `RuleLearner.ensure_representation` --
+    this avoids leaking test-set discretization thresholds into training.
 
     Per (fold, learner): `learner.fit(train_rep)` through `TimeoutRunner`
     (`fit_timeout` seconds; `None` disables the subprocess/timeout
@@ -327,14 +335,17 @@ def run_cv(
 
     Fold caching (`cache_dir`, off by default): one JSON file per
     `cache_dir`, keyed by a stable hash of (dataset name + OpenML id +
-    version, `n_folds`, fold index, `random_state`, `learner.display_name`,
-    a stable repr of the learner's constructor params --
-    `learner._provenance_params()`, the same values `Provenance` records).
-    A row already cached is loaded instead of refit, so adding one
-    learner, or resuming after a crash, doesn't refit everything. This
-    is a simple v1 -- refine later if it proves too coarse (e.g. it
-    doesn't detect that `datasets`/`max_intervals` changed between runs;
-    clear `cache_dir` by hand if that matters).
+    version, `n_folds`, fold index, `random_state`, `representation`'s
+    class name, `learner.display_name`, a stable repr of the learner's
+    constructor params -- `learner._provenance_params()`, the same
+    values `Provenance` records). A row already cached is loaded instead
+    of refit, so adding one learner, or resuming after a crash, doesn't
+    refit everything. This is a simple v1 -- refine later if it proves
+    too coarse (e.g. it doesn't detect that `datasets`/`max_intervals`
+    changed between runs, or that a learner's own *code* changed while
+    its constructor params didn't -- clear `cache_dir` by hand if that
+    matters; `representation` is keyed precisely because that trap was
+    hit in practice).
 
     `verbose` (default True) prints progress as it runs: one line per
     dataset as it starts, then one line per (fold, learner) -- name and
@@ -347,6 +358,7 @@ def run_cv(
     """
     import pandas as pd
 
+    resolved_representation = representation or default_representation()
     rows: List[Dict[str, Any]] = []
     timeout_runner = TimeoutRunner(fit_timeout) if fit_timeout is not None else None
     try:
@@ -362,16 +374,16 @@ def run_cv(
                 test_df = df.iloc[test_idx].reset_index(drop=True)
                 spec = build_dataspec(train_df, target=target, max_intervals=max_intervals,
                                       skip_unusable=True).build()
-                train_X = binarize(spec, train_df)
-                test_X = binarize(spec, test_df)
-                train_rep = BooleanDataRepresentation(spec, train_X, train_df[target].to_numpy())
-                test_rep = BooleanDataRepresentation(spec, test_X, test_df[target].to_numpy())
+                train_rep = encode(spec, train_df, train_df[target].to_numpy(),
+                                   representation=resolved_representation)
+                test_rep = encode(spec, test_df, test_df[target].to_numpy(),
+                                  representation=resolved_representation)
 
                 for learner in learners:
                     if verbose:
                         print(f"  fold {fold + 1}/{n_folds}  {learner.display_name:<15s} ...",
                              end="", flush=True)
-                    key = _cache_key(entry, n_folds, fold, random_state, learner)
+                    key = _cache_key(entry, n_folds, fold, random_state, learner, resolved_representation)
                     cached = _cache_load(cache_dir, key)
                     if cached is not None:
                         rows.append(cached)

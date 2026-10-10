@@ -419,3 +419,35 @@ def test_negation_toggle_gives_every_learner_the_same_rules_as_a_native_build():
         # feature indices line up because without_negations keeps names/order
         assert a == b
     print("without_negations() reproduces a from-scratch negation=False build for the learners: OK")
+
+
+def test_preference_order_and_default_representation(monkeypatch):
+    import pandas as pd
+    from pyrulearn.data import representation
+    from pyrulearn.data.io import encode
+    from pyrulearn.learners import base
+
+    assert representation.REPRESENTATION_PREFERENCE_ORDER == (
+        NListRepresentation, PrePostNListRepresentation, BooleanDataRepresentation, SparseDataRepresentation)
+    assert representation.default_representation() is NListRepresentation
+    assert base.REPRESENTATION_PREFERENCE_ORDER is representation.REPRESENTATION_PREFERENCE_ORDER
+    ds = DataSpec(["f0", "f1"])
+    df = pd.DataFrame({"f0": [True, False], "f1": [False, True]})
+    assert isinstance(encode(ds, df), NListRepresentation)
+    # read when called: reordering the module attribute changes the library-wide default
+    monkeypatch.setattr(representation, "REPRESENTATION_PREFERENCE_ORDER",
+                        (BooleanDataRepresentation, NListRepresentation))
+    assert representation.default_representation() is BooleanDataRepresentation
+    assert type(encode(ds, df)) is BooleanDataRepresentation
+
+
+@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation])
+def test_external_learner_converts_any_representation(rep_cls):
+    from pyrulearn.interfaces.sklearn import SKLDecisionTree
+    brep, _ = _dataset(n=300, k=10, seed=3, negation=True)
+    other = rep_cls.from_boolean(brep)
+    learner = SKLDecisionTree(max_depth=3, random_state=0)
+    assert learner.ensure_representation(other, None, announce=False).__class__ is BooleanDataRepresentation
+    mb, mo = SKLDecisionTree(max_depth=3, random_state=0).fit(brep), learner.fit(other)
+    assert str(mb) == str(mo)
+    assert np.array_equal(np.asarray(mb.predict(brep)), np.asarray(mo.predict(other)))

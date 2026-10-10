@@ -3,32 +3,36 @@ pyrulearn.data.io
 =====================
 
 Read external tabular data (ARFF, CSV) into a
-`pyrulearn.data.representation.BooleanDataRepresentation` (a `DataSpec` plus
-its Boolean feature matrix) via `read_arff`/`read_csv`, in three ways:
+`pyrulearn.data.representation.DataRepresentation` via `read_arff`/
+`read_csv`, in three ways:
 
 1. **Validate** an already-built `DataSpec` against a file's header
    (`validate_dataspec`) -- report missing attributes, declared/inferred
    type mismatches, and nominal categories the file has that the
    `DataSpec` doesn't know about.
 2. **Read with a given `DataSpec`** (pass `dataspec=` to `read_arff`/
-   `read_csv`) -- binarize the file's raw values against the `DataSpec`'s
+   `read_csv`) -- encode the file's raw values against the `DataSpec`'s
    existing `FeatureSpec`s (via `pyrulearn.data.attributes.evaluate_feature`).
 3. **Read and infer the `DataSpec`** (`dataspec=None`, the default) --
    build one attribute per column (nominal/numeric) from the file's own
    declared types (ARFF) or a cardinality-based heuristic (CSV), then
-   binarize the same way.
+   encode the same way.
 
-Both readers binarize via `binarize` (a `DataSpec` + a dataframe of raw
-values -> a dense Boolean matrix) and wrap the result in a
-`BooleanDataRepresentation` directly -- the two lower-level functions
-this module actually builds the matrix with. `encode` is `binarize`'s
-sparse-intermediate cousin: given the same `DataSpec` and dataframe, it
-builds whichever `DataRepresentation` you ask for (default
-`NListRepresentation`) straight from a `scipy.sparse` matrix, without
-ever forming the dense array `binarize` always does -- call it directly
-(not through `read_arff`/`read_csv`, which don't expose a
-`representation=` choice yet) when the representation choice matters
-enough to skip paying for a dense matrix even transiently.
+Both readers build the chosen representation via `encode` -- a
+`DataSpec` + a dataframe of raw values, accumulated into a
+`scipy.sparse` intermediate, straight into whichever `representation`
+is asked for (`read_arff`/`read_csv`'s own `representation=` parameter,
+default `pyrulearn.data.representation.default_representation()`, the
+first entry of `REPRESENTATION_PREFERENCE_ORDER`, `NListRepresentation`
+-- the representations demo (`demos/representations_report.md`)
+confirms it's still the fastest for every SeCo-built learner even after
+this package's Boolean-representation speedups). `binarize` is `encode`'s
+older, simpler sibling: a `DataSpec` + a dataframe of raw values -> a
+dense Boolean matrix, kept as the low-level helper for callers that
+want that dense matrix directly or explicitly want
+`BooleanDataRepresentation` without going through `encode` -- pass
+`representation=BooleanDataRepresentation` to `read_arff`/`read_csv`/
+`encode` for that, or call `binarize` yourself and wrap the result.
 
 Numeric columns without pre-given thresholds are discretized via a
 single-feature decision tree
@@ -68,7 +72,7 @@ import pandas as pd
 
 from .attributes import AttributeType, MissingStrategy, evaluate_feature
 from .spec import DataSpec, DataSpecBuilder
-from .representation import BooleanDataRepresentation, DataRepresentation, NListRepresentation
+from .representation import BooleanDataRepresentation, DataRepresentation, default_representation
 
 # Default cap on the number of buckets a numeric column is discretized
 # into (`max_intervals` below) -- a ceiling passed to `tree_thresholds`,
@@ -325,8 +329,9 @@ def encode(
     weights: Optional[np.ndarray] = None,
 ) -> DataRepresentation:
     """Like `binarize`, but builds `representation` (default
-    `NListRepresentation` -- `pyrulearn.learners.base.REPRESENTATION_PREFERENCE_ORDER`'s
-    first choice) directly from a `scipy.sparse` intermediate instead of
+    `pyrulearn.data.representation.default_representation()`, the first
+    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `NListRepresentation`)
+    directly from a `scipy.sparse` intermediate instead of
     writing into a dense `(n_samples, n_features)` array first.
 
     `binarize` always allocates that array, even when the representation
@@ -362,7 +367,7 @@ def encode(
     from scipy import sparse
 
     if representation is None:
-        representation = NListRepresentation
+        representation = default_representation()
     resolved = missing_strategy or dataspec.missing_strategy or DataSpec.DEFAULT_MISSING_STRATEGY
     n = len(df)
     rng = np.random.default_rng(random_state) if resolved == MissingStrategy.RANDOM else None
@@ -444,16 +449,19 @@ def read_arff(
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
     include_negations: bool = True,
-) -> BooleanDataRepresentation:
+    representation: Optional[Type[DataRepresentation]] = None,
+) -> DataRepresentation:
     """Read an ARFF file (path or file-like object) into a
-    `BooleanDataRepresentation`.
+    `DataRepresentation` -- `representation` (default
+    `default_representation()`, `NListRepresentation`, via `encode`; pass
+    `BooleanDataRepresentation` for the dense matrix instead).
 
     If `dataspec` is given, the file's header is validated against it
-    (see `validate_dataspec`) before binarizing -- `strict=True`
+    (see `validate_dataspec`) before encoding -- `strict=True`
     (default) raises on any mismatch found. If `dataspec` is omitted,
     one is inferred from ARFF's own declared attribute types
     (`build_dataspec`). `missing_strategy`/`random_state` are passed
-    through to `binarize`.
+    through to `encode`.
 
     Nominal *data* values wrapped in quotes (``'like this'``/``"like
     this"``, needed for a category containing whitespace or another
@@ -493,8 +501,8 @@ def read_arff(
         ).build()
 
     y = df[target].to_numpy() if target is not None else None
-    X = binarize(dataspec, df, missing_strategy=missing_strategy, random_state=random_state)
-    return BooleanDataRepresentation(dataspec, X, y)
+    return encode(dataspec, df, y, representation=representation,
+                 missing_strategy=missing_strategy, random_state=random_state)
 
 
 def read_csv(
@@ -506,14 +514,17 @@ def read_csv(
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
     include_negations: bool = True,
+    representation: Optional[Type[DataRepresentation]] = None,
     **read_csv_kwargs,
-) -> BooleanDataRepresentation:
+) -> DataRepresentation:
     """Read a CSV file (path or file-like object) into a
-    `BooleanDataRepresentation`. CSV carries no declared column types,
+    `DataRepresentation` -- `representation` (default
+    `default_representation()`, `NListRepresentation`, via `encode`; pass
+    `BooleanDataRepresentation` for the dense matrix instead). CSV carries no declared column types,
     so when `dataspec` is omitted, types are guessed heuristically
     (`_infer_csv_column_type`); pass an explicit `dataspec` whenever that
     guess isn't good enough. `missing_strategy`/`random_state` are
-    passed through to `binarize`. `**read_csv_kwargs` are passed through
+    passed through to `encode`. `**read_csv_kwargs` are passed through
     to `pandas.read_csv`.
     """
     df = pd.read_csv(source, **read_csv_kwargs)
@@ -529,8 +540,8 @@ def read_csv(
         ).build()
 
     y = df[target].to_numpy() if target is not None else None
-    X = binarize(dataspec, df, missing_strategy=missing_strategy, random_state=random_state)
-    return BooleanDataRepresentation(dataspec, X, y)
+    return encode(dataspec, df, y, representation=representation,
+                 missing_strategy=missing_strategy, random_state=random_state)
 
 
 _ARFF_NEEDS_QUOTE = re.compile(r"[\s,{}%'\"]")

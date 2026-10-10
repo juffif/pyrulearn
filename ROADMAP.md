@@ -426,12 +426,32 @@ the work below is worth doing for them too):
    `NListRepresentation.__init__` now also accepts a `scipy.sparse`
    matrix directly (reading rows from its CSR structure instead of
    `np.flatnonzero` on a dense row -- `BooleanDataRepresentation`/
-   `SparseDataRepresentation` already did). **Not done yet, on purpose,
-   done step by step**: `run_cv` and every demo still call `binarize` +
-   `BooleanDataRepresentation(...)` by hand, unchanged -- migrating them
-   onto `encode` is the deliberate next step, kept separate so each
-   demo's migration can be checked (identical rules/accuracy, not just
-   "didn't crash") on its own rather than in one sweeping change.
+   `SparseDataRepresentation` already did). **Done (2026-10-10)**:
+   `REPRESENTATION_PREFERENCE_ORDER` moved to `pyrulearn.data.representation`
+   (re-exported from `learners.base`), now with `PrePostNListRepresentation`
+   after `NListRepresentation`; its first entry, `default_representation()`
+   (read when called, so reassigning the module attribute changes the
+   default library-wide), is what `encode`, `read_arff`/`read_csv`
+   (new `representation=` parameter) and `run_cv` (same) build when no
+   representation is given. `binarize` stays as the lower-level
+   dense-matrix helper. `run_cv`'s fold cache key now includes the
+   representation's class name, so a representation change can't
+   silently replay a stale fit_time from a different one (the exact trap
+   hit the same day in `seco_learners_comparison`'s cache).
+   `NATIVE_REPRESENTATIONS`/`ensure_representation` moved up from
+   `NativeRuleLearner` to `RuleLearner`, `max_auto_convert_cells=None`
+   meaning unbounded; `ExternalRuleLearner` declares
+   `(BooleanDataRepresentation,)` and converts in `fit`, unbounded and
+   silent (the tool needs the dense matrix either way) -- so every
+   learner, external ones included, accepts every representation, and
+   the demos need no `representation=` of their own. Checked with the
+   `run_cv` demos' quick runs, not full reruns. (`OptimalRuleBoosting`
+   and `LRI` read `data.X` directly, which every representation provides
+   -- built on demand for N-lists and sparse data -- so they run on any
+   representation too; making them use the coverage functions instead is
+   item 2.) The tutorial notebook asks for `BooleanDataRepresentation`
+   explicitly (it shows `data.X`), with a note that N-lists are the
+   default.
 2. *The three learners*: score candidate conditions through the
    representation's (weighted) coverage functions instead of matrix
    columns. Measure the speed on every representation -- numpy scores all

@@ -1533,3 +1533,28 @@ class SparseDataRepresentation(DataRepresentation):
             f"SparseDataRepresentation(spec={self.spec!r}, n_samples={self.n_samples}, "
             f"nnz={nnz}, density={density:.2f})"
         )
+
+
+#: Representation types, most to least generally preferred: what
+#: `pyrulearn.data.io`'s loaders/`encode` and
+#: `pyrulearn.experiments.runner.run_cv` build when no `representation=`
+#: is given (`default_representation()`, the first entry), and how
+#: `RuleLearner.ensure_representation` breaks ties when a learner's
+#: `NATIVE_REPRESENTATIONS` names more than one type and the data matches
+#: none of them. `NListRepresentation` first: every native learner
+#: measured is faster on it than on `BooleanDataRepresentation`, also
+#: after this package's own Boolean speedups (`demos/representations.py`).
+#: `PrePostNListRepresentation` right after it -- the same index plus
+#: pre/post codes, measured about break-even with plain N-lists but
+#: slower to build. Read at call time, so reassigning this module
+#: attribute changes the library-wide default.
+REPRESENTATION_PREFERENCE_ORDER: Tuple[type, ...] = (
+    NListRepresentation, PrePostNListRepresentation,
+    BooleanDataRepresentation, SparseDataRepresentation,
+)
+
+
+def default_representation() -> type:
+    """The representation built when none is asked for: the first entry
+    of `REPRESENTATION_PREFERENCE_ORDER`, looked up when called."""
+    return REPRESENTATION_PREFERENCE_ORDER[0]

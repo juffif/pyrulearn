@@ -36,11 +36,14 @@ from .representation import (
     DataRepresentation,
     NListRepresentation,
     PrePostNListRepresentation,
+    REPRESENTATION_PREFERENCE_ORDER,
     SparseDataRepresentation,
+    default_representation,
 )
 
 __all__ = [
     "DataSpec", "DataSpecBuilder", "merge_dataspecs",
     "DataRepresentation", "BooleanDataRepresentation",
     "NListRepresentation", "PrePostNListRepresentation", "SparseDataRepresentation",
+    "REPRESENTATION_PREFERENCE_ORDER", "default_representation",
 ]

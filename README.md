@@ -184,9 +184,9 @@ details.
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the default), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, fastest for every native learner measured, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
-| `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold binarization, a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
+| `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
 | `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `OptimalRuleBoosting`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
@@ -205,15 +205,22 @@ representations**, all implementing the same `coverage(rule)` /
 `pyrulearn.learners.pylord.PyLORD`, ...) runs on any of them unchanged and
 produces byte-identical rules:
 
-- `BooleanDataRepresentation` -- the default: a `numpy.packbits`-packed copy
-  of the feature matrix; every example is checked with vectorized bitwise
-  NumPy ops instead of per-feature Python loops.
+- `BooleanDataRepresentation` -- a `numpy.packbits`-packed copy of the
+  feature matrix; every example is checked with vectorized bitwise NumPy
+  ops instead of per-feature Python loops. The simplest to construct by
+  hand, and `rep.X` is its own storage (the others build `X` on demand)
+  -- but not what `data.io`'s loaders or `run_cv` build unless asked:
+  see the preference order below.
 - `SparseDataRepresentation` -- `scipy` CSR/CSC; a rule's coverage is
   the intersection of its features' column index-sets (Eclat's vertical
   tid-lists), rarest feature first. This is the N-list *without* the
   prefix tree.
-- `NListRepresentation` -- the FP-tree / N-list vertical index Huynh,
-  Fürnkranz & Beck's LORD builds. Each row's true-feature set is inserted
+- `NListRepresentation` -- the default representation (first in the
+  preference order below; faster than Boolean for every native learner
+  measured, also after this package's own Boolean speedups --
+  `demos/representations_report.md`): the FP-tree / N-list
+  vertical index Huynh, Fürnkranz & Beck's LORD builds. Each row's
+  true-feature set is inserted
   (most-frequent-first) into a prefix trie with shared prefixes; a
   rule's coverage is a vectorized `uint64` word-AND over one item's
   N-list, no `(n_rows, n_features)` matrix ever materialized.
@@ -225,6 +232,20 @@ produces byte-identical rules:
   break-even with plain `NListRepresentation` at the data scales this
   library deals with -- see `demos/representations_report.md` and its own
   docstring for the numbers and when it might actually help.
+
+`pyrulearn.data.REPRESENTATION_PREFERENCE_ORDER` ranks them --
+`NListRepresentation`, `PrePostNListRepresentation`,
+`BooleanDataRepresentation`, `SparseDataRepresentation` -- and its first
+entry (`default_representation()`) is what `read_arff`/`read_csv`/`encode`
+and `run_cv` build when no `representation=` is given; reassigning
+`pyrulearn.data.representation.REPRESENTATION_PREFERENCE_ORDER` changes
+that library-wide. A learner that needs one representation's own storage
+declares it (`NATIVE_REPRESENTATIONS`) and converts anything else on its
+own (`RuleLearner.ensure_representation`, the order breaking ties):
+`DenseCPAR`/`DenseENDER` (bounded by `max_auto_convert_cells`), `CARMiner`
+(to N-lists), and every external learner (`ExternalRuleLearner`: the
+tool takes a dense matrix, converted without a bound) -- so every learner
+accepts every representation.
 
 Coverage dispatches on the `DataRepresentation` subclass:
 `Rule.covers_data` / `Rule.covers_data_packed` both forward to
@@ -407,10 +428,15 @@ from pyrulearn.data.io import read_arff, read_csv
 # capped at DEFAULT_MAX_INTERVALS = 8 by default -- a full 3-level binary tree)
 rep = read_arff("weather.arff", target="play")
 rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
+# rep.spec is the inferred DataSpec; rep is an NListRepresentation
+# (representation=, default default_representation() -- pass
+# BooleanDataRepresentation for the dense matrix instead)
 
-# or binarize against a DataSpec you already have (thresholds and all)
-rep = read_csv("data.csv", dataspec=my_dataspec, target="label")
-# rep.spec is my_dataspec; rep.X / rep.y hold the binarized data
+# or encode against a DataSpec you already have (thresholds and all)
+from pyrulearn.data import BooleanDataRepresentation
+rep = read_csv("data.csv", dataspec=my_dataspec, target="label",
+               representation=BooleanDataRepresentation)
+# rep.spec is my_dataspec; rep.X / rep.y hold the dense data
 ```
 
 Numeric columns without pre-given thresholds need a `target` column to
@@ -2594,15 +2620,16 @@ that all of them give the same rules as `BooleanDataRepresentation`).
 Development plans, with the reasons behind them, are in
 [`ROADMAP.md`](ROADMAP.md).
 
-- **Every native learner on any data representation.** The SeCo learners
-  and `PyLORD` run unchanged on all four representations, and on
-  N-lists take about half the time (see `demos/representations_report.md`).
-  `OptimalRuleBoosting` and `LRI` still work on a dense matrix of the
-  data, so they gain nothing from the other representations; they should
-  use the representation's coverage functions instead (as `CPAR` and
-  `ENDER` do; `DenseCPAR` and `DenseENDER` keep the dense matrix on
-  purpose, for speed). The representation would then be chosen once, when
-  the data is prepared (e.g. in `run_cv`), with N-lists as the default.
+- **Two learners still on a dense matrix.** The SeCo learners and
+  `PyLORD` run unchanged on all four representations, and on N-lists
+  take about half the time (see `demos/representations_report.md`,
+  confirmed again after this package's own Boolean speedups -- N-list
+  is still the faster one, which is why `data.io`'s loaders and `run_cv`
+  default to it now). `OptimalRuleBoosting` and `LRI` still work on a
+  dense matrix of the data, so they gain nothing from the other
+  representations; they should use the representation's coverage
+  functions instead (as `CPAR` and `ENDER` do; `DenseCPAR` and
+  `DenseENDER` keep the dense matrix on purpose, for speed).
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 
  `StringRuleImporter` for importing rule in text formats or
