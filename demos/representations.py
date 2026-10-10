@@ -396,37 +396,36 @@ def _agreement(rows) -> tuple:
 
 
 def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
+    """One row per (learner, representation), fit time at each `x_field`
+    value. Every non-Boolean cell also carries, in parentheses, its ratio
+    to Boolean's fit time at the same point (``19.41 (37%)``) -- below
+    100% is faster than Boolean -- so a gain or a loss sits right next to
+    the number it's relative to, rather than in a separate, unweighted
+    summary that a few cheap points can dominate."""
     fits = [r for r in rows if r["learner"] and (negation is None or r["negation"] == negation)]
     xs = sorted({r[x_field] for r in fits}, reverse=(x_field == "noise_density"))
     lines = [f"| learner | representation | " + " | ".join(f"{x_label}={x}" for x in xs) + " |\n",
              "|---|---|" + "--:|" * len(xs) + "\n"]
     for learner in LEARNERS:
+        boolean_at = {}
         for kind in REPRESENTATIONS:
             cells = []
             for x in xs:
                 r = next((r for r in fits if r["learner"] == learner and r["rep"] == kind and r[x_field] == x), None)
-                cells.append("" if r is None else ("time-out" if r["error"] == "timeout" else
-                                                   "error" if r["error"] else f"{r['fit_time']:.2f}"))
+                if r is None:
+                    cells.append("")
+                elif r["error"] == "timeout":
+                    cells.append("time-out")
+                elif r["error"]:
+                    cells.append("error")
+                elif kind == "Boolean":
+                    boolean_at[x] = r["fit_time"]
+                    cells.append(f"{r['fit_time']:.2f}")
+                else:
+                    ref = boolean_at.get(x)
+                    ratio = f" ({100 * r['fit_time'] / ref:.0f}%)" if ref else ""
+                    cells.append(f"{r['fit_time']:.2f}{ratio}")
             lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
-    return "".join(lines)
-
-
-def _relative(rows) -> str:
-    """Mean fit time relative to Boolean (same learner and point), per representation."""
-    groups: Dict[str, Dict[str, float]] = {}
-    for r in rows:
-        if r["learner"] and r["error"] is None:
-            k = json.dumps({x: r.get(x) for x in ("part", "learner", "negation", "n", "noise_density")})
-            groups.setdefault(k, {})[r["rep"]] = r["fit_time"]
-    lines = ["| representation | " + " | ".join(LEARNERS) + " | all |\n", "|---|" + "--:|" * (len(LEARNERS) + 1) + "\n"]
-    for kind in REPRESENTATIONS[1:]:
-        per = {l: [] for l in LEARNERS}
-        for k, t in groups.items():
-            if kind in t and t.get("Boolean", 0) >= 0.05:
-                per[json.loads(k)["learner"]].append(t[kind] / t["Boolean"])
-        allv = [v for vs in per.values() for v in vs]
-        cell = lambda vs: f"{100 * np.mean(vs):.0f}%" if vs else ""  # noqa: E731
-        lines.append(f"| {kind} | " + " | ".join(cell(per[l]) for l in LEARNERS) + f" | {cell(allv)} |\n")
     return "".join(lines)
 
 
@@ -511,10 +510,6 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
     L.append(img("density_coverage", "coverage() time vs. density"))
     L.append("Fit time in seconds:\n\n" + _fit_table(density_rows, "noise_density", "p") + "\n")
 
-    L.append("## Summary: fit time relative to Boolean\n\n")
-    L.append("Mean of (fit time / Boolean fit time) over all points of both parts where the "
-             "Boolean fit took at least 0.05s; below 100% is faster than Boolean.\n\n")
-    L.append(_relative(size_rows + density_rows) + "\n")
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(L)
     print(f"Report -> {report_path}")
