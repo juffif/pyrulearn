@@ -17,8 +17,10 @@ default), `ExponentialLoss` (AdaBoost's) or `SigmoidLoss` -- and one of
 the paper's minimization techniques (constant-step, gradient descent,
 gradient boosting, simultaneous minimization) or MLRules' Newton
 criterion; `Boomer` is its BOOMER configuration (Rapp et al. 2020,
-single-label). `OptimalRuleBoosting` (Boley et al., SDM 2021) boosts rules
-that are optimal for the XGBoost-style gain, found by branch-and-bound.
+single-label). `ORB` (optimal rule boosting, Boley et al., SDM 2021)
+boosts rules that maximize the XGBoost-style gain (`XGBGain`, an
+`Objective`), found by any rule search -- by default branch and bound,
+the optimal rule; `DenseORB` is its dense-matrix specialization.
 """
 
 from __future__ import annotations
@@ -35,8 +37,8 @@ from ..models import LinearRuleModel, annotate_rules
 from ..rule import Rule, WeightedRule
 from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
 from .seco import (
-    AdaBoostReweighting, CoveringState, EmptyRuleAllFeatures, GrowPruneSplit, HillClimbing,
-    materialize_child, parent_closure,
+    AdaBoostReweighting, BeamSearch, CoveringState, EmptyRuleAllFeatures, GrowPruneSplit,
+    HillClimbing, RuleSearch, ValueSumObjective, materialize_child, parent_closure,
 )
 
 
@@ -912,38 +914,249 @@ class DenseBoomer(DenseENDER):
 
 # ================================================== optimal rule boosting ===
 
-class OptimalRuleBoosting(NativeRuleLearner):
-    """Rule boosting with (optionally) optimal rules (Boley, Teshuva, Le
-    Bodic & Webb, "Better short than greedy: Interpretable models through
-    optimal rule boosting", SDM 2021; the `realkd` package).
+class XGBGain(ValueSumObjective):
+    """Optimal rule boosting's objective (Boley et al. 2021) as an
+    `Objective`: the XGBoost-style gain of a rule that covers the rows
+    ``Q``,
+
+        (sum_{i in Q} g_i)**2 / (reg + sum_{i in Q} h_i)
+
+    for one boosting round's per-row loss derivatives ``g``/``h`` (row
+    weights already multiplied in). It is the loss reduction of the
+    rule's best weight ``w = -sum g / (reg + sum h)`` under the
+    second-order approximation of the loss.
+
+    `sign` picks which rules count: ``None`` (default) both directions --
+    the objective is symmetric, and the weight's sign decides the class
+    afterwards (realkd's search); ``+1`` only rules that raise the scores
+    (``sum g < 0``, for the class the scores favor), ``-1`` only rules that
+    lower them. The empty rule scores ``-inf``: it isn't a rule this
+    search looks for (a boosting learner's intercept is a separate step),
+    so a greedy search always takes a first condition.
+
+    Bounds, for any subset of a rule's covered rows (what a refinement can
+    cover): from the sums, ``max(G+**2, G-**2) / reg`` -- ``G+``/``G-`` the
+    sums of the positive/negative ``g`` -- infinite for ``reg = 0``; and,
+    from the covered rows themselves (`exact_bound`), the paper's bound:
+    the best prefix or suffix of the covered rows sorted by ``g/h``."""
+
+    def __init__(self, g: np.ndarray, h: np.ndarray, reg: float = 1.0, sign: Optional[int] = None):
+        if sign not in (None, 1, -1):
+            raise ValueError(f"sign must be None, 1 or -1, got {sign!r}")
+        self.g = np.asarray(g, dtype=float)
+        self.h = np.asarray(h, dtype=float)
+        self.reg = float(reg)
+        self.sign = sign
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(self.h > 0, self.g / self.h, np.sign(self.g) * np.inf)
+        order = np.argsort(-ratio, kind="stable")              # rows by g/h, descending
+        self._rank = np.empty(len(self.g), dtype=np.int64)
+        self._rank[order] = np.arange(len(self.g))
+
+    def columns(self) -> np.ndarray:
+        return np.column_stack([self.g, self.h, np.maximum(self.g, 0.0), np.minimum(self.g, 0.0)])
+
+    def _gain(self, G, H):
+        if self.sign == 1:
+            G = np.minimum(G, 0.0)
+        elif self.sign == -1:
+            G = np.maximum(G, 0.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return G ** 2 / (self.reg + H)
+
+    def score_sums(self, sums: np.ndarray, length: Any) -> np.ndarray:
+        gain = np.asarray(self._gain(sums[0], sums[1]), dtype=float)
+        return np.where(np.asarray(length) == 0, -np.inf, gain)
+
+    def bound_sums(self, sums: np.ndarray) -> np.ndarray:
+        g_pos, g_neg = sums[2], sums[3]
+        top = (np.maximum(g_pos ** 2, g_neg ** 2) if self.sign is None
+               else g_neg ** 2 if self.sign == 1 else g_pos ** 2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(top == 0, 0.0, top / self.reg)
+
+    def exact_bound(self, data, handle) -> float:
+        idx = np.flatnonzero(data.cover_rows(handle))
+        if idx.size == 0:
+            return 0.0
+        idx = idx[np.argsort(self._rank[idx], kind="stable")]
+        gq, hq = self.g[idx], self.h[idx]
+        best = -math.inf
+        if self.sign in (None, -1):                            # largest g/h first: sum g > 0
+            best = max(best, float(np.max(self._gain(np.cumsum(gq), np.cumsum(hq)))))
+        if self.sign in (None, 1):                             # smallest g/h first: sum g < 0
+            best = max(best, float(np.max(self._gain(np.cumsum(gq[::-1]), np.cumsum(hq[::-1])))))
+        return best
+
+
+def _boosting_derivatives(loss: str, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """realkd's first/second derivatives of `loss` at scores `s`, labels ``y = +-1``."""
+    if loss == "squared":
+        return 2.0 * (s - y), np.full_like(s, 2.0)
+    sig = 1.0 / (1.0 + np.exp(y * s))                           # sigmoid(-y s)
+    return -y * sig, sig * (1.0 - sig)
+
+
+class _ORBBase(NativeRuleLearner):
+    """The boosting loop shared by `ORB` and `DenseORB`: everything but how
+    a round's rule is found (`_prepare`, `_best_query`, `_covers`)."""
+
+    def __init__(self, n_rules: int, loss: str, reg: float, offset: bool):
+        if n_rules < 1:
+            raise ValueError(f"n_rules must be at least 1, got {n_rules}")
+        if loss not in ("logistic", "squared"):
+            raise ValueError(f"loss must be 'logistic' or 'squared', got {loss!r}")
+        if reg < 0:
+            raise ValueError(f"reg must be non-negative, got {reg}")
+        self.n_rules = n_rules
+        self.loss = loss
+        self.reg = reg
+        self.offset = offset
+
+    def _default_model(self, data: Any) -> type:
+        return LinearRuleModel
+
+    def _derivatives(self, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return _boosting_derivatives(self.loss, y, s)
+
+    @produces(LinearRuleModel)
+    def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
+        if data.y is None:
+            raise ValueError(f"{type(self).__name__} needs data.y")
+        labels = np.unique(np.asarray(data.y))
+        if len(labels) != 2:
+            raise ValueError(f"{type(self).__name__} needs a binary target, got {len(labels)} classes")
+        classes = [c.item() if isinstance(c, np.generic) else c for c in labels]
+        y = np.where(np.asarray(data.y) == labels[1], 1.0, -1.0)
+        ctx = self._prepare(data)
+        d = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
+        s = np.zeros(len(y))
+        learned: Dict[Tuple[int, ...], float] = {}
+        for m in range(self.n_rules):
+            g, h = self._derivatives(y, s)
+            g, h = g * d, h * d
+            if self.offset and m == 0:
+                body: Tuple[int, ...] = ()
+            else:
+                body = self._best_query(ctx, g, h)
+                if body is None:
+                    break
+            cov = self._covers(ctx, body) if body else np.ones(len(y), dtype=bool)
+            w = -float(g[cov].sum()) / (self.reg + float(h[cov].sum()))
+            s = s + w * cov
+            learned[body] = learned.get(body, 0.0) + w
+        rules = []
+        for body, w in learned.items():
+            if w == 0:
+                continue
+            target = classes[1] if w > 0 else classes[0]
+            rules.append(WeightedRule(list(body), target=target, dataspec=data.spec, weight=abs(w)))
+        return LinearRuleModel(annotate_rules(rules, data), classes=classes)
+
+
+class ORB(_ORBBase):
+    """Optimal rule boosting (Boley, Teshuva, Le Bodic & Webb, "Better
+    short than greedy: Interpretable models through optimal rule
+    boosting", SDM 2021; the `realkd` package), built from the rule
+    search components: each round, `search` maximizes the `XGBGain`
+    objective of the current scores.
 
     Binary classification with labels ``y = +1`` for the positive class
     (the second in sorted order) and ``-1`` for the other. The model is a
     sum of rules ``w * q(x)``; each round adds the rule whose query ``q``
-    maximizes the XGBoost-style gain of the current scores
+    maximizes the XGBoost-style gain
 
-        obj(q) = (sum_{i in q} g_i)**2 / (lambda + sum_{i in q} h_i)
+        obj(q) = (sum_{i in q} g_i)**2 / (reg + sum_{i in q} h_i)
 
-    (``g``/``h``: first/second derivatives of the loss; `reg` is
-    ``lambda``), with the weight ``w = -sum g / (lambda + sum h)``.
+    (``g``/``h``: first/second derivatives of the loss at the current
+    scores, times the row weights), with the weight
+    ``w = -sum g / (reg + sum h)``. The objective is symmetric in the
+    sign of ``sum g``; the weight's sign decides the class the rule votes
+    for (a rule with a negative weight votes for the negative class with
+    its absolute weight).
+
+    `search` is the rule search, as in every `SeCo` learner (default
+    `BeamSearch(beam_width=10)`): a `BranchAndBoundSearch` finds the
+    optimal rule, as realkd's exhaustive search does, with `XGBGain`'s
+    bounds, the paper's prefix/suffix bound included; a `HillClimbing`
+    adds the best condition while the gain rises (realkd's greedy); a
+    `BeamSearch` lies in between -- the default width 10 was the most
+    accurate of greedy, beam widths 3/5/10 and branch and bound capped at
+    3 conditions on 8 binary datasets (5-fold, 10 rules; see `ROADMAP.md`),
+    while unbounded branch and bound often takes minutes per rule set.
+    The search's `max_conditions` caps the
+    rule length. The search runs on the data's own representation. The
+    rule found is simplified by dropping conditions that don't change
+    what it covers.
+
+    `loss` is ``"logistic"`` (default) or ``"squared"``, with realkd's
+    derivatives; `reg` is the L2 regularization ``lambda``; `offset=True`
+    makes the first rule the empty one (an intercept). The result is a
+    `LinearRuleModel`; a query found again adds to its weight. `DenseORB`
+    is the same learner specialized for speed on a dense matrix, with its
+    own two searches (exhaustive and greedy); it reproduces realkd
+    exactly. With `BranchAndBoundSearch`/`HillClimbing` ORB finds rules of
+    the same gain as DenseORB's exhaustive/greedy search; where several
+    rules tie, they may pick different ones.
+    """
+
+    def __init__(
+        self,
+        n_rules: int = 10,
+        loss: str = "logistic",
+        reg: float = 1.0,
+        search: Optional[RuleSearch] = None,
+        offset: bool = False,
+    ):
+        super().__init__(n_rules, loss, reg, offset)
+        if search is not None and not isinstance(search, RuleSearch):
+            raise ValueError(f"search must be a RuleSearch, got {search!r}")
+        self.search = search if search is not None else BeamSearch(beam_width=10)
+
+    def _prepare(self, data: Any):
+        return data, self.search, EmptyRuleAllFeatures().initial_candidates(data, None)
+
+    def _best_query(self, ctx, g: np.ndarray, h: np.ndarray) -> Optional[Tuple[int, ...]]:
+        data, search, initial = ctx
+        rule = search.search(data, None, XGBGain(g, h, reg=self.reg), initial)
+        if rule is None or rule.length() == 0:
+            return None
+        return self._simplify(data, tuple(lit.feature for lit in rule.conditions))
+
+    def _covers(self, ctx, body: Tuple[int, ...]) -> np.ndarray:
+        data = ctx[0]
+        return np.asarray(data.coverage(Rule(list(body), dataspec=data.spec)), dtype=bool)
+
+    def _simplify(self, data: Any, body: Tuple[int, ...]) -> Tuple[int, ...]:
+        """Drop conditions whose removal doesn't change the covered rows."""
+        ctx = (data,)
+        cov = self._covers(ctx, body)
+        kept = list(body)
+        for f in list(body):
+            rest = [x for x in kept if x != f]
+            if rest and np.array_equal(self._covers(ctx, tuple(rest)), cov):
+                kept = rest
+        return tuple(sorted(kept))
+
+
+class DenseORB(_ORBBase):
+    """`ORB`, specialized for speed on a dense matrix: the same boosting
+    loop with two hand-written searches on ``data.X`` (any representation
+    provides it). It reproduces the `realkd` package exactly -- the same
+    rules and weights with either search, with or without an intercept
+    (``tests/test_realkd_import.py``). See `ORB` for the algorithm and
+    the parameters.
 
     `search="exhaustive"` (default) finds the optimal query by
-    branch-and-bound over conjunctions of the data's features (and their
-    negation features). The bound is the paper's: among the subsets of a
-    query's covered examples, the objective is maximal at a prefix or a
-    suffix of them sorted by ``g/h``. Refinements that don't change the
-    covered set are skipped, and the query found is simplified by
-    dropping conditions that don't change what it covers.
+    best-first branch-and-bound over conjunctions of the data's features
+    (and their negation features), with the paper's bound: among the
+    subsets of a query's covered examples, the objective is maximal at a
+    prefix or a suffix of them sorted by ``g/h``. Refinements that don't
+    change the covered set are skipped, and the query found is simplified
+    by dropping conditions that don't change what it covers.
     `search="greedy"` adds the best condition until the objective stops
-    improving. `max_length` caps the query length.
-
-    `loss` is ``"logistic"`` (``log(1 + exp(-y s))``, default) or
-    ``"squared"`` (``(y - s)**2``) -- the losses of `realkd`, with its
-    derivatives, so that the two agree. `offset=True` makes the first rule
-    the empty query (an intercept). The result is a `LinearRuleModel`: a
-    rule with a negative weight votes for the negative class with its
-    absolute weight (the same decision), repeated queries are merged, and
-    the positive class wins where the weights for it sum higher.
+    improving -- one matrix multiply per step. `max_length` caps the
+    query length.
     """
 
     def __init__(
@@ -955,63 +1168,17 @@ class OptimalRuleBoosting(NativeRuleLearner):
         max_length: Optional[int] = None,
         offset: bool = False,
     ):
-        if n_rules < 1:
-            raise ValueError(f"n_rules must be at least 1, got {n_rules}")
-        if loss not in ("logistic", "squared"):
-            raise ValueError(f"loss must be 'logistic' or 'squared', got {loss!r}")
+        super().__init__(n_rules, loss, reg, offset)
         if search not in ("exhaustive", "greedy"):
             raise ValueError(f"search must be 'exhaustive' or 'greedy', got {search!r}")
-        if reg < 0:
-            raise ValueError(f"reg must be non-negative, got {reg}")
-        self.n_rules = n_rules
-        self.loss = loss
-        self.reg = reg
         self.search = search
         self.max_length = max_length
-        self.offset = offset
 
-    def _default_model(self, data: Any) -> type:
-        return LinearRuleModel
+    def _prepare(self, data: Any) -> np.ndarray:
+        return np.asarray(data.X, dtype=bool)
 
-    def _derivatives(self, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        if self.loss == "squared":
-            return 2.0 * (s - y), np.full_like(s, 2.0)
-        sig = 1.0 / (1.0 + np.exp(y * s))                       # sigmoid(-y s)
-        return -y * sig, sig * (1.0 - sig)
-
-    @produces(LinearRuleModel)
-    def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
-        if data.y is None:
-            raise ValueError("OptimalRuleBoosting needs data.y")
-        labels = np.unique(np.asarray(data.y))
-        if len(labels) != 2:
-            raise ValueError(f"OptimalRuleBoosting needs a binary target, got {len(labels)} classes")
-        classes = [c.item() if isinstance(c, np.generic) else c for c in labels]
-        y = np.where(np.asarray(data.y) == labels[1], 1.0, -1.0)
-        X = np.asarray(data.X, dtype=bool)
-        d = np.ones(len(y)) if data.weights is None else data.weights.astype(float)
-        s = np.zeros(len(y))
-        learned: Dict[Tuple[int, ...], float] = {}
-        for m in range(self.n_rules):
-            g, h = self._derivatives(y, s)
-            g, h = g * d, h * d
-            if self.offset and m == 0:
-                body: Tuple[int, ...] = ()
-            else:
-                body = self._best_query(X, g, h)
-                if body is None:
-                    break
-            cov = np.all(X[:, list(body)], axis=1) if body else np.ones(len(y), dtype=bool)
-            w = -float(g[cov].sum()) / (self.reg + float(h[cov].sum()))
-            s = s + w * cov
-            learned[body] = learned.get(body, 0.0) + w
-        rules = []
-        for body, w in learned.items():
-            if w == 0:
-                continue
-            target = classes[1] if w > 0 else classes[0]
-            rules.append(WeightedRule(list(body), target=target, dataspec=data.spec, weight=abs(w)))
-        return LinearRuleModel(annotate_rules(rules, data), classes=classes)
+    def _covers(self, X: np.ndarray, body: Tuple[int, ...]) -> np.ndarray:
+        return np.all(X[:, list(body)], axis=1)
 
     # -- the search -----------------------------------------------------------
 

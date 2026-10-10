@@ -132,7 +132,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **Pypper** | `seco.Pypper` | a `SeCo` instantiation: a re-implementation of RIPPER, not a port of Cohen's code. IREP\* growth and pruning plus the replace/revise optimization phase, per class, least-frequent class first. It differs from the original in places: the covering loop stops on FOIL's MDL restriction or IREP's precision below 0.5 instead of Cohen's 64-bit description-length rule, and there is no residual IREP\* pass after optimization | Cohen 1995; Fürnkranz & Widmer 1994 |
 | **SLIPPER** | `boosting.Slipper` | confidence-rated boosting of rules: each round a rule is grown with `SlipperZ` and pruned on a held-out split, gets a confidence, and reweights the examples (`AdaBoostReweighting`); the model is a `LinearRuleModel`. Fixed number of rounds instead of the original's internal cross-validation | Cohen & Singer 1999 |
 | **BOOMER** (single-label) | `boosting.Boomer` | `ENDER` with BOOMER's settings: logistic loss, L2-regularized Newton steps (λ = 1), shrinkage 0.3, up to 1000 rules; predicts like the original on binary data (see *Interfaced*); multi-label BOOMER is not done. `boosting.DenseBoomer`: the faster dense-matrix version, same models | Rapp et al. 2020 |
-| **Optimal rule boosting** | `boosting.OptimalRuleBoosting` | gradient boosting of rules that each maximize the XGBoost-style gain `(Σg)² / (λ + Σh)`, found exactly by branch-and-bound with the paper's prefix/suffix bound (or greedily); cross-checked rule-for-rule against `realkd` | Boley, Teshuva, Le Bodic & Webb 2021 |
+| **Optimal rule boosting** | `boosting.ORB`, `boosting.DenseORB` | gradient boosting of rules that each maximize the XGBoost-style gain `(Σg)² / (λ + Σh)` (the `XGBGain` objective), found by any rule search -- a beam search by default, exactly by branch-and-bound with the paper's prefix/suffix bound; `DenseORB` is the dense-matrix specialization; both cross-checked rule-for-rule against `realkd` | Boley, Teshuva, Le Bodic & Webb 2021 |
 | **ENDER** / MLRules | `boosting.ENDER` | boosting of rules by forward stagewise loss minimization: each rule, grown greedily on a subsample to minimize an impurity derived from the loss (constant-step, gradient descent, gradient boosting, simultaneous minimization, or MLRules' Newton criterion), votes for one class with a shrunk weight computed on all rows; pluggable loss (`LogisticLoss`, default, multiclass; `ExponentialLoss`; `SigmoidLoss`) and impurity criterion (`ImpurityCriterion`); a `LinearRuleModel`; runs on every data representation. `boosting.DenseENDER`: the faster dense-matrix version, same models | Dembczyński, Kotłowski & Słowiński 2008, 2010 |
 | **LRI** | `lri.LRI` | Lightweight Rule Induction: the same number of unweighted DNF rules per class, each grown term by term minimizing the weighted error `FP + k·FN` without pruning, with cases reweighted by the rules' cumulative errors (`LRIReweighting`); the class with the most satisfied rules wins | Weiss & Indurkhya 2000 |
 | **LORD** (simplified, `PyLORD`) | `pylord.PyLORD` | locally optimal rules, built from the `SeCo` building blocks but not a covering loop: every training example seeds a rule search. A simplified reimplementation, not the reference one (see *Interfaced* for that) | Huynh, Fürnkranz & Beck 2023 |
@@ -189,7 +189,7 @@ details.
 | `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `OptimalRuleBoosting`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `ORB`, `DenseORB`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -1344,7 +1344,7 @@ exchangeable building blocks:
 | building block | options |
 |---|---|
 | search | `BranchAndBoundSearch(max_conditions, k)` (exhaustive: the optimal rule, or the `k` best, by branch and bound, after OPUS); `BeamSearch(beam_width)` (keeps the best `beam_width` candidates, returns the best rule seen); `HillClimbing` (one candidate, stops at a local optimum of the heuristic); `GainAscentHillClimbing` (the only search for a gain heuristic such as `FoilGain`, which scores a refinement relative to its parent; `min_gain=` raises the bar from any positive gain, and `branch_similarity=` makes it yield several rules, see below) |
-| heuristic | any `RuleHeuristic` -- see *Rule-evaluation heuristics* |
+| heuristic | any `RuleHeuristic` -- see *Rule-evaluation heuristics* -- or, more generally, any `Objective` (see below) |
 | where the search starts | `EmptyRuleAllFeatures` (the empty rule, all features open -- default); `FeatureSubset`; `SeedExample` (a rule that must keep covering one chosen example, as in AQ) |
 | data preparation | `NoSplit` (default); `GrowPruneSplit` (grow on one part, prune on a held-out part -- IREP, RIPPER) |
 | post-processing | `NoPostProcessing` (default); `ReducedErrorPruning` (drop trailing conditions while that improves the rule on the pruning data) |
@@ -1356,6 +1356,35 @@ search still runs to its end -- while a **stopping** criterion also ends
 the search as soon as its current best candidate fails it. A candidate
 that covers no positive example is never chosen or returned, whatever the
 heuristic says about it.
+
+**What a search maximizes: objectives.** A search never calls a
+heuristic directly; it talks to an `Objective`
+(`pyrulearn.learners.seco`), which owns everything about scoring:
+
+- the statistics of a rule, and of all open one-condition refinements of
+  it at once, counted through the data representation's own primitives
+  without building any refinement;
+- their scores, and an optimistic bound on what any further refinement
+  can score (for pruning and for branch and bound);
+- which refinements change nothing (they keep exactly their parent's
+  statistics, so float rounding can't make them look better) and which
+  have nothing left to gain (dropped and masked out further down).
+
+A `RuleHeuristic` is one objective, `HeuristicObjective`: its statistics
+are the class counts `RuleStats` (tp, fp, fn, tn), its bound is the
+score at (tp, 0), and a refinement covering no positive is dead -- every
+search wraps a heuristic this way, so passing a heuristic works as
+always. A `ValueSumObjective` is a function of sums of arbitrary per-row
+values over the covered rows instead -- class counts are the special case
+of class indicators as values -- counted with one `batch_cover_sums` per
+search step on every representation. Optimal rule boosting's gain is one
+(`XGBGain`, over the loss derivatives g and h; see *Boosting*):
+with it, `BranchAndBoundSearch`, `BeamSearch` and `HillClimbing` find
+boosting rules exactly as they find classification rules. An objective
+may also give an exact bound from a rule's covered rows
+(`exact_bound`), which branch and bound uses for every refinement it
+builds. Filtering and stopping criteria take `RuleStats`, so they work
+with heuristic objectives only.
 
 The named learners are configurations of these blocks, and every block
 can still be overridden through the constructor:
@@ -1690,20 +1719,32 @@ is interfaced as `MLRLBoomer` (see *BOOMER and realkd: boosted rule
 ensembles*), and the two differ in details such as feature sampling.
 `DenseBoomer` is the same on `DenseENDER`: same models, faster.
 
-**Optimal rule boosting.** `pyrulearn.learners.boosting.OptimalRuleBoosting`
-(Boley, Teshuva, Le Bodic & Webb 2021; the `realkd` package) adds, in
-each round, the rule that maximizes the same gain -- but found by
-branch-and-bound over all conjunctions (`search="exhaustive"`, the
-default) rather than grown greedily (`search="greedy"`), so it tends to
-reach an accurate model with fewer and shorter rules. Binary
-classification, with the logistic or squared loss of `realkd` (interfaced
-as `RKDRuleBoosting`); `max_length` caps the rule length.
+**Optimal rule boosting.** `pyrulearn.learners.boosting.ORB` (Boley,
+Teshuva, Le Bodic & Webb 2021; the `realkd` package) adds, in each round,
+the rule that maximizes the XGBoost-style gain (Σg)² / (λ + Σh) of the
+loss derivatives g and h -- found with the library's rule searches on
+the `XGBGain` objective (see *What a search maximizes* under SeCo). The
+search is passed as a `RuleSearch`, as in every SeCo learner: by default
+`BeamSearch(beam_width=10)`, which was the most accurate on average in a
+first comparison with greedy search, narrower beams and capped branch
+and bound (see `ROADMAP.md`), at a fraction of a second per fit;
+`BranchAndBoundSearch` finds the optimal rule (the paper's and realkd's
+exhaustive search, with the paper's prefix/suffix bound), and
+`HillClimbing` grows it greedily. A search's `max_conditions` caps the
+rule length. Binary classification, with the logistic or squared loss of
+`realkd` (interfaced as `RKDRuleBoosting`); a rule's class is the sign of
+its weight. `DenseORB` is the same learner with two hand-written
+searches (`search="exhaustive"`/`"greedy"`) on a dense matrix; `ORB` with
+`BranchAndBoundSearch`/`HillClimbing` and `DenseORB` both reproduce
+`realkd` exactly (`tests/test_realkd_import.py`).
 
 ```python
-from pyrulearn.learners.boosting import Boomer, OptimalRuleBoosting
+from pyrulearn.learners.boosting import ORB, Boomer
+from pyrulearn.learners.seco import BranchAndBoundSearch
 
 model = Boomer(n_rules=50, random_state=0).fit(train_rep)
-short = OptimalRuleBoosting(n_rules=5, max_length=3).fit(train_rep)
+short = ORB(n_rules=5).fit(train_rep)                     # beam search, width 10
+optimal = ORB(n_rules=5, search=BranchAndBoundSearch(max_conditions=3)).fit(train_rep)
 ```
 
 ### Interfaced learning algorithms
@@ -2345,20 +2386,21 @@ yet (see *Not yet implemented*).
 boosting (Boley et al. 2021), and `RealkdImporter` reads its rule ensemble.
 `realkd` is given the data's positive features as columns `c0, c1, ...`;
 its propositions `c<=0` / `c>=1` become the negation feature / the
-feature. The native `learners.boosting.OptimalRuleBoosting` reproduces it
+feature. The native `learners.boosting.ORB` and `DenseORB` reproduce it
 exactly -- the same rules and weights with greedy or exhaustive search,
-with or without an intercept (see `tests/test_realkd_import.py`) -- and runs
-several times faster.
+with or without an intercept (see `tests/test_realkd_import.py`) -- and
+`DenseORB` runs several times faster.
 
 ```python
 from pyrulearn.interfaces.boomer import MLRLBoomer
 from pyrulearn.interfaces.realkd import RKDRuleBoosting
-from pyrulearn.learners.boosting import OptimalRuleBoosting
+from pyrulearn.learners.boosting import ORB
+from pyrulearn.learners.seco import BranchAndBoundSearch
 
 boomer = MLRLBoomer(max_rules=50, random_state=0).fit(train_rep)
 native_boomer = Boomer(n_rules=50).fit(train_rep)      # from pyrulearn.learners.boosting
 reference = RKDRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)
-native = OptimalRuleBoosting(n_rules=10, search="exhaustive").fit(train_rep)   # the same model
+native = ORB(n_rules=10, search=BranchAndBoundSearch()).fit(train_rep)   # the same model
 ```
 
 #### Provenance of imported rules
@@ -2585,7 +2627,7 @@ report and plots are checked in next to the script:
 - `native_vs_interfaced` -- four native rule learners (RuleFit, Boomer,
   CBA, Pypper) against the external reference implementations they're
   modeled on (IMod:RuleFit, MLRL:Boomer, PArc:CBA, Weka:JRip); a fifth
-  pair, OptimalRuleBoosting vs. RKD:RuleBoosting, is checked separately
+  pair, ORB vs. RKD:RuleBoosting, is checked separately
   in its own preliminary section, since neither's exhaustive search
   scales to this demo's wider data.
 
@@ -2620,16 +2662,16 @@ that all of them give the same rules as `BooleanDataRepresentation`).
 Development plans, with the reasons behind them, are in
 [`ROADMAP.md`](ROADMAP.md).
 
-- **Two learners still on a dense matrix.** The SeCo learners and
+- **One learner still on a dense matrix.** The SeCo learners and
   `PyLORD` run unchanged on all four representations, and on N-lists
   take about half the time (see `demos/representations_report.md`,
   confirmed again after this package's own Boolean speedups -- N-list
   is still the faster one, which is why `data.io`'s loaders and `run_cv`
-  default to it now). `OptimalRuleBoosting` and `LRI` still work on a
-  dense matrix of the data, so they gain nothing from the other
-  representations; they should use the representation's coverage
-  functions instead (as `CPAR` and `ENDER` do; `DenseCPAR` and
-  `DenseENDER` keep the dense matrix on purpose, for speed).
+  default to it now). `LRI` still works on a dense matrix of the data,
+  so it gains nothing from the other representations; it should use the
+  representation's coverage functions instead (as `CPAR`, `ENDER` and
+  `ORB` do; `DenseCPAR`, `DenseENDER` and `DenseORB` keep the dense
+  matrix on purpose, for speed).
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 
  `StringRuleImporter` for importing rule in text formats or

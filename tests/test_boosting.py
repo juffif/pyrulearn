@@ -225,14 +225,14 @@ def test_ender_l2_regularization_shrinks_the_weights():
 
 from itertools import combinations  # noqa: E402
 
-from pyrulearn.learners.boosting import OptimalRuleBoosting  # noqa: E402
+from pyrulearn.learners.boosting import DenseORB  # noqa: E402
 
 
 def test_branch_and_bound_finds_the_best_conjunction():
     data = _data(n=200)
     X = data.X
     y = np.where(data.y == "pos", 1.0, -1.0)
-    learner = OptimalRuleBoosting(reg=1.0)
+    learner = DenseORB(reg=1.0)
     g, h = learner._derivatives(y, np.zeros(len(y)))
     body = learner._best_query(X, g, h)
     best = learner._objective(g, h, np.all(X[:, list(body)], axis=1))
@@ -241,22 +241,22 @@ def test_branch_and_bound_finds_the_best_conjunction():
             cov = np.all(X[:, list(combo)], axis=1)
             if cov.any():
                 assert learner._objective(g, h, cov) <= best + 1e-9
-    greedy = OptimalRuleBoosting(search="greedy")._best_query(X, g, h)
+    greedy = DenseORB(search="greedy")._best_query(X, g, h)
     assert learner._objective(g, h, np.all(X[:, list(greedy)], axis=1)) <= best + 1e-9
 
 
 def test_optimal_rule_boosting_model():
     data = _data()
-    model = OptimalRuleBoosting(n_rules=5).fit(data)
+    model = DenseORB(n_rules=5).fit(data)
     assert isinstance(model, LinearRuleModel) and model.labels == ["neg", "pos"]
     assert all(r.weight > 0 for r in model.rules)          # negative weights vote for "neg"
     bodies = {(r.target, tuple(sorted(l.feature for l in r.conditions))) for r in model.rules}
     assert ("pos", (0, 2)) in bodies and ("pos", (4, 6)) in bodies
     test = _data(seed=1)
     assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
-    with_offset = OptimalRuleBoosting(n_rules=3, offset=True).fit(data)
+    with_offset = DenseORB(n_rules=3, offset=True).fit(data)
     assert any(len(r.conditions) == 0 for r in with_offset.rules)
-    squared = OptimalRuleBoosting(n_rules=5, loss="squared").fit(data)
+    squared = DenseORB(n_rules=5, loss="squared").fit(data)
     assert np.mean(np.asarray(squared.predict(test)) == test.y) > 0.85
 
 
@@ -265,10 +265,79 @@ def test_optimal_rule_boosting_rejects_bad_input():
     raw = rng.random((60, 3)) < 0.5
     three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
-        OptimalRuleBoosting().fit(three)
+        DenseORB().fit(three)
     with pytest.raises(ValueError):
-        OptimalRuleBoosting(search="beam")
+        DenseORB(search="beam")
 
+
+
+def _best_gain_brute_force(X, g, h, reg, sign=None, max_len=3):
+    """The best XGBoost gain over every conjunction of up to `max_len` features."""
+    from pyrulearn.learners.boosting import XGBGain
+    objective = XGBGain(g, h, reg=reg, sign=sign)
+    best = -math.inf
+    for size in range(1, max_len + 1):
+        for combo in combinations(range(X.shape[1]), size):
+            cov = np.all(X[:, list(combo)], axis=1)
+            if cov.any():
+                G, H = g[cov].sum(), h[cov].sum()
+                best = max(best, float(objective._gain(np.array([G]), np.array([H]))[0]))
+    return best
+
+
+@pytest.mark.parametrize("reg", [1.0, 0.0])
+@pytest.mark.parametrize("sign", [None, 1, -1])
+def test_orb_branch_and_bound_finds_the_best_gain(reg, sign):
+    from pyrulearn.learners.boosting import XGBGain
+    from pyrulearn.learners.seco import BranchAndBoundSearch, EmptyRuleAllFeatures
+    data = _data(n=200)
+    X = data.X
+    y = np.where(data.y == "pos", 1.0, -1.0)
+    s = np.random.default_rng(3).normal(0, 0.5, len(y))          # a later round: varied g and h
+    g, h = DenseORB()._derivatives(y, s)
+    objective = XGBGain(g, h, reg=reg, sign=sign)
+    initial = EmptyRuleAllFeatures().initial_candidates(data, None)
+    rule = BranchAndBoundSearch(max_conditions=3).search(data, None, objective, initial)
+    cov = np.all(X[:, [l.feature for l in rule.conditions]], axis=1)
+    found = float(objective._gain(np.array([g[cov].sum()]), np.array([h[cov].sum()]))[0])
+    assert found == pytest.approx(_best_gain_brute_force(X, g, h, reg, sign), rel=1e-12)
+
+
+@pytest.mark.parametrize("search", ["exhaustive", "greedy"])
+def test_orb_matches_dense_orb(search):
+    from pyrulearn.learners.boosting import ORB
+    from pyrulearn.learners.seco import BranchAndBoundSearch, HillClimbing
+    rule_search = {"exhaustive": BranchAndBoundSearch, "greedy": HillClimbing}[search]
+    data = _data()
+    for kw in ({}, {"offset": True}, {"loss": "squared"}, {"max_length": 2}):
+        dense = DenseORB(n_rules=5, search=search, **kw).fit(data)
+        orb_kw = {k: v for k, v in kw.items() if k != "max_length"}
+        modular = ORB(n_rules=5, search=rule_search(max_conditions=kw.get("max_length")), **orb_kw).fit(data)
+        assert str(modular) == str(dense)
+
+
+def test_orb_is_the_same_on_every_representation():
+    from pyrulearn.data import SparseDataRepresentation
+    from pyrulearn.learners.boosting import ORB
+    from pyrulearn.learners.seco import BeamSearch
+    data = _data()
+    for make in (lambda: ORB(n_rules=4), lambda: ORB(n_rules=4, search=BeamSearch(beam_width=3))):
+        want = str(make().fit(data))
+        for rep in (NListRepresentation.from_boolean(data), SparseDataRepresentation.from_boolean(data)):
+            assert str(make().fit(rep)) == want
+
+
+def test_orb_rejects_bad_input():
+    from pyrulearn.learners.boosting import ORB
+    from pyrulearn.learners.seco import BeamSearch
+    rng = np.random.default_rng(2)
+    raw = rng.random((60, 3)) < 0.5
+    three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
+    with pytest.raises(ValueError, match="binary"):
+        ORB().fit(three)
+    with pytest.raises(ValueError):
+        ORB(search="beam")
+    assert isinstance(ORB().search, BeamSearch)
 
 def test_boomer_is_ender_with_boomers_defaults():
     from pyrulearn.learners.boosting import Boomer

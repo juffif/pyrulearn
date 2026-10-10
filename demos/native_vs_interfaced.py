@@ -57,9 +57,10 @@ they are modeled on, cross-validated through
                       wittgenstein's RIPPER too, in
                       `demos/ripper_comparison.py`.
 
-A fifth pair, **OptimalRuleBoosting** vs. **RKD:RuleBoosting**
-(`pyrulearn.learners.boosting.OptimalRuleBoosting`, exact branch-and-
-bound rule search, vs. the reference `realkd` package), is checked
+A fifth pair, **ORB** vs. **RKD:RuleBoosting**
+(`pyrulearn.learners.boosting.ORB`, optimal rule boosting with the
+library's branch-and-bound rule search, vs. the reference `realkd`
+package), is checked
 separately first on a couple of small, low-feature-count datasets, then
 left out of the main comparison below -- both implementations' exhaustive
 search stops scaling to this demo's wider, one-hot-encoded feature
@@ -117,9 +118,9 @@ from pyrulearn.interfaces.realkd import RKDRuleBoosting
 from pyrulearn.interfaces.sklearn import SKLRandomForest
 from pyrulearn.interfaces.weka import WekaJRip
 from pyrulearn.learners.associative import CBA
-from pyrulearn.learners.boosting import Boomer, OptimalRuleBoosting
+from pyrulearn.learners.boosting import Boomer, ORB
 from pyrulearn.learners.rulefit import RuleFit
-from pyrulearn.learners.seco import Pypper
+from pyrulearn.learners.seco import BranchAndBoundSearch, Pypper
 from pyrulearn.models import FlatRuleSet
 
 RANDOM_STATE = 0
@@ -152,14 +153,14 @@ QUICK_MAX_INTERVALS = 3  # fewer binary features -> faster, for a sanity check, 
 # one-hot features: measured single-fit times of 730s/744s and 242s/458s,
 # both past FIT_TIMEOUT, for no informative result (both implementations
 # fail the same way -- not a native-vs-reference difference, same reasoning
-# as OptimalRuleBoosting/RKD:RuleBoosting above).
+# as ORB/RKD:RuleBoosting above).
 FULL_DATASETS = [
     "vote", "breast-cancer", "tic-tac-toe", "hepatitis", "heart-statlog", "SPECT",
     "colic", "credit-approval", "dresses-sales",
     "heart-h", "heart-c", "credit-g", "kr-vs-kp", "sick", "mushroom", "adult",
 ]
 
-# OptimalRuleBoosting/RKD:RuleBoosting preliminary check only (see
+# ORB/RKD:RuleBoosting preliminary check only (see
 # run_preliminary_optimal_rule_boosting_check) -- both time out well
 # before this on wider data (e.g. all 3 folds of breast-cancer, ~30
 # minutes), a shared limit of exhaustive branch-and-bound search, not a
@@ -201,7 +202,7 @@ class RuleFitRF(RuleFit):
 
 
 # pair key -> (native class, native kwargs, interfaced class, interfaced kwargs)
-# OptimalRuleBoosting/RKDRuleBoosting are deliberately not here -- see
+# ORB/RKDRuleBoosting are deliberately not here -- see
 # run_preliminary_optimal_rule_boosting_check and the module docstring.
 #
 # MLRLBoomer's instance_sampling/feature_sampling default to BOOMER's own
@@ -245,8 +246,8 @@ LEARNER_NOTES = {
              "Newton steps, up to 1,000 rules.",
     "MLRL:Boomer": "The reference BOOMER implementation (`mlrl-boomer`), with its instance/feature "
                   "sampling turned off to match native Boomer's full-data search (see PAIRS above).",
-    "OptimalRuleBoosting": "Rule boosting where each round's rule is the exact best by branch-and-"
-                           "bound search (10 rounds by default), not grown greedily.",
+    "ORB": "Optimal rule boosting: each round's rule is the exact best by branch-and-bound "
+           "search (10 rounds by default), not grown greedily.",
     "RKD:RuleBoosting": "The reference optimal-rule-boosting implementation (`realkd`).",
     "CBA": "Classification Based on Associations: mine class association rules (here capped at "
           f"max_len={ITEMSET_MAX_LEN}, see ROADMAP.md), sort by precedence, select by database "
@@ -271,7 +272,7 @@ def build_learners():
 
 # {learner display_name -> pair key}, {pair key -> (native name, interfaced name)} -- built from
 # the actual instantiated learners, not guessed from their names (RKDRuleBoosting's TOOL-stripped
-# name is "RuleBoosting", not the pair key "OptimalRuleBoosting")
+# name is "RuleBoosting", not the pair key "ORB")
 def _pair_index(learners):
     name_to_key, native_name, ext_name = {}, {}, {}
     i = 0
@@ -293,7 +294,7 @@ def _pair_of(learner_name: str) -> str:
 
 
 def run_preliminary_optimal_rule_boosting_check():
-    """Fits native `OptimalRuleBoosting` against `RKD:RuleBoosting` on
+    """Fits native `ORB` against `RKD:RuleBoosting` on
     `PRELIM_DATASETS`, and returns `(results, verdict)`: the usual
     long-format `run_cv` table (just these two learners, these datasets)
     and a plain-English sentence built from the actual numbers (never a
@@ -303,15 +304,16 @@ def run_preliminary_optimal_rule_boosting_check():
     out of the main comparison and checked here instead, at a scale
     where both can actually finish."""
     datasets = Catalog.default().select(names=PRELIM_DATASETS)
-    results = run_cv([OptimalRuleBoosting(), RKDRuleBoosting()], datasets, n_folds=PRELIM_FOLDS,
+    # realkd's exhaustive search (its default) vs. ORB with the matching search
+    results = run_cv([ORB(search=BranchAndBoundSearch()), RKDRuleBoosting()], datasets, n_folds=PRELIM_FOLDS,
                      fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
                      cache_dir=CACHE_DIR)
     by_learner = results.groupby("learner").agg(accuracy=("accuracy", "mean"), fit_time=("fit_time", "mean"))
-    native, ext = by_learner.loc["OptimalRuleBoosting"], by_learner.loc["RKD:RuleBoosting"]
+    native, ext = by_learner.loc["ORB"], by_learner.loc["RKD:RuleBoosting"]
     acc_gap = abs(native["accuracy"] - ext["accuracy"])
     agree = "closely" if acc_gap < 0.02 else "reasonably" if acc_gap < 0.05 else "not closely"
     verdict = (
-        f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), OptimalRuleBoosting and "
+        f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), ORB and "
         f"RKD:RuleBoosting agreed {agree} on accuracy (mean {native['accuracy']:.3f} vs. "
         f"{ext['accuracy']:.3f}, {acc_gap:.3f} apart; mean fit time {native['fit_time']:.2f}s vs. "
         f"{ext['fit_time']:.2f}s) -- but neither's exhaustive search scales to the main comparison's "
@@ -346,7 +348,7 @@ they are modeled on, on {len(datasets) - len(large)} small/medium and
 Two more pairs are covered by their own demos instead: Slipper vs.
 IMod:Slipper (`ripper_comparison.py`'s own preliminary check), and PyLORD
 vs. the reference JavaLord (`demos/seco_learners_comparison.py`). A
-fifth pair, OptimalRuleBoosting vs. RKD:RuleBoosting, is checked
+fifth pair, ORB vs. RKD:RuleBoosting, is checked
 separately below instead of in the main comparison -- see "Why optimal
 rule boosting isn't in the main comparison". {prelim_verdict}
 
@@ -523,7 +525,7 @@ def main(quick: bool = True) -> None:
     n_folds = QUICK_FOLDS if quick else N_FOLDS
     report_path = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
 
-    print("Preliminary check: OptimalRuleBoosting vs. RKD:RuleBoosting ...")
+    print("Preliminary check: ORB vs. RKD:RuleBoosting ...")
     prelim_results, prelim_verdict = run_preliminary_optimal_rule_boosting_check()
     print(prelim_verdict)
 

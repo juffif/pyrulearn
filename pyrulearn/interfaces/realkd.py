@@ -7,7 +7,7 @@ package (`realkd.rules.RuleBoostingEstimator`, an
 `AdditiveRuleEnsemble`), and `RKDRuleBoosting`, its learner -- the
 reference implementation of optimal rule boosting (Boley, Teshuva, Le
 Bodic & Webb, SDM 2021), which the native
-`pyrulearn.learners.boosting.OptimalRuleBoosting` re-implements.
+`pyrulearn.learners.boosting.ORB` re-implements (`DenseORB` exactly).
 
 `realkd` fits binary targets coded ``+1``/``-1`` and describes rows by
 propositions it generates from a pandas DataFrame: on a 0/1 column ``c``
@@ -133,7 +133,7 @@ class RKDRuleBoosting(ExternalRuleLearner):
     optionally preceded by an intercept (`offset=True`). Binary targets
     only. `fit(data)` -> `LinearRuleModel` (see `RealkdImporter`). The
     native re-implementation is
-    `pyrulearn.learners.boosting.OptimalRuleBoosting`."""
+    `pyrulearn.learners.boosting.DenseORB` (and `ORB`)."""
 
     IMPORTER = RealkdImporter
     NATIVE_MODEL = LinearRuleModel

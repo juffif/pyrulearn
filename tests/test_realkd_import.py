@@ -5,7 +5,7 @@ pytest.importorskip("realkd")
 
 from pyrulearn.data import BooleanDataRepresentation  # noqa: E402
 from pyrulearn.interfaces.realkd import RKDRuleBoosting  # noqa: E402
-from pyrulearn.learners.boosting import OptimalRuleBoosting  # noqa: E402
+from pyrulearn.learners.boosting import ORB, DenseORB  # noqa: E402
 from pyrulearn.models import LinearRuleModel  # noqa: E402
 
 from _negation_helpers import neg_spec, neg_X  # noqa: E402
@@ -19,12 +19,18 @@ def _data(n=300, seed=0):
     return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
 
 
+@pytest.mark.parametrize("learner", [DenseORB, ORB], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("search", ["greedy", "exhaustive"])
 @pytest.mark.parametrize("offset", [False, True])
-def test_native_optimal_rule_boosting_equals_realkd(search, offset):
+def test_native_optimal_rule_boosting_equals_realkd(learner, search, offset):
     data = _data()
     ref = RKDRuleBoosting(n_rules=5, search=search, offset=offset).fit(data)
-    native = OptimalRuleBoosting(n_rules=5, search=search, offset=offset).fit(data)
+    if learner is ORB:
+        from pyrulearn.learners.seco import BranchAndBoundSearch, HillClimbing
+        native = ORB(n_rules=5, search=BranchAndBoundSearch() if search == "exhaustive" else HillClimbing(),
+                     offset=offset).fit(data)
+    else:
+        native = learner(n_rules=5, search=search, offset=offset).fit(data)
     assert isinstance(ref, LinearRuleModel)
     assert sorted(r.to_string() for r in ref.rules) == sorted(r.to_string() for r in native.rules)
     a, b = ref.scores(data), native.scores(data)

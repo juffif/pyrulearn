@@ -226,7 +226,24 @@ indicator column in `ENDER`'s sums). Unweighted counts were always exact;
 the SeCo learners and `CPAR` learned the same models as before the fix,
 a few percent slower.
 
-Still open: a dense vs. modular demo.
+Still open: a dense vs. modular demo -- every learner with both
+versions side by side: `CPAR`/`DenseCPAR`, `ENDER`/`DenseENDER`,
+`Boomer`/`DenseBoomer`, `ORB`/`DenseORB` (accuracy, model size, fit
+time, on every representation for the modular ones). Plan (2026-10-10):
+start with a quick comparison that rules out ORB's exhaustive search
+(`BranchAndBoundSearch` without a length cap times out on most datasets
+beyond vote/tic-tac-toe -- over 300s per fit on breast-cancer); in the
+long run, compare `BeamSearch` widths for ORB. A first look (scratch
+run, not a demo): SPECT, breast-cancer, colic, credit-approval,
+heart-statlog, hepatitis, tic-tac-toe, vote; 5-fold, 10 rules, N-lists.
+Mean accuracy / mean rank / total conditions / fit time: greedy 83.08% /
+3.06 / 32.6 / 0.13s; beam3 82.56% / 3.75 / 36.9 / 0.14s; beam5 83.12% /
+3.06 / 39.3 / 0.22s; beam10 83.64% / 2.00 / 41.0 / 0.43s; branch and
+bound capped at 3 conditions 83.06% / 3.12 / 26.6 / 38.2s. Greedy won on
+the three noisiest, smallest datasets (SPECT, breast-cancer,
+hepatitis). Uncapped branch and bound: vote 2s, tic-tac-toe 118s,
+breast-cancer over 300s per fit. Hence `ORB`'s default search is
+`BeamSearch(beam_width=10)`.
 
 ## Batched counting on every representation
 
@@ -339,12 +356,43 @@ the remaining values when that's shorter), and thresholds on one numeric
 attribute as one interval; open: a value-set *feature* that also counts
 as one condition, for rule-length measures and `max_conditions`.
 
-Next, deferred: `OptimalRuleBoosting`'s two searches as configurations
-of `BranchAndBoundSearch` and a greedy search. Its objective (sums of
-the loss derivatives `g`, `h`, with a bound over the covered rows
-themselves) is no `RuleHeuristic`; it needs an objective component on
-sums of per-row values (as ENDER's `ImpurityCriterion` already is), with
-a heuristic adapter -- decision (a) of 2026-10-09, open.
+## Objectives: what a search maximizes; ORB on the rule searches
+
+**Done (2026-10-10).** Decision (a) of 2026-10-09, taken: the searches no
+longer call a heuristic; they talk to an `Objective`
+(`pyrulearn.learners.seco`), which owns counting (a rule's statistics,
+and every open child's at once, from the representation's primitives),
+scoring, optimistic bounds, and the "changes nothing" / "nothing left"
+predicates. `HeuristicObjective` wraps a `RuleHeuristic` (statistics
+`RuleStats`, bound at `(tp, 0)`, counting via `count_open_children`) --
+every search wraps a heuristic it is given, so the API is unchanged.
+`ValueSumObjective` is a function of sums of per-row values over the
+covered rows (one `batch_cover_sums` per step; an exact integer count of
+contributing rows decides "same" and "dead"), optionally with an
+`exact_bound` from the covered rows that `BranchAndBoundSearch` applies
+to every child it builds. Checked: all 120 models of 10 search-based
+learners (CN2, AQR, PFoil, PFossil, Pypper, PyLORD, CPAR, Opus x2,
+OpusTopK) on 6 datasets x Boolean/N-list identical to before; timing
+below.
+
+On top: `ORB` -- optimal rule boosting with any rule search on the
+`XGBGain` objective, passed as a `RuleSearch` like in every SeCo learner
+(default `BeamSearch(beam_width=10)`, see the dense vs. modular demo
+item; `BranchAndBoundSearch` is realkd's exhaustive search,
+`HillClimbing` its greedy one), on every representation; the old
+`OptimalRuleBoosting` is `DenseORB`, the dense-matrix specialization.
+Both reproduce realkd exactly (`tests/test_realkd_import.py`), and ORB
+reproduces DenseORB model for model. `XGBGain(sign=)` restricts to
+rules raising (`+1`) or lowering (`-1`) the scores -- the per-class
+search a multi-class ORB would run, and the way to use class-dependent
+filters; not used by `ORB` yet (binary, class from the weight's sign).
+
+To write up (report or paper): the objective abstraction -- searches as
+pure strategies over an objective that owns counting, scoring and
+bounding -- is central to this package's design; class-count heuristics
+and boosting gains are its two instances so far. ENDER's
+`ImpurityCriterion` is a third candidate (its own grower is a hill
+climb on an objective of the same kind).
 
 ## 0.3.0: every native learner on any data representation
 
@@ -368,7 +416,6 @@ PFoil, PFossil and Pypper, PyLORD, the rule models, pruning and
 evaluation. Four implementations turn the data into a dense matrix
 (`data.X`) and work on its columns with numpy instead:
 
-- `OptimalRuleBoosting`,
 - `LRI`.
 
 `CPAR` and `ENDER` (with `Boomer`) were on this list; both now run on
@@ -445,11 +492,12 @@ the work below is worth doing for them too):
    silent (the tool needs the dense matrix either way) -- so every
    learner, external ones included, accepts every representation, and
    the demos need no `representation=` of their own. Checked with the
-   `run_cv` demos' quick runs, not full reruns. (`OptimalRuleBoosting`
-   and `LRI` read `data.X` directly, which every representation provides
-   -- built on demand for N-lists and sparse data -- so they run on any
-   representation too; making them use the coverage functions instead is
-   item 2.) The tutorial notebook asks for `BooleanDataRepresentation`
+   `run_cv` demos' quick runs, not full reruns. (`LRI` reads
+   `data.X` directly, which every representation provides -- built on
+   demand for N-lists and sparse data -- so it runs on any representation
+   too; making it use the coverage functions instead is item 2. The old
+   `OptimalRuleBoosting` did too; it is `DenseORB` now, next to the
+   representation-generic `ORB`.) The tutorial notebook asks for `BooleanDataRepresentation`
    explicitly (it shows `data.X`), with a note that N-lists are the
    default.
 2. *The three learners*: score candidate conditions through the
@@ -529,6 +577,12 @@ the work below is worth doing for them too):
   whose code word is nearest to the models' predictions. It would fit as
   another model type of `DecomposingLearner` (`fit(data, model=...)`) and
   as another method in the multi-class decomposition demo.
+- **Accuracy as percentages, four digits** (the user's preference,
+  2026-10-10): every demo report, verdict sentence and plot axis shows
+  accuracy as ``86.31%``, not ``0.863`` -- `experiments.report`'s
+  `render_results_table` (its one `float_format` for all columns) and
+  each demo's own summary tables and sentences. With the planned clean
+  re-run of the demos.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
