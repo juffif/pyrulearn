@@ -18,7 +18,7 @@ coverage), `CBA` (precedence sort + database-coverage selection), `CMAR`
 (chi-square significance filter + per-class coverage pruning + weighted
 voting), `IDS` (Interpretable Decision Sets -- a diverse, accurate subset
 via Smooth Local Search over 7 weighted objectives, or its cheap
-`optimizer="greedy"` fallback as `IDS-greedy`), and two baselines with no
+`optimizer=GreedySelection()` fallback as `IDS-greedy`), and two baselines with no
 distillation at all, just the whole pool wrapped in a `FlatRuleSet` and
 predicted from directly (`Max`, its default Laplace-scored combiner, and
 `Vote`, a plain majority vote) -- the four proper distillers share
@@ -76,6 +76,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.experiments.catalog import Catalog, CatalogEntry
@@ -85,7 +86,7 @@ from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.interfaces.sklearn import SKLRandomForest
 from pyrulearn.learners.associative import CARMiner, CBA, CMAR
 from pyrulearn.learners.base import NativeRuleLearner, produces
-from pyrulearn.learners.ids import IDS
+from pyrulearn.learners.ids import IDS, GreedySelection
 from pyrulearn.learners.pylord import pylord_candidates
 from pyrulearn.learners.rulefit import RuleFit
 from pyrulearn.models import FlatRuleSet, MajorityClass
@@ -187,11 +188,11 @@ def build_distiller(name: str, pool: FlatRuleSet):
     if name == "IDS":
         return IDS(rules=pool)
     if name == "IDS-greedy":
-        return IDS(rules=pool, optimizer="greedy")
+        return IDS(rules=pool, optimizer=GreedySelection())
     if name == "Max":
-        return NoDistill(rules=pool, combiner="max")
+        return NoDistill(rules=pool, combiner=HeuristicMaxCombiner())
     if name == "Vote":
-        return NoDistill(rules=pool, combiner="vote")
+        return NoDistill(rules=pool, combiner=CountVoteCombiner())
     raise ValueError(f"unknown distiller {name!r}")
 
 
@@ -603,7 +604,7 @@ module docstring):
   `pylord_candidates` (one local search per training row, growing
   super-linearly -- feasible on the smaller datasets here, expected to
   run long or time out on `bank-marketing`/`adult`), and only six
-  distillers: plain `IDS` (`optimizer="sls"`) is dropped here -- on
+  distillers: plain `IDS` (`SmoothLocalSearch`) is dropped here -- on
   Study 1's own small datasets it was already the slowest distiller by
   a wide margin (its cost doesn't track data size in any simple way --
   see "Why IDS is slow and unstable" below), so repeating it on bigger

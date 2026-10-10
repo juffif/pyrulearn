@@ -1,4 +1,5 @@
 import numpy as np
+from pyrulearn.combiners import CountVoteCombiner
 from pyrulearn import BooleanDataRepresentation, DataSpec, DataSpecBuilder, Rule
 
 from _negation_helpers import neg_spec, neg_X
@@ -197,7 +198,7 @@ def test_random_forest_importer_returns_single_ruleset():
     # unweighted majority vote reasonably tracks the true labels (sanity
     # check, not exactness -- sklearn's own predict() does soft/
     # probability-averaged voting, not hard majority voting)
-    preds = rules.predict(rep, combiner="vote")
+    preds = rules.predict(rep, combiner=CountVoteCombiner())
     assert np.mean(preds == y) > 0.9
 
     rules2 = from_random_forest(rf, dataspec=ds)

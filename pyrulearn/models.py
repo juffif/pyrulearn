@@ -69,7 +69,8 @@ from typing import (
 import numpy as np
 
 from .combiners import (
-    DistributionCombiner, ListCombiner, RuleCombiner, _argmax_classes, _label_sortkey, _resolve_combiner,
+    CountVoteCombiner, DistributionCombiner, ListCombiner, RuleCombiner, _argmax_classes, _label_sortkey,
+    _resolve_combiner,
     _rule_stats, _training_frequencies,
 )
 from .data import DataRepresentation
@@ -278,12 +279,11 @@ class Exclusive(FirstMatch):
 
 class Combine(Resolution):
     """Aggregate every rule covering a row via a `pyrulearn.combiners.
-    RuleCombiner` (or a shortcut string -- `"max"`, `"vote"`, `"list"`,
-    ...). Unique coverage = rows a rule covers that no other rule *of the
-    same head* covers."""
+    RuleCombiner` (default `HeuristicMaxCombiner()`). Unique coverage =
+    rows a rule covers that no other rule *of the same head* covers."""
 
-    def __init__(self, combiner: Union[str, RuleCombiner] = "max"):
-        self.combiner = combiner
+    def __init__(self, combiner: Optional[RuleCombiner] = None):
+        self.combiner = _resolve_combiner(combiner)
 
     def predict(self, rules, cov, fallback, n_samples):
         strat = _resolve_combiner(self.combiner)
@@ -1101,10 +1101,10 @@ class RuleSet(RuleModel):
     #: (off for `LinearRuleModel`, whose rules each carry their own weight)
     _LOGIC_AS_DNF = True
 
-    resolution: Resolution = Combine("max")
+    resolution: Resolution = Combine()
 
     def predict(
-        self, data: DataRepresentation, combiner: Optional[Union[str, RuleCombiner]] = None,
+        self, data: DataRepresentation, combiner: Optional[RuleCombiner] = None,
     ) -> np.ndarray:
         """`combiner`, if given, resolves multiply-covered rows for this
         call only (a `RuleCombiner` instance or a shortcut string) --
@@ -1122,7 +1122,7 @@ class RuleSet(RuleModel):
 
     def _resolved_by_list_order(self) -> bool:
         """Whether list order decides this set's predictions: its own
-        combiner is `ListCombiner` (``"list"``) *and* its rules have more
+        combiner is `ListCombiner` *and* its rules have more
         than one head (with a single head, e.g. a `ConceptModel`, any
         covering rule gives the same label, so order can't matter)."""
         res = self.resolution
@@ -1171,7 +1171,7 @@ class RuleSet(RuleModel):
         appended to its head line instead of trailing its last condition
         (Prolog; other formats unaffected).
 
-        A set resolved by list order (its own combiner ``"list"``, rules
+        A set resolved by list order (its own combiner `ListCombiner`, rules
         with more than one head) prints like a `DecisionList` instead --
         in list order, ungrouped -- since that order is what decides its
         predictions and grouping by label would hide it.
@@ -1490,7 +1490,7 @@ class ConceptModel(_FlatRules, RuleSet):
     `ConceptCascade`, and the classical concept-learning target (AQ,
     version spaces)."""
 
-    resolution = Combine("list")  # all rules share a head -> any covering rule -> label
+    resolution = Combine(ListCombiner())  # all rules share a head -> any covering rule -> label
 
     def __init__(
         self,
@@ -1524,8 +1524,8 @@ class ConceptModel(_FlatRules, RuleSet):
 
 class FlatRuleSet(_FlatRules, RuleSet):
     """A plain bag of rules with mixed heads, resolved by one global
-    `combiner` (`pyrulearn.combiners.RuleCombiner` or a shortcut string;
-    default `"max"`). The generic `RuleSet` -- the counterpart to
+    `combiner` (a `pyrulearn.combiners.RuleCombiner`; default
+    `HeuristicMaxCombiner()`). The generic `RuleSet` -- the counterpart to
     `DeepModel`. Insertion order is kept but unused for prediction, which
     is what lets it convert *either* to a `DecisionList` (adopt the
     order) or a `ConceptSet` (drop it). Direct successor of the old flat
@@ -1536,17 +1536,17 @@ class FlatRuleSet(_FlatRules, RuleSet):
         rules: Optional[Sequence[Rule]] = None,
         *,
         default_prediction: Any = None,
-        combiner: Union[str, RuleCombiner] = "max",
+        combiner: Optional[RuleCombiner] = None,
     ):
         super().__init__(rules, default_prediction=default_prediction)
         self.resolution = Combine(combiner)
 
     @property
-    def combiner(self) -> Union[str, RuleCombiner]:
+    def combiner(self) -> RuleCombiner:
         return self.resolution.combiner  # type: ignore[attr-defined]
 
     @combiner.setter
-    def combiner(self, value: Union[str, RuleCombiner]) -> None:
+    def combiner(self, value: RuleCombiner) -> None:
         self.resolution = Combine(value)
 
     def _rebuild_kwargs(self) -> Dict[str, Any]:
@@ -1674,7 +1674,7 @@ class PooledRuleSet(FlatRuleSet):
     def __init__(
         self, dataspec: DataSpec, items: np.ndarray, offsets: np.ndarray, target_codes: np.ndarray,
         class_counts: np.ndarray, classes: Sequence[Any], totals: Dict[Any, int], *,
-        default_prediction: Any = None, combiner: Union[str, RuleCombiner] = "max",
+        default_prediction: Any = None, combiner: Optional[RuleCombiner] = None,
     ):
         super().__init__([], default_prediction=default_prediction, combiner=combiner)
         self._spec = dataspec
@@ -1834,8 +1834,8 @@ class ConceptSet(_ConceptIndexed, RuleSet):
     """One `ConceptModel` per label, unordered. A row covered by a single
     concept gets that concept's label; a row covered by several is
     resolved by `combiner` over the union of those concepts' covering
-    rules. For an order-independent `combiner` (`"max"`, `"vote"`, the
-    distribution combiners) prediction matches a `FlatRuleSet` with the
+    rules. For an order-independent `combiner` (`HeuristicMaxCombiner`,
+    `CountVoteCombiner`, the distribution combiners) prediction matches a `FlatRuleSet` with the
     same rules -- the difference is then purely structural (nested
     concepts, 3-level stats). Rows no concept covers fall back to
     `default_prediction`."""
@@ -1845,17 +1845,17 @@ class ConceptSet(_ConceptIndexed, RuleSet):
         concepts: Sequence["ConceptModel"],
         *,
         default_prediction: Any = None,
-        combiner: Union[str, RuleCombiner] = "max",
+        combiner: Optional[RuleCombiner] = None,
     ):
         super().__init__(concepts, default_prediction=default_prediction)
         self.resolution = Combine(combiner)
 
     @property
-    def combiner(self) -> Union[str, RuleCombiner]:
+    def combiner(self) -> RuleCombiner:
         return self.resolution.combiner  # type: ignore[attr-defined]
 
     @combiner.setter
-    def combiner(self, value: Union[str, RuleCombiner]) -> None:
+    def combiner(self, value: RuleCombiner) -> None:
         self.resolution = Combine(value)
 
     def _rebuild_kwargs(self) -> Dict[str, Any]:
@@ -1867,7 +1867,7 @@ class ConceptSet(_ConceptIndexed, RuleSet):
         rules: Sequence[Rule],
         *,
         default_prediction: Any = None,
-        combiner: Union[str, RuleCombiner] = "max",
+        combiner: Optional[RuleCombiner] = None,
     ) -> "ConceptSet":
         """Group a flat rule list into one `ConceptModel` per head."""
         by_head: Dict[Any, List[Rule]] = {}
@@ -2210,31 +2210,23 @@ class AccuracyWeightedVote(WeightedVote):
         return "pairwise vote weighted by each pair's training accuracy"
 
 
-_PAIRWISE_COMBINER_SHORTCUTS: Dict[str, Callable[[], PairwiseCombiner]] = {
-    "vote": MajorityVote,
-    "weighted_vote": WeightedVote,
-    "accuracy_vote": AccuracyWeightedVote,
-}
-
-
-def _resolve_pairwise_combiner(combiner: Union[str, PairwiseCombiner]) -> PairwiseCombiner:
+def _resolve_pairwise_combiner(combiner: Optional[PairwiseCombiner]) -> PairwiseCombiner:
+    """`combiner` itself, `MajorityVote()` for `None`; anything that isn't
+    a `PairwiseCombiner` (a name, say) is refused."""
+    if combiner is None:
+        return MajorityVote()
     if isinstance(combiner, PairwiseCombiner):
         return combiner
-    try:
-        return _PAIRWISE_COMBINER_SHORTCUTS[combiner]()
-    except (KeyError, TypeError):
-        raise ValueError(
-            f"Unknown pairwise combiner {combiner!r}; choose from "
-            f"{sorted(_PAIRWISE_COMBINER_SHORTCUTS)} or pass a PairwiseCombiner"
-        ) from None
+    raise ValueError(f"combiner must be a PairwiseCombiner -- MajorityVote(), WeightedVote(), "
+                     f"AccuracyWeightedVote() -- got {combiner!r}")
 
 
 class PairwiseModel(CompositeModel):
     """Round-robin: one binary member per unordered label pair (Fürnkranz,
     *Round Robin Classification*, JMLR 2002), each voting for one of its
     two labels. `members` are ``(label_a, label_b, submodel)`` triples;
-    `combiner` (`PairwiseCombiner` or a shortcut -- ``"vote"`` /
-    ``"weighted_vote"`` / ``"accuracy_vote"``) turns the per-row votes
+    `combiner` (a `PairwiseCombiner`: `MajorityVote()`, the default,
+    `WeightedVote()`, `AccuracyWeightedVote()`) turns the per-row votes
     into a label, or `None` → `default_prediction`.
 
     Swap `combiner` on a fitted model with no retraining -- `fit` records
@@ -2245,7 +2237,7 @@ class PairwiseModel(CompositeModel):
         self,
         members: Sequence[Tuple[Any, Any, RuleModel]],
         *,
-        combiner: Union[str, PairwiseCombiner] = "vote",
+        combiner: Optional[PairwiseCombiner] = None,
         default_prediction: Any = None,
         labels: Optional[Sequence[Any]] = None,
         label_priors: Optional[Dict[Any, float]] = None,
@@ -2430,9 +2422,9 @@ def conceptset_to_flatruleset(cs: ConceptSet) -> FlatRuleSet:
         list(cs.rules), default_prediction=cs.default_prediction, combiner=cs.combiner))
 
 
-def ensemblemodel_to_flatruleset(ens: EnsembleModel, *, combiner: str = "vote") -> FlatRuleSet:
+def ensemblemodel_to_flatruleset(ens: EnsembleModel, *, combiner: Optional[RuleCombiner] = None) -> FlatRuleSet:
     """Pool every member's rules into one flat bag, resolved by a single
-    `combiner` (default `"vote"` -- an unweighted plurality vote over all
+    `combiner` (default `CountVoteCombiner()` -- an unweighted plurality vote over all
     covering rules, the closest flat analogue of the ensemble's own
     per-member vote). Lossy: the per-member grouping, any
     `member_weights`, and each member's own resolution (e.g. a tree's
@@ -2440,7 +2432,8 @@ def ensemblemodel_to_flatruleset(ens: EnsembleModel, *, combiner: str = "vote") 
     vote is *not* reproduced. Use it when a downstream consumer needs a
     single rule list and an approximate vote is acceptable."""
     return _carry_provenance(ens, FlatRuleSet(
-        list(ens.rules), default_prediction=ens.default_prediction, combiner=combiner))
+        list(ens.rules), default_prediction=ens.default_prediction,
+        combiner=combiner if combiner is not None else CountVoteCombiner()))
 
 
 def conceptcascade_to_decision_list(cascade: ConceptCascade) -> DecisionList:

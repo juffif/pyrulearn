@@ -66,7 +66,7 @@ for the SeCo family):
   each rule seeded on a random uncovered example and headed with that
   example's own label -- AQ's multi-class covering, rules kept in learn
   order (`model=FlatRuleSet` gives the same rules resolved by that order,
-  `combiner="list"`).
+  `ListCombiner()`).
 
 A single global "best rule for any class" search (the early-CN2 entropy
 heuristic) is a different, deferred thing; when built it would also wrap
@@ -113,7 +113,7 @@ from ..heuristics import (
     Laplace, LEF, LikelihoodRatio, MinimalLength, Precision, RuleHeuristic, RuleStats, Score,
 )
 from .base import DecomposingLearner, NativeRuleLearner, produces
-from ..combiners import MicroVoteCombiner
+from ..combiners import ListCombiner, MicroVoteCombiner
 from ..pruning import AnyOf, EncodingLengthRestriction, PrePruningCriterion, ThresholdPrePruning
 from ..data import BooleanDataRepresentation
 from ..data.attributes import NumericGroup, ThresholdChain
@@ -2718,16 +2718,16 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
       as the head -> learn -> remove -> repeat; AQ's multi-class covering),
       rules in learn order, first match wins.
     - `fit(data, model=FlatRuleSet)` -- the same rules, as a rule set
-      resolved by learn order (`combiner="list"`), e.g. to compare other
+      resolved by learn order (`ListCombiner()`), e.g. to compare other
       combiners on them.
 
     `SeCo` takes no default-prediction or combiner arguments -- it sets
-    sensible ones on the result (`MajorityClass(data)` fallback; `"max"`
-    combiner for a `ConceptSet`) and leaves the rest to the caller. Reassign
+    sensible ones on the result (`MajorityClass(data)` fallback;
+    `HeuristicMaxCombiner()` for a `ConceptSet`) and leaves the rest to the caller. Reassign
     either on the returned model.
 
-    Learned rules carry no declarative weight -- `combiner = "max"`
-    (`HeuristicMaxCombiner`, `Laplace` by default) scores each rule from
+    Learned rules carry no declarative weight -- `HeuristicMaxCombiner()`
+    (`Laplace` by default) scores each rule from
     its own *measured* `stats()` at predict time instead, the same
     default `sort_rules`/`covered_by` use for inspection; pass
     `combiner=HeuristicMaxCombiner(SomeHeuristic())` for a different one.
@@ -2966,10 +2966,10 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     def _fit_seed_covering_set(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)`: the same rules as
         `model=DecisionList`, as a rule set resolved by learn order
-        (`combiner="list"`, so it predicts identically) -- e.g. to compare
+        (`ListCombiner()`, so it predicts identically) -- e.g. to compare
         other combiners on the same rules via `predict(combiner=...)`."""
         dl = self._seed_covering_fit(data)
-        model = FlatRuleSet(dl.rules, default_prediction=dl.default_prediction, combiner="list")
+        model = FlatRuleSet(dl.rules, default_prediction=dl.default_prediction, combiner=ListCombiner())
         return annotate_default_rule(model, data)
 
 
@@ -3019,8 +3019,10 @@ class CN2(_ClassCountLaplace, SeCo):
       empty ruleset either way. They differ only in reach: `stopping`
       halts the search the moment the round's best candidate goes
       insignificant, so it can miss a rule that would have regained
-      significance a few refinements deeper -- `mode="filtering"` runs
-      the search out and can still find that rule. Pass
+      significance a few refinements deeper -- as `filtering` the
+      criterion lets the search run out and can still find that rule
+      (``CN2(filtering=ThresholdPrePruning(LikelihoodRatio(), 3.841,
+      operator="<"))``). Pass
       `significance_threshold=None` to disable the criterion entirely
       (every rule the search lands on is accepted, same as calling
       `SeCo` directly with a `Laplace` heuristic and no `stopping`).
@@ -3042,17 +3044,14 @@ class CN2(_ClassCountLaplace, SeCo):
     only quality gate.
 
     `filtering`/`stopping`, if passed explicitly, override
-    `significance_threshold`'s default construction entirely -- `mode`
-    is a shorthand for that swap without constructing the criterion by
-    hand: `mode="stopping"` (the default) wires the significance test as
-    `stopping=` (gate the result *and* halt early), `mode="filtering"`
-    wires the identical criterion as `filtering=` instead (gate the
-    result, run the search out). Ignored once `filtering`/`stopping` is
-    passed explicitly, or if `significance_threshold=None` disables the
-    criterion entirely.
+    `significance_threshold`'s default construction entirely: the
+    significance test is the default `stopping` criterion (gate the
+    result *and* halt early) only while neither is given. To use it as a
+    `filtering` criterion instead (gate the result, run the search out),
+    pass it as such.
 
     `fit(data)`'s default `ConceptSet` uses `MicroVoteCombiner`, not the
-    family's generic `combiner="max"` -- see `_fit_one_vs_rest` below for
+    family's generic `HeuristicMaxCombiner()` -- see `_fit_one_vs_rest` below for
     why. Measured empirically to make little difference on real data
     (rows where covering rules actually disagree in target are rare, and
     even then the two combiners' accuracy differs by a fraction of a
@@ -3066,7 +3065,6 @@ class CN2(_ClassCountLaplace, SeCo):
         heuristic: Optional[RuleHeuristic] = None,
         beam_width: int = 5,
         significance_threshold: Optional[float] = 3.841,
-        mode: str = "stopping",
         search: Optional[RuleSearch] = None,
         preparation: Optional[SingleRulePreparation] = None,
         postprocessing: Optional[SingleRulePostProcessing] = None,
@@ -3077,17 +3075,11 @@ class CN2(_ClassCountLaplace, SeCo):
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
     ):
-        if mode not in ("stopping", "filtering"):
-            raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
         self._default_laplace = heuristic is None
         heuristic = heuristic if heuristic is not None else Laplace()
         search = search if search is not None else BeamSearch(beam_width=beam_width)
         if stopping is None and filtering is None and significance_threshold is not None:
-            criterion = ThresholdPrePruning(LikelihoodRatio(), significance_threshold, operator="<")
-            if mode == "stopping":
-                stopping = criterion
-            else:
-                filtering = criterion
+            stopping = ThresholdPrePruning(LikelihoodRatio(), significance_threshold, operator="<")
         single_rule_learner = SingleRuleLearner(
             heuristic=heuristic,
             search=search,
@@ -3110,7 +3102,7 @@ class CN2(_ClassCountLaplace, SeCo):
         """Clark & Boswell (1991)'s own unordered CN2 resolves a clash
         between rules of different classes covering the same row not by
         picking the single best-scoring rule (the family's generic
-        `combiner="max"`) but by summing each rule's own covered-training-
+        `HeuristicMaxCombiner()`) but by summing each rule's own covered-training-
         example class distribution and predicting the largest total --
         `pyrulearn.combiners.MicroVoteCombiner`. Only this one producer is
         overridden: `model=ConceptModel` (one concept, nothing to
@@ -3131,8 +3123,9 @@ class AQR(SeCo):
       rule is grown as a generalization of one still-uncovered positive
       example, never from the fully-open empty rule -- the defining
       difference from `CN2`'s general-to-specific beam. See
-      `SeedExample`'s docstring; `seed_strategy`/`random_state` pick
-      which uncovered positive.
+      `SeedExample`'s docstring; ``space_init=SeedExample("random",
+      random_state)`` picks a random uncovered positive instead of the
+      first.
 
     - **evaluation: a `LEF`** (Michalski's Lexicographic Evaluation
       Functional, `pyrulearn.heuristics.LEF`). Clark & Niblett describe
@@ -3205,7 +3198,6 @@ class AQR(SeCo):
         target_class: Any = None,
         heuristic: Optional[RuleHeuristic] = None,
         maxstar: int = 5,
-        seed_strategy: str = "first",
         random_state: Optional[int] = 0,
         require_consistency: bool = True,
         search: Optional[RuleSearch] = None,
@@ -3222,7 +3214,7 @@ class AQR(SeCo):
             CoveredPositives(), CoveredNegatives(), MinimalLength()
         )
         search = search if search is not None else BeamSearch(beam_width=maxstar)
-        space_init = space_init if space_init is not None else SeedExample(seed_strategy, random_state)
+        space_init = space_init if space_init is not None else SeedExample("first", random_state)
         if filtering is None and stopping is None and require_consistency:
             filtering = ThresholdPrePruning(CoveredNegatives(), 0, operator="<")
         single_rule_learner = SingleRuleLearner(
@@ -3358,21 +3350,20 @@ class PFossil(SeCo):
       correlation gradient from the empty rule adds negatives-removing
       conditions first and stops earlier, landing on tighter rules.
 
-    `correlation_threshold` is wired as `filtering` by default
-    (`mode="filtering"`): the local-optimum stop already decides *when to
-    stop climbing*; the threshold only decides *whether the rule the
-    climb lands on is worth keeping* -- if its correlation is below the
-    threshold the search returns `None` and `SeCo` ends its covering
-    loop. `mode="stopping"` uses the same threshold but also halts the
-    climb the moment correlation dips below it (returning the rule from
-    just before, or `None` if there wasn't one yet) -- earlier than the
-    natural peak, so it tends to underfit (often one rule); kept for
-    parity with `CN2`'s own `mode=`. `evaluate()` is
-    `ThresholdPrePruning(Correlation(), correlation_threshold, "<")`
-    either way -- and either way a sub-threshold rule is never returned
-    (before 2026, `mode="stopping"` did append them, which is what
-    wrecked accuracy). Pass `correlation_threshold=None` to drop the
-    gate entirely (every rule the climb lands on is accepted).
+    `correlation_threshold` is wired as the `filtering` criterion
+    ``ThresholdPrePruning(Correlation(), correlation_threshold, "<")``
+    while neither `filtering` nor `stopping` is given: the local-optimum
+    stop already decides *when to stop climbing*; the threshold only
+    decides *whether the rule the climb lands on is worth keeping* -- if
+    its correlation is below the threshold the search returns `None` and
+    `SeCo` ends its covering loop. Passing the same criterion as
+    `stopping` instead also halts the climb the moment correlation dips
+    below it (returning the rule from just before, or `None` if there
+    wasn't one yet) -- earlier than the natural peak, so it tends to
+    underfit (often one rule). Either way a sub-threshold rule is never
+    returned (before 2026, the stopping variant did append them, which
+    is what wrecked accuracy). Pass `correlation_threshold=None` to drop
+    the gate entirely (every rule the climb lands on is accepted).
 
     Beam search -- the pre-2026 default -- is still available explicitly:
     `PFossil(target_class=..., search=BeamSearch(beam_width=5),
@@ -3384,7 +3375,6 @@ class PFossil(SeCo):
         target_class: Any = None,
         heuristic: Optional[RuleHeuristic] = None,
         correlation_threshold: Optional[float] = 0.3,
-        mode: str = "filtering",
         search: Optional[RuleSearch] = None,
         preparation: Optional[SingleRulePreparation] = None,
         postprocessing: Optional[SingleRulePostProcessing] = None,
@@ -3395,17 +3385,11 @@ class PFossil(SeCo):
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
     ):
-        if mode not in ("stopping", "filtering"):
-            raise ValueError(f"mode must be 'stopping' or 'filtering', got {mode!r}")
         search = search if search is not None else HillClimbing()
         if heuristic is None:
             heuristic = Correlation()
         if stopping is None and filtering is None and correlation_threshold is not None:
-            criterion = ThresholdPrePruning(Correlation(), correlation_threshold, operator="<")
-            if mode == "stopping":
-                stopping = criterion
-            else:
-                filtering = criterion
+            filtering = ThresholdPrePruning(Correlation(), correlation_threshold, operator="<")
         single_rule_learner = SingleRuleLearner(
             heuristic=heuristic,
             search=search,

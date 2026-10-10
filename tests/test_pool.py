@@ -1,3 +1,4 @@
+from pyrulearn.learners.ids import GreedySelection
 import numpy as np
 import pytest
 
@@ -115,7 +116,7 @@ def test_distillers_give_identical_models_from_a_pooled_or_an_eager_pool():
     cmar_p, cmar_e = CMAR(rules=pool).fit(data), CMAR(rules=eager).fit(data)
     assert sorted(_sig(cmar_p.rules)) == sorted(_sig(cmar_e.rules))
 
-    kw = dict(rule_cutoff=8, optimizer="greedy", tune_lambdas=False, lambda_weights=(0.2, 0.2, 0.2, 0.2, 1, 1, 2))
+    kw = dict(rule_cutoff=8, optimizer=GreedySelection(), tune_lambdas=False, lambda_weights=(0.2, 0.2, 0.2, 0.2, 1, 1, 2))
     ids_p, ids_e = IDS(rules=pool, **kw).fit(data), IDS(rules=eager, **kw).fit(data)
     assert _sig(ids_p.rules) == _sig(ids_e.rules)
     print("CBA, CMAR and IDS give identical models from a lazy pool and from the equivalent eager list: OK")

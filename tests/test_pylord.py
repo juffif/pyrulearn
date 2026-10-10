@@ -1,3 +1,4 @@
+from pyrulearn.combiners import HeuristicMaxCombiner
 import numpy as np
 import pytest
 
@@ -64,7 +65,7 @@ def test_default_is_always_training_majority():
     majority = vals[int(np.argmax(cnts))]
     # None -> FlatRuleSet (combiner "max"); "x" -> ConceptModel (no combiner attr)
     flat = PyLORD(m=0.1, random_state=0).fit(rep)
-    assert flat.default_rule.target == majority and flat.combiner == "max"
+    assert flat.default_rule.target == majority and isinstance(flat.combiner, HeuristicMaxCombiner)
     concept = PyLORD(m=0.1, random_state=0, target_class="x").fit(rep)
     assert concept.default_rule.target == majority
     print("PyLORD default = training majority; FlatRuleSet combiner = 'max': OK")

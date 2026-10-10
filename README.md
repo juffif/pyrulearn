@@ -125,7 +125,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | Algorithm | Class (in `pyrulearn.learners`) | Notes | Reference |
 |---|---|---|---|
 | **SeCo framework** | `seco.SeCo` | the separate-and-conquer (covering) engine that the next five entries are instantiations of: a per-class covering loop around composable building blocks (search, heuristics, pruning, stopping, optimization, covering: removal or weighted) | Fürnkranz, Gamberger & Lavrač 2012; Fürnkranz & Flach 2005 |
-| **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test; unlike the rest of the family, its default `ConceptSet` resolves a clash between firing rules by summing their covered-class distributions (`MicroVoteCombiner`), not the family's generic `combiner="max"`, matching Clark & Boswell's own unordered-CN2 | Clark & Niblett 1989; Clark & Boswell 1991 |
+| **CN2** | `seco.CN2` | a `SeCo` instantiation: Laplace heuristic and likelihood-ratio significance test; unlike the rest of the family, its default `ConceptSet` resolves a clash between firing rules by summing their covered-class distributions (`MicroVoteCombiner`), not the family's generic `HeuristicMaxCombiner()`, matching Clark & Boswell's own unordered-CN2 | Clark & Niblett 1989; Clark & Boswell 1991 |
 | **AQR** | `seco.AQR` | a `SeCo` instantiation: Clark & Niblett's reimplementation of Michalski's AQ; the literal *star* search is approximated by a seed-restricted beam search | Clark & Niblett 1989 |
 | **PFOIL** | `seco.PFoil` | a `SeCo` instantiation: propositional FOIL with information gain, hill climbing, MDL-based encoding-length restriction | Mooney 1995; Quinlan 1990 |
 | **FOSSIL** | `seco.PFossil` | a `SeCo` instantiation: correlation heuristic with a quality threshold | Fürnkranz 1994 |
@@ -141,7 +141,7 @@ already-fitted external model (or its text output) into a `RuleModel`.
 | **CBA** | `associative.CBA` | CBA-CB (M1) classifier building on top of a rule pool; cross-checked rule-for-rule against `pyarc` | Liu et al. 1998 |
 | **CMAR** | `associative.CMAR` | simplified: chi-square significance filter, per-class coverage pruning, weighted chi-square voting | Li et al. 2001 |
 | **CPAR** | `cpar.CPAR` | FOIL-gain rule growing on weighted examples that also follows every nearly-as-good condition (several rules per search), covered positives decayed instead of removed; predicts by the mean expected accuracy of each class's best `k` covering rules (`TopKMeanCombiner`). Built from exchangeable components; `cpar.DenseCPAR` is a faster, Boolean-only implementation learning the same models | Yin & Han 2003 |
-| **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, smooth local search or greedy optimization, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
+| **IDS** | `ids.IDS` | interpretable decision sets: submodular objective, `SmoothLocalSearch` or `GreedySelection` as `optimizer=`, optional coordinate-ascent tuning of the weights | Lakkaraju et al. 2016 |
 | **RuleFit** (distiller) | `rulefit.RuleFit` | a sparse (L1 / elastic-net) logistic regression over a rule pool's coverage, multinomial for multiclass; returns a `LinearRuleModel`. Only RuleFit's fitting step: candidates come from the pool, not from a tree ensemble | Friedman & Popescu 2008 |
 | **Multiclass decomposition** | `multiclass.OneVsRest`, `OrderedOneVsRest`, `Pairwise` | one-vs-rest, ordered (peeling) and round-robin decomposition for any binary-capable learner | Fürnkranz 2002 |
 
@@ -619,7 +619,7 @@ family:
   disjunction, so each rule just stays its own clause under the header.
   `"pattern"`/`"conditions"` have no natural merged form, so rules are
   listed under the label header unmerged. The exception is a rule set
-  whose own combiner is `"list"` (first covering rule wins) and whose
+  whose own combiner is a `ListCombiner` (first covering rule wins) and whose
   rules have more than one head: list order decides its predictions, so
   it prints like a `DecisionList`, in that order.
 - `RuleList` (`DecisionList`/`ConceptCascade`) doesn't group by label --
@@ -676,7 +676,7 @@ recomputed against other data (`show_stats=False` prints the bare rules):
   actually this rule's own target (the classic C4.5/RIPPER rule-quality
   notation; 0 `fp` reads as a perfect rule).
 - For a model whose own `combiner` is genuinely a `DistributionCombiner`
-  (`"micro_vote"`/`"macro_vote"`/`"micro_max"`/`"macro_max"`) *and* has more
+  (`MicroVoteCombiner`/`MacroVoteCombiner`/`MicroMaxCombiner`/`MacroMaxCombiner`) *and* has more
   than two classes, the full per-class breakdown instead -- `% [n0, n1, ...]`
   -- everything that combiner's own `resolve()` reads, nothing it doesn't.
   A one-line `% classes: [...]` legend, printed once above the rest of the
@@ -689,7 +689,7 @@ Both are choices, not hard rules -- `to_string`'s `show_distribution`/
 model, any class count, any combiner: the per-class counts are always in a
 rule's stats, whether or not a given model's own resolution actually
 consults them. `show_distribution=True`/`False` forces the vector
-on or off outright (e.g. showing it for a plain `combiner="max"` model, or
+on or off outright (e.g. showing it for a plain `HeuristicMaxCombiner()` model, or
 suppressing it for a genuine `DistributionCombiner`); `show_classes=True`/
 `False` independently forces the legend on or off, regardless of whether any
 rule ends up showing a vector at all -- useful for naming a model's relevant
@@ -707,7 +707,7 @@ member's own rules a reader needs to redo the vote by hand; `show_stats`/
 `show_distribution`/`show_classes` pass through unchanged to every member,
 since they all cover the same overall multiclass problem. `PairwiseModel`
 headers each pair `% pair: a vs b`, with `(member weight: ...)` appended for
-`"accuracy_vote"` specifically -- `"weighted_vote"`'s own per-row deciding-
+`AccuracyWeightedVote` specifically -- `WeightedVote`'s own per-row deciding-
 rule weight is its heuristic (named in the model's conflict-resolution line)
 on that rule's printed training stats, so nothing extra is needed for that
 combiner. Each pair's rules carry stats measured on that
@@ -731,7 +731,7 @@ transitive closure, so chain converters explicitly). The registered ones:
 - `ConceptSet` to `FlatRuleSet` -- drops the per-concept structure.
 - `ConceptCascade` to `DecisionList` -- prediction is preserved.
 - `EnsembleModel` to `FlatRuleSet` -- lossy: pools every member's rules under
-  one combiner (default `"vote"`), dropping the per-member grouping and any
+  one combiner (default `CountVoteCombiner()`), dropping the per-member grouping and any
   member weights.
 
 Any `RuleSet` also has `to_rulelist(key=None, reverse=True)`, which orders
@@ -743,10 +743,11 @@ a `DecisionList`.
 
 When several rules cover the same row, a `RuleSet` reconciles them with its
 `combiner` (a `RuleCombiner` in `pyrulearn.combiners`, or a string shortcut).
-Pass either the string shortcut or a `RuleCombiner` instance directly to the
-constructor, or override it per call via `predict(data, combiner=...)`.
+Pass a `RuleCombiner` object to the constructor -- like every component,
+combiners are objects, not names -- or override it per call via
+`predict(data, combiner=...)`.
 Omitted, `predict` falls back to the set's own `self.combiner` (settable at
-construction, itself defaulting to `"max"`), so a `RuleSet` built with a
+construction, itself defaulting to `HeuristicMaxCombiner()`), so a `RuleSet` built with a
 particular strategy keeps it without every `predict` call re-passing it.
 
 A printed model whose rules predict more than one class names its conflict
@@ -761,7 +762,7 @@ own criterion leaves several classes level, `max` first lets the tied
 top-scoring rules vote (the class with the most of them wins); any tie
 left after that, for every combiner, goes to the class that is more
 frequent in the training data, then to the one that sorts first. This
-convention is documented rather than printed. Only `"list"` is order-based,
+convention is documented rather than printed. Only `ListCombiner` is order-based,
 by definition. A `LinearRuleModel` doesn't use a combiner: its resolution
 is the weighted sum, printed as `% conflict resolution: sum of rule weights
 per class, highest wins`, and its (rare, exact) ties follow the same
@@ -773,13 +774,13 @@ convention.
 intermediate bases, matching two different kinds of per-rule information a
 combiner can use:
 
-- `"list"` -- `ListCombiner`: rule position, i.e. list order.
-- `"vote"` -- `CountVoteCombiner`: plain, unweighted majority vote.
+- `ListCombiner`: rule position, i.e. list order.
+- `CountVoteCombiner`: plain, unweighted majority vote.
 - `HeuristicCombiner` -- scores a `RuleHeuristic` against each rule's own
   measured stats (`SingleRule.stats()`'s `ConfusionMatrix`, rotated to the
   rule's own target), computed fresh at combine time, not baked into the
   model beforehand. All take a `heuristic=` (default `Laplace()`):
-  - `"max"` -- `HeuristicMaxCombiner`: the classic ensemble "max rule",
+  - `HeuristicMaxCombiner`: the classic ensemble "max rule",
     which picks the single covering rule with the highest heuristic score.
   - `HeuristicVoteCombiner`: majority vote across every covering rule, each
     vote weighted by that rule's heuristic score.
@@ -799,16 +800,16 @@ combiner can use:
   across covering rules (the classic ensemble "max rule" in its full
   per-class form, distinct from `HeuristicMaxCombiner`, which picks one whole
   rule rather than comparing per class).
-  - `"micro_vote"` -- `MicroVoteCombiner`.
-  - `"macro_vote"` -- `MacroVoteCombiner`. **This is the one that matches
+  - `MicroVoteCombiner`.
+  - `MacroVoteCombiner`. **This is the one that matches
     `sklearn.ensemble.RandomForestClassifier.predict()`'s own mechanism**:
     each tree contributes one class-probability vector (its own leaf counts
     normalized), averaged (equivalently, summed) across trees -- unlike every
     `HeuristicCombiner`/`CountVoteCombiner`, which collapses each rule down
     to a single hard vote/score before combining, discarding how confident a
     leaf actually was.
-  - `"micro_max"` -- `MicroMaxCombiner`.
-  - `"macro_max"` -- `MacroMaxCombiner`.
+  - `MicroMaxCombiner`.
+  - `MacroMaxCombiner`.
 
 The distribution combiners are the ones to reach for when importing a whole
 random forest as one `FlatRuleSet`
@@ -1665,25 +1666,26 @@ pruning.
   multinomial log-likelihood; any number of classes; weight: Newton
   step), `ExponentialLoss` (AdaBoost's, two classes; weight: the exact
   minimizer, smoothed as in Slipper), `SigmoidLoss` (a bounded, non-convex
-  approximation of the 0-1 loss, two classes; weight: the constant step).
+  approximation of the 0-1 loss, two classes; weight: its constant step
+  `SigmoidLoss(beta=0.2)`).
 - **Impurities** (`method`: a pluggable `ImpurityCriterion`, ENDER's
-  counterpart of a rule-evaluation heuristic, or its name), with `g`/`h`
-  the loss's first/second derivatives for a vote for the class, summed
-  over the covered rows: `ConstantStep(beta)` / `"constant_step"` (the
-  change of the loss for a step of `beta`; any loss; `beta` controls
-  coverage -- larger, smaller and purer rules), `Gradient()` /
-  `"gradient"` (`g`; the most general rules), `GradientBoosting()` /
-  `"gradient_boosting"` (`g / sqrt(covered weight)`), `Simultaneous()` /
-  `"simultaneous"` (exponential loss: `-sqrt(W+) + sqrt(W-)`, the loss
-  with the rule's exact weight), `Newton()` / `"newton"` (`g / sqrt(h)`,
-  MLRules'). A criterion implements `terms` (per-row quantities) and
-  `impurity` (the criterion from their sums over the covered rows).
+  counterpart of a rule-evaluation heuristic), with `g`/`h` the loss's
+  first/second derivatives for a vote for the class, summed over the
+  covered rows: `ConstantStep(beta=0.2)` (the default; the change of the
+  loss for a step of `beta`; any loss; `beta` controls coverage --
+  larger, smaller and purer rules), `Gradient()` (`g`; the most general
+  rules), `GradientBoosting()` (`g / sqrt(covered weight)`),
+  `Simultaneous()` (exponential loss: `-sqrt(W+) + sqrt(W-)`, the loss
+  with the rule's exact weight), `Newton()` (`g / sqrt(h)`, MLRules'). A
+  criterion implements `terms` (per-row quantities) and `impurity` (the
+  criterion from their sums over the covered rows). Losses and criteria
+  are passed as objects, like a SeCo learner's components.
 - **Defaults** are the paper's constant-step logit setting (`beta = 0.2`,
   `shrinkage = 0.1`, `subsample = 0.25`, 500 rules), among its best and
   usable with any number of classes. Its best-ranked setting, CS-Exp, is
-  `ENDER(loss="exponential")`; SM-Exp adds `method="simultaneous"`;
-  CS-Sigm is `ENDER(loss="sigmoid", shrinkage=0.2, subsample=0.5)`; MLRules
-  is `ENDER(method="newton", subsample=0.5)`.
+  `ENDER(loss=ExponentialLoss())`; SM-Exp adds `method=Simultaneous()`;
+  CS-Sigm is `ENDER(loss=SigmoidLoss(), shrinkage=0.2, subsample=0.5)`;
+  MLRules is `ENDER(method=Newton(), subsample=0.5)`.
 - `early_stopping=True` (MLRules') uses the rows left out of each
   subsample as a holdout: a rule is acceptable if its error on the
   holdout rows it covers is below guessing (`1 - 1/K`), and growth stops
@@ -1702,10 +1704,11 @@ dense float matrix: same parameters, same models, 1-8x faster on a
 *Native learning algorithms* for this pairing).
 
 ```python
-from pyrulearn.learners.boosting import ENDER
+from pyrulearn.learners.boosting import ENDER, ConstantStep, ExponentialLoss
 
 model = ENDER().fit(train_rep)                                   # CS-Log
-few = ENDER(n_rules=3, shrinkage=1.0, subsample=1.0, loss="exponential", beta=0.6).fit(train_rep)
+few = ENDER(n_rules=3, shrinkage=1.0, subsample=1.0, loss=ExponentialLoss(),
+            method=ConstantStep(beta=0.6)).fit(train_rep)
 ```
 
 **Boomer.** `pyrulearn.learners.boosting.Boomer` (Rapp, Loza Mencía,
@@ -1731,9 +1734,10 @@ and bound (see `ROADMAP.md`), at a fraction of a second per fit;
 `BranchAndBoundSearch` finds the optimal rule (the paper's and realkd's
 exhaustive search, with the paper's prefix/suffix bound), and
 `HillClimbing` grows it greedily. A search's `max_conditions` caps the
-rule length. Binary classification, with the logistic or squared loss of
-`realkd` (interfaced as `RKDRuleBoosting`); a rule's class is the sign of
-its weight. `DenseORB` is the same learner with two hand-written
+rule length. Binary classification, with `realkd`'s losses as
+`MarginLoss` objects -- `LogisticMarginLoss()` (default) or
+`SquaredMarginLoss()` (`realkd` itself is interfaced as
+`RKDRuleBoosting`); a rule's class is the sign of its weight. `DenseORB` is the same learner with two hand-written
 searches (`search="exhaustive"`/`"greedy"`) on a dense matrix; `ORB` with
 `BranchAndBoundSearch`/`HillClimbing` and `DenseORB` both reproduce
 `realkd` exactly (`tests/test_realkd_import.py`).
@@ -2428,7 +2432,7 @@ calls, for the older call style or to bundle a `random_state`/non-default
 - `model=ConceptSet` (`OneVsRest(base_learner)`) — one `ConceptModel`
   per class, pooled into a `ConceptSet`; `default_prediction =
   MajorityClass(data)` (fires only for a row no class's rules cover),
-  `combiner = "max"`. Reassign either on the result.
+  `HeuristicMaxCombiner()`. Reassign either on the result.
 - `model=ConceptCascade, order="least_frequent"`
   (`OrderedOneVsRest(base_learner, order=...)`) — peel the classes off
   one at a time (`least_frequent` / `most_frequent` / `"random"` / an
@@ -2447,12 +2451,12 @@ calls, for the older call style or to bundle a `random_state`/non-default
   gets a member for every class). At predict time each member votes and
   a `PairwiseCombiner` (`pyrulearn.models`) turns the votes into a
   label:
-  - `combiner="vote"` → `MajorityVote` — one hard vote per member;
+  - `combiner=MajorityVote()` (default) — one hard vote per member;
     `tie_break` `"direct"` (default: the tied labels' own duel, then
     training frequency, then label order -- never member order),
     `"prior"`, `"first"` or a callable. Training frequencies are the
     model's `label_priors`, else read from its rules' stats.
-  - `combiner="weighted_vote"` → `WeightedVote(heuristic=Laplace())` —
+  - `combiner=WeightedVote(heuristic=Laplace())` —
     the deciding rule's weight `p_ij` (the heuristic on its frozen
     training stats, 0.5 if it has none) goes to the predicted label,
     `1 - p_ij` to the other (clamped to `[0, 1]`). The deciding rule is
@@ -2464,7 +2468,7 @@ calls, for the older call style or to bundle a `random_state`/non-default
     per-rule reliability varies (`PyLORD`'s m-estimate scoring;
     imprecise base learners on many-class sets) but roughly neutral
     otherwise — `MajorityVote` stays the default.
-  - `combiner="accuracy_vote"` → `AccuracyWeightedVote` — same
+  - `combiner=AccuracyWeightedVote()` — same
     `p_ij` / `1 - p_ij` split, but `p_ij` is the *member's* accuracy on
     its own two-class sub-problem (one scalar per member, constant over
     rows, recorded once at fit time as `PairwiseModel.member_weights`

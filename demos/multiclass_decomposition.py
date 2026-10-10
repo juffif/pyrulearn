@@ -68,7 +68,9 @@ from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.seco import PFossil, Pypper
-from pyrulearn.models import ConceptCascade, ConceptSet, PairwiseModel, _resolve_pairwise_combiner
+from pyrulearn.models import (
+    AccuracyWeightedVote, ConceptCascade, ConceptSet, MajorityVote, PairwiseModel, WeightedVote,
+)
 
 RANDOM_STATE = 0
 N_FOLDS = 10
@@ -78,7 +80,8 @@ FIT_TIMEOUT = 300.0
 
 BASES = ("Pypper", "PFossil")
 DECOMPOSITIONS = ("ovr", "ordered", "pw_smaller", "pw_larger", "pw_both")
-VOTES = ("vote", "weighted_vote", "accuracy_vote")
+# the vote schemes compared: report column -> combiner
+VOTES = {"vote": MajorityVote, "weighted_vote": WeightedVote, "accuracy_vote": AccuracyWeightedVote}
 
 # small datasets with many classes (mostly symbolic, except vowel)
 QUICK_DATASETS = ["audiology", "primary-tumor", "soybean", "vowel", "zoo"]
@@ -161,7 +164,7 @@ def measure(model, test_rep) -> dict:
            "n_models": len(getattr(model, "members", []) or [])}
     if isinstance(model, PairwiseModel):
         for vote in VOTES:
-            model.combiner = _resolve_pairwise_combiner(vote)
+            model.combiner = VOTES[vote]()
             t0 = time.perf_counter()
             pred = np.asarray(model.predict(test_rep))
             out[f"predict_time_{vote}"] = time.perf_counter() - t0
@@ -180,7 +183,7 @@ def measure_default_confidence(model, test_rep) -> dict:
     y = np.asarray(test_rep.y)
 
     def accuracy(vote: str) -> float:
-        model.combiner = _resolve_pairwise_combiner(vote)
+        model.combiner = VOTES[vote]()
         return float(np.mean(np.asarray(model.predict(test_rep)) == y))
 
     out = {vote: accuracy(vote) for vote in VOTES}

@@ -1,11 +1,12 @@
 import numpy as np
 import pytest
 
+from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, ListCombiner, MicroVoteCombiner
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data import DataSpec, DataSpecBuilder, merge_dataspecs
 from pyrulearn.rule import Rule, WeightedRule
 from pyrulearn.models import (
-    CompositeModel, ConceptCascade, ConceptModel, ConceptSet, DecisionList,
+    AccuracyWeightedVote, CompositeModel, ConceptCascade, ConceptModel, ConceptSet, DecisionList,
     DeepModel, DefaultPrediction, DisjointRuleSet, EnsembleModel, FlatRuleSet, MajorityClass,
     PairwiseModel, Provenance, RuleList, RuleModel, RuleSet, SingleRule, WeightedVote,
     can_convert, conceptcascade_to_decision_list, conceptset_to_flatruleset, convert,
@@ -100,10 +101,10 @@ def test_concept_model_rejects_mixed_heads():
 
 def test_flat_rule_set_resolves_by_combiner_and_swaps():
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS), Rule([1], target="b", dataspec=DS)],
-                     default_prediction="a", combiner="list")
+                     default_prediction="a", combiner=ListCombiner())
     assert list(rs.predict(DATA)) == ["a", "b", "a", "a", "a"]  # row2 both -> list: first
-    assert rs.filter("a").combiner == "list"
-    rs.combiner = "vote"
+    assert isinstance(rs.filter("a").combiner, ListCombiner)
+    rs.combiner = CountVoteCombiner()
     assert set(np.unique(rs.predict(DATA))) <= {"a", "b"}
     assert type(rs.remap(DataSpec(["p", "q", "r", "s"]))) is FlatRuleSet
 
@@ -128,15 +129,15 @@ def test_disjoint_rule_set_predicts_the_one_covering_rule():
 
 def test_concept_set_blocks_and_matches_flat_when_no_conflict():
     rules = [Rule([0], target="a", dataspec=DS), Rule([2], target="b", dataspec=DS)]
-    cs = ConceptSet.from_rules(rules, default_prediction="a", combiner="max")
+    cs = ConceptSet.from_rules(rules, default_prediction="a", combiner=HeuristicMaxCombiner())
     assert sorted(cs.concept_labels) == ["a", "b"]
     assert len(cs.concept_for("a")) == 1
     assert cs.labels == ["a", "b"]
-    flat = FlatRuleSet(rules, default_prediction="a", combiner="max")
+    flat = FlatRuleSet(rules, default_prediction="a", combiner=HeuristicMaxCombiner())
     assert list(cs.predict(DATA)) == list(flat.predict(DATA)) == ["a", "a", "a", "b", "a"]
     assert len(cs.filter("b").concepts) == 1
-    cs.combiner = "vote"
-    assert cs.filter("a").combiner == "vote"
+    cs.combiner = CountVoteCombiner()
+    assert isinstance(cs.filter("a").combiner, CountVoteCombiner)
 
 
 # --------------------------------------------------------------- ConceptCascade ---
@@ -255,7 +256,7 @@ def test_converters_and_can_convert():
     assert can_convert(EnsembleModel, FlatRuleSet)
     flat = ensemblemodel_to_flatruleset(ens)
     assert type(flat) is FlatRuleSet and len(flat.rules) == 3
-    assert flat.default_prediction == "a" and flat.combiner == "vote"
+    assert flat.default_prediction == "a" and isinstance(flat.combiner, CountVoteCombiner)
     assert type(convert(ens, FlatRuleSet)) is FlatRuleSet
 
 
@@ -792,13 +793,13 @@ def test_decision_list_to_string_sequential_and_if_elif_else():
 
 
 def test_list_resolved_rule_set_prints_in_its_deciding_order():
-    # combiner="list": the first covering rule in list order decides, so
+    # combiner=ListCombiner(): the first covering rule in list order decides, so
     # printing grouped by label would hide what decides -- it prints like
     # the equivalent DecisionList instead (and predicts like it)
     ds = DataSpec(["a", "b"])
     r1 = Rule.from_pos_neg(pos=[0], target="Z", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="A", dataspec=ds)
-    fs = FlatRuleSet([r1, r2], default_prediction="C", combiner="list")
+    fs = FlatRuleSet([r1, r2], default_prediction="C", combiner=ListCombiner())
     dl = DecisionList([r1, r2], default_prediction="C")
     for fmt in ("logic", "prolog"):
         assert fs.to_string(fmt=fmt) == dl.to_string(fmt=fmt)
@@ -807,7 +808,7 @@ def test_list_resolved_rule_set_prints_in_its_deciding_order():
     assert list(fs.predict(rep)) == list(dl.predict(rep)) == ["Z", "A", "C"]
     # other combiners, and a single-head set, still print grouped by label
     assert "% class:" in FlatRuleSet([r1, r2], default_prediction="C").to_string(fmt="prolog")
-    one_head = FlatRuleSet([r1, Rule.from_pos_neg(pos=[1], target="Z", dataspec=ds)], combiner="list")
+    one_head = FlatRuleSet([r1, Rule.from_pos_neg(pos=[1], target="Z", dataspec=ds)], combiner=ListCombiner())
     assert "% class: Z" in one_head.to_string(fmt="prolog")
 
 
@@ -818,7 +819,7 @@ def test_conflict_resolution_line_only_where_rules_can_conflict():
     ra2 = Rule.from_pos_neg(pos=[1], target="A", dataspec=ds)
     head = "% conflict resolution: "
     assert FlatRuleSet([ra, rb]).to_string(fmt="prolog").startswith(head + "max Laplace\n")
-    assert FlatRuleSet([ra, rb], combiner="vote").to_string(fmt="prolog").startswith(
+    assert FlatRuleSet([ra, rb], combiner=CountVoteCombiner()).to_string(fmt="prolog").startswith(
         head + "vote (one vote per covering rule)\n")
     assert DecisionList([ra, rb]).to_string(fmt="prolog").startswith(head + "first matching rule\n")
     # nothing to resolve: one head only, disjoint rules, a lone rule
@@ -997,13 +998,13 @@ def test_to_string_prints_the_full_distribution_only_for_a_distributioncombiner(
 
     # a DistributionCombiner and >2 classes -> the full per-class breakdown,
     # with a printed-once legend giving its order (sorted: bird, cat, dog)
-    fs.combiner = "micro_vote"
+    fs.combiner = MicroVoteCombiner()
     text = fs.to_string(fmt="prolog")
     assert text.splitlines()[0] == "% classes: [bird, cat, dog]"
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # "max" (the default) -- no distribution, no legend, plain (tp/fp)
-    fs.combiner = "max"
+    fs.combiner = HeuristicMaxCombiner()
     text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
@@ -1018,7 +1019,7 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
     X = np.array([[1]] * 5 + [[0]] * 5, dtype=bool)
     y = np.array(["dog"] * 5 + ["cat"] * 5)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    fs = FlatRuleSet(annotate_rules([rule], BooleanDataRepresentation(ds, X, y)), combiner="micro_vote")
+    fs = FlatRuleSet(annotate_rules([rule], BooleanDataRepresentation(ds, X, y)), combiner=MicroVoteCombiner())
 
     text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
@@ -1039,7 +1040,7 @@ def test_to_string_singlerule_default_never_prints_the_distribution():
 
 
 def test_to_string_show_distribution_forces_the_choice_either_way():
-    fs, data = _three_class_dog_rule()  # combiner="max" (the default), 3 classes
+    fs, data = _three_class_dog_rule()  # combiner=HeuristicMaxCombiner() (the default), 3 classes
 
     # show_distribution=True forces the vector even though "max" never needs it
     text = fs.to_string(fmt="prolog", show_distribution=True)
@@ -1047,7 +1048,7 @@ def test_to_string_show_distribution_forces_the_choice_either_way():
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text
 
     # show_distribution=False suppresses it even under a genuine DistributionCombiner
-    fs.combiner = "micro_vote"
+    fs.combiner = MicroVoteCombiner()
     text = fs.to_string(fmt="prolog", show_distribution=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % (14/2)" in text
@@ -1071,7 +1072,7 @@ def test_to_string_show_distribution_forces_the_choice_either_way():
 
 
 def test_to_string_show_classes_is_independent_of_show_distribution():
-    fs, _ = _three_class_dog_rule()  # combiner="max", no rule would show a vector by default
+    fs, _ = _three_class_dog_rule()  # combiner=HeuristicMaxCombiner(), no rule would show a vector by default
 
     # show_classes=True prints the legend even though no rule shows a distribution
     text = fs.to_string(fmt="prolog", show_classes=True)
@@ -1079,7 +1080,7 @@ def test_to_string_show_classes_is_independent_of_show_distribution():
     assert "dog(X) :- barks(X).  % (14/2)" in text  # still plain (tp/fp) -- show_distribution untouched
 
     # show_classes=False suppresses the legend even while a distribution IS shown
-    fs.combiner = "micro_vote"
+    fs.combiner = MicroVoteCombiner()
     text = fs.to_string(fmt="prolog", show_classes=False)
     assert "% classes:" not in text
     assert "dog(X) :- barks(X).  % [1, 1, 14]" in text  # the vector itself is untouched
@@ -1115,7 +1116,7 @@ def test_pairwisemodel_to_string_forces_each_pairs_own_two_classes_by_default():
     cat_dog, cat_bird, dog_bird, _ = _three_class_pairwise_fixture()
     pw = PairwiseModel(
         [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)],
-        combiner="accuracy_vote", member_weights=[0.9, 0.75, 0.6], default_prediction="cat",
+        combiner=AccuracyWeightedVote(), member_weights=[0.9, 0.75, 0.6], default_prediction="cat",
     )
     text = pw.to_string(fmt="prolog")
 
@@ -1147,7 +1148,7 @@ def test_pairwise_weighted_vote_heuristic_is_configurable_and_printed():
     members = [("cat", "dog", cat_dog), ("cat", "bird", cat_bird), ("dog", "bird", dog_bird)]
     head = "% conflict resolution: "
     assert PairwiseModel(members).to_string(fmt="prolog").startswith(head + "pairwise vote\n")
-    lap = PairwiseModel(members, combiner="weighted_vote")
+    lap = PairwiseModel(members, combiner=WeightedVote())
     assert lap.to_string(fmt="prolog").startswith(
         head + "pairwise vote weighted by Laplace of each pair's deciding rule\n")
     prec = PairwiseModel(members, combiner=WeightedVote(heuristic=Precision()))
@@ -1290,13 +1291,13 @@ def test_covered_by_other_blocks_ordered_by_strongest_rule():
     ra = Rule([0], target="a", dataspec=ds)
     rb = Rule([1], target="b", dataspec=ds)
     rc = Rule([2], target="c", dataspec=ds)
-    # combiner="list" so predict() (called internally by covered_by()) doesn't
+    # combiner=ListCombiner() so predict() (called internally by covered_by()) doesn't
     # need stats -- ra is first in list order, matching this fixture's
     # intended "a" prediction. b/c are structurally tied under any real
     # measurement on this single row, so an explicit `by=` (a plain
     # callable, no stats needed) exercises the "other blocks by their
     # strongest rule" mechanism directly rather than the stats-based default.
-    fs = FlatRuleSet([ra, rb, rc], default_prediction="a", combiner="list")
+    fs = FlatRuleSet([ra, rb, rc], default_prediction="a", combiner=ListCombiner())
     scores = {"a": 0.95, "b": 0.40, "c": 0.70}
     (block,) = fs.covered_by(data, by=lambda r: scores[r.target])
     # predicted "a" first, then the *other* blocks by their strongest rule: c (0.70) before b (0.40)

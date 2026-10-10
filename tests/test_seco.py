@@ -8,7 +8,7 @@ from pyrulearn.models import (
     ConceptCascade, ConceptModel, ConceptSet, DecisionList, DisjointRuleSet, FlatRuleSet, PairwiseModel,
     annotate_rules,
 )
-from pyrulearn.combiners import HeuristicMaxCombiner, MicroVoteCombiner
+from pyrulearn.combiners import HeuristicMaxCombiner, ListCombiner, MicroVoteCombiner
 from pyrulearn.rule import Rule
 from pyrulearn.heuristics import (
     Accuracy, Correlation, CoveredNegatives, CoveredPositives, DeltaGain, FoilGain,
@@ -1028,7 +1028,7 @@ def test_seco_seed_covering_is_one_loop_over_all_classes():
 
     # model=FlatRuleSet: the same rules, resolved by learn order -- same predictions
     fs = AQR(random_state=0).fit(rep, model=FlatRuleSet)
-    assert type(fs) is FlatRuleSet and fs.combiner == "list"
+    assert type(fs) is FlatRuleSet and isinstance(fs.combiner, ListCombiner)
     assert [r.pos for r in fs.rules] == [r.pos for r in m.rules]
     assert list(fs.predict(rep)) == list(m.predict(rep))
 
@@ -1241,32 +1241,17 @@ def test_cn2_an_absurd_significance_threshold_yields_an_empty_ruleset_either_mod
     print("An absurd significance threshold empties the ruleset whether wired as filtering or stopping: OK")
 
 
-def test_cn2_mode_filtering_wires_the_same_criterion_as_filtering_not_stopping():
-    # mode= is a shorthand for exactly the swap test_cn2_explicit_filtering_
-    # overrides_significance_threshold_default demonstrates by hand
-    cn2 = CN2(target_class="pos", mode="filtering")
-    assert cn2.single_rule_learner.stopping is None
-    assert isinstance(cn2.single_rule_learner.filtering, ThresholdPrePruning)
-    assert isinstance(cn2.single_rule_learner.filtering.heuristic, LikelihoodRatio)
-    assert cn2.single_rule_learner.filtering.threshold == 3.841
-    print("CN2(mode='filtering') wires the significance test as filtering=, not stopping=: OK")
-
-
-def test_cn2_mode_rejects_unknown_value():
-    try:
-        CN2(target_class="pos", mode="sideways")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
-    print("CN2 rejects an unrecognized mode=: OK")
-
-
-def test_cn2_explicit_stopping_suppresses_mode_routing():
-    custom = ThresholdPrePruning(LikelihoodRatio(), 2.0, "<")
-    cn2 = CN2(target_class="pos", mode="filtering", stopping=custom)
-    assert cn2.single_rule_learner.stopping is custom
-    assert cn2.single_rule_learner.filtering is None  # mode= never applied once stopping= is explicit
-    print("CN2's explicit stopping= is honored as-is, bypassing mode= entirely: OK")
+def test_cn2_significance_test_as_filtering_is_passed_as_such():
+    criterion = ThresholdPrePruning(LikelihoodRatio(), 3.841, "<")
+    cn2 = CN2(target_class="pos", filtering=criterion)
+    assert cn2.single_rule_learner.stopping is None      # no default stopping once a criterion is given
+    assert cn2.single_rule_learner.filtering is criterion
+    default = CN2(target_class="pos").single_rule_learner
+    assert default.filtering is None and isinstance(default.stopping, ThresholdPrePruning)
+    assert default.stopping.threshold == 3.841
+    with pytest.raises(TypeError):
+        CN2(target_class="pos", mode="filtering")           # no names: pass the criterion
+    print("CN2's significance test: stopping by default, filtering when passed as such: OK")
 
 
 def test_cn2_conceptset_uses_microvotecombiner_not_the_family_max_default():
@@ -1289,7 +1274,7 @@ def test_cn2_microvotecombiner_matches_clark_and_boswell_1991s_summed_distributi
     # carries the class distribution of the training rows it covers, and a
     # clash between firing rules of different classes is resolved by summing
     # those distributions and predicting the largest total -- not by picking
-    # the single highest-Laplace rule (the family's generic combiner="max").
+    # the single highest-Laplace rule (the family's generic HeuristicMaxCombiner()).
     # Here: one pure "elephant" rule (5 covered, higher individual Laplace)
     # against two pure "bird" rules (4 covered each) that together outvote it.
     ds = DataSpec(["a", "b", "c"])
@@ -1413,7 +1398,6 @@ def test_aqr_overrides_are_all_honored():
         heuristic=CoveredPositives(),
         require_consistency=False,
         space_init=EmptyRuleAllFeatures(),
-        seed_strategy="random",  # ignored once space_init is explicit
     )
     srl = aqr.single_rule_learner
     assert isinstance(srl.heuristic, CoveredPositives)
@@ -1479,7 +1463,7 @@ def test_aqr_sets_a_bad_seed_aside_and_keeps_covering():
     rep = BooleanDataRepresentation(DataSpec(["a", "b"]), X, y)
 
     for strategy in ("first", "random"):
-        ruleset = AQR(target_class="pos", seed_strategy=strategy, random_state=0).fit(rep)
+        ruleset = AQR(target_class="pos", space_init=SeedExample(strategy, 0)).fit(rep)
         assert [set(r.pos) for r in ruleset.rules] == [{0}], strategy
         assert list(ruleset.predict(rep)) == ["neg", "neg", "pos", "pos", "neg", "neg", "neg"]
     print("AQR sets a seed with no consistent rule aside and keeps covering: OK")
@@ -1620,12 +1604,12 @@ def test_pfossil_defaults_wire_hillclimbing_correlation_and_filtering():
     print("PFossil defaults wire HillClimbing + Correlation + a 0.3 threshold as filtering: OK")
 
 
-def test_pfossil_mode_stopping_wires_the_criterion_as_stopping_not_filtering():
-    srl = PFossil(target_class="pos", mode="stopping").single_rule_learner
+def test_pfossil_threshold_as_stopping_is_passed_as_such():
+    criterion = ThresholdPrePruning(Correlation(), 0.3, "<")
+    srl = PFossil(target_class="pos", stopping=criterion).single_rule_learner
     assert srl.filtering is None
-    assert isinstance(srl.stopping, ThresholdPrePruning)
-    assert srl.stopping.threshold == 0.3
-    print("PFossil(mode='stopping') wires the correlation threshold as stopping=, not filtering=: OK")
+    assert srl.stopping is criterion
+    print("PFossil's correlation threshold as stopping=, when passed as such: OK")
 
 
 def test_pfossil_passes_any_plain_heuristic_straight_through():
@@ -1638,15 +1622,6 @@ def test_pfossil_passes_any_plain_heuristic_straight_through():
     ).single_rule_learner.heuristic
     assert isinstance(beam, Correlation)
     print("PFossil passes a plain heuristic straight through for both HillClimbing and BeamSearch: OK")
-
-
-def test_pfossil_mode_rejects_unknown_value():
-    try:
-        PFossil(target_class="pos", mode="sideways")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
-    print("PFossil rejects an unrecognized mode=: OK")
 
 
 def test_pfossil_correlation_threshold_none_disables_the_criterion():

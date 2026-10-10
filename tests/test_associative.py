@@ -1,3 +1,4 @@
+from pyrulearn.combiners import HeuristicMaxCombiner
 import numpy as np
 import pytest
 
@@ -253,7 +254,7 @@ def test_carminer_defaults_to_the_same_combiner_as_a_random_forest_import():
     # whether it came from mining or from_random_forest.
     rep, raw, y = _separable_multiclass()
     model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(rep)
-    assert model.combiner == "max"
+    assert isinstance(model.combiner, HeuristicMaxCombiner)
     print("CARMiner's raw FlatRuleSet uses the plain 'max' default combiner: OK")
 
 

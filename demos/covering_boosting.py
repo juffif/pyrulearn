@@ -97,7 +97,7 @@ from pyrulearn.experiments.report import render_results_table, render_setup_sect
 from pyrulearn.experiments.runner import TimeoutRunner
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.heuristics import Laplace, MEstimate, WRAcc
-from pyrulearn.learners.boosting import Boomer, ENDER, Slipper
+from pyrulearn.learners.boosting import Boomer, ENDER, ExponentialLoss, Newton, Slipper
 from pyrulearn.learners.cpar import CPAR
 from pyrulearn.learners.lri import LRI
 from pyrulearn.learners.seco import (
@@ -185,9 +185,9 @@ def build_section2_learner(name: str):
     if family == "ENDER-CSLog":
         return ENDER(n_rules=n, random_state=RANDOM_STATE)
     if family == "ENDER-CSExp":
-        return ENDER(n_rules=n, loss="exponential", random_state=RANDOM_STATE)
+        return ENDER(n_rules=n, loss=ExponentialLoss(), random_state=RANDOM_STATE)
     if family == "ENDER-Newton":
-        return ENDER(n_rules=n, method="newton", subsample=0.5, random_state=RANDOM_STATE)
+        return ENDER(n_rules=n, method=Newton(), subsample=0.5, random_state=RANDOM_STATE)
     if family == "Boomer":
         return Boomer(n_rules=n, random_state=RANDOM_STATE)
     raise ValueError(f"unknown boosting family {family!r}")

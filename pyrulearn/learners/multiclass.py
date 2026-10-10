@@ -76,8 +76,9 @@ class OrderedOneVsRest(NativeRuleLearner):
 class Pairwise(NativeRuleLearner):
     """`Pairwise(base).fit(data)` ==
     `base.fit(data, model=PairwiseModel, positive=positive)`, then the
-    result's `combiner` set to `combiner` (`"vote"` / `"weighted_vote"` /
-    `"accuracy_vote"` / a `PairwiseCombiner`).
+    result's `combiner` set to `combiner` (a `PairwiseCombiner`:
+    `MajorityVote()`, the default, `WeightedVote()`,
+    `AccuracyWeightedVote()`).
 
     `positive` picks each pair's target: ``"smaller"`` (default) /
     ``"larger"`` / ``"random"`` / ``"both"`` (double round robin) / a
@@ -88,7 +89,7 @@ class Pairwise(NativeRuleLearner):
         self,
         base_learner: NativeRuleLearner,
         positive: Union[str, Callable[[Any, Any], Any]] = "smaller",
-        combiner: Union[str, PairwiseCombiner] = "vote",
+        combiner: Optional[PairwiseCombiner] = None,
         random_state: Optional[int] = None,
     ):
         self.base_learner = base_learner

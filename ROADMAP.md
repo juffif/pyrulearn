@@ -387,6 +387,27 @@ rules raising (`+1`) or lowering (`-1`) the scores -- the per-class
 search a multi-class ORB would run, and the way to use class-dependent
 filters; not used by `ORB` yet (binary, class from the weight's sign).
 
+**Components by object, not by name (2026-10-10).** Every learner
+component is now passed as an object, like a SeCo learner's search and
+heuristic: ENDER/DenseENDER/Boomer `loss=` (`LogisticLoss()`,
+`ExponentialLoss()`, `SigmoidLoss(beta)` -- `beta` moved onto the loss)
+and `method=` (`ConstantStep(beta)`, `Gradient()`, ...; the learner's
+`beta` is gone); ORB/DenseORB `loss=` (`LogisticMarginLoss()`,
+`SquaredMarginLoss()`, new `MarginLoss`); ORB `search=` (a `RuleSearch`);
+every `combiner=` (`HeuristicMaxCombiner()`, `ListCombiner()`,
+`CountVoteCombiner()`, the Micro/Macro combiners; pairwise:
+`MajorityVote()`, `WeightedVote()`, `AccuracyWeightedVote()` -- the
+shortcut tables are gone); IDS `optimizer=` (`SmoothLocalSearch(samples,
+max_restarts, final_samples)`, `GreedySelection()`; the `sls_*`
+parameters moved onto the optimizer). Shorthands that only swapped a
+criterion's role are gone too: `CN2`/`PFossil` `mode=` (pass the
+criterion as `filtering=`/`stopping=`), `AQR` `seed_strategy=` (pass
+`space_init=SeedExample(...)`). Left as names, on purpose: `DenseORB`
+`search=` (a fixed pair of hand-written searches), `SeedExample`
+`strategy=`, `MajorityVote` `tie_break=` (accepts a callable), the
+multi-class `order=`/`positive=` (a label sequence or callable also work),
+RuleFit's `solver=` (scikit-learn's own).
+
 To write up (report or paper): the objective abstraction -- searches as
 pure strategies over an objective that owns counting, scoring and
 bounding -- is central to this package's design; class-count heuristics

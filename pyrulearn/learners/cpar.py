@@ -62,7 +62,7 @@ class _CPARParameters:
         max_rounds: int,
         heuristic: Optional[GainHeuristic],
         covering: Optional[CoveringStrategy],
-        combiner: Union[str, RuleCombiner, None],
+        combiner: Optional[RuleCombiner],
     ) -> None:
         if not 0.0 < gain_similarity <= 1.0:
             raise ValueError(f"gain_similarity must be in (0, 1], got {gain_similarity}")
@@ -100,7 +100,7 @@ class _CPARParameters:
         return WeightedCovering(MultiplicativeReweighting(self.decay), PositiveWeightBelow(self.min_total_weight),
                                 max_rounds=self.max_rounds)
 
-    def _combiner(self, n_classes: int) -> Union[str, RuleCombiner]:
+    def _combiner(self, n_classes: int) -> RuleCombiner:
         if self.combiner is not None:
             return self.combiner
         return TopKMeanCombiner(GeneralizedMEstimate(m=n_classes, cost=1.0 / n_classes), k=self.k)
@@ -199,7 +199,7 @@ class CPAR(_CPARParameters, SeCo):
         max_rounds: int = 1000,
         heuristic: Optional[GainHeuristic] = None,
         covering: Optional[CoveringStrategy] = None,
-        combiner: Union[str, RuleCombiner, None] = None,
+        combiner: Optional[RuleCombiner] = None,
         target_class: Any = None,
     ):
         self._set_cpar_params(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,
@@ -251,7 +251,7 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
         max_rounds: int = 1000,
         heuristic: Optional[GainHeuristic] = None,
         covering: Optional[CoveringStrategy] = None,
-        combiner: Union[str, RuleCombiner, None] = None,
+        combiner: Optional[RuleCombiner] = None,
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         self._set_cpar_params(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,

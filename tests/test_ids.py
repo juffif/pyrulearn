@@ -5,7 +5,9 @@ from pyrulearn.combiners import HeuristicMaxCombiner
 from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation
 from pyrulearn.heuristics import FBeta
 from pyrulearn.learners.associative import generate_cars
-from pyrulearn.learners.ids import IDS, _Candidate, _candidates_from_rules, _greedy_select, _objective
+from pyrulearn.learners.ids import (
+    IDS, GreedySelection, SmoothLocalSearch, _Candidate, _candidates_from_rules, _greedy_select, _objective,
+)
 from pyrulearn.models import ConceptCascade, ConceptSet, ConceptModel, FlatRuleSet, PairwiseModel, annotate_rules
 from pyrulearn.rule import Rule
 
@@ -115,16 +117,16 @@ def _separable_multiclass(n=250, seed=0):
     return BooleanDataRepresentation(ds, neg_X(raw), y), raw, y
 
 
-# Most of the tests below deliberately pin optimizer="greedy",
+# Most of the tests below deliberately pin optimizer=GreedySelection(),
 # tune_lambdas=False -- IDS's own *default* now matches the paper as
-# closely as possible (optimizer="sls", tune_lambdas=True, max_len=10),
+# closely as possible (optimizer=SmoothLocalSearch(), tune_lambdas=True, max_len=10),
 # which is real, deliberately-slower work (see the module docstring);
 # these tests are exercising fit()/predict() shape and switcher
 # behavior, not the optimizer/tuning machinery itself, so they pin the
 # fast fallback to stay quick and deterministic. The default
 # combination itself gets one dedicated, small-scale end-to-end test
 # below (`test_ids_default_settings_match_the_paper_and_run_end_to_end`).
-_FAST = dict(optimizer="greedy", tune_lambdas=False)
+_FAST = dict(optimizer=GreedySelection(), tune_lambdas=False)
 
 
 def test_ids_fit_returns_a_flat_rule_set_with_an_f1_tie_break_combiner():
@@ -178,7 +180,7 @@ def test_ids_raises_a_clear_error_past_the_auto_convert_threshold():
 
 def test_ids_rejects_an_unknown_optimizer_or_wrong_lambda_count():
     with pytest.raises(ValueError, match="optimizer"):
-        IDS(optimizer="bogus")
+        IDS(optimizer="sls")                       # names aren't components
     with pytest.raises(ValueError, match="lambda_weights"):
         IDS(lambda_weights=(1.0,) * 5)
     print("IDS validates optimizer= and lambda_weights= eagerly in the constructor: OK")
@@ -193,7 +195,7 @@ def test_ids_default_constructor_values_match_the_papers_reported_settings():
     # not a paper-fidelity choice (see the module docstring).
     assert ids.max_len == 4
     assert ids.min_support == 0.01
-    assert ids.optimizer == "sls"
+    assert isinstance(ids.optimizer, SmoothLocalSearch)
     assert ids.tune_lambdas is True
     assert ids.validation_fraction == 0.05
     assert (ids.max_rules, ids.max_avg_length, ids.max_overlap, ids.max_uncovered) == (15, 10.0, 0.10, 0.15)
@@ -203,7 +205,7 @@ def test_ids_default_constructor_values_match_the_papers_reported_settings():
 def test_ids_sls_optimizer_runs_and_returns_a_valid_model():
     rep, raw, y = _separable_multiclass(n=150)
     model = IDS(min_support=0.05, min_confidence=0.5, max_len=2, rule_cutoff=10,
-               optimizer="sls", sls_samples=5, sls_max_restarts=25, sls_final_samples=5,
+               optimizer=SmoothLocalSearch(samples=5, max_restarts=25, final_samples=5),
                lambda_weights=(0.2, 0.2, 0.2, 0.2, 1.0, 1.0, 2.0), tune_lambdas=False, seed=0).fit(rep)
     assert isinstance(model, FlatRuleSet)
     preds = np.asarray(model.predict(rep))
@@ -214,7 +216,7 @@ def test_ids_sls_optimizer_runs_and_returns_a_valid_model():
 def test_ids_tune_lambdas_runs_and_returns_a_valid_model():
     rep, raw, y = _separable_multiclass(n=150)
     model = IDS(min_support=0.05, min_confidence=0.5, max_len=2, rule_cutoff=10,
-               optimizer="greedy", tune_lambdas=True, validation_fraction=0.3, tune_passes=1,
+               optimizer=GreedySelection(), tune_lambdas=True, validation_fraction=0.3, tune_passes=1,
                tune_grid=(0.2, 1.0, 3.0), seed=0).fit(rep)
     assert isinstance(model, FlatRuleSet)
     preds = np.asarray(model.predict(rep))
@@ -223,7 +225,7 @@ def test_ids_tune_lambdas_runs_and_returns_a_valid_model():
 
 
 def test_ids_default_settings_match_the_paper_and_run_end_to_end():
-    # the real default combination (optimizer="sls", tune_lambdas=True)
+    # the real default combination (optimizer=SmoothLocalSearch(), tune_lambdas=True)
     # on a small dataset with tiny sls_*/tune_* knobs, just to bound
     # runtime -- not a claim that these tiny knobs are themselves
     # paper-faithful, only that the *shape* of the defaults (which knobs
@@ -231,7 +233,7 @@ def test_ids_default_settings_match_the_paper_and_run_end_to_end():
     # the caller overriding optimizer=/tune_lambdas=.
     rep, raw, y = _separable_multiclass(n=120)
     model = IDS(min_support=0.05, min_confidence=0.5, rule_cutoff=8,
-               sls_samples=3, sls_max_restarts=15, sls_final_samples=3,
+               optimizer=SmoothLocalSearch(samples=3, max_restarts=15, final_samples=3),
                tune_passes=1, tune_grid=(0.5, 2.0), seed=0).fit(rep)
     assert isinstance(model, FlatRuleSet)
     preds = np.asarray(model.predict(rep))
@@ -245,13 +247,13 @@ def test_ids_default_settings_match_the_paper_and_run_end_to_end():
 def test_ids_with_an_externally_supplied_rules_pool_skips_mining_entirely():
     rep, raw, y = _separable_multiclass(n=150)
     mined = IDS(min_support=0.05, min_confidence=0.5, max_len=2, rule_cutoff=10,
-               optimizer="greedy", tune_lambdas=False,
+               optimizer=GreedySelection(), tune_lambdas=False,
                lambda_weights=(0.2, 0.2, 0.2, 0.2, 1.0, 1.0, 2.0)).fit(rep)
     pool = FlatRuleSet(list(mined.rules))
 
     # min_support/min_confidence/max_len are irrelevant now -- rules= is given.
     model = IDS(rules=pool, min_support=0.9, min_confidence=0.99, rule_cutoff=10,
-               optimizer="greedy", tune_lambdas=False,
+               optimizer=GreedySelection(), tune_lambdas=False,
                lambda_weights=(0.2, 0.2, 0.2, 0.2, 1.0, 1.0, 2.0)).fit(rep)
     assert isinstance(model, FlatRuleSet)
     print("IDS(rules=...) compresses an externally-supplied pool without mining: OK")
@@ -270,7 +272,7 @@ def test_ids_random_forest_rules_round_trip():
     forest_rules = from_random_forest(rf, dataspec=ds)
     pool = FlatRuleSet(annotate_rules(forest_rules.rules, data))
 
-    model = IDS(rules=pool, rule_cutoff=10, optimizer="greedy", tune_lambdas=False,
+    model = IDS(rules=pool, rule_cutoff=10, optimizer=GreedySelection(), tune_lambdas=False,
                lambda_weights=(0.2, 0.2, 0.2, 0.2, 1.0, 1.0, 2.0)).fit(data)
     assert isinstance(model, FlatRuleSet)
     preds = np.asarray(model.predict(data))

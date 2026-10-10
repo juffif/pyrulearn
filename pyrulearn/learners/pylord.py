@@ -85,6 +85,7 @@ import copy
 
 from ..heuristics import MEstimate, RuleHeuristic, RuleStats
 from .base import DecomposingLearner, NativeRuleLearner, produces
+from ..combiners import HeuristicMaxCombiner
 from ..models import (
     ConceptModel, FlatRuleSet, MajorityClass, SingleRule, annotate_default_rule, annotate_rules,
 )
@@ -135,7 +136,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
 
     Like `SeCo`, `PyLORD` takes no default-prediction/combiner arguments:
     the fitted `RuleSet` gets `default_prediction = MajorityClass(data)`
-    (LORD's training-majority `defaultClassID`) and `combiner = "max"`
+    (LORD's training-majority `defaultClassID`) and `HeuristicMaxCombiner()`
     (`HeuristicMaxCombiner`, scored from measured stats via `Laplace` by
     default -- LORD's own `get_best_covering_rule` instead uses its own
     metric directly; pass `combiner=HeuristicMaxCombiner(self.metric)`
@@ -144,8 +145,8 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
     **Do not use with `pyrulearn.learners.multiclass.OrderedOneVsRest`** (or any
     first-match decision list). LORD's every-example seeding produces a
     large pool of individually-imprecise, locally-optimal rules that are
-    only accurate *in aggregate, weighted* -- exactly what `combiner =
-    "max"` gives you, and exactly what a position-only `RuleList` throws
+    only accurate *in aggregate, weighted* -- exactly what
+    `HeuristicMaxCombiner()` gives you, and exactly what a position-only `RuleList` throws
     away: an over-general rule near the top of the list captures examples
     that a lower, more precise rule of another class should have won.
     `OneVsRest(PyLORD(...))` (a weighted `RuleSet`) is fine; a
@@ -285,14 +286,14 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
     @produces(FlatRuleSet)
     def _fit_native(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)` -- native LORD: seed every row
-        (or every `target_class` row), a `FlatRuleSet` with `"max"`
-        (`HeuristicMaxCombiner`, scored from measured stats -- LORD's own
+        (or every `target_class` row), a `FlatRuleSet` with
+        `HeuristicMaxCombiner` (scored from measured stats -- LORD's own
         `get_best_covering_rule` used its own metric instead), the
         training-majority label as the default."""
         if data.y is None:
             raise ValueError("PyLORD.fit needs data.y")
         model = FlatRuleSet(self._induce(data), default_prediction=MajorityClass(data),
-                            combiner="max")
+                            combiner=HeuristicMaxCombiner())
         return annotate_default_rule(model, data)
 
     # No SingleRule producer: LORD's induced pool comes from every training

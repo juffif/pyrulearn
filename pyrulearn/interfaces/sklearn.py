@@ -77,7 +77,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 
 from .base import ObjectRuleImporter, deprecated_aliases, register_importer
-from ..combiners import RuleCombiner
+from ..combiners import HeuristicMaxCombiner, RuleCombiner
 from ..data import BooleanDataRepresentation, DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import ExternalRuleLearner, RelabelingExternalLearner
@@ -113,8 +113,9 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
     default_class : Any, optional
         Prediction for examples covered by no rule. Set as the resulting
         `FlatRuleSet`'s `default_prediction` (a bare label) at fit time.
-    combiner : str or RuleCombiner, optional
-        How to combine multiple covering rules -- see `FlatRuleSet.predict`.
+    combiner : RuleCombiner, optional
+        How to combine multiple covering rules (default
+        `HeuristicMaxCombiner()`) -- see `FlatRuleSet.predict`.
     """
 
     def __init__(
@@ -122,7 +123,7 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
         rules: Optional[Any] = None,
         learner: Optional[Callable[[DataRepresentation], RuleModel]] = None,
         default_class: Any = None,
-        combiner: Union[str, RuleCombiner] = "max",
+        combiner: Optional[RuleCombiner] = None,
     ):
         if rules is None and learner is None:
             raise ValueError("Provide either `rules` or `learner`")
@@ -153,7 +154,8 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
         if self.rule_set_ is None:
             raise RuntimeError("Call fit() before predict()")
         rep = X if isinstance(X, DataRepresentation) else BooleanDataRepresentation.from_xy(X)
-        return self.rule_set_.predict(rep, combiner=self.combiner)
+        return self.rule_set_.predict(
+            rep, combiner=self.combiner if self.combiner is not None else HeuristicMaxCombiner())
 
     def score(self, X, y) -> float:
         preds = self.predict(X)

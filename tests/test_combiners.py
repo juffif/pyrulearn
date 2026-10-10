@@ -1,4 +1,6 @@
 import numpy as np
+import pytest
+from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, ListCombiner, MacroMaxCombiner, MacroVoteCombiner, MicroMaxCombiner, MicroVoteCombiner
 from pyrulearn import (
     BooleanDataRepresentation,
     DataSpec,
@@ -18,7 +20,7 @@ from pyrulearn.models import FlatRuleSet, annotate_rules
 from _negation_helpers import make_rule, neg_spec, neg_X
 
 
-def test_combiner_shortcuts_and_instances_are_interchangeable():
+def test_combiner_instances_are_what_predict_takes():
     ds = DataSpec(["a", "b"])
     train_X = np.array([[1, 0], [1, 0], [1, 0], [0, 1], [0, 1]], dtype=bool)
     train_y = np.array(["first", "first", "first", "heaviest", "second"])  # a: 3/3 -> pure; b: 1/2
@@ -31,16 +33,14 @@ def test_combiner_shortcuts_and_instances_are_interchangeable():
     X = np.array([[1, 1]], dtype=bool)  # both fire
     data_rep = BooleanDataRepresentation(ds, X)
 
-    assert list(rs.predict(data_rep, combiner="list")) == ["first"]
     assert list(rs.predict(data_rep, combiner=ListCombiner())) == ["first"]
-    assert list(rs.predict(data_rep, combiner="max")) == ["first"]  # higher measured precision
+    assert list(rs.predict(data_rep, combiner=ListCombiner())) == ["first"]
+    assert list(rs.predict(data_rep, combiner=HeuristicMaxCombiner())) == ["first"]  # higher measured precision
     assert list(rs.predict(data_rep, combiner=HeuristicMaxCombiner())) == ["first"]
 
-    try:
-        rs.predict(data_rep, combiner="not_a_real_strategy")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
+    for name in ("max", "list", "not_a_real_strategy"):       # names aren't components
+        with pytest.raises(ValueError, match="RuleCombiner"):
+            rs.predict(data_rep, combiner=name)
     print("combiner shortcuts and RuleCombiner instances interchangeable: OK")
 
 
@@ -100,7 +100,7 @@ def test_heuristic_vote_combiner_forest_like_scenario():
     ])
     data_rep = BooleanDataRepresentation(ds, X)
 
-    preds = forest.predict(data_rep, combiner="vote")
+    preds = forest.predict(data_rep, combiner=CountVoteCombiner())
     assert list(preds) == ["yes", "no"]
 
     # weighted by measured Precision: tree3's near-perfect precision (1.0)
@@ -132,12 +132,12 @@ def test_distribution_combiners_micro_vs_macro_genuinely_diverge():
     test_rep = BooleanDataRepresentation(ds, np.array([[1, 1]], dtype=bool))  # both fire
 
     # micro: pooled raw counts -- yes=81, no=29 -> the big leaf dominates
-    assert list(rs.predict(test_rep, combiner="micro_vote")) == ["yes"]
-    assert list(rs.predict(test_rep, combiner="micro_max")) == ["yes"]
+    assert list(rs.predict(test_rep, combiner=MicroVoteCombiner())) == ["yes"]
+    assert list(rs.predict(test_rep, combiner=MicroMaxCombiner())) == ["yes"]
 
     # macro: normalize each rule first -- yes=0.8+0.1=0.9, no=0.2+0.9=1.1 -> flips
-    assert list(rs.predict(test_rep, combiner="macro_vote")) == ["no"]
-    assert list(rs.predict(test_rep, combiner="macro_max")) == ["no"]
+    assert list(rs.predict(test_rep, combiner=MacroVoteCombiner())) == ["no"]
+    assert list(rs.predict(test_rep, combiner=MacroMaxCombiner())) == ["no"]
     print("Micro vs Macro distribution combiners genuinely diverge: OK")
 
 
@@ -153,7 +153,7 @@ def test_heuristic_combiner_raises_without_stats_on_a_genuine_disagreement():
     data_rep = BooleanDataRepresentation(ds, X)
 
     try:
-        rs.predict(data_rep, combiner="max")
+        rs.predict(data_rep, combiner=HeuristicMaxCombiner())
         assert False, "expected ValueError"
     except ValueError as e:
         assert "stats" in str(e)
@@ -174,7 +174,7 @@ def test_distribution_combiner_raises_without_stats_on_a_genuine_disagreement():
     data_rep = BooleanDataRepresentation(ds, X)
 
     try:
-        rs.predict(data_rep, combiner="macro_vote")
+        rs.predict(data_rep, combiner=MacroVoteCombiner())
         assert False, "expected ValueError"
     except ValueError as e:
         assert "stats" in str(e)
@@ -191,9 +191,9 @@ def test_a_trivial_single_target_never_needs_stats():
     X = np.array([[1, 1]], dtype=bool)
     data_rep = BooleanDataRepresentation(ds, X)
 
-    assert list(rs.predict(data_rep, combiner="max")) == ["pos"]
+    assert list(rs.predict(data_rep, combiner=HeuristicMaxCombiner())) == ["pos"]
     assert list(rs.predict(data_rep, combiner=HeuristicVoteCombiner())) == ["pos"]
-    assert list(rs.predict(data_rep, combiner="macro_vote")) == ["pos"]
+    assert list(rs.predict(data_rep, combiner=MacroVoteCombiner())) == ["pos"]
     print("A unanimous covering block never needs stats, from either combiner family: OK")
 
 
@@ -216,7 +216,7 @@ def test_count_vote_combiner_is_the_vote_shortcut():
     X = np.array([[1, 1]], dtype=bool)  # all three fire: x, x, y -> x wins 2-1
     data_rep = BooleanDataRepresentation(ds, X)
 
-    assert list(rs.predict(data_rep, combiner="vote")) == ["x"]
+    assert list(rs.predict(data_rep, combiner=CountVoteCombiner())) == ["x"]
     assert list(rs.predict(data_rep, combiner=CountVoteCombiner())) == ["x"]
     print("CountVoteCombiner is exactly the 'vote' shortcut: OK")
 
@@ -242,7 +242,7 @@ def test_heuristic_vote_combiner_flips_a_noisy_majority():
     test_rep = BooleanDataRepresentation(DataSpec(["a", "b", "c"]), np.array([[1, 1, 1]], dtype=bool))
 
     # unweighted: 2 "neg" votes (r_noisy1, r_noisy2) beat 1 "pos" vote (r_pure)
-    assert list(rs.predict(test_rep, combiner="vote")) == ["neg"]
+    assert list(rs.predict(test_rep, combiner=CountVoteCombiner())) == ["neg"]
 
     # weighted by measured Precision: r_pure's precision (1.0) now outweighs
     # the noisy rules' combined precision (1/3 + 1/3 = 2/3), flipping it
@@ -280,12 +280,12 @@ def test_max_ties_vote_among_the_tied_top_rules():
         ("bad", {"bad": 8, "good": 2}),           # Laplace 0.75
         ("bad", {"bad": 1, "good": 4}),           # lower score -- doesn't vote
     ], totals)
-    assert _predict_every_order(rules, row, "max") == {"good"}   # 2 tied good vs 1 tied bad
+    assert _predict_every_order(rules, row, HeuristicMaxCombiner()) == {"good"}   # 2 tied good vs 1 tied bad
 
 
 def test_remaining_ties_go_to_training_frequency_then_label_order():
     level = [("good", {"good": 8, "bad": 2}), ("bad", {"bad": 8, "good": 2})]
-    for combiner in ("max", "vote", HeuristicVoteCombiner(Laplace())):
+    for combiner in (HeuristicMaxCombiner(), CountVoteCombiner(), HeuristicVoteCombiner(Laplace())):
         rules, row = _tie_rules(level, {"good": 700, "bad": 300})
         assert _predict_every_order(rules, row, combiner) == {"good"}, combiner   # more frequent
         rules, row = _tie_rules(level, {"good": 300, "bad": 700})
@@ -298,22 +298,23 @@ def test_distribution_combiner_ties_use_the_same_fallback():
     # micro vote: summed counts good 5, bad 5 -> level
     level = [("good", {"good": 3, "bad": 3}), ("bad", {"good": 2, "bad": 2})]
     rules, row = _tie_rules(level, {"good": 700, "bad": 300})
-    assert _predict_every_order(rules, row, "micro_vote") == {"good"}
+    assert _predict_every_order(rules, row, MicroVoteCombiner()) == {"good"}
     rules, row = _tie_rules(level, {"good": 300, "bad": 700})
-    assert _predict_every_order(rules, row, "micro_vote") == {"bad"}
+    assert _predict_every_order(rules, row, MicroVoteCombiner()) == {"bad"}
 
 
 def test_every_combiner_describes_itself():
-    from pyrulearn.combiners import _COMBINER_SHORTCUTS
     from pyrulearn.heuristics import FBeta
-    assert {k: c.describe() for k, c in _COMBINER_SHORTCUTS.items()} == {
-        "list": "first matching rule",
-        "max": "max Laplace",
-        "vote": "vote (one vote per covering rule)",
-        "micro_vote": "sum of covered class counts",
-        "macro_vote": "sum of covered class proportions",
-        "micro_max": "max covered class count",
-        "macro_max": "max covered class proportion",
+    assert {type(c).__name__: c.describe() for c in (
+        ListCombiner(), HeuristicMaxCombiner(), CountVoteCombiner(), MicroVoteCombiner(),
+        MacroVoteCombiner(), MicroMaxCombiner(), MacroMaxCombiner())} == {
+        "ListCombiner": "first matching rule",
+        "HeuristicMaxCombiner": "max Laplace",
+        "CountVoteCombiner": "vote (one vote per covering rule)",
+        "MicroVoteCombiner": "sum of covered class counts",
+        "MacroVoteCombiner": "sum of covered class proportions",
+        "MicroMaxCombiner": "max covered class count",
+        "MacroMaxCombiner": "max covered class proportion",
     }
     assert HeuristicMaxCombiner(FBeta(beta=2.0)).describe() == "max FBeta(beta=2.0)"
     assert HeuristicVoteCombiner(Precision()).describe() == "vote weighted by Precision"

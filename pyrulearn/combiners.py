@@ -53,10 +53,9 @@ a plain unweighted vote, respectively -- no weight, heuristic, or
 distribution involved, so nothing to be missing), so they're direct
 `RuleCombiner` children.
 
-`RuleSet.predict`'s `combiner` argument accepts either a `RuleCombiner`
-instance directly, or one of the built-in shortcuts' string names
-("list"/"max"/"vote"/"micro_vote"/"macro_vote"/"micro_max"/"macro_max")
--- see `_resolve_combiner`.
+Models and learners take a combiner as a `RuleCombiner` object
+(`HeuristicMaxCombiner()` is the default where one is needed) -- like
+every other component, never by name.
 
 **Ties.** When a combiner's own criterion leaves several classes level
 (`HeuristicMaxCombiner` first applies a step of its own, see there), every
@@ -259,11 +258,10 @@ class HeuristicCombiner(RuleCombiner):
 
     def __init__(self, heuristic: Optional["RuleHeuristic"] = None):
         #: `None` resolves to `Laplace()` lazily, in `_score` -- not
-        #: here, so building a module-level default instance (this
-        #: module's own `_COMBINER_SHORTCUTS`) never has to import
-        #: `.heuristics` at combiners.py's own load time (it imports
-        #: `.evaluation`, which imports `.classifier`, which imports
-        #: `.combiners` -- a genuine cycle if resolved eagerly).
+        #: here, so a default instance never has to import `.heuristics`
+        #: at combiners.py's own load time (it imports `.evaluation`,
+        #: which imports `.classifier`, which imports `.combiners` -- a
+        #: genuine cycle if resolved eagerly).
         self.heuristic = heuristic
 
     def _heuristic(self) -> "RuleHeuristic":
@@ -483,24 +481,14 @@ class MacroMaxCombiner(DistributionCombiner):
         return "max covered class proportion"
 
 
-_COMBINER_SHORTCUTS: Dict[str, RuleCombiner] = {
-    "list": ListCombiner(),
-    "max": HeuristicMaxCombiner(),
-    "vote": CountVoteCombiner(),
-    "micro_vote": MicroVoteCombiner(),
-    "macro_vote": MacroVoteCombiner(),
-    "micro_max": MicroMaxCombiner(),
-    "macro_max": MacroMaxCombiner(),
-}
-
-
-def _resolve_combiner(combiner: Union[str, RuleCombiner]) -> RuleCombiner:
+def _resolve_combiner(combiner: Optional[RuleCombiner]) -> RuleCombiner:
+    """`combiner` itself, `HeuristicMaxCombiner()` for `None`; anything
+    that isn't a `RuleCombiner` (a name, say) is refused."""
+    if combiner is None:
+        return HeuristicMaxCombiner()
     if isinstance(combiner, RuleCombiner):
         return combiner
-    try:
-        return _COMBINER_SHORTCUTS[combiner]
-    except KeyError:
-        raise ValueError(
-            f"Unknown combiner {combiner!r}; choose from {sorted(_COMBINER_SHORTCUTS)} "
-            "or pass a RuleCombiner instance"
-        ) from None
+    raise ValueError(
+        f"combiner must be a RuleCombiner -- e.g. HeuristicMaxCombiner(), CountVoteCombiner(), "
+        f"ListCombiner(), MicroVoteCombiner() -- got {combiner!r}"
+    )

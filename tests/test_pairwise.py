@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from pyrulearn.models import AccuracyWeightedVote, WeightedVote
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data import DataSpec
 from pyrulearn.models import (
@@ -52,14 +53,13 @@ def test_weighted_vote_splits_the_vote():
     assert WeightedVote.weight_source == "rule" and AccuracyWeightedVote.weight_source == "member"
 
 
-def test_resolve_shortcut():
-    assert isinstance(_resolve_pairwise_combiner("vote"), MajorityVote)
-    assert isinstance(_resolve_pairwise_combiner("weighted_vote"), WeightedVote)
-    assert isinstance(_resolve_pairwise_combiner("accuracy_vote"), AccuracyWeightedVote)
+def test_resolve_combiner_takes_objects_only():
+    assert isinstance(_resolve_pairwise_combiner(None), MajorityVote)
     mv = MajorityVote()
     assert _resolve_pairwise_combiner(mv) is mv
-    with pytest.raises(ValueError):
-        _resolve_pairwise_combiner("nope")
+    for name in ("vote", "weighted_vote", "nope"):                 # names aren't components
+        with pytest.raises(ValueError, match="PairwiseCombiner"):
+            _resolve_pairwise_combiner(name)
 
 
 # -- PairwiseModel mechanics -----------------------------------------
@@ -102,7 +102,7 @@ def test_weighted_vote_reads_the_deciding_rules_weight():
     ac = FlatRuleSet([WeightedRule([0], target="a", dataspec=ds, weight=0.55)], default_prediction="c")
     bc = FlatRuleSet([WeightedRule([1], target="b", dataspec=ds, weight=0.90)], default_prediction="c")
     m = PairwiseModel([("a", "b", ab), ("a", "c", ac), ("b", "c", bc)],
-                      combiner="weighted_vote", default_prediction="a", labels=["a", "b", "c"])
+                      combiner=WeightedVote(), default_prediction="a", labels=["a", "b", "c"])
     assert np.asarray(m.predict(data))[0] == "a"          # a: 0.95 + 0.55 = 1.5
     ac.rules[0].weight = 0.05
     assert set(np.unique(m.predict(data))) <= {"a", "b", "c"}
@@ -116,7 +116,7 @@ def test_accuracy_weighted_vote_uses_member_weights():
     members = [("a", "b", ab), ("a", "c", ac), ("b", "c", bc)]
     # row0 [p]: ab->a ac->a bc->c ; accs (0.9, 0.1, 0.5):
     #   a: 0.9 + 0.1 = 1.0 ; b: 0.1 + 0.5 = 0.6 ; c: 0.9 + 0.5 = 1.4  -> c
-    m = PairwiseModel(members, combiner="accuracy_vote", default_prediction="a",
+    m = PairwiseModel(members, combiner=AccuracyWeightedVote(), default_prediction="a",
                       labels=["a", "b", "c"], member_weights=[0.9, 0.1, 0.5])
     assert np.asarray(m.predict(data))[0] == "c"
     m.member_weights = np.array([0.9, 0.95, 0.5])
@@ -124,7 +124,7 @@ def test_accuracy_weighted_vote_uses_member_weights():
     with pytest.raises(ValueError):
         PairwiseModel(members, member_weights=[0.5, 0.5])
     with pytest.raises(ValueError):
-        PairwiseModel(members, combiner="accuracy_vote").predict(data)
+        PairwiseModel(members, combiner=AccuracyWeightedVote()).predict(data)
 
 
 def test_filter_and_remap_recurse_into_members():

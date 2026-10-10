@@ -243,7 +243,7 @@ class BoostingLoss(ABC):
     def derivatives(self, F: np.ndarray, Y: np.ndarray, d: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
 
-    def response(self, g: float, h: float, beta: float) -> float:
+    def response(self, g: float, h: float) -> float:
         return -g / h if h > 0 else 0.0
 
     def __repr__(self) -> str:
@@ -304,7 +304,7 @@ class ExponentialLoss(BoostingLoss):
         self.eps = 0.5 * float(w.mean())
         return np.stack([y * w, -y * w], axis=1), np.stack([w, w], axis=1)
 
-    def response(self, g, h, beta):
+    def response(self, g, h):
         w_pos, w_neg = (h - g) / 2.0, (h + g) / 2.0            # g = W- - W+, h = W+ + W-
         return 0.5 * math.log((max(w_pos, 0.0) + self.eps) / (max(w_neg, 0.0) + self.eps))
 
@@ -313,12 +313,21 @@ class SigmoidLoss(BoostingLoss):
     """The sigmoid loss ``1 / (1 + exp(y f))`` for two classes (``f`` as in
     `ExponentialLoss`): a smooth approximation of the 0-1 loss, bounded,
     and so less sensitive to outliers, but not convex -- so no Newton
-    steps: a rule's weight is the constant step ``beta`` (the paper's
-    choice), and the Newton criterion is refused."""
+    steps: a rule's weight is the constant step `beta` (default 0.2; the
+    paper uses the same value as `ConstantStep`'s), and the Newton
+    criterion is refused."""
 
     multiclass = False
     convex = False
     iterative_response = False
+
+    def __init__(self, beta: float = 0.2):
+        if beta <= 0:
+            raise ValueError(f"beta must be positive, got {beta}")
+        self.beta = beta
+
+    def __repr__(self) -> str:
+        return f"SigmoidLoss(beta={self.beta!r})"
 
     def values(self, F, Y, d):
         y, f = _binary_margin(F, Y)
@@ -331,11 +340,8 @@ class SigmoidLoss(BoostingLoss):
         curvature = d * L * (1.0 - L) * (1.0 - 2.0 * L)
         return np.stack([y * slope, -y * slope], axis=1), np.stack([curvature, curvature], axis=1)
 
-    def response(self, g, h, beta):
-        return beta
-
-
-_LOSSES = {"logistic": LogisticLoss, "exponential": ExponentialLoss, "sigmoid": SigmoidLoss}
+    def response(self, g, h):
+        return self.beta
 
 
 class ImpurityCriterion(ABC):
@@ -453,13 +459,6 @@ class Newton(ImpurityCriterion):
             return np.where(denom > 0, sums[0] / np.sqrt(denom), 0.0)
 
 
-#: `ENDER`'s `method=` shorthands -- `"constant_step"` takes the learner's `beta`
-_METHODS = {
-    "constant_step": ConstantStep, "gradient": Gradient, "gradient_boosting": GradientBoosting,
-    "simultaneous": Simultaneous, "newton": Newton,
-}
-
-
 class _ENDERBase(NativeRuleLearner):
     """What `ENDER` and `DenseENDER` share: the boosting loop, the losses,
     the impurity criteria and the default rule. They differ only in how
@@ -470,9 +469,8 @@ class _ENDERBase(NativeRuleLearner):
         n_rules: int = 500,
         shrinkage: float = 0.1,
         subsample: float = 0.25,
-        loss: Union[str, BoostingLoss] = "logistic",
-        method: Union[str, ImpurityCriterion] = "constant_step",
-        beta: float = 0.2,
+        loss: Optional[BoostingLoss] = None,
+        method: Optional[ImpurityCriterion] = None,
         l2_regularization: float = 0.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
@@ -484,19 +482,19 @@ class _ENDERBase(NativeRuleLearner):
             raise ValueError(f"shrinkage must be in (0, 1], got {shrinkage}")
         if not 0.0 < subsample <= 1.0:
             raise ValueError(f"subsample must be in (0, 1], got {subsample}")
-        if not isinstance(method, ImpurityCriterion) and method not in _METHODS:
-            raise ValueError(f"method must be an ImpurityCriterion or one of {tuple(_METHODS)}, got {method!r}")
-        if beta <= 0:
-            raise ValueError(f"beta must be positive, got {beta}")
+        loss = LogisticLoss() if loss is None else loss
+        method = ConstantStep() if method is None else method
+        if not isinstance(loss, BoostingLoss):
+            raise ValueError(f"loss must be a BoostingLoss, got {loss!r}")
+        if not isinstance(method, ImpurityCriterion):
+            raise ValueError(f"method must be an ImpurityCriterion, got {method!r}")
         if l2_regularization < 0:
             raise ValueError(f"l2_regularization must be non-negative, got {l2_regularization}")
-        loss = _LOSSES[loss]() if isinstance(loss, str) else loss
         self.n_rules = n_rules
         self.shrinkage = shrinkage
         self.subsample = subsample
         self.loss = loss
         self.method = method
-        self.beta = beta
         self.l2_regularization = l2_regularization
         self.early_stopping = early_stopping
         self.max_length = max_length
@@ -504,11 +502,7 @@ class _ENDERBase(NativeRuleLearner):
         self._criterion().check(loss)
 
     def _criterion(self) -> ImpurityCriterion:
-        """`method` as an `ImpurityCriterion` -- a string is a shorthand,
-        ``"constant_step"`` taking this learner's `beta`."""
-        if isinstance(self.method, ImpurityCriterion):
-            return self.method
-        return ConstantStep(self.beta) if self.method == "constant_step" else _METHODS[self.method]()
+        return self.method
 
     def _default_model(self, data: Any) -> type:
         return LinearRuleModel
@@ -574,7 +568,7 @@ class _ENDERBase(NativeRuleLearner):
         """The loss's rule weight; Newton steps get the L2 penalty."""
         if self.loss.iterative_response:
             h = h + self.l2_regularization
-        return self.loss.response(g, h, self.beta)
+        return self.loss.response(g, h)
 
     # -- the default rule ------------------------------------------------------
 
@@ -642,51 +636,48 @@ class ENDER(_ENDERBase):
     2. Grow a rule on it: starting from the empty rule (impurity 0), add
        the condition, and choose the class, that minimize the impurity
        ``L(rule)`` of `method` -- an `ImpurityCriterion`, ENDER's
-       counterpart of a rule-evaluation heuristic, or its shorthand
-       string -- until no condition lowers it; the rule is kept only if
+       counterpart of a rule-evaluation heuristic -- until no condition
+       lowers it; the rule is kept only if
        its impurity is negative. With ``g``/``h`` the loss's first/second
        derivatives for a vote for the class, summed over the covered
        rows:
 
-       - `ConstantStep(beta)` / ``"constant_step"`` (CS, the default,
-         with this learner's `beta`) -- the change of the loss if the
-         covered rows' score for the class rose by `beta`: works for any
-         loss, and `beta` trades off coverage against purity (larger:
-         smaller, purer rules);
-       - `Gradient()` / ``"gradient"`` (GD) -- ``g``: the most general
-         rules (``beta -> 0`` of constant-step);
-       - `GradientBoosting()` / ``"gradient_boosting"`` (GB) -- ``g /
-         sqrt(covered weight)``;
-       - `Simultaneous()` / ``"simultaneous"`` (SM, `ExponentialLoss`
-         only) -- the loss with the rule's exact weight: ``-sqrt(W+) +
-         sqrt(W-)``, ``W+``/``W-`` the weights of the covered examples of
-         the voted/other class;
-       - `Newton()` / ``"newton"`` -- ``g / sqrt(h)``, MLRules' criterion
-         (convex losses).
+       - `ConstantStep(beta=0.2)` (CS, the default) -- the change of the
+         loss if the covered rows' score for the class rose by `beta`:
+         works for any loss, and `beta` trades off coverage against
+         purity (larger: smaller, purer rules);
+       - `Gradient()` (GD) -- ``g``: the most general rules (``beta -> 0``
+         of constant-step);
+       - `GradientBoosting()` (GB) -- ``g / sqrt(covered weight)``;
+       - `Simultaneous()` (SM, `ExponentialLoss` only) -- the loss with
+         the rule's exact weight: ``-sqrt(W+) + sqrt(W-)``, ``W+``/``W-``
+         the weights of the covered examples of the voted/other class;
+       - `Newton()` -- ``g / sqrt(h)``, MLRules' criterion (convex
+         losses).
 
        The loss is a component too: `loss` takes a `BoostingLoss`
-       (`LogisticLoss()`, `ExponentialLoss()`, `SigmoidLoss()`) or its
-       name.
+       (`LogisticLoss()`, the default, `ExponentialLoss()`,
+       `SigmoidLoss(beta=0.2)`).
     3. Give it the loss's weight (`BoostingLoss.response`: a Newton step
-       for `LogisticLoss`, the exact minimizer for `ExponentialLoss`,
-       `beta` for `SigmoidLoss`) computed on *all* rows -- which also
+       for `LogisticLoss`, the exact minimizer for `ExponentialLoss`, the
+       constant `beta` for `SigmoidLoss`) computed on *all* rows -- which also
        regularizes it -- shrink it by `shrinkage` (``nu``), and add it to
        the scores.
 
     Defaults are the paper's constant-step logit setting (CS-Log: ``beta
     = 0.2``, ``nu = 0.1``, subsample 0.25, 500 rules), among its best and
     usable for any number of classes; its best-ranked, CS-Exp, is
-    ``ENDER(loss="exponential")`` with the same settings. MLRules is
-    ``ENDER(method="newton", subsample=0.5)``. `LogisticLoss` handles any
+    ``ENDER(loss=ExponentialLoss())`` with the same settings. MLRules is
+    ``ENDER(method=Newton(), subsample=0.5)``. `LogisticLoss` handles any
     number of classes; `ExponentialLoss` and `SigmoidLoss` two (as in the
     paper, which also covers regression -- not here).
 
     `l2_regularization` (``lambda``, default 0) adds an L2 penalty on the
     rule weights to the Newton steps -- ``-sum g / (sum h + lambda)`` for
     the Newton-step weights (`LogisticLoss`, and the default rule) and
-    ``sum g / sqrt(sum h + lambda)`` for `method="newton"` -- as in
+    ``sum g / sqrt(sum h + lambda)`` for `method=Newton()` -- as in
     BOOMER (Rapp et al. 2020), whose single-output case is then
-    ``ENDER(method="newton", l2_regularization=...)``.
+    ``ENDER(method=Newton(), l2_regularization=...)``.
 
     `early_stopping` is MLRules': the rows left out of each subsample are
     a holdout set; a rule is acceptable if its error on the holdout rows
@@ -790,16 +781,15 @@ class DenseENDER(_ENDERBase):
         n_rules: int = 500,
         shrinkage: float = 0.1,
         subsample: float = 0.25,
-        loss: Union[str, BoostingLoss] = "logistic",
-        method: Union[str, ImpurityCriterion] = "constant_step",
-        beta: float = 0.2,
+        loss: Optional[BoostingLoss] = None,
+        method: Optional[ImpurityCriterion] = None,
         l2_regularization: float = 0.0,
         early_stopping: bool = False,
         max_length: Optional[int] = None,
         random_state: Optional[int] = 0,
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
-        super().__init__(n_rules, shrinkage, subsample, loss, method, beta, l2_regularization,
+        super().__init__(n_rules, shrinkage, subsample, loss, method, l2_regularization,
                          early_stopping, max_length, random_state)
         self.max_auto_convert_cells = max_auto_convert_cells
 
@@ -853,7 +843,7 @@ class Boomer(ENDER):
     """BOOMER (Rapp, Loza Mencía, Fürnkranz, Nguyen & Hüllermeier, ECML PKDD
     2020) for single-label classification: gradient-boosted rules with the
     logistic loss and L2-regularized Newton steps -- `ENDER` with
-    ``method="newton"``, ``loss="logistic"`` and BOOMER's defaults: up to
+    ``method=Newton()``, ``loss=LogisticLoss()`` and BOOMER's defaults: up to
     1000 rules, shrinkage 0.3, L2 weight 1.0, no subsampling. Each rule
     maximizes ``(sum g)**2 / (sum h + lambda)`` (as ``sum g / sqrt(sum h
     + lambda)``) and gets the weight ``-sum g / (sum h + lambda)``, shrunk.
@@ -883,7 +873,7 @@ class Boomer(ENDER):
         random_state: Optional[int] = 0,
     ):
         super().__init__(
-            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
+            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss=LogisticLoss(), method=Newton(),
             l2_regularization=l2_regularization, early_stopping=early_stopping, max_length=max_length,
             random_state=random_state,
         )
@@ -906,7 +896,7 @@ class DenseBoomer(DenseENDER):
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         super().__init__(
-            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss="logistic", method="newton",
+            n_rules=n_rules, shrinkage=shrinkage, subsample=subsample, loss=LogisticLoss(), method=Newton(),
             l2_regularization=l2_regularization, early_stopping=early_stopping, max_length=max_length,
             random_state=random_state, max_auto_convert_cells=max_auto_convert_cells,
         )
@@ -989,23 +979,45 @@ class XGBGain(ValueSumObjective):
         return best
 
 
-def _boosting_derivatives(loss: str, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """realkd's first/second derivatives of `loss` at scores `s`, labels ``y = +-1``."""
-    if loss == "squared":
+class MarginLoss(ABC):
+    """A loss for `ORB`/`DenseORB`: binary labels ``y = +-1`` and one score
+    ``s`` per example, as in `realkd`. `derivatives` gives the per-example
+    first and second derivatives ``g``/``h`` with respect to ``s`` --
+    what `XGBGain` scores rules with."""
+
+    @abstractmethod
+    def derivatives(self, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+
+class LogisticMarginLoss(MarginLoss):
+    """``log(1 + exp(-y s))`` -- realkd's ``"logistic"`` loss."""
+
+    def derivatives(self, y, s):
+        sig = 1.0 / (1.0 + np.exp(y * s))                       # sigmoid(-y s)
+        return -y * sig, sig * (1.0 - sig)
+
+
+class SquaredMarginLoss(MarginLoss):
+    """``(y - s)**2`` -- realkd's ``"squared"`` loss."""
+
+    def derivatives(self, y, s):
         return 2.0 * (s - y), np.full_like(s, 2.0)
-    sig = 1.0 / (1.0 + np.exp(y * s))                           # sigmoid(-y s)
-    return -y * sig, sig * (1.0 - sig)
 
 
 class _ORBBase(NativeRuleLearner):
     """The boosting loop shared by `ORB` and `DenseORB`: everything but how
     a round's rule is found (`_prepare`, `_best_query`, `_covers`)."""
 
-    def __init__(self, n_rules: int, loss: str, reg: float, offset: bool):
+    def __init__(self, n_rules: int, loss: Optional[MarginLoss], reg: float, offset: bool):
         if n_rules < 1:
             raise ValueError(f"n_rules must be at least 1, got {n_rules}")
-        if loss not in ("logistic", "squared"):
-            raise ValueError(f"loss must be 'logistic' or 'squared', got {loss!r}")
+        loss = LogisticMarginLoss() if loss is None else loss
+        if not isinstance(loss, MarginLoss):
+            raise ValueError(f"loss must be a MarginLoss, got {loss!r}")
         if reg < 0:
             raise ValueError(f"reg must be non-negative, got {reg}")
         self.n_rules = n_rules
@@ -1017,7 +1029,7 @@ class _ORBBase(NativeRuleLearner):
         return LinearRuleModel
 
     def _derivatives(self, y: np.ndarray, s: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        return _boosting_derivatives(self.loss, y, s)
+        return self.loss.derivatives(y, s)
 
     @produces(LinearRuleModel)
     def _fit_native(self, data: Any, **kw) -> LinearRuleModel:
@@ -1089,8 +1101,8 @@ class ORB(_ORBBase):
     rule found is simplified by dropping conditions that don't change
     what it covers.
 
-    `loss` is ``"logistic"`` (default) or ``"squared"``, with realkd's
-    derivatives; `reg` is the L2 regularization ``lambda``; `offset=True`
+    `loss` is a `MarginLoss`: `LogisticMarginLoss()` (default) or
+    `SquaredMarginLoss()`, realkd's two losses with its derivatives; `reg` is the L2 regularization ``lambda``; `offset=True`
     makes the first rule the empty one (an intercept). The result is a
     `LinearRuleModel`; a query found again adds to its weight. `DenseORB`
     is the same learner specialized for speed on a dense matrix, with its
@@ -1103,7 +1115,7 @@ class ORB(_ORBBase):
     def __init__(
         self,
         n_rules: int = 10,
-        loss: str = "logistic",
+        loss: Optional[MarginLoss] = None,
         reg: float = 1.0,
         search: Optional[RuleSearch] = None,
         offset: bool = False,
@@ -1162,7 +1174,7 @@ class DenseORB(_ORBBase):
     def __init__(
         self,
         n_rules: int = 10,
-        loss: str = "logistic",
+        loss: Optional[MarginLoss] = None,
         reg: float = 1.0,
         search: str = "exhaustive",
         max_length: Optional[int] = None,

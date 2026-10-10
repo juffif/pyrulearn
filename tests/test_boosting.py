@@ -94,7 +94,10 @@ def test_slipper_rejects_bad_arguments():
 
 # ------------------------------------------------------------------- ENDER
 
-from pyrulearn.learners.boosting import ENDER, ExponentialLoss, LogisticLoss, SigmoidLoss  # noqa: E402
+from pyrulearn.learners.boosting import (  # noqa: E402
+    ENDER, ConstantStep, ExponentialLoss, Gradient, GradientBoosting, LogisticLoss, Newton, SigmoidLoss,
+    Simultaneous,
+)
 
 
 @pytest.mark.parametrize("loss", [LogisticLoss(), ExponentialLoss(), SigmoidLoss()])
@@ -132,9 +135,9 @@ def test_ender_learns_positive_class_votes_that_find_the_concept():
 
 
 @pytest.mark.parametrize("kw", [
-    dict(method="gradient"), dict(method="gradient_boosting"), dict(method="newton", subsample=0.5),
-    dict(loss="exponential"), dict(loss="exponential", method="simultaneous"),
-    dict(loss="sigmoid", shrinkage=1.0, subsample=0.5), dict(shrinkage=1.0), dict(beta=0.6),
+    dict(method=Gradient()), dict(method=GradientBoosting()), dict(method=Newton(), subsample=0.5),
+    dict(loss=ExponentialLoss()), dict(loss=ExponentialLoss(), method=Simultaneous()),
+    dict(loss=SigmoidLoss(), shrinkage=1.0, subsample=0.5), dict(shrinkage=1.0), dict(method=ConstantStep(0.6)),
 ])
 def test_ender_variants(kw):
     data = _data()
@@ -152,9 +155,9 @@ def test_ender_multiclass_and_loss_restrictions():
     assert model.labels == ["a", "b", "c"]
     assert np.mean(np.asarray(model.predict(data)) == y) > 0.95
     with pytest.raises(ValueError, match="two classes only"):
-        ENDER(loss="exponential").fit(data)
+        ENDER(loss=ExponentialLoss()).fit(data)
     with pytest.raises(ValueError):
-        ENDER(method="exact")
+        ENDER(method="exact")                      # names aren't components
 
 
 def test_ender_early_stopping_ends_on_noise():
@@ -178,7 +181,8 @@ def test_ender_is_reproducible_and_uses_data_weights():
 
 def test_ender_defaults_are_the_papers_constant_step_logit_setting():
     e = ENDER()
-    assert (e.method, e.beta, e.shrinkage, e.subsample, e.n_rules) == ("constant_step", 0.2, 0.1, 0.25, 500)
+    assert isinstance(e.method, ConstantStep) and e.method.beta == 0.2
+    assert (e.shrinkage, e.subsample, e.n_rules) == (0.1, 0.25, 500)
     assert isinstance(e.loss, LogisticLoss)
 
 
@@ -186,8 +190,8 @@ def test_exponential_response_is_the_smoothed_exact_minimizer():
     loss = ExponentialLoss()
     loss.eps = 0.5
     w_pos, w_neg = 6.0, 2.0                        # g = W- - W+, h = W+ + W-
-    assert loss.response(w_neg - w_pos, w_pos + w_neg, 0.2) == pytest.approx(0.5 * np.log(6.5 / 2.5))
-    assert SigmoidLoss().response(-3.0, 1.0, 0.7) == 0.7
+    assert loss.response(w_neg - w_pos, w_pos + w_neg) == pytest.approx(0.5 * np.log(6.5 / 2.5))
+    assert SigmoidLoss(beta=0.7).response(-3.0, 1.0) == 0.7
 
 
 def test_a_larger_constant_step_gives_rules_covering_less():
@@ -195,7 +199,7 @@ def test_a_larger_constant_step_gives_rules_covering_less():
     X = data.X
 
     def mean_coverage(beta):
-        model = ENDER(n_rules=60, beta=beta, random_state=0).fit(data)
+        model = ENDER(n_rules=60, method=ConstantStep(beta), random_state=0).fit(data)
         body = [r for r in model.rules if r.conditions]
         return np.mean([np.all(X[:, [l.feature for l in r.conditions]], axis=1).sum() for r in body])
 
@@ -204,18 +208,22 @@ def test_a_larger_constant_step_gives_rules_covering_less():
 
 def test_invalid_method_and_loss_combinations_are_refused():
     with pytest.raises(ValueError, match="exponential"):
-        ENDER(method="simultaneous")
+        ENDER(method=Simultaneous())
     with pytest.raises(ValueError, match="convex"):
-        ENDER(loss="sigmoid", method="newton")
+        ENDER(loss=SigmoidLoss(), method=Newton())
     with pytest.raises(ValueError):
-        ENDER(beta=0.0)
+        ConstantStep(0.0)
+    with pytest.raises(ValueError):
+        SigmoidLoss(beta=0.0)
+    with pytest.raises(ValueError):
+        ENDER(loss="logistic")                     # names aren't components
 
 
 
 def test_ender_l2_regularization_shrinks_the_weights():
     data = _data()
-    plain = ENDER(n_rules=20, method="newton", subsample=0.5, random_state=0).fit(data)
-    reg = ENDER(n_rules=20, method="newton", subsample=0.5, l2_regularization=50.0, random_state=0).fit(data)
+    plain = ENDER(n_rules=20, method=Newton(), subsample=0.5, random_state=0).fit(data)
+    reg = ENDER(n_rules=20, method=Newton(), subsample=0.5, l2_regularization=50.0, random_state=0).fit(data)
     assert np.mean([r.weight for r in reg.rules]) < np.mean([r.weight for r in plain.rules])
     with pytest.raises(ValueError):
         ENDER(l2_regularization=-1.0)
@@ -225,7 +233,7 @@ def test_ender_l2_regularization_shrinks_the_weights():
 
 from itertools import combinations  # noqa: E402
 
-from pyrulearn.learners.boosting import DenseORB  # noqa: E402
+from pyrulearn.learners.boosting import DenseORB, SquaredMarginLoss  # noqa: E402
 
 
 def test_branch_and_bound_finds_the_best_conjunction():
@@ -256,7 +264,7 @@ def test_optimal_rule_boosting_model():
     assert np.mean(np.asarray(model.predict(test)) == test.y) > 0.85
     with_offset = DenseORB(n_rules=3, offset=True).fit(data)
     assert any(len(r.conditions) == 0 for r in with_offset.rules)
-    squared = DenseORB(n_rules=5, loss="squared").fit(data)
+    squared = DenseORB(n_rules=5, loss=SquaredMarginLoss()).fit(data)
     assert np.mean(np.asarray(squared.predict(test)) == test.y) > 0.85
 
 
@@ -309,7 +317,7 @@ def test_orb_matches_dense_orb(search):
     from pyrulearn.learners.seco import BranchAndBoundSearch, HillClimbing
     rule_search = {"exhaustive": BranchAndBoundSearch, "greedy": HillClimbing}[search]
     data = _data()
-    for kw in ({}, {"offset": True}, {"loss": "squared"}, {"max_length": 2}):
+    for kw in ({}, {"offset": True}, {"loss": SquaredMarginLoss()}, {"max_length": 2}):
         dense = DenseORB(n_rules=5, search=search, **kw).fit(data)
         orb_kw = {k: v for k, v in kw.items() if k != "max_length"}
         modular = ORB(n_rules=5, search=rule_search(max_conditions=kw.get("max_length")), **orb_kw).fit(data)
@@ -342,7 +350,8 @@ def test_orb_rejects_bad_input():
 def test_boomer_is_ender_with_boomers_defaults():
     from pyrulearn.learners.boosting import Boomer
     b = Boomer()
-    assert (b.n_rules, b.shrinkage, b.l2_regularization, b.subsample, b.method) == (1000, 0.3, 1.0, 1.0, "newton")
+    assert (b.n_rules, b.shrinkage, b.l2_regularization, b.subsample) == (1000, 0.3, 1.0, 1.0)
+    assert isinstance(b.method, Newton)
     assert isinstance(b.loss, LogisticLoss)
     data = _data()
     model = Boomer(n_rules=50).fit(data)
@@ -370,12 +379,12 @@ def _numeric_data(n=300, seed=3):
 
 ENDER_CONFIGS = [
     dict(),
-    dict(method="gradient"),
-    dict(method="gradient_boosting"),
-    dict(method="newton", l2_regularization=1.0, subsample=1.0),
-    dict(method="simultaneous", loss="exponential"),
-    dict(loss="exponential"),
-    dict(loss="sigmoid"),
+    dict(method=Gradient()),
+    dict(method=GradientBoosting()),
+    dict(method=Newton(), l2_regularization=1.0, subsample=1.0),
+    dict(method=Simultaneous(), loss=ExponentialLoss()),
+    dict(loss=ExponentialLoss()),
+    dict(loss=SigmoidLoss()),
     dict(max_length=2, early_stopping=True),
 ]
 
@@ -392,11 +401,7 @@ def test_ender_and_dense_ender_learn_the_same_model(kw, make):
 
 def test_impurity_criteria_are_components():
     data = _numeric_data()
-    for name, criterion in [("constant_step", ConstantStep(0.2)), ("gradient", Gradient()),
-                            ("gradient_boosting", GradientBoosting()), ("newton", Newton())]:
-        assert str(ENDER(n_rules=30, method=criterion).fit(data)) == str(ENDER(n_rules=30, method=name).fit(data))
-    assert str(ENDER(n_rules=30, method=Simultaneous(), loss=ExponentialLoss()).fit(data)) == \
-        str(ENDER(n_rules=30, method="simultaneous", loss="exponential").fit(data))
+    assert str(ENDER(n_rules=30, method=ConstantStep(0.2)).fit(data)) == str(ENDER(n_rules=30).fit(data))
     other_beta = ENDER(n_rules=30, method=ConstantStep(1.0)).fit(data)
     assert str(other_beta) != str(ENDER(n_rules=30).fit(data))       # the criterion's own beta is used
     with pytest.raises(ValueError, match="exponential"):

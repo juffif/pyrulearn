@@ -68,7 +68,7 @@ doesn't apply to it -- see each class's own docstring.
 `CARMiner` itself is a full, directly-usable
 `pyrulearn.learners.NativeRuleLearner`: `fit(data)` with no further
 pruning returns the **raw, unpruned CAR pool** as a plain `FlatRuleSet`
--- the default combiner (`"max"`, i.e. `HeuristicMaxCombiner(Laplace())`
+-- the default combiner (`HeuristicMaxCombiner(Laplace())`
 -- no `combiner=` passed), matching the default
 `pyrulearn.interfaces.sklearn.from_random_forest`'s own `FlatRuleSet`
 gets: one convention for "a raw pool of many small rules", regardless

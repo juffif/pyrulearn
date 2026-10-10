@@ -67,12 +67,12 @@ built under:
   `pyrulearn.combiners.HeuristicMaxCombiner` fed
   `pyrulearn.heuristics.FBeta()` -- `beta=1.0` (its default) *is* F1.
   No new heuristic or combiner code at all.
-- **Smooth Local Search** (`optimizer="sls"`, the default) estimates
-  each marginal contribution by averaging a fixed `sls_samples`
+- **Smooth Local Search** (`optimizer=SmoothLocalSearch()`, the default) estimates
+  each marginal contribution by averaging a fixed `samples`
   Monte-Carlo draws instead of the paper's adaptive
   stop-on-standard-error rule, and caps the total number of add/remove
-  moves at `sls_max_restarts` instead of relying on its
-  only-in-expectation polynomial-time bound. `optimizer="greedy"` (plain
+  moves at `max_restarts` instead of relying on its
+  only-in-expectation polynomial-time bound. `optimizer=GreedySelection()` (plain
   forward submodular maximization -- no formal guarantee for a
   non-monotone objective) is offered as an explicit, much cheaper
   fallback.
@@ -87,7 +87,7 @@ built under:
   confidence-gated candidate domain can't always reach the paper's own
   literal "every class in the dataset"). Coordinate ascent always
   searches via `_greedy_select` internally regardless of `self.
-  optimizer` -- re-running `"sls"` at every grid point would be far too
+  optimizer` -- re-running ``SmoothLocalSearch`` at every grid point would be far too
   slow -- then the *final* fit still uses whichever `optimizer` was
   actually requested. `tune_lambdas=False` (fixed `lambda_weights`,
   default all `1.0`) is offered as an explicit, much cheaper fallback.
@@ -443,6 +443,56 @@ def _sls_select(
     return best_subset, best_score
 
 
+class SelectionOptimizer:
+    """How `IDS` picks the rule subset that maximizes its objective: a
+    component, passed as `IDS(optimizer=...)`. `select` returns the
+    indices of the candidates kept."""
+
+    def select(self, candidates: Sequence[_Candidate], classes: Sequence[Any], n: int, s_size: int,
+               lmax: int, weights: Sequence[float], rng: np.random.Generator) -> Set[int]:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{type(self).__name__}({params})"
+
+
+class GreedySelection(SelectionOptimizer):
+    """Plain forward submodular maximization: repeatedly add whichever
+    remaining candidate gives the largest objective gain, stop once
+    nothing improves it (`_greedy_select`). Deterministic, no sampling;
+    fast, with no formal guarantee for a non-monotone objective."""
+
+    def select(self, candidates, classes, n, s_size, lmax, weights, rng):
+        return _greedy_select(candidates, classes, n, s_size, lmax, weights)
+
+
+class SmoothLocalSearch(SelectionOptimizer):
+    """Smooth Local Search (Algorithm 1 of the IDS paper, `_sls_select`),
+    run twice -- once with and once without the final smoothing -- keeping
+    the better subset: the paper's own `(2/5)`-approximation setup for
+    non-monotone submodular functions. `samples`/`final_samples` are the
+    number of random sets drawn per marginal-contribution estimate / for
+    the final subset; `max_restarts` caps the add/remove moves (the
+    polynomial-time bound only holds in expectation)."""
+
+    def __init__(self, samples: int = 10, max_restarts: int = 50, final_samples: int = 10):
+        self.samples = samples
+        self.max_restarts = max_restarts
+        self.final_samples = final_samples
+
+    def select(self, candidates, classes, n, s_size, lmax, weights, rng):
+        subset1, score1 = _sls_select(candidates, classes, n, s_size, lmax, weights,
+                                      delta=1 / 3, delta_final=1 / 3, samples=self.samples,
+                                      final_samples=self.final_samples,
+                                      max_restarts=self.max_restarts, rng=rng)
+        subset2, score2 = _sls_select(candidates, classes, n, s_size, lmax, weights,
+                                      delta=1 / 3, delta_final=-1.0, samples=self.samples,
+                                      final_samples=self.final_samples,
+                                      max_restarts=self.max_restarts, rng=rng)
+        return set(subset1) if score1 >= score2 else set(subset2)
+
+
 class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
     """Interpretable Decision Sets (Lakkaraju, Bach & Leskovec, 2016).
     See the module docstring for the objective, the optimizer options,
@@ -451,7 +501,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
 
     Defaults throughout aim to match the paper's own reported settings
     (Section 5.1) as closely as this implementation's structure allows;
-    `optimizer="greedy"`/`tune_lambdas=False` are offered as explicit,
+    `optimizer=GreedySelection()`/`tune_lambdas=False` are offered as explicit,
     much cheaper fallbacks, not the default.
 
     - `max_len=4` (this codebase's own shared mining-cost limit, not the
@@ -464,11 +514,10 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
       the module docstring).
     - `lambda_weights` -- the 7 objective weights; only used directly
       when `tune_lambdas=False`.
-    - `optimizer` -- `"sls"` (default, Smooth Local Search, matches the
-      paper/`pyIDS`) or `"greedy"` (fast fallback, no formal guarantee
-      for a non-monotone objective).
-    - `sls_samples`/`sls_final_samples`/`sls_max_restarts` -- only used
-      when `optimizer="sls"`; see `_sls_select`.
+    - `optimizer` -- a `SelectionOptimizer`: `SmoothLocalSearch(samples,
+      max_restarts, final_samples)` (default, matches the paper/`pyIDS`;
+      see `_sls_select`) or `GreedySelection()` (fast fallback, no formal
+      guarantee for a non-monotone objective).
     - `tune_lambdas` -- default `True`: fit a simplified coordinate
       ascent over `lambda_weights` on a held-out `validation_fraction`
       slice (`tune_passes` sweeps over `tune_grid` candidate values per
@@ -478,7 +527,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
       `_resolve_lambdas`/`_feasible`. `False` uses `lambda_weights`
       directly (fast fallback).
     - `validation_fraction=0.05` -- the paper's own held-out fraction.
-    - `seed` -- seeds the `numpy.random.Generator` used by `"sls"` and
+    - `seed` -- seeds the `numpy.random.Generator` used by ``SmoothLocalSearch`` and
       by the train/validation split in `tune_lambdas`.
     - The rest (`rules`/`min_confidence`/`target_class`/
       `max_auto_convert_cells`) are `RuleDistiller`'s, unchanged.
@@ -492,10 +541,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         max_len: int = 4,
         rule_cutoff: int = 50,
         lambda_weights: Tuple[float, ...] = (1.0,) * 7,
-        optimizer: str = "sls",
-        sls_samples: int = 10,
-        sls_max_restarts: int = 50,
-        sls_final_samples: int = 10,
+        optimizer: Optional[SelectionOptimizer] = None,
         tune_lambdas: bool = True,
         validation_fraction: float = 0.05,
         tune_passes: int = 2,
@@ -510,16 +556,14 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         max_auto_convert_cells: int = DEFAULT_MAX_AUTO_CONVERT_CELLS,
     ):
         super().__init__(rules, min_support, min_confidence, max_len, max_auto_convert_cells, target_class)
-        if optimizer not in ("greedy", "sls"):
-            raise ValueError(f"optimizer must be 'greedy' or 'sls', got {optimizer!r}")
+        if optimizer is not None and not isinstance(optimizer, SelectionOptimizer):
+            raise ValueError(f"optimizer must be a SelectionOptimizer (GreedySelection(), "
+                             f"SmoothLocalSearch()), got {optimizer!r}")
         if len(lambda_weights) != 7:
             raise ValueError(f"lambda_weights needs 7 values, got {len(lambda_weights)}")
         self.rule_cutoff = rule_cutoff
         self.lambda_weights = tuple(lambda_weights)
-        self.optimizer = optimizer
-        self.sls_samples = sls_samples
-        self.sls_max_restarts = sls_max_restarts
-        self.sls_final_samples = sls_final_samples
+        self.optimizer = optimizer if optimizer is not None else SmoothLocalSearch()
         self.tune_lambdas = tune_lambdas
         self.validation_fraction = validation_fraction
         self.tune_passes = tune_passes
@@ -557,17 +601,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
     ) -> Set[int]:
         if not candidates:
             return set()
-        if self.optimizer == "greedy":
-            return _greedy_select(candidates, classes, n, s_size, lmax, weights)
-        subset1, score1 = _sls_select(candidates, classes, n, s_size, lmax, weights,
-                                      delta=1 / 3, delta_final=1 / 3, samples=self.sls_samples,
-                                      final_samples=self.sls_final_samples,
-                                      max_restarts=self.sls_max_restarts, rng=rng)
-        subset2, score2 = _sls_select(candidates, classes, n, s_size, lmax, weights,
-                                      delta=1 / 3, delta_final=-1.0, samples=self.sls_samples,
-                                      final_samples=self.sls_final_samples,
-                                      max_restarts=self.sls_max_restarts, rng=rng)
-        return set(subset1) if score1 >= score2 else set(subset2)
+        return self.optimizer.select(candidates, classes, n, s_size, lmax, weights, rng)
 
     def _score_lambda_candidate(
         self, weights: Sequence[float], candidates: Sequence[_Candidate], classes: Sequence[Any],
@@ -580,7 +614,7 @@ class IDS(RuleDistiller, DecomposingLearner, NativeRuleLearner):
         that rule set violates `_feasible`'s constraints (the paper's
         own Parameter Selection bounds). Always searches via the fast
         `_greedy_select` proxy here regardless of `self.optimizer`:
-        re-running full `"sls"` at every one of `tune_passes * 7 *
+        re-running full ``SmoothLocalSearch`` at every one of `tune_passes * 7 *
         len(tune_grid)` grid points would be prohibitively slow, and
         greedy's ranking of candidate weight vectors is a reasonable
         stand-in for this purpose -- the *final* fitted model still

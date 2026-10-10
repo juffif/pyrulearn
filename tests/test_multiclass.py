@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from pyrulearn.models import MajorityVote, WeightedVote
 from pyrulearn.data import BooleanDataRepresentation
 from pyrulearn.data import DataSpec
 from pyrulearn.models import (
@@ -130,7 +131,7 @@ def test_pairwise_combiner_is_swappable_no_refit():
 
 def test_pairwise_weighted_vote_end_to_end():
     data, ds, y = _three_class(n=500, seed=1)
-    m = Pairwise(_cn2(), combiner="weighted_vote", random_state=0).fit(data)
+    m = Pairwise(_cn2(), combiner=WeightedVote(), random_state=0).fit(data)
     assert isinstance(m.combiner, WeightedVote)
     for _, _, sub in m._triples:
         # WeightedVote scores each deciding rule from its own measured
@@ -142,8 +143,8 @@ def test_pairwise_weighted_vote_end_to_end():
 
 def test_pairwise_weighted_vote_helps_an_imprecise_base():
     data, ds, y = _three_class(n=500, seed=3)
-    hard = Pairwise(PyLORD(m=0.1, random_state=0), combiner="vote", random_state=0).fit(data)
-    soft = Pairwise(PyLORD(m=0.1, random_state=0), combiner="weighted_vote", random_state=0).fit(data)
+    hard = Pairwise(PyLORD(m=0.1, random_state=0), combiner=MajorityVote(), random_state=0).fit(data)
+    soft = Pairwise(PyLORD(m=0.1, random_state=0), combiner=WeightedVote(), random_state=0).fit(data)
     assert np.mean(np.asarray(soft.predict(data)) == y) >= np.mean(np.asarray(hard.predict(data)) == y)
 
 
