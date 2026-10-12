@@ -189,7 +189,7 @@ details.
 | `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
-| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `ORB`, `DenseORB`), `learners.lri` (`LRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
+| `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `ORB`, `DenseORB`), `learners.lri` (`LRI`, `DenseLRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
 | `models` | The `RuleModel` hierarchy, organised by how a prediction is resolved: `RuleSet` (`FlatRuleSet`, `ConceptModel`, `ConceptSet`, `DisjointRuleSet`, and the memory-compact `PooledRuleSet` that `CARMiner` returns), `RuleList` (`DecisionList`, `ConceptCascade`), `CompositeModel` (`EnsembleModel`, `PairwiseModel`, `DeepModel`) and `SingleRule`. Also the `default_prediction` policy, per-model `stats`, `Provenance`, `annotate_rules`, and the model-to-model converters. |
 | `pruning` | `PrePruningCriterion`: one per-candidate test (`ThresholdPrePruning`, `EncodingLengthRestriction`, ...) that a search can use as a filter, as a stopping trigger, or that the covering loop can use as its stop condition. |
 | `rule` | `Rule`: a conjunction of Boolean literals, with optional condition order, several output formats and constraint-aware consistency checks. No dependencies beyond numpy. |
@@ -1590,23 +1590,36 @@ class, `n_rules` unweighted DNF rules, and predicts the class with the
 most satisfied rules. A DNF rule is a `ConceptModel` -- up to `max_terms`
 terms with the same head, firing where any term does -- and the model an
 `EnsembleModel` voting over them all. Per class, each rule is grown on
-the whole (reweighted) data: a term by greedily adding the condition with
-the lowest weighted `FP + k·FN` among those keeping a true positive (`k`
-doubled while the cheapest condition would drop them all), up to
-`max_length` conditions or until it covers no negative; then the next
-term on the cases no earlier term covers, until `max_terms` or no
-positive is left. After each rule, cases are reweighted by `1 + e**3`,
-`e` the number of rules so far that err on them (`LRIReweighting`). No
-pruning, no default rule, and a rule found again is kept, adding votes.
-After `freeze_features_after` rules only the features used so far remain
-candidates. The paper's Table 2 grows a term "until FN = 0", which can't
-be meant (FN only grows as conditions are added); terms stop at FP = 0
-here.
+the whole (reweighted) data. A term is what a `SingleRuleLearner` finds:
+a `search` (default `HillClimbing(max_conditions=5,
+stop_at_local_optimum=False)`: add the best condition each step until the
+term covers no negative) over the objective `LRIError`, the weighted
+`FP + k·FN` among conditions keeping a true positive (`k` doubled while
+the cheapest condition would drop them all). The next term is grown on
+the cases no earlier term covers, until `max_terms` or no positive is
+left. After each rule, a `WeightedCovering` reweights the cases by `1 +
+e**3`, `e` the number of rules so far that err on them (`LRIReweighting`).
+No pruning, no default rule, and a rule found again is kept, adding
+votes. After `freeze_features_after` rules only the features used so far
+remain candidates (a `FeatureSubset`). The paper's Table 2 grows a term
+"until FN = 0", which can't be meant (FN only grows as conditions are
+added); terms stop at FP = 0 here. `LRI` runs on every data
+representation; `DenseLRI` is the same learner with a hand-written term
+search on a dense matrix. On features without constraints among them
+(no negations, no thresholds) both learn identical models; with them,
+`LRI` never adds a condition the term already implies, where `DenseLRI`
+can. Unlike `CPAR` and `ENDER`, the modular learner is the faster one on
+larger data -- 7s (Boolean) or 2.5s (N-lists) against 47s for 10 rules
+per class on 32,000 rows of `adult` -- since it only counts the rows a
+term still covers; on a few hundred rows `DenseLRI` is about twice as
+fast.
 
 ```python
 from pyrulearn.learners.lri import LRI
+from pyrulearn.learners.seco import BeamSearch
 
-model = LRI(n_rules=50, max_terms=4, max_length=5).fit(train_rep)
+model = LRI(n_rules=50, max_terms=4).fit(train_rep)
+beam = LRI(n_rules=50, search=BeamSearch(beam_width=3, optimistic_pruning=False)).fit(train_rep)
 ```
 
 #### Boosting
@@ -2665,17 +2678,6 @@ that all of them give the same rules as `BooleanDataRepresentation`).
 
 Development plans, with the reasons behind them, are in
 [`ROADMAP.md`](ROADMAP.md).
-
-- **One learner still on a dense matrix.** The SeCo learners and
-  `PyLORD` run unchanged on all four representations, and on N-lists
-  take about half the time (see `demos/representations_report.md`,
-  confirmed again after this package's own Boolean speedups -- N-list
-  is still the faster one, which is why `data.io`'s loaders and `run_cv`
-  default to it now). `LRI` still works on a dense matrix of the data,
-  so it gains nothing from the other representations; it should use the
-  representation's coverage functions instead (as `CPAR`, `ENDER` and
-  `ORB` do; `DenseCPAR`, `DenseENDER` and `DenseORB` keep the dense
-  matrix on purpose, for speed).
 
 - **More rule learners and importers.** `pyrulearn` supports a wide suite of classic and modern rule learning algorithm. Beyond what's already interfaced, the framework supports to be continuously expanded via 
  `StringRuleImporter` for importing rule in text formats or

@@ -408,6 +408,44 @@ criterion as `filtering=`/`stopping=`), `AQR` `seed_strategy=` (pass
 multi-class `order=`/`positive=` (a label sequence or callable also work),
 RuleFit's `solver=` (scikit-learn's own).
 
+## LRI on the rule searches
+
+**Done (2026-10-10).** The previous `LRI` is `DenseLRI`; `LRI` is built
+from the components, as `ORB` is: per class, `n_rules` rounds of a
+`WeightedCovering(LRIReweighting(), max_rounds=n_rules)`; a round's DNF
+rule is up to `max_terms` terms, each found by a `SingleRuleLearner` --
+`HillClimbing(max_conditions=5, stop_at_local_optimum=False)` (any search
+works) over `LRIError`, the new objective for the paper's weighted
+`FP + k*FN` with its adaptive `k` -- with the covered cases removed
+between terms (scope = the round's weights times the remaining rows) and
+`FeatureSubset` after `freeze_features_after` rules. `max_length`,
+`power` and `max_errors` moved onto the search and `LRIReweighting`.
+`LRIError` counts all conditions not yet in the term, the dead ones
+included, to choose `k` as the paper does, and returns children only for
+the conditions the search keeps open (constraint propagation).
+
+Checked against `DenseLRI`: 54 configurations on plain Boolean features
+(weighted, three classes, frozen, short rules; Boolean, N-list and sparse
+data) give identical models -- the weights are integers, so every count is
+exact whatever the summation order. With negation and threshold features
+the models differ: the dense version can append a condition the term
+already implies (72 of 160 terms of tic-tac-toe carry a redundant
+condition, 42 for `LRI`, whose remaining ones are conditions that change
+nothing on the training data -- the paper's "always add the best
+condition" does that), and the reweighting cascades from there; test
+accuracy on one 70/30 split of five datasets was about the same (`LRI`
+ahead on three of them, by up to 3.5 points; single splits).
+
+Speed (10 rules per class, best of one on `adult`, 242-256 features):
+2,000 rows: `DenseLRI` 0.88s, `LRI` 0.46s on Boolean data, 0.29s on
+N-lists; 8,000 rows: 5.5s / 2.0s / 0.67s; 32,000 rows: 47s / 7.0s / 2.5s.
+Unlike `CPAR` and `ENDER`, the modular learner is the faster one here,
+and the gap grows with the data: the dense term search multiplies the
+whole data matrix per condition, while the modular one only counts the
+rows its term still covers. On the small datasets of the demos (a few
+hundred rows) `DenseLRI` is about twice as fast (0.05s vs 0.10s for 20
+rules per class on vote).
+
 To write up (report or paper): the objective abstraction -- searches as
 pure strategies over an objective that owns counting, scoring and
 bounding -- is central to this package's design; class-count heuristics
@@ -434,14 +472,13 @@ intended default.
 (`covers_data_packed`, which forwards to the data's own `coverage`) is
 already representation-independent: the SeCo framework with CN2, AQR,
 PFoil, PFossil and Pypper, PyLORD, the rule models, pruning and
-evaluation. Four implementations turn the data into a dense matrix
-(`data.X`) and work on its columns with numpy instead:
-
-- `LRI`.
-
-`CPAR` and `ENDER` (with `Boomer`) were on this list; both now run on
-every representation, built from the SeCo search primitives, and the
-dense-matrix versions stay on purpose as `DenseCPAR` (same models, 2-4x
+evaluation. Some implementations turned the data into a dense matrix
+(`data.X`) and worked on its columns with numpy instead: `CPAR`, `ENDER`
+(with `Boomer`), `OptimalRuleBoosting` and `LRI`. All four now run on
+every representation, built from the SeCo search primitives (`ORB`,
+`LRI`: 2026-10-10, see "Objectives" and "LRI on the rule searches"
+below), and the dense-matrix versions stay on purpose as `DenseORB`,
+`DenseLRI`, `DenseCPAR` (same models, 2-4x
 faster) and `DenseENDER`/`DenseBoomer` (same models, 1-8x faster) -- see
 "Build only the children a search follows" and "ENDER on the
 representation's primitives" below. (`ENDER` had been investigated on
@@ -513,19 +550,19 @@ the work below is worth doing for them too):
    silent (the tool needs the dense matrix either way) -- so every
    learner, external ones included, accepts every representation, and
    the demos need no `representation=` of their own. Checked with the
-   `run_cv` demos' quick runs, not full reruns. (`LRI` reads
-   `data.X` directly, which every representation provides -- built on
-   demand for N-lists and sparse data -- so it runs on any representation
-   too; making it use the coverage functions instead is item 2. The old
-   `OptimalRuleBoosting` did too; it is `DenseORB` now, next to the
-   representation-generic `ORB`.) The tutorial notebook asks for `BooleanDataRepresentation`
+   `run_cv` demos' quick runs, not full reruns. (`LRI` and
+   `OptimalRuleBoosting` read `data.X` directly, which every
+   representation provides -- built on demand for N-lists and sparse data
+   -- so they ran on any representation too; they are `DenseLRI` and
+   `DenseORB` now, next to the representation-generic `LRI` and `ORB`.) The tutorial notebook asks for `BooleanDataRepresentation`
    explicitly (it shows `data.X`), with a note that N-lists are the
    default.
-2. *The three learners*: score candidate conditions through the
-   representation's (weighted) coverage functions instead of matrix
-   columns. Measure the speed on every representation -- numpy scores all
-   features in one vectorized step, so this could be slower on Boolean
-   data, as with the rule searches.
+2. *The learners*: **done (2026-10-10)** -- `CPAR`, `ENDER`, `ORB`,
+   `LRI` score candidate conditions through the representation's
+   (weighted) coverage functions instead of matrix columns; the speed is
+   measured on every representation in each learner's section (numpy
+   scores all features in one vectorized step, so the modular versions
+   are slower than the `Dense*` ones on small Boolean data).
 3. *Tests*: extend the check that all representations give identical
    rules (so far CN2/PFoil/PFossil/AQR, PyLORD, and `ENDER` (2026-10-08,
    checking its deliberate dense-conversion path rather than true
