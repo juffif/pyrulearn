@@ -573,6 +573,103 @@ the work below is worth doing for them too):
    about 7 s for 32,000 rows of `adult`) and store feature indices as
    32-bit integers to halve its memory.
 
+## Memory of the representations; N-list on top of a base storage
+
+**Open (discussed 2026-10-13; start after the re-run demo reports from
+the server are checked in).** The memory measurement in
+`demos/representations.py` (`tracemalloc`, held after the build and peak
+while building) shows the vertical representations far larger than the
+packed Boolean matrix -- `adult`, n=32,000:
+
+| | with negation | without negation | peak while building (with) |
+|---|--:|--:|--:|
+| Boolean (packed bits) | 1.1 MiB | 0.55 MiB | 1.1 MiB |
+| Sparse | 50 MiB | 10.2 MiB | 113 MiB |
+| NList | 166 MiB | 38.4 MiB | 528 MiB |
+| PrePostNList | 190 MiB | 41.7 MiB | 706 MiB |
+| unpacked `X` | 8.5 MiB | 4.3 MiB | |
+
+*Why Boolean wins.* One bit per cell against at least one integer per
+*true* cell: an `int32` index list only beats packed bits below a density
+of 1/32 (1/64 with two copies, as `Sparse` keeps CSR and CSC). `adult`
+without negation has density 0.136 (19 of 140 features per row), so any
+index list is at least ~4x the packed matrix per copy. Sparse storage
+saves memory against an *unpacked* matrix, not against packed bits.
+
+*Where N-list's memory goes* (n=32,000, no negation; deep size of the
+stored attributes, 23.7 MiB of the 38.4 MiB `tracemalloc` reports):
+`_row_feats` 8.3 MiB (32,000 separate small `int64` arrays -- the whole
+Boolean table a second time, in a far more expensive format; used by
+`features_of` and `X`), `_row_idx` 4.7 and `_entry_node` 4.7 (`int64`,
+one entry per true cell: a full tid-list, i.e. the information of
+`Sparse`'s CSC), `_path_words` 2.4 (the per-node path bitmasks -- the
+only part corresponding to the paper's N-lists), `_node_class_counts` 1.6
+(`int64`), `_leaf_of` 1.6+ (assigned during the build, never read again,
+and it keeps the trie's leaf nodes alive -- probably most of the
+unaccounted 15 MiB; not verified). 105,271 tree nodes. `Sparse`: CSR 3.0
++ CSC 2.9 MiB (`int32` indices, `bool` data) against 10.2 MiB from
+`tracemalloc` -- the gap is unexplained.
+
+*The tree is the bottleneck, as in Huynh et al.* -- but only while
+building: the Python `_PPCNode` trie (a dict of children and a Python list
+of row ids per node) causes the ~3x peak, then is dropped. What is kept
+is more than LORD's N-list: LORD only *counts* (per node pre/post code and
+count), while our learners also need (1) *which* rows a rule covers
+(removal in separate-and-conquer, predictions), (2) counts *under a
+mask* (uncovered examples, grow/prune splits), and (3) counts under
+*changing weights* (boosting, weighted covering, LRI). Hence the row ids
+per node -- so our N-list is LORD's N-list plus a sparse matrix, and can
+never be smaller than `Sparse`.
+
+*Decided direction.* Base storage underneath, N-list as an index on top:
+
+- Base: Boolean (packed bits) or Sparse (index lists, `int32` is enough
+  -- scipy picks it when the sizes fit), chosen by density. The base
+  answers `features_of`, `X` and "which rows does this rule cover"; the
+  N-list holds no copy of the table.
+- N-list is positioned as a *trade-off between memory and speed*, not as
+  the obvious default. The case for it as the default has weakened: it
+  is clearly faster for the SeCo learners on larger data (CN2, PFossil,
+  Pypper 2-5x on `adult` at 16,000-32,000 rows), but even or slower for
+  the small datasets and the boosting/CPAR learners (`dense_vs_modular`:
+  N-list/Boolean 0.87-1.88x), at 70-190x the memory. Revisit
+  `REPRESENTATION_PREFERENCE_ORDER` after the fixes below, on the new
+  numbers.
+
+*Options for the N-list index:*
+
+- **C. Current layout, slimmed -- do first; only changes that don't cost
+  time.** Drop `_leaf_of`; drop `_row_feats` (answer from the base);
+  `int32` for `_row_idx`, `_entry_node`, `_node_class_counts`, `_y_idx`;
+  replace `_entry_node` (one node id per true cell) by per-node offsets
+  and `np.repeat(hit, sizes)` instead of `hit[entry_node]` (needs a
+  timing check). Estimate: ~38 -> ~6-7 MiB here (still ~12x Boolean;
+  `_row_idx` alone is ~4x at this density). For `Sparse`: drop the CSR
+  copy, `features_of` from the base's packed rows (~6 -> ~3.5 MiB).
+  Storage only, so identical rules (the equality tests cover it);
+  benchmark old vs new as usual (worktree,
+  sequential, best of 3), since `features_of` and coverage are hot paths.
+- **B. Counts kept up to date -- prototype later.** Per node pre/post
+  code and per-class (weighted) counts; per row the node ids along its
+  path (one integer per true cell); removing or reweighting an example
+  updates the counts along its path; "which rows" from the base. Drops
+  `_row_idx`, `_entry_node`, `_row_feats` -- close to LORD's footprint.
+  Removal is one walk down a path, a full reweighting one pass over the
+  true cells; arbitrary changing masks (grow/prune splits) don't fit
+  well. A redesign of how the search counts under masks and weights:
+  prototype and full benchmark before deciding.
+- **A. Count-only N-list** (pre/post + class counts, everything else from
+  the base): smallest, but masked or weighted counts fall back to the
+  base, which is what SeCo (masks after every rule) and boosting
+  (weights every round) do all the time -- probably loses the speed gain.
+- Peak while building: build the trie in numpy (sort the rows by their
+  ranked features, group shared prefixes) instead of the Python
+  `_PPCNode` trie -- lowers the peak and the build time (item 4 of the
+  0.3.0 list above). The biggest of these changes.
+
+`PrePostNListRepresentation` already stores pre/post codes, but
+*alongside* the row ids, not instead of them.
+
 ## Other planned work
 
 - **Measure the SeCo-search-vs-ENDER speed gap on `demos/covering_boosting.py`
