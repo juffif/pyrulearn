@@ -26,6 +26,11 @@ the equality at every point:
 2. **Density** -- synthetic data with a fixed learnable concept and a
    fixed number of features, whose noise features get sparser and sparser.
 
+Both also record the **memory** each representation holds after it is
+built (and its peak while building), measured with `tracemalloc` in a
+separate, untimed pass -- next to the unpacked `n x k` bool matrix a
+learner gets from `data.X`.
+
 Learners: CN2, PFossil, Pypper and PyLORD, each with its defaults. Every
 fit runs in a worker process under a `FIT_TIMEOUT` cap; after a time-out
 the remaining, larger points of that curve are skipped.
@@ -44,6 +49,7 @@ import hashlib
 import json
 import os
 import time
+import tracemalloc
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -119,6 +125,23 @@ def _build(kind: str, spec, X, y):
     t = time.perf_counter()
     rep = _VERTICAL[kind].from_boolean(boolean)
     return rep, time.perf_counter() - t
+
+
+def _measure_memory(kind: str, spec, X, y) -> dict:
+    """Bytes the representation of kind `kind` holds once built, and the peak
+    while building it (`tracemalloc`; the inputs `X` and `y` are allocated
+    before tracing starts, so neither counts, nor does the Boolean matrix a
+    vertical index is built from). A separate pass from `_build`, which is
+    timed: tracing slows allocation down."""
+    boolean = None if kind == "Boolean" else BooleanDataRepresentation(spec, X, y)
+    tracemalloc.start()
+    try:
+        rep = BooleanDataRepresentation(spec, X, y) if kind == "Boolean" else _VERTICAL[kind].from_boolean(boolean)
+        held, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    del rep, boolean
+    return {"mem_bytes": held, "mem_peak_bytes": peak, "x_bytes": int(X.size * X.itemsize)}
 
 
 class Cache:
@@ -199,7 +222,8 @@ def run_size_curve(runner, cache, sizes) -> List[dict]:
                 reps[kind], build_s = _build(kind, spec, X, y)
                 test_reps[kind] = _build(kind, spec, Xt, yt)[0]
                 rows.append({**base, "learner": None, "rep": kind, "build_time": build_s,
-                             "density": float(X.mean()), "n_features": spec.n_features})
+                             "density": float(X.mean()), "n_features": spec.n_features,
+                             **_measure_memory(kind, spec, X, y)})
             print(f"  {SIZE_DATASET}, {'with' if negation else 'without'} negation, n={n} "
                   f"({spec.n_features} features, density {X.mean():.3f})", flush=True)
             for learner in LEARNERS:
@@ -239,7 +263,8 @@ def run_density_sweep(runner, cache, densities) -> List[dict]:
                     reps[kind].coverage(r)
                 timings.append(time.perf_counter() - t)
             rows.append({**base, "learner": None, "rep": kind, "build_time": build_s,
-                         "coverage_ms": min(timings) * 1000, "density": float(X.mean())})
+                         "coverage_ms": min(timings) * 1000, "density": float(X.mean()),
+                         **_measure_memory(kind, spec, X, y)})
         print(f"  noise density {p} (overall {X.mean():.3f})", flush=True)
         for learner in LEARNERS:
             rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
@@ -367,6 +392,27 @@ def write_plots(size_rows, density_rows, quick: bool) -> Dict[str, str]:
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3, which="both")
     paths["density_coverage"] = _save(fig, "density_coverage", quick)
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
+    mem = [r for r in size_rows if r["learner"] is None]
+    size_lines(ax, [{**r, "mb": r["mem_bytes"] / 2**20} for r in mem], "mb", REPRESENTATIONS)
+    size_axes(ax, REPRESENTATIONS, True, "memory held (MiB)", "memory of the representation vs. training-set size")
+    paths["size_memory"] = _save(fig, "size_memory", quick)
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
+    for kind in REPRESENTATIONS:
+        marker, color = STYLE[kind]
+        pts = sorted((r["noise_density"], r["mem_bytes"] / 2**20) for r in density_rows
+                     if r["learner"] is None and r["rep"] == kind)
+        ax.plot(*zip(*pts), "-", marker=marker, color=color, markersize=4, label=kind)
+    _plain_log_y(ax)
+    density_x(ax)
+    ax.set_xlabel(f"density of the noise features (k={DENSITY_K}, n={DENSITY_N})")
+    ax.set_ylabel("memory held (MiB)")
+    ax.set_title("memory of the representation vs. density")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3, which="both")
+    paths["density_memory"] = _save(fig, "density_memory", quick)
     return paths
 
 
@@ -426,6 +472,35 @@ def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
                     ratio = f" ({100 * r['fit_time'] / ref:.0f}%)" if ref else ""
                     cells.append(f"{r['fit_time']:.2f}{ratio}")
             lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
+    return "".join(lines)
+
+
+def _bytes(n: float) -> str:
+    return f"{n / 1024:.0f} KiB" if n < 1024 ** 2 else f"{n / 1024 ** 2:.1f} MiB"
+
+
+def _memory_table(rows, x_field: str, x_label: str, field: str = "mem_bytes", negation=None) -> str:
+    """One row per representation, the memory at each `x_field` value, each
+    non-Boolean cell with its ratio to Boolean in parentheses; the last row is
+    the unpacked bool matrix `X` a learner gets from `data.X`, for scale."""
+    rows = [r for r in rows if r["learner"] is None and (negation is None or r["negation"] == negation)]
+    xs = sorted({r[x_field] for r in rows}, reverse=(x_field == "noise_density"))
+    lines = ["| representation | " + " | ".join(f"{x_label}={x}" for x in xs) + " |\n",
+             "|---|" + "--:|" * len(xs) + "\n"]
+    at = lambda kind, x: next((r for r in rows if r["rep"] == kind and r[x_field] == x), None)  # noqa: E731
+    for kind in REPRESENTATIONS:
+        cells = []
+        for x in xs:
+            r, ref = at(kind, x), at("Boolean", x)
+            if r is None:
+                cells.append("")
+            elif kind == "Boolean" or ref is None:
+                cells.append(_bytes(r[field]))
+            else:
+                cells.append(f"{_bytes(r[field])} ({100 * r[field] / ref[field]:.0f}%)")
+        lines.append(f"| {kind} | " + " | ".join(cells) + " |\n")
+    lines.append("| unpacked `X` | " + " | ".join(
+        _bytes(at("Boolean", x)["x_bytes"]) if at("Boolean", x) else "" for x in xs) + " |\n")
     return "".join(lines)
 
 
@@ -494,6 +569,17 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
     L.append("Without negation:\n\n" + _fit_table(size_rows, "n", "n", False) + "\n")
     L.append("Building a vertical index is paid once per fit, on top of the fit itself:\n\n")
     L.append(img("size_build", "index build time vs. training-set size"))
+    L.append(
+        "**Memory.** What each representation holds once built, measured with `tracemalloc` (the "
+        "input matrix and the Boolean matrix a vertical index is built from don't count), and in "
+        "parentheses its share of the Boolean representation's memory; the last row is the "
+        "unpacked `n x k` bool matrix that `data.X` builds on demand, which any learner or "
+        "external library working on a plain array pays on top.\n\n")
+    L.append(img("size_memory", "memory vs. training-set size"))
+    L.append("With negation:\n\n" + _memory_table(size_rows, "n", "n", negation=True) + "\n")
+    L.append("Without negation:\n\n" + _memory_table(size_rows, "n", "n", negation=False) + "\n")
+    L.append("Peak memory while building (with negation) -- the vertical indexes need more than "
+             "they keep:\n\n" + _memory_table(size_rows, "n", "n", "mem_peak_bytes", negation=True) + "\n")
 
     L.append("## 2. Density\n\n")
     L.append(
@@ -509,6 +595,10 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
         "conditions, without any search around it:\n\n")
     L.append(img("density_coverage", "coverage() time vs. density"))
     L.append("Fit time in seconds:\n\n" + _fit_table(density_rows, "noise_density", "p") + "\n")
+    L.append("Memory held by each representation (share of Boolean in parentheses; the last row is the "
+             "unpacked bool matrix):\n\n")
+    L.append(img("density_memory", "memory vs. density"))
+    L.append(_memory_table(density_rows, "noise_density", "p") + "\n")
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(L)
