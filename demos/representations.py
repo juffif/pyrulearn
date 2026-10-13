@@ -33,7 +33,9 @@ the equality at every point:
 All three also record the **memory** each representation holds after it is
 built (and its peak while building), measured with `tracemalloc` in a
 separate, untimed pass -- next to the unpacked `n x k` bool matrix a
-learner gets from `data.X`.
+learner gets from `data.X` -- and what a fit costs in total: that, plus
+the peak the fit allocates on top of it (caches a representation builds
+while a learner runs included), again in a separate, untimed pass.
 
 Learners: CN2, PFossil, Pypper and PyLORD, each with its defaults. Every
 fit runs in a worker process under a `FIT_TIMEOUT` cap; after a time-out
@@ -120,6 +122,19 @@ def timed_fit(learner_name: str, rep):
     return model, (cpu if wall - cpu > 30 else wall)
 
 
+def measured_fit(learner_name: str, rep) -> int:
+    """Runs in the worker process: the peak memory the fit allocates on top
+    of `rep` (which arrived before tracing starts) -- the learner's own
+    work and whatever the representation caches while it runs. Untimed:
+    tracing slows allocation down."""
+    tracemalloc.start()
+    try:
+        make_learner(learner_name).fit(rep)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
@@ -199,6 +214,10 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
             cached = ""
         else:
             cached = " (cached)"
+        if row["error"] is None and "fit_peak" not in row:
+            (peak, err) = runner.run(measured_fit, learner, reps[kind])
+            row = {**row, "fit_peak": peak if err is None else None}
+            cache.put(row)
         status = f"{row['fit_time']:.2f}s" if row["error"] is None else row["error"]
         print(f"    {learner:8s} {kind:12s} {status}{cached}", flush=True)
         if row["error"] is not None:
@@ -524,7 +543,7 @@ def _agreement(rows) -> tuple:
     for r in rows:
         if r["learner"] and r["error"] is None:
             k = json.dumps({x: r[x] for x in r if x not in (
-                "key", "rep", "fit_time", "error", "rules", "preds", "n_rules")}, sort_keys=True)
+                "key", "rep", "fit_time", "error", "rules", "preds", "n_rules", "fit_peak")}, sort_keys=True)
             groups.setdefault(k, {})[r["rep"]] = r
     compared, agreed, bad = 0, 0, []
     for k, by_rep in groups.items():
@@ -603,6 +622,37 @@ def _memory_table(rows, x_field: str, x_label: str, field: str = "mem_bytes", ne
     return "".join(lines)
 
 
+def _fit_memory_table(rows, x_field: str, x_label: str, negation=None) -> str:
+    """One row per (learner, representation): the memory a fit costs in
+    total at each `x_field` value -- what the representation holds plus the
+    peak the fit allocates on top of it -- each non-Boolean cell with its
+    ratio to Boolean in parentheses."""
+    rows = [r for r in rows if negation is None or r.get("negation") == negation]
+    held = {(r["rep"], r[x_field]): r["mem_bytes"] for r in rows if r["learner"] is None}
+    fits = [r for r in rows if r["learner"] and r["error"] is None and r.get("fit_peak") is not None]
+    xs = sorted({r[x_field] for r in rows if r["learner"]}, reverse=(x_field == "noise_density"))
+    lines = [f"| learner | representation | " + " | ".join(f"{x_label}={x}" for x in xs) + " |\n",
+             "|---|---|" + "--:|" * len(xs) + "\n"]
+    for learner in LEARNERS:
+        boolean_at = {}
+        for kind in REPRESENTATIONS:
+            cells = []
+            for x in xs:
+                r = next((r for r in fits if r["learner"] == learner and r["rep"] == kind and r[x_field] == x), None)
+                if r is None or (kind, x) not in held:
+                    cells.append("")
+                    continue
+                total = held[(kind, x)] + r["fit_peak"]
+                if kind == "Boolean":
+                    boolean_at[x] = total
+                    cells.append(_bytes(total))
+                else:
+                    ref = boolean_at.get(x)
+                    cells.append(_bytes(total) + (f" ({100 * total / ref:.0f}%)" if ref else ""))
+            lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
+    return "".join(lines)
+
+
 def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report_path: str) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda key, alt: f"![{alt}]({plots}/{os.path.basename(paths[key])})\n\n"  # noqa: E731
@@ -677,6 +727,11 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
     L.append(img("size_memory", "memory vs. training-set size"))
     L.append("With negation:\n\n" + _memory_table(size_rows, "n", "n", negation=True) + "\n")
     L.append("Without negation:\n\n" + _memory_table(size_rows, "n", "n", negation=False) + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass), with negation:\n\n"
+             + _fit_memory_table(size_rows, "n", "n", negation=True) + "\n")
+    L.append("Without negation:\n\n" + _fit_memory_table(size_rows, "n", "n", negation=False) + "\n")
     L.append("Peak memory while building (with negation) -- the vertical indexes need more than "
              "they keep:\n\n" + _memory_table(size_rows, "n", "n", "mem_peak_bytes", negation=True) + "\n")
 
@@ -698,6 +753,10 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
              "unpacked bool matrix):\n\n")
     L.append(img("density_memory", "memory vs. density"))
     L.append(_memory_table(density_rows, "noise_density", "p") + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass):\n\n"
+             + _fit_memory_table(density_rows, "noise_density", "p") + "\n")
 
     L.append("## 3. Width\n\n")
     L.append(
@@ -718,6 +777,10 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
     L.append(img("width_coverage", "coverage() time vs. width"))
     L.append(img("width_fit", "fit time vs. width"))
     L.append("Fit time in seconds:\n\n" + _fit_table(width_rows, "k", "k") + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass):\n\n"
+             + _fit_memory_table(width_rows, "k", "k") + "\n")
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(L)
