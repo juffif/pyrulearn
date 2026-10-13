@@ -3,6 +3,60 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## 0.3.0 (2026-10-13)
+
+A modular release: the rule learners are built from exchangeable
+components (searches, objectives, covering and boosting loops) that run on
+every data representation. The previous hand-written versions stay,
+under `Dense*` names, for speed. API changes are listed under *Changed*.
+
+### Added
+
+- `Objective`: what a rule search maximizes -- statistics, batch scoring,
+  bounds and the "same", "dead" and "consistent" predicates. Searches
+  (`BeamSearch`, `HillClimbing`, `GainAscentHillClimbing`,
+  `BranchAndBoundSearch`) talk only to an objective; a rule heuristic is
+  one (`as_objective`). Further objectives: `XGBGain` (ORB) and `LRIError`
+  (LRI).
+- `ORB` (optimal rule boosting) and `LRI` (lightweight rule induction) on
+  the rule searches, taking any `RuleSearch`; `ORB` defaults to
+  `BeamSearch(beam_width=10)` instead of exhaustive search. `MarginLoss`
+  objects for ORB's loss.
+- `CPAR` and `ENDER` (with `Boomer`) built from the SeCo components;
+  `CPAR` is a configuration of the SeCo learner, and a search can yield
+  several rules.
+- OPUS: `BranchAndBoundSearch` with dominance pruning, `Opus` and
+  `OpusTopK`, the productive-rule filter, and Laplace and sibling pruning
+  (Webb 1995; the OPUS references are in `references.bib`).
+- `Dense*` learners: `DenseCPAR`, `DenseENDER`, `DenseBoomer`,
+  `DenseORB`, `DenseLRI` -- the earlier dense-matrix implementations,
+  kept for speed (2-4x on small Boolean data) and as references.
+- `encode()`: like `binarize`, but sparse throughout, never densifies; the
+  loaders and `run_cv` use the preferred representation
+  (`default_representation()`, `REPRESENTATION_PREFERENCE_ORDER`, N-list
+  first). External learners convert to Boolean themselves.
+- Faster counting: numeric thresholds in one pass on
+  `BooleanDataRepresentation`, batched counting on N-lists and sparse
+  data, one `batch_score` call per node, constraint closures passed down.
+- Demos: `dense_vs_modular` (every `Dense*` learner against its modular
+  twin, ORB and LRI with beam widths 5 and 10, exhaustive ORB on tiny
+  datasets); Opus in the SeCo comparison.
+
+### Changed
+
+- Learners are seeded by default (`random_state=0`).
+- Components are passed as objects, not names: `search=`,
+  `heuristic=` and the like take a `RuleSearch` or `Objective` (`CN2` and
+  `PFossil` lose `mode=`, AQR loses `seed_strategy=`; `ORB(search=...)`
+  takes a search object instead of `"exhaustive"`/`"greedy"`).
+- `CPAR`, `ENDER` and `ORB` are the component-built versions; the old
+  ones are `DenseCPAR`, `DenseENDER` and `DenseORB`. `LRI` likewise, with
+  `DenseLRI` the old one; `LRI`'s `max_length`, `power` and `max_errors`
+  moved onto the search and `LRIReweighting`.
+- Pretty printing shows one condition per attribute (a value set as
+  `in`/`not in`, numeric ranges as intervals).
+- A search never takes a condition that changes nothing as an improvement.
+
 ## 0.2.2 (2026-10-07)
 
 A feature release: shared cross-validation infrastructure for demos and
