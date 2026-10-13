@@ -324,6 +324,28 @@ class BooleanDataRepresentation(DataRepresentation):
         n_features = self.spec.n_features
         return np.unpackbits(self._packed, axis=1)[:, :n_features].astype(bool)
 
+    def to_csr(self, chunk_cells: int = 1 << 16):
+        """The matrix as a `scipy.sparse` CSR matrix (bool data, `int32`
+        indices when they fit), unpacked a block of rows at a time -- so,
+        unlike `X`, nothing dense of the full ``(n_samples, n_features)``
+        size is formed, and nothing is cached here. What the sparse and
+        N-list representations are built from (`from_boolean`)."""
+        from scipy import sparse
+
+        n, k = self._n_samples, self.spec.n_features
+        index_dtype = np.int32 if n * k < 2 ** 31 else np.int64   # n * k bounds the nonzeros
+        step = max(1, chunk_cells // max(k, 1))
+        indptr = np.zeros(n + 1, dtype=index_dtype)
+        cols = [np.zeros(0, dtype=index_dtype)]
+        for start in range(0, n, step):
+            block = np.unpackbits(self._packed[start:start + step], axis=1)[:, :k]
+            indptr[start + 1:start + 1 + len(block)] = indptr[start] + np.cumsum(block.sum(axis=1, dtype=np.int64))
+            cols.append(np.nonzero(block)[1].astype(index_dtype))   # row-major: ascending per row
+            del block
+        indices = np.concatenate(cols)
+        del cols
+        return sparse.csr_matrix((np.ones(len(indices), dtype=bool), indices, indptr), shape=(n, k))
+
     @property
     def n_samples(self) -> int:
         return self._n_samples
@@ -1122,7 +1144,7 @@ class NListRepresentation(DataRepresentation):
         """Build the N-list index for an existing
         `BooleanDataRepresentation`, reusing its `DataSpec`, labels and
         row weights."""
-        return cls(data.spec, data.X, data.y, weights=data.weights)
+        return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
     @classmethod
     def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "NListRepresentation":
@@ -1499,7 +1521,7 @@ class SparseDataRepresentation(DataRepresentation):
 
     @classmethod
     def from_boolean(cls, data: "BooleanDataRepresentation") -> "SparseDataRepresentation":
-        return cls(data.spec, data.X, data.y, weights=data.weights)
+        return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
     @classmethod
     def from_dataframe(
