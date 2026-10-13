@@ -84,7 +84,7 @@ def test_with_weights_shares_storage_and_weights_survive_row_operations():
     w = np.arange(len(y), dtype=float) % 3
     nlist = NListRepresentation(spec, X, y)
     weighted = nlist.with_weights(w)
-    assert weighted._row_idx is nlist._row_idx and nlist.weights is None
+    assert weighted._perm is nlist._perm and nlist.weights is None
     np.testing.assert_array_equal(weighted.weights, w)
     assert weighted.with_weights(None).weights is None
     boolean = BooleanDataRepresentation(spec, X, y, weights=w)

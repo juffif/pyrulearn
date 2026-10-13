@@ -690,6 +690,56 @@ now `int32` views into the CSR's indices instead of separate `int64`
 arrays. Identical `features_of`, `X` and Pypper models; build times
 unchanged within noise.
 
+*Done (2026-10-14, branch `memory-efficiency`): the tree is the data
+(option D).* Instead of slimming the layout (C), `NListRepresentation`
+now stores the tree *instead of* the table, not next to it. The nodes
+are numbered in pre-order and the rows kept in the order of the node they
+end at, so the rows through a node are one contiguous range of that
+order. Stored per node: the path bitmask (as before, for the search) and
+its row range (2 `int32`); per row: its place in the order and its end
+node (2 `int32`). `features_of`, `X` and the batched counting's row
+patterns are decoded from the end nodes' path bitmasks; `select_rows`,
+`relabel` and `without_negations` decode to a sparse matrix (no dense `X`
+cached). Class counts are differences of cumulative per-class sums over
+the rows in tree order -- under a mask or weights built once per search.
+The tree is built in numpy (rows sorted by their ranked feature
+sequences; nodes read off the shared prefixes of neighbouring rows), no
+Python node objects. `PrePostNListRepresentation` coincides in storage:
+it only keeps the two pre/post codes per node (which the base needs
+during the build anyway) and overrides the re-anchoring strategy.
+
+`adult`, n=32,000, held / peak while building, build time (against the
+`from_boolean` fix above):
+
+| | before | after |
+|---|--:|--:|
+| NList, no negation | 27.9 / 65.4 MiB, 0.88 s | 4.2 / 44.2 MiB, 0.14 s |
+| PrePost, no negation | 31.2 / 87.7 MiB, 1.09 s | 5.0 / 44.2 MiB, 0.14 s |
+| NList, with negation | 136.6 / 503.5 MiB, 5.13 s | 37.7 / 289.2 MiB, 0.82 s |
+| PrePost, with negation | 161.2 / 681.5 MiB, 6.66 s | 43.8 / 289.2 MiB, 1.01 s |
+
+Now slightly below `Sparse` (5.9 / 41.9 MiB); packed Boolean is still
+far smaller (0.55 / 1.1 MiB). Fits on N-lists, `adult` n=8,000, new / old,
+best of 3 (identical models in all 14 cases; a video stream ran during
+some of it, so +-10% is noise): CN2 1.01 / 0.82 (without / with
+negation), PFossil 1.05 / 0.77, ENDER 1.00 / 0.93, CPAR 0.96 / 0.91, LRI
+0.96 / 0.68, Pypper 1.15-1.18 / 0.88-1.09, PyLORD 1.03 / 1.03-1.27. The
+cost is in `coverage`: the old layout kept a row-id list per feature
+(one integer per true cell -- the memory saved), the new one expands the
+matching nodes' row ranges on every call (34 against 22 us per call; of
+three formulations the cumulative "steps" one is the fastest), which
+the coverage-heavy learners (Pypper's pruning, PyLORD) feel.
+
+*Still open for N-lists:* on wide, sparse data the path bitmasks
+dominate -- `k/64` words per node, and with little prefix sharing about
+one node per true cell (estimate for the width sweep at k=5,000: ~11-12
+MiB, against 0.6 for Boolean and 0.2 for `Sparse`). Replacing them by
+ancestor tests through the pre/post codes (a binary search per feature,
+as `PrePostNListRepresentation` already does for re-anchoring) would make
+a node ~20-24 bytes whatever k, so N-lists could beat Boolean below about
+1 true cell in 160-190 -- at a speed cost (the PrePost trade-off);
+possibly only above some width.
+
 *Sparse: what is left, and why it stays (for now).* The remaining
 5.9 MiB is CSR 3.0 + CSC 2.9 (`int32` indices, `bool` data) -- close to the
 floor for two index copies. Both copies are hot paths: CSC answers
