@@ -103,8 +103,10 @@ from pyrulearn.experiments.report import render_results_table, render_setup_sect
 from pyrulearn.experiments.stats import mean_rank, win_counts
 from pyrulearn.interfaces.weka import J48Importer, JRipImporter, WekaJ48, WekaJRip, _resolve_weka, _weka_cli_options
 
-WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
-WEKA_JAR = r"C:\Program Files\Weka-3-8-7\weka.jar"
+# $WEKA_JAR / $WEKA_JAVA win; else this machine's Windows install, else `java` on the PATH
+_WIN_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
+WEKA_JAVA = os.environ.get("WEKA_JAVA") or (_WIN_JAVA if os.path.exists(_WIN_JAVA) else "java")
+WEKA_JAR = os.environ.get("WEKA_JAR") or r"C:\Program Files\Weka-3-8-7\weka.jar"
 
 RANDOM_STATE = 0
 LEVELS = (3, 5, 8)

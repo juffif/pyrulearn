@@ -72,11 +72,14 @@ from pyrulearn.learners.opus import Opus
 from pyrulearn.learners.pylord import PyLORD
 from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil, Pypper
 
-WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
-WEKA_JAR = r"C:\Program Files\Weka-3-8-7\weka.jar"
+# $WEKA_JAR / $WEKA_JAVA win; else this machine's Windows install, else `java` on the PATH
+_WIN_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
+WEKA_JAVA = os.environ.get("WEKA_JAVA") or (_WIN_JAVA if os.path.exists(_WIN_JAVA) else "java")
+WEKA_JAR = os.environ.get("WEKA_JAR") or r"C:\Program Files\Weka-3-8-7\weka.jar"
 # the reference LORD (github.com/vqphuynh/LORD): its compiled classes plus
-# its bundled Weka; $LORD_CLASSPATH / $LORD_JAVA take precedence
-LORD_DIR = r"C:\Users\juffi\Github\LORD"
+# its bundled Weka; $LORD_CLASSPATH / $LORD_JAVA take precedence ($LORD_DIR moves
+# the checkout)
+LORD_DIR = os.environ.get("LORD_DIR") or r"C:\Users\juffi\Github\LORD"
 LORD_CLASSPATH = os.environ.get("LORD_CLASSPATH") or os.pathsep.join(
     [os.path.join(LORD_DIR, "bin"), os.path.join(LORD_DIR, "libs", "weka_3.8_stable.jar")])
 LORD_JAVA = os.environ.get("LORD_JAVA") or WEKA_JAVA

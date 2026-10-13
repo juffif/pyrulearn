@@ -88,8 +88,10 @@ from pyrulearn.learners.boosting import Slipper
 from pyrulearn.learners.seco import Pypper
 from pyrulearn.models import ConceptModel, ConceptSet
 
-WEKA_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
-WEKA_JAR = r"C:\Program Files\Weka-3-8-7\weka.jar"
+# $WEKA_JAR / $WEKA_JAVA win; else this machine's Windows install, else `java` on the PATH
+_WIN_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
+WEKA_JAVA = os.environ.get("WEKA_JAVA") or (_WIN_JAVA if os.path.exists(_WIN_JAVA) else "java")
+WEKA_JAR = os.environ.get("WEKA_JAR") or r"C:\Program Files\Weka-3-8-7\weka.jar"
 
 RANDOM_STATE = 0
 N_FOLDS = 10             # cheap now that IMod:Slipper -- the one slow learner -- is out of the main run

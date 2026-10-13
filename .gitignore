@@ -42,3 +42,6 @@ examples/*/*_quick*.png
 demos/*_quick_report.md
 demos/*_quick*.png
 demos/*/*_quick*.png
+
+# run_all_demos.sh logs
+demos/_logs/
