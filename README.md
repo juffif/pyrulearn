@@ -2647,6 +2647,12 @@ report and plots are checked in next to the script:
   pair, ORB vs. RKD:RuleBoosting, is checked separately
   in its own preliminary section, since neither's exhaustive search
   scales to this demo's wider data.
+- `dense_vs_modular` -- every `Dense*` learner against its modular twin
+  (CPAR, CPAR PRM, ENDER, ENDER CS-Exp, ENDER MLRules, Boomer, ORB, LRI):
+  accuracy, fit time and whether the models are identical; the modular
+  ones again on N-lists, and ORB and LRI with beam searches of width 5
+  and 10. Exhaustive ORB is checked separately on a few tiny datasets,
+  since it doesn't scale to the rest.
 
 `heuristic_isometrics` and `covering` are illustrations, without
 cross-validation.

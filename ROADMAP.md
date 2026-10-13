@@ -226,7 +226,7 @@ indicator column in `ENDER`'s sums). Unweighted counts were always exact;
 the SeCo learners and `CPAR` learned the same models as before the fix,
 a few percent slower.
 
-Still open: a dense vs. modular demo -- every learner with both
+Built (2026-10-12, `demos/dense_vs_modular.py`, report checked in for all 44 small and medium binary datasets, 2026-10-13): a dense vs. modular demo -- every learner with both
 versions side by side: `CPAR`/`DenseCPAR`, `ENDER`/`DenseENDER`,
 `Boomer`/`DenseBoomer`, `ORB`/`DenseORB` (accuracy, model size, fit
 time, on every representation for the modular ones). Plan (2026-10-10):
