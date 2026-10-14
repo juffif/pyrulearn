@@ -3,6 +3,46 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## 0.3.1 (2026-10-14)
+
+A memory-efficiency release: the N-list and sparse representations hold
+much less, and the representations demo measures memory -- held, peak
+while building, and what a fit costs in total. No API changes; every
+learner learns the same rules as before.
+
+### Changed
+
+- `NListRepresentation` stores the tree *instead of* the table: per node
+  the path bitmask and its row range (the rows are kept in tree order, so
+  the rows through a node are one contiguous range), per row its place in
+  that order and its end node. `features_of` and `X` are decoded from the
+  tree; class counts are differences of cumulative sums. Built in numpy,
+  without Python node objects. `adult`, 32,000 rows: 27.9 -> 4.2 MiB held
+  without negation features, 136.6 -> 37.7 MiB with; built 6x faster,
+  with a lower peak. Fits are as fast or faster for most learners;
+  coverage-heavy ones (Pypper) up to ~15% slower.
+- `PrePostNListRepresentation` shares that storage and only keeps the
+  nodes' pre/post codes for its search.
+- `SparseDataRepresentation` and the N-lists are built from the packed
+  bits (`BooleanDataRepresentation.to_csr()`, new), no longer leaving the
+  unpacked matrix cached on the Boolean source: `Sparse` 10.2 -> 5.9 MiB
+  held, peak while building no higher than what it holds.
+- `select_rows`, `relabel` and `without_negations` on N-lists decode to a
+  sparse matrix instead of caching a dense `X`.
+
+### Added
+
+- `BooleanDataRepresentation.to_csr()`: the matrix as an `int32` CSR,
+  unpacked a block of rows at a time.
+- `demos/representations.py`: memory held by each representation and its
+  peak while building, the memory a fit costs in total, and a width sweep
+  (a fixed number of true features per example, up to 20,000 features)
+  showing where sparse storage pays off. README: which representation to
+  use -- N-lists for speed (the default), Boolean for dense and normal
+  data when memory matters, Sparse for sparse data.
+- Demos read the Weka and LORD locations from `$WEKA_JAR`, `$WEKA_JAVA`
+  and `$LORD_DIR`; `tools/run_all_demos.sh` runs every full demo in turn.
+
 ## 0.3.0 (2026-10-13)
 
 A modular release: the rule learners are built from exchangeable
