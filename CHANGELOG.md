@@ -13,6 +13,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   behaviour is unchanged. The `fit_time` of a parallel run is measured inside the worker and
   is skewed by the concurrent load, so it should not be compared across runs -- use it for
   accuracy-, size- and count-based comparisons, not for timing reports.
+  A request for more workers than the cores available to the process is capped at that
+  number, with a `RuntimeWarning`; `n_jobs="10!"` (a string ending in `!`) starts that many
+  workers regardless.
 
 ## 0.3.0 (2026-10-13)
 

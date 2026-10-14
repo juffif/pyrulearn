@@ -37,11 +37,13 @@ import json
 import multiprocessing as mp
 import os
 import queue
+import re
 import subprocess
 import sys
 import time
+import warnings
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
 
 import numpy as np
 
@@ -290,6 +292,39 @@ def _score(model, error: Optional[str], fit_time: float, test_rep: DataRepresent
     return row
 
 
+def _available_cpus() -> int:
+    """The cores this process may use (its affinity mask where the platform
+    has one, which respects `taskset` and cluster allocations)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not available on Windows and macOS
+        return os.cpu_count() or 1
+
+
+def _resolve_n_jobs(n_jobs: Union[int, str]) -> int:
+    """`n_jobs` as the number of workers to start: a positive integer, capped
+    at the available cores with a warning, unless it is given as a string
+    ending in ``!`` (``"10!"``), which is used as it is."""
+    force = False
+    if isinstance(n_jobs, str):
+        match = re.fullmatch(r"(\d+)(!?)", n_jobs.strip())
+        if match is None:
+            raise ValueError(f"n_jobs must be a positive integer, or one followed by '!' to force it "
+                             f"(e.g. '10!'), got {n_jobs!r}")
+        n_jobs, force = int(match.group(1)), bool(match.group(2))
+    if isinstance(n_jobs, bool) or not isinstance(n_jobs, int) or n_jobs < 1:
+        raise ValueError(f"n_jobs must be a positive integer, or one followed by '!' to force it "
+                         f"(e.g. '10!'), got {n_jobs!r}")
+    available = _available_cpus()
+    if n_jobs > available and not force:
+        warnings.warn(f"n_jobs={n_jobs} is more than the {available} available core(s); using "
+                      f"n_jobs={available}. Pass n_jobs='{n_jobs}!' to start {n_jobs} workers anyway "
+                      f"(they would share the cores, and the per-fit time limit would count the waiting).",
+                      RuntimeWarning, stacklevel=3)
+        n_jobs = available
+    return n_jobs
+
+
 @dataclass
 class _Cell:
     """One (dataset, fold, learner) cell of `run_cv`, ready to fit."""
@@ -417,7 +452,7 @@ def run_cv(
     measure_fn: Optional[Callable[[Any, DataRepresentation], dict]] = None,
     verbose: bool = True,
     representation: Optional[Type[DataRepresentation]] = None,
-    n_jobs: int = 1,
+    n_jobs: Union[int, str] = 1,
 ):
     """Run every learner in `learners` against every dataset in
     `datasets`, `n_folds`-fold cross-validation, and return one
@@ -503,11 +538,17 @@ def run_cv(
     worker holds its own copy of its fold; a learner passed with `n_jobs > 1`
     must be picklable by reference like any other (no class defined inside
     a function).
+
+    `n_jobs` larger than the cores available to the process (its affinity
+    mask) is capped at that number, with a `RuntimeWarning`: workers beyond
+    the cores only share them, and since the per-fit `fit_timeout` counts wall
+    time, they would also make fits time out that finish when run alone. To
+    start exactly that many workers anyway, give a string ending in ``!``:
+    ``n_jobs="10!"``.
     """
     import pandas as pd
 
-    if not isinstance(n_jobs, int) or n_jobs < 1:
-        raise ValueError(f"n_jobs must be a positive integer, got {n_jobs!r}")
+    n_jobs = _resolve_n_jobs(n_jobs)
 
     resolved_representation = representation or default_representation()
     cells = _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,

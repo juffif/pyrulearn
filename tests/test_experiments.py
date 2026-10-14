@@ -220,9 +220,51 @@ def test_run_cv_n_jobs_records_a_failed_fit_without_raising():
 
 def test_run_cv_rejects_a_bad_n_jobs():
     entries = [_synthetic_entry("synth_a")]
-    for bad in (0, -1, 1.5, None):
+    for bad in (0, -1, 1.5, None, True, "", "x", "-2", "3!!", "!"):
         with pytest.raises(ValueError):
             run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, verbose=False, n_jobs=bad)
+
+
+def test_n_jobs_above_the_available_cores_is_capped_with_a_warning(monkeypatch):
+    from pyrulearn.experiments import runner
+
+    monkeypatch.setattr(runner, "_available_cpus", lambda: 2)
+    with pytest.warns(RuntimeWarning, match=r"more than the 2 available.*'10!'"):
+        assert runner._resolve_n_jobs(10) == 2
+    with pytest.warns(RuntimeWarning):
+        assert runner._resolve_n_jobs("10") == 2
+
+
+def test_n_jobs_within_the_available_cores_is_left_alone(monkeypatch, recwarn):
+    from pyrulearn.experiments import runner
+
+    monkeypatch.setattr(runner, "_available_cpus", lambda: 4)
+    assert runner._resolve_n_jobs(4) == 4
+    assert runner._resolve_n_jobs(1) == 1
+    assert runner._resolve_n_jobs("3") == 3
+    assert not recwarn.list
+
+
+def test_n_jobs_with_an_exclamation_mark_is_not_capped(monkeypatch, recwarn):
+    from pyrulearn.experiments import runner
+
+    monkeypatch.setattr(runner, "_available_cpus", lambda: 1)
+    assert runner._resolve_n_jobs("10!") == 10
+    assert runner._resolve_n_jobs(" 3! ") == 3
+    assert not recwarn.list
+
+
+def test_run_cv_starts_the_forced_number_of_workers(monkeypatch):
+    from pyrulearn.experiments import runner
+
+    monkeypatch.setattr(runner, "_available_cpus", lambda: 1)
+    started = []
+    real = runner.TimeoutRunner
+    monkeypatch.setattr(runner, "TimeoutRunner", lambda *a, **k: started.append(1) or real(*a, **k))
+    entries = [_synthetic_entry("synth_a")]
+    results = run_cv(LEARNERS, entries, n_folds=2, fit_timeout=60.0, random_state=0, verbose=False,
+                     n_jobs="3!")
+    assert len(started) == 3 and len(results) == 4
 
 
 # ------------------------------------------------------------------- stats
