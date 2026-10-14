@@ -730,6 +730,20 @@ matching nodes' row ranges on every call (34 against 22 us per call; of
 three formulations the cumulative "steps" one is the fastest), which
 the coverage-heavy learners (Pypper's pruning, PyLORD) feel.
 
+*Decided (2026-10-14), after the full re-run of
+`demos/representations.py` with the memory a fit costs in total:*
+`NListRepresentation` stays the default, for speed (the
+separate-and-conquer learners are fastest on it on real data, and a fit
+costs 1.3-1.7x Boolean's memory with negation features, about half
+without); `BooleanDataRepresentation` for dense and normal data when
+memory matters; `SparseDataRepresentation` for sparse data (without
+negation features). `PrePostNListRepresentation` stays an opt-in: equal
+to N-lists in most of the report, faster on the largest dense data (CN2,
+`adult` with negation, 32,000 rows: 22 s against 31 s). Written up in the
+README ("Which one to use"). Worth a look separately: a fit on Boolean
+allocates 30-90 MiB at 32,000 rows although the data holds 0.55-1.1 MiB
+-- probably temporary unpacked or float matrices in the counting.
+
 *Still open for N-lists:* on wide, sparse data the path bitmasks
 dominate -- `k/64` words per node, and with little prefix sharing about
 one node per true cell (estimate for the width sweep at k=5,000: ~11-12
