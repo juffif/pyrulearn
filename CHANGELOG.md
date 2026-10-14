@@ -3,6 +3,17 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- `run_cv(..., n_jobs=N)` fits `N` cells (dataset, fold, learner) at a time, each in its own
+  `TimeoutRunner` worker process. The table has the same rows, in the same order, with the
+  same accuracies and rule counts as with `n_jobs=1`; the default is 1, so existing
+  behaviour is unchanged. The `fit_time` of a parallel run is measured inside the worker and
+  is skewed by the concurrent load, so it should not be compared across runs -- use it for
+  accuracy-, size- and count-based comparisons, not for timing reports.
+
 ## 0.3.0 (2026-10-13)
 
 A modular release: the rule learners are built from exchangeable

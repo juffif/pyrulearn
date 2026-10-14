@@ -173,6 +173,58 @@ def test_run_cv_records_a_failed_fit_without_raising():
     assert results["accuracy"].isna().all()
 
 
+class _AlwaysFailsLearner(Pypper):
+    """Module-level, so that it can be sent to a worker process (a class defined
+    inside a test function can't be)."""
+    def fit(self, data, model=None, **model_kwargs):
+        raise RuntimeError("synthetic failure")
+
+
+def _cells(results):
+    return results.drop(columns=["fit_time"]).reset_index(drop=True)
+
+
+def test_run_cv_n_jobs_gives_the_same_table_as_sequential():
+    entries = [_synthetic_entry("synth_a", seed=0), _synthetic_entry("synth_b", n=50, seed=1)]
+    kwargs = dict(n_folds=3, fit_timeout=60.0, random_state=0, verbose=False)
+    sequential = run_cv(LEARNERS, entries, **kwargs)
+    parallel = run_cv(LEARNERS, entries, n_jobs=2, **kwargs)
+
+    # same rows, same order, same measurements; only the timings may differ
+    pd.testing.assert_frame_equal(_cells(parallel), _cells(sequential))
+    assert (parallel["fit_time"] >= 0).all()
+
+
+def test_run_cv_n_jobs_uses_and_fills_the_cache(tmp_path, capsys):
+    entries = [_synthetic_entry("synth_a")]
+    kwargs = dict(n_folds=2, fit_timeout=60.0, random_state=0, cache_dir=str(tmp_path), n_jobs=2)
+    first = run_cv(LEARNERS, entries, verbose=False, **kwargs)
+    assert len(list(tmp_path.glob("*.json"))) == len(first) == 4
+
+    second = run_cv(LEARNERS, entries, verbose=True, **kwargs)
+    out = capsys.readouterr().out
+    assert out.count("(cached)") == 4
+    pd.testing.assert_frame_equal(second.reset_index(drop=True), first.reset_index(drop=True))
+
+
+def test_run_cv_n_jobs_records_a_failed_fit_without_raising():
+    entries = [_synthetic_entry("synth_a")]
+    results = run_cv([_AlwaysFailsLearner(), PFossil(random_state=0)], entries, n_folds=2,
+                     fit_timeout=60.0, random_state=0, verbose=False, n_jobs=2)
+    assert len(results) == 4
+    failed = results["error"].notna()
+    assert failed.sum() == 2 and results.loc[~failed, "learner"].eq("PFossil").all()
+    assert (results.loc[failed, "error"] == "RuntimeError: synthetic failure").all()
+    assert results["fold"].tolist() == [0, 0, 1, 1]  # still in sequential order
+
+
+def test_run_cv_rejects_a_bad_n_jobs():
+    entries = [_synthetic_entry("synth_a")]
+    for bad in (0, -1, 1.5, None):
+        with pytest.raises(ValueError):
+            run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, verbose=False, n_jobs=bad)
+
+
 # ------------------------------------------------------------------- stats
 
 @pytest.fixture(scope="module")
