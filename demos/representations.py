@@ -641,6 +641,36 @@ def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
     return "".join(lines)
 
 
+#: the growth exponent is fitted from this training-set size on: below it a fit's fixed
+#: costs (setting up the search, the first rule) still dominate the time
+GROWTH_MIN_N = 2000
+
+
+def _growth_table(rows) -> str:
+    """How fit time grows with the training-set size: the exponent ``b`` of
+    ``time ~ n^b``, the least-squares slope of log time over log n across the
+    sizes from `GROWTH_MIN_N` on that finished (1: linear, 2: quadratic). A
+    curve that a time-out cut short is fitted on fewer points, shown in
+    parentheses; with fewer than three, no exponent."""
+    fits = [r for r in rows if r["learner"] and r["error"] is None and r["n"] >= GROWTH_MIN_N]
+    lines = ["| learner | representation | with negation | without negation |\n", "|---|---|--:|--:|\n"]
+    sizes = sorted({r["n"] for r in rows if r["n"] >= GROWTH_MIN_N})
+    for learner in [l for l in LEARNERS if any(r["learner"] == l for r in fits)]:
+        for kind in REPRESENTATIONS:
+            cells = []
+            for negation in (True, False):
+                pts = sorted((r["n"], r["fit_time"]) for r in fits
+                             if r["learner"] == learner and r["rep"] == kind and r["negation"] == negation
+                             and r["fit_time"] and r["fit_time"] > 0)
+                if len(pts) < 3:
+                    cells.append("--")
+                    continue
+                b = np.polyfit(np.log([n for n, _ in pts]), np.log([t for _, t in pts]), 1)[0]
+                cells.append(f"{b:.2f}" + ("" if len(pts) == len(sizes) else f" ({len(pts)} points)"))
+            lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
+    return "".join(lines)
+
+
 def _bytes(n: float) -> str:
     return f"{n / 1024:.0f} KiB" if n < 1024 ** 2 else f"{n / 1024 ** 2:.1f} MiB"
 
@@ -769,6 +799,12 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         L.append(" ".join(pair) + "\n\n")
     L.append("Fit time in seconds, with negation:\n\n" + _fit_table(size_rows, "n", "n", True) + "\n")
     L.append("Without negation:\n\n" + _fit_table(size_rows, "n", "n", False) + "\n")
+    L.append(f"**Growth.** How fast each learner's fit time grows with the training-set size: the exponent "
+             f"*b* of time ~ n^*b*, fitted by least squares to log time over log n from n={GROWTH_MIN_N:,} on "
+             "(below that, a fit's fixed costs still dominate). 1 is linear, 2 quadratic; a curve cut short "
+             "by a time-out is fitted on the points that finished. This is what decides, for example, how much "
+             "a learner gains from splitting a problem into smaller ones (`demos/multiclass_decomposition.py`):"
+             "\n\n" + _growth_table(size_rows) + "\n")
     L.append("Building a vertical index is paid once per fit, on top of the fit itself:\n\n")
     L.append(img("size_build", "index build time vs. training-set size"))
     L.append(
