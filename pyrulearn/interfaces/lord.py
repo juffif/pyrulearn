@@ -282,6 +282,7 @@ def run_lord(
     metric_arg: float = 0.1,
     timeout: Optional[float] = None,
     test_rows: Optional[Sequence[Sequence[Any]]] = None,
+    thread_count: Optional[int] = None,
 ) -> str:
     """Run LORD's ``run.LordRun`` on one train/(test) split and return the
     text of its ``eg_output.txt``.
@@ -298,8 +299,12 @@ def run_lord(
     / ``run.LordLoopRun``). `metric` is one of LORD's ``-mt`` values
     (``precision``, ``laplace``, ``entropy``, ``mestimate``,
     ``linear_cost``, ``relative_cost``, ``cosine``); `metric_arg` is its
-    ``-ma``. Raises if the classpath isn't set, the subprocess fails, or
-    no rule output is produced.
+    ``-ma``. `thread_count` limits the threads LORD uses; `None` keeps its
+    own default, half the machine's cores. Its ``-tc`` option alone doesn't
+    reach the discretization and data-reading threads, which size
+    themselves from the cores the JVM sees, so the JVM is also told it has
+    that many (``-XX:ActiveProcessorCount``). Raises if the classpath isn't
+    set, the subprocess fails, or no rule output is produced.
     """
     classpath, java_exe = _lord_classpath(classpath, java)
     test_rows = train_rows if test_rows is None else test_rows
@@ -321,9 +326,11 @@ def run_lord(
             # (a German JVM prints "Accuracy: 1,000000"), and parses -ma the
             # same way -- force en-US so both are dot-decimal and stable.
             "-Duser.language=en", "-Duser.country=US",
+            *([f"-XX:ActiveProcessorCount={thread_count}"] if thread_count is not None else []),
             "-cp", classpath, main_class,
             "-id", in_dir, "-od", out_dir,
             "-mt", metric, "-ma", str(metric_arg),
+            *(["-tc", str(thread_count)] if thread_count is not None else []),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if result.returncode != 0:
@@ -364,7 +371,8 @@ class JavaLord(RelabelingExternalLearner):
 
     `classpath=` (else ``$LORD_CLASSPATH`` / ``$LORD_JAR``) and `java=`
     (else ``$LORD_JAVA``) locate the build -- see `run_lord`. `metric` /
-    `metric_arg` are LORD's ``-mt`` / ``-ma``.
+    `metric_arg` are LORD's ``-mt`` / ``-ma``; `thread_count` limits its
+    threads (`None`: LORD's default, half the machine's cores).
     """
 
     IMPORTER = LORDImporter
@@ -373,7 +381,8 @@ class JavaLord(RelabelingExternalLearner):
 
     def __init__(self, variant: str = "lord", *, classpath: Optional[str] = None,
                  java: Optional[str] = None, timeout: Optional[float] = None,
-                 metric: str = "mestimate", metric_arg: float = 0.1):
+                 metric: str = "mestimate", metric_arg: float = 0.1,
+                 thread_count: Optional[int] = None):
         if variant not in self._MAIN:
             raise ValueError(f"variant must be one of {sorted(self._MAIN)}, got {variant!r}")
         self.variant = variant
@@ -382,6 +391,7 @@ class JavaLord(RelabelingExternalLearner):
         self.timeout = timeout
         self.metric = metric
         self.metric_arg = metric_arg
+        self.thread_count = thread_count
 
     def fit_external(self, X, y, feature_names=None):
         import numpy as np
@@ -392,7 +402,8 @@ class JavaLord(RelabelingExternalLearner):
         rows = [[*X[i].tolist(), y[i]] for i in range(X.shape[0])]
         return run_lord(rows, header, classpath=self.classpath, java=self.java,
                         main_class=self._MAIN[self.variant], metric=self.metric,
-                        metric_arg=self.metric_arg, timeout=self.timeout)
+                        metric_arg=self.metric_arg, timeout=self.timeout,
+                        thread_count=self.thread_count)
 
     def _import(self, data):
         text = self.fit_external(data.X, data.y, feature_names=data.spec.feature_names)
