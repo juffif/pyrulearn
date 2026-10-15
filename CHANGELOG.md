@@ -24,7 +24,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   on Boolean data (credit-g: ENDER 1.68 s -> 1.25 s, Boolean 1.18 s; Boomer
   3.08 s -> 2.23 s, faster than Boolean), while wide sparse data keeps the
   sparse product (20,000 features: unchanged). The dense patterns cost one byte
-  per cell, built on first use.
+  per cell, built on first use, and are converted to floats a block of at most
+  2^18 cells at a time, so the product's temporary copy stays small (peak memory
+  of a CN2 fit on 8,000 rows of adult: 12.1 MiB before, 3.1 MiB now).
 
 ## 0.3.2 (2026-10-15)
 
