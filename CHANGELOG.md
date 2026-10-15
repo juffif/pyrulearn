@@ -5,6 +5,16 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ## Unreleased
 
+### Added
+
+- `demos/representations.py`: ENDER as a fifth learner; `--parallel`, which prepares every
+  point first (the representations, their memory, the `coverage()` timings) and then
+  fits the learners side by side, one worker process each; a table of the growth
+  exponent of each learner's fit time over the training-set size (time ~ n^b, from
+  2,000 examples on). `demos/multiclass_decomposition.py`: PFoil as a third base
+  learner, and a section that sets each base learner's measured growth against the
+  pairwise speed-up it predicts.
+
 ### Changed
 
 - `run_cv(..., stop_on_timeout=True)` (the new default): once a fold of a
