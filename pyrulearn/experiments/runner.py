@@ -372,8 +372,39 @@ def _outcome(row: Dict[str, Any]) -> str:
     return row["error"] if row["error"] is not None else f"acc={format_accuracy(row['accuracy'])}"
 
 
+#: `error` of a cell that was not run because an earlier fold of the same dataset and
+#: learner timed out (`run_cv`'s `stop_on_timeout`); in the returned table it reads "timeout"
+_SKIPPED = "skipped after a timeout"
+
+
+def _skipped_row(cell: _Cell) -> Dict[str, Any]:
+    return {"dataset": cell.dataset, "fold": cell.fold, "learner": cell.learner.display_name,
+            "fit_time": np.nan, "error": "timeout", "accuracy": np.nan, "n_rules": np.nan,
+            "n_conditions": np.nan}
+
+
+def _whole_cv_timed_out(results):
+    """Every fold of a (dataset, learner) with a timed-out fold as a timeout, its measures
+    NaN -- the cross-validation of that pair counts as timed out, not just the folds that
+    did. (The cache keeps what each fold really did.)"""
+    import pandas as pd
+
+    if results.empty or "error" not in results:
+        return results
+    hit = results.loc[results["error"] == "timeout", ["dataset", "learner"]].drop_duplicates()
+    if hit.empty:
+        return results
+    mask = pd.MultiIndex.from_frame(results[["dataset", "learner"]]).isin(pd.MultiIndex.from_frame(hit))
+    results = results.copy()
+    measures = [c for c in results.columns if c not in ("dataset", "fold", "learner", "fit_time", "error")]
+    results.loc[mask, "error"] = "timeout"
+    results.loc[mask, measures] = np.nan
+    return results
+
+
 def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
-                        measure_fn, cache_dir: Optional[str], verbose: bool) -> List[Dict[str, Any]]:
+                        measure_fn, cache_dir: Optional[str], verbose: bool,
+                        stop_on_timeout: bool = False) -> List[Dict[str, Any]]:
     """The cells of `_iter_cells`, `n_jobs` fits at a time, each in its own
     `TimeoutRunner` worker process (a thread per worker waits on it). The
     parent only encodes folds, evaluates finished fits and writes the cache.
@@ -391,6 +422,9 @@ def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
             cell = todo.get()
             if cell is None:
                 return
+            if stop_on_timeout and (cell.dataset, cell.learner.display_name) in timed_out:
+                done.put((cell, None, _SKIPPED, np.nan))
+                continue
             t0 = time.time()
             try:
                 out, error = runner.run(_timed_fit, cell.learner, cell.train_rep)
@@ -403,13 +437,22 @@ def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
             done.put((cell, model, error, fit_time))
 
     rows: Dict[int, Dict[str, Any]] = {}
+    timed_out: set = set()  # (dataset, learner) with a timed-out fold
 
     def finish() -> None:
         cell, model, error, fit_time = done.get()
+        if error == _SKIPPED:
+            rows[cell.index] = _skipped_row(cell)
+            if verbose:
+                print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
+                      f"{cell.learner.display_name:<15s} skipped: an earlier fold timed out", flush=True)
+            return
         row = {"dataset": cell.dataset, "fold": cell.fold, "learner": cell.learner.display_name}
         row.update(_score(model, error, fit_time, cell.test_rep, measure_fn))
         _cache_save(cache_dir, cell.key, row)
         rows[cell.index] = row
+        if error == "timeout":
+            timed_out.add((cell.dataset, cell.learner.display_name))
         if verbose:
             print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
                   f"{cell.learner.display_name:<15s} {row['fit_time']:6.2f}s  {_outcome(row)}", flush=True)
@@ -422,9 +465,17 @@ def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
         for cell in cells:
             if cell.cached is not None:
                 rows[cell.index] = cell.cached
+                if cell.cached.get("error") == "timeout":
+                    timed_out.add((cell.dataset, cell.learner.display_name))
                 if verbose:
                     print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
                           f"{cell.learner.display_name:<15s} (cached)", flush=True)
+                continue
+            if stop_on_timeout and (cell.dataset, cell.learner.display_name) in timed_out:
+                rows[cell.index] = _skipped_row(cell)
+                if verbose:
+                    print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
+                          f"{cell.learner.display_name:<15s} skipped: an earlier fold timed out", flush=True)
                 continue
             while in_flight >= 2 * n_jobs:
                 finish()
@@ -454,6 +505,7 @@ def run_cv(
     verbose: bool = True,
     representation: Optional[Type[DataRepresentation]] = None,
     n_jobs: Union[int, str] = 1,
+    stop_on_timeout: bool = True,
 ):
     """Run every learner in `learners` against every dataset in
     `datasets`, `n_folds`-fold cross-validation, and return one
@@ -499,6 +551,17 @@ def run_cv(
     picklable by reference -- a learner instance and a `DataRepresentation`
     both already are (plain attributes, no closures), so this holds for
     any `RuleLearner` in this package.
+
+    `stop_on_timeout` (default True): once a fold of a (dataset, learner)
+    times out, that pair's cross-validation counts as timed out -- its
+    remaining folds are not run, and every fold of it, the finished ones
+    included, comes back as ``error="timeout"`` with NaN measures (a mean
+    over just the folds that happened to finish would favour the easy
+    ones). Only timeouts, not other errors. The cache keeps what each fold
+    really did, so a later run with a longer `fit_timeout` reuses the
+    finished folds. With `n_jobs > 1`, folds already running when another
+    fold of the same pair times out still finish; only the ones not yet
+    started are skipped. `False`: every fold is run and counted on its own.
 
     Fold caching (`cache_dir`, off by default): one JSON file per
     `cache_dir`, keyed by a stable hash of (dataset name + OpenML id +
@@ -555,29 +618,43 @@ def run_cv(
     cells = _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,
                         resolved_representation, verbose)
     if n_jobs > 1:
-        rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose)
-        return pd.DataFrame(rows)
+        rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose,
+                                   stop_on_timeout)
+        results = pd.DataFrame(rows)
+        return _whole_cv_timed_out(results) if stop_on_timeout else results
 
     rows: List[Dict[str, Any]] = []
+    timed_out: set = set()  # (dataset, learner) with a timed-out fold
     timeout_runner = TimeoutRunner(fit_timeout) if fit_timeout is not None else None
     try:
         for cell in cells:
+            pair = (cell.dataset, cell.learner.display_name)
             if verbose:
                 print(f"  fold {cell.fold + 1}/{n_folds}  {cell.learner.display_name:<15s} ...",
                       end="", flush=True)
             if cell.cached is not None:
                 rows.append(cell.cached)
+                if cell.cached.get("error") == "timeout":
+                    timed_out.add(pair)
                 if verbose:
                     print(" (cached)", flush=True)
+                continue
+            if stop_on_timeout and pair in timed_out:
+                rows.append(_skipped_row(cell))
+                if verbose:
+                    print(" skipped: an earlier fold timed out", flush=True)
                 continue
             row = {"dataset": cell.dataset, "fold": cell.fold, "learner": cell.learner.display_name}
             row.update(_measure(cell.learner, cell.train_rep, cell.test_rep, timeout_runner, measure_fn))
             _cache_save(cache_dir, cell.key, row)
             rows.append(row)
+            if row["error"] == "timeout":
+                timed_out.add(pair)
             if verbose:
                 print(f" {row['fit_time']:6.2f}s  {_outcome(row)}", flush=True)
     finally:
         if timeout_runner is not None:
             timeout_runner.close()
 
-    return pd.DataFrame(rows)
+    results = pd.DataFrame(rows)
+    return _whole_cv_timed_out(results) if stop_on_timeout else results

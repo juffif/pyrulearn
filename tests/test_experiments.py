@@ -267,6 +267,62 @@ def test_run_cv_starts_the_forced_number_of_workers(monkeypatch):
     assert len(started) == 3 and len(results) == 4
 
 
+class _SlowOnSize(Pypper):
+    """Module-level, so a worker process can unpickle it: sleeps far past any test's
+    `fit_timeout` on a training set of exactly `slow_size` rows."""
+    def __init__(self, slow_size: int, **kwargs):
+        super().__init__(**kwargs)
+        self.slow_size = slow_size
+
+    def fit(self, data, model=None, **model_kwargs):
+        if data.n_samples == self.slow_size:
+            time.sleep(60)
+        return super().fit(data, model, **model_kwargs)
+
+
+def _fold_train_sizes(entry, n_folds):
+    from pyrulearn.experiments.runner import _stratified_folds
+    df, target = entry.load()
+    return [len(tr) for tr, _ in _stratified_folds(df[target].to_numpy(), n_folds, 0)]
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_run_cv_stop_on_timeout_fails_the_whole_cross_validation(tmp_path, n_jobs):
+    entry = _synthetic_entry("synth_a", n=61)
+    sizes = _fold_train_sizes(entry, 3)
+    slow = next(s for s in sizes[1:] if s != sizes[0])        # fold 0 finishes, a later one hangs
+    learners = [_SlowOnSize(slow, random_state=0), PFossil(random_state=0)]
+    results = run_cv(learners, [entry], n_folds=3, fit_timeout=3.0, random_state=0, verbose=False,
+                     cache_dir=str(tmp_path), n_jobs=n_jobs)
+    name = learners[0].display_name
+    slow_rows = results[results["learner"] == name]
+    assert len(slow_rows) == 3
+    assert (slow_rows["error"] == "timeout").all() and slow_rows["accuracy"].isna().all()
+    other = results[results["learner"] == "PFossil"]
+    assert len(other) == 3 and other["error"].isna().all()  # other learners unaffected
+    # the cache keeps what really happened: fold 0 finished
+    import json
+    cached = [json.load(open(f)) for f in tmp_path.glob("*.json")]
+    fold0 = [r for r in cached if r["learner"] == name and r["fold"] == 0]
+    assert fold0 and fold0[0]["error"] is None
+    if n_jobs == 1:   # sequentially, the folds after the timed-out one are not run at all
+        first_slow = sizes.index(slow)
+        later = slow_rows[slow_rows["fold"] > first_slow]
+        assert later["fit_time"].isna().all()
+
+
+def test_run_cv_without_stop_on_timeout_counts_folds_on_their_own():
+    entry = _synthetic_entry("synth_a", n=61)
+    sizes = _fold_train_sizes(entry, 3)
+    slow = next(s for s in sizes[1:] if s != sizes[0])
+    results = run_cv([_SlowOnSize(slow, random_state=0)], [entry], n_folds=3, fit_timeout=3.0,
+                     random_state=0, verbose=False, stop_on_timeout=False)
+    by_fold = results.set_index("fold")
+    assert by_fold.loc[0, "error"] is None or by_fold.loc[0, "error"] != by_fold.loc[0, "error"]
+    assert by_fold.loc[0, "accuracy"] == by_fold.loc[0, "accuracy"]          # a real number
+    assert (results["error"] == "timeout").sum() == sum(s == slow for s in sizes)
+
+
 # ------------------------------------------------------------------- stats
 
 @pytest.fixture(scope="module")

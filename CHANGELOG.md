@@ -7,6 +7,13 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Changed
 
+- `run_cv(..., stop_on_timeout=True)` (the new default): once a fold of a
+  (dataset, learner) times out, the whole cross-validation of that pair counts
+  as timed out -- its remaining folds are not run, and all its folds, the
+  finished ones included, come back as `error="timeout"` with NaN measures, so
+  no mean rests on just the folds that happened to finish. Only timeouts. The
+  cache keeps each fold's real outcome. `stop_on_timeout=False` restores the
+  old behaviour.
 - `NListRepresentation.select_rows` (and `PrePostNListRepresentation`'s) derives the
   subset's tree from the existing one instead of building it anew: the nodes no
   selected row passes through are dropped and the rest renumbered, keeping the
