@@ -36,6 +36,8 @@ handling several classes -- see `LEARNER_NOTES`):
 - **JavaLord** -- the reference LORD implementation, via
                   `pyrulearn.interfaces.lord.JavaLord`. Only included when
                   found (`LORD_CLASSPATH` below, or `$LORD_CLASSPATH`).
+                  Limited to one thread in this demo only (LORD's own
+                  default is half the machine's cores).
 
 **AQR** (Clark & Niblett 1989, the AQ baseline CN2 was designed to improve
 on) and **Opus with the Laplace estimate** (Webb's own setting: the rule
@@ -62,7 +64,9 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
 from pyrulearn.interfaces.lord import JavaLord
@@ -83,6 +87,10 @@ LORD_DIR = os.environ.get("LORD_DIR") or r"C:\Users\juffi\Github\LORD"
 LORD_CLASSPATH = os.environ.get("LORD_CLASSPATH") or os.pathsep.join(
     [os.path.join(LORD_DIR, "bin"), os.path.join(LORD_DIR, "libs", "weka_3.8_stable.jar")])
 LORD_JAVA = os.environ.get("LORD_JAVA") or WEKA_JAVA
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
 
 RANDOM_STATE = 0
 N_FOLDS = 10
@@ -165,7 +173,9 @@ def build_learners():
         WekaJRip(jar=WEKA_JAR, java=WEKA_JAVA),
     ]
     if lord_available():
-        learners.append(JavaLord(classpath=LORD_CLASSPATH, java=LORD_JAVA))
+        # one thread, for this comparison only: the reference LORD uses half the machine's cores by
+        # default, every other learner here one (`JavaLord` itself keeps LORD's default)
+        learners.append(JavaLord(classpath=LORD_CLASSPATH, java=LORD_JAVA, thread_count=1))
     return learners
 
 
@@ -188,7 +198,7 @@ def run_preliminary_aqr_check():
                 LabeledOpus("Opus(Laplace)", random_state=RANDOM_STATE)]
     results = run_cv(learners, datasets,
                      n_folds=PRELIM_FOLDS, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
-                     random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+                     random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     r = results.copy()
     r["conds_per_rule"] = r["n_conditions"] / r["n_rules"]
     m = r.groupby("learner")[["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"]].mean()
@@ -196,19 +206,19 @@ def run_preliminary_aqr_check():
     verdict = (
         f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), AQR was "
         f"{'less' if aqr['accuracy'] < cn2['accuracy'] else 'not less'} accurate than CN2 "
-        f"(mean accuracy {aqr['accuracy']:.3f} vs. {cn2['accuracy']:.3f}), learned rules "
+        f"(mean accuracy {format_accuracy(aqr['accuracy'])} vs. {format_accuracy(cn2['accuracy'])}), learned rules "
         f"{aqr['conds_per_rule'] / cn2['conds_per_rule']:.1f}x as long "
         f"({aqr['conds_per_rule']:.1f} vs. {cn2['conds_per_rule']:.1f} conditions per rule; "
-        f"{aqr['n_conditions']:.0f} vs. {cn2['n_conditions']:.0f} conditions in total), and took "
+        f"{format_mean_count(aqr['n_conditions'])} vs. {format_mean_count(cn2['n_conditions'])} conditions in total), and took "
         f"{aqr['fit_time'] / cn2['fit_time']:.0f}x as long per fit ({aqr['fit_time']:.1f}s vs. "
         f"{cn2['fit_time']:.2f}s, mean) -- requiring every rule to be consistent overfits noisy "
         f"data, and on larger datasets with numeric attributes the fit times would dominate the "
         f"whole comparison. Opus with the Laplace estimate (at most {OPUS_MAX_CONDITIONS} "
         f"conditions per rule), which finds the rule CN2's beam search only approximates, was "
         f"{'less' if opus['accuracy'] < cn2['accuracy'] else 'not less'} accurate than CN2 "
-        f"(mean accuracy {opus['accuracy']:.3f}), learned "
-        f"{opus['n_rules'] / cn2['n_rules']:.1f}x as many rules ({opus['n_rules']:.0f} vs. "
-        f"{cn2['n_rules']:.0f}, mean) and took {opus['fit_time'] / cn2['fit_time']:.0f}x as long "
+        f"(mean accuracy {format_accuracy(opus['accuracy'])}), learned "
+        f"{opus['n_rules'] / cn2['n_rules']:.1f}x as many rules ({format_mean_count(opus['n_rules'])} vs. "
+        f"{format_mean_count(cn2['n_rules'])}, mean) and took {opus['fit_time'] / cn2['fit_time']:.0f}x as long "
         f"per fit ({opus['fit_time']:.1f}s, mean). Webb (1993) found classifiers that optimize "
         f"the Laplace estimate exactly often less accurate than those of a heuristic search "
         f"that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The "
@@ -239,8 +249,27 @@ LEARNER_NOTES = {
     "Weka:JRip": "Weka's RIPPER, run as a subprocess on the same binarized data. Fit time "
                  "includes the JVM start.",
     "JavaLord": "The reference LORD implementation (Java), run as a subprocess on the same "
-                "binarized data.",
+                "binarized data, and, in this demo only, on a single thread: by default it uses half "
+                "the machine's cores, which no other learner here does.",
 }
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    threads = ("Every learner runs single-threaded; the reference Java LORD, which by default uses "
+               "half the machine's cores, is limited to one thread here (`thread_count=1`, for this "
+               "comparison only).")
+    if N_JOBS.rstrip("!") == "1":
+        return f"\n\n{threads} Fits run one at a time."
+    return (f"\n\n{threads} Fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s `n_jobs`), each in its own "
+            "process and timed there, with the numerical libraries limited to one thread "
+            "(`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` learners on 11 "
+            "datasets found the fit times of 5 concurrent fits as close to a sequential run as a second "
+            "sequential run (per-learner ratios and rankings alike); time ratios between learners are "
+            "reproducible to about +-10% either way.")
 
 
 def _build_description(datasets, n_folds: int, quick: bool, learner_names,
@@ -287,12 +316,13 @@ Opus(Laplace) aren't in the main comparison".
 Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
-against that same `DataSpec` -- every learner sees the identical Boolean
-feature matrix per fold. Each fit is capped at {FIT_TIMEOUT:.0f}s; a
+against that same `DataSpec` -- every learner sees the identical binary
+features per fold (as N-lists, the library's default representation; the learners
+that need the dense matrix convert them). Each fit is capped at {FIT_TIMEOUT:.0f}s; a
 time-out or an error counts as a failure (and as last in the ranking),
 not as the end of the run. The cap is deliberately kept for the large
 datasets too: which learners scale to tens of thousands of examples is
-part of the result (a single CN2 fit on adult takes about 20 minutes).
+part of the result (a single CN2 fit on adult takes about 20 minutes).{_concurrency_note()}
 
 Measures: test accuracy, number of rules and conditions, fit time.
 """
@@ -310,8 +340,8 @@ def _summary_table(results) -> list:
              "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n"]
     for learner in ranks.sort_values().index:
         row = summary.loc[learner]
-        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
-                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
+        lines.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                     f"{format_mean_count(row['n_conditions'])} | {format_mean_count(row['conds_per_rule'])} | "
                      f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
                      f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
     return lines
@@ -376,7 +406,7 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
             ["learner", "task"])["accuracy"].mean()
         for learner in mean_rank(results, "accuracy").sort_values().index:
             b, m = by_task.get((learner, "binary")), by_task.get((learner, "multiclass"))
-            lines.append(f"| {learner} | {b:.3f} | {m:.3f} |\n")
+            lines.append(f"| {learner} | {format_accuracy(b)} | {format_accuracy(m)} |\n")
         lines.append("\n")
 
     if len(large):
@@ -390,7 +420,8 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
                      "|---|---|--:|--:|--:|--:|--:|\n")
         for (ds, learner), g in large.groupby(["dataset", "learner"]):
             ok = g[g["error"].isna()]
-            cells = ([f"{ok[c].mean():.3f}" if c == "accuracy" else f"{ok[c].mean():.1f}"
+            cells = ([format_accuracy(ok[c].mean()) if c == "accuracy" else
+                      f"{ok[c].mean():.2f}" if c == "fit_time" else format_mean_count(ok[c].mean())
                       for c in ("accuracy", "n_rules", "n_conditions", "fit_time")]
                      if len(ok) else ["--"] * 4)
             lines.append(f"| {ds} | {learner} | {len(ok)}/{len(g)} | " + " | ".join(cells) + " |\n")
@@ -412,6 +443,7 @@ def write_plots(results, plots: dict, learner_names) -> None:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.ticker import PercentFormatter
     except ImportError:
         return
     os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -428,6 +460,7 @@ def write_plots(results, plots: dict, learner_names) -> None:
     ax.set_xscale("symlog")
     ax.set_xlabel("total conditions (rule set complexity)")
     ax.set_ylabel("test accuracy")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_title("accuracy vs. rule-set complexity, one point per dataset")
     ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=4)
     ax.grid(alpha=0.3)
@@ -486,7 +519,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
     ]
     results = pd.concat([
         run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
-               random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+               random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)
     write_report(results, datasets, n_folds, report_path, plots, quick, learner_names,
@@ -504,5 +537,9 @@ if __name__ == "__main__":
                              f"{len(FULL_MULTICLASS)} multi-class datasets) instead of the quick default")
     parser.add_argument("--datasets", default=None,
                         help="Catalog.parse() spec for a full-scale run, e.g. 'vote,mushroom'")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))

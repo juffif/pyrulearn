@@ -80,21 +80,17 @@ sections at full scale and writes the canonical report.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import pickle
-import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
-from pyrulearn.data import BooleanDataRepresentation
-from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.experiments.catalog import Catalog, CatalogEntry
-from pyrulearn.experiments.report import render_results_table, render_setup_section
-from pyrulearn.experiments.runner import TimeoutRunner
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
+from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.heuristics import Laplace, MEstimate, WRAcc
 from pyrulearn.learners.boosting import Boomer, ENDER, ExponentialLoss, Newton, Slipper
@@ -158,6 +154,35 @@ NAME = "covering_boosting"
 CACHE_DIR = os.path.join(HERE, "_covering_boosting_cache")
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _labeled(cls):
+    """`cls` named by a `label` in the results -- the same class is run with
+    many settings, which `run_cv` tells apart by `display_name`. A
+    module-level class, so a worker process can unpickle it by reference."""
+    class Labeled(cls):
+        def __init__(self, label, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.label = label
+
+        @property
+        def display_name(self) -> str:
+            return self.label
+    Labeled.__name__ = Labeled.__qualname__ = f"Labeled{cls.__name__}"
+    Labeled.__module__ = __name__
+    return Labeled
+
+
+LabeledSeCo = _labeled(SeCo)
+LabeledCPAR = _labeled(CPAR)
+LabeledLRI = _labeled(LRI)
+LabeledSlipper = _labeled(Slipper)
+LabeledENDER = _labeled(ENDER)
+LabeledBoomer = _labeled(Boomer)
+
 
 # =========================================================== learners ===
 
@@ -166,14 +191,14 @@ def build_covering_learner(name: str) -> SeCo:
     heuristic = HEURISTICS[heur_name]()
     covering = COVERINGS[cov_name]()
     srl = SingleRuleLearner(heuristic=heuristic, search=BeamSearch(beam_width=BEAM_WIDTH))
-    return SeCo(single_rule_learner=srl, covering=covering, random_state=RANDOM_STATE)
+    return LabeledSeCo(name, single_rule_learner=srl, covering=covering, random_state=RANDOM_STATE)
 
 
 def build_section1_learner(name: str):
     if name == "CPAR":
-        return CPAR()
+        return LabeledCPAR(name)
     if name == "LRI":
-        return LRI()
+        return LabeledLRI(name)
     return build_covering_learner(name)
 
 
@@ -181,20 +206,16 @@ def build_section2_learner(name: str):
     family, n_str = name.split("@")
     n = int(n_str)
     if family == "Slipper":
-        return Slipper(n_rounds=n, random_state=RANDOM_STATE)
+        return LabeledSlipper(name, n_rounds=n, random_state=RANDOM_STATE)
     if family == "ENDER-CSLog":
-        return ENDER(n_rules=n, random_state=RANDOM_STATE)
+        return LabeledENDER(name, n_rules=n, random_state=RANDOM_STATE)
     if family == "ENDER-CSExp":
-        return ENDER(n_rules=n, loss=ExponentialLoss(), random_state=RANDOM_STATE)
+        return LabeledENDER(name, n_rules=n, loss=ExponentialLoss(), random_state=RANDOM_STATE)
     if family == "ENDER-Newton":
-        return ENDER(n_rules=n, method=Newton(), subsample=0.5, random_state=RANDOM_STATE)
+        return LabeledENDER(name, n_rules=n, method=Newton(), subsample=0.5, random_state=RANDOM_STATE)
     if family == "Boomer":
-        return Boomer(n_rules=n, random_state=RANDOM_STATE)
+        return LabeledBoomer(name, n_rules=n, random_state=RANDOM_STATE)
     raise ValueError(f"unknown boosting family {family!r}")
-
-
-def _fit_one(learner, train_rep):
-    return learner.fit(train_rep)
 
 
 def _overlap(model, test_rep) -> float:
@@ -205,40 +226,24 @@ def _overlap(model, test_rep) -> float:
     return float(counts.mean())
 
 
-# ============================================================= caching ===
-
-def _cache_key(entry_name: str, n_folds: int, fold: int, name: str) -> str:
-    payload = f"{entry_name}|folds={n_folds}|fold={fold}|rs={RANDOM_STATE}|name={name}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+def _overlap_measure(model, test_rep) -> dict:
+    """`run_cv`'s `measure_fn`: the overlap column next to its default measures."""
+    return {"overlap": _overlap(model, test_rep)}
 
 
-def _cache_path(cache_dir: str, key: str) -> str:
-    return os.path.join(cache_dir, f"{key}.json")
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
 
 
-def _cache_load(cache_dir: Optional[str], key: str) -> Optional[Dict[str, Any]]:
-    if cache_dir is None:
-        return None
-    path = _cache_path(cache_dir, key)
-    if not os.path.exists(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _cache_save(cache_dir: Optional[str], key: str, row: Dict[str, Any]) -> None:
-    if cache_dir is None:
-        return
-    os.makedirs(cache_dir, exist_ok=True)
-    with open(_cache_path(cache_dir, key), "w", encoding="utf-8") as f:
-        json.dump(row, f)
-
-
-def _stratified_folds(y: np.ndarray, n_folds: int, random_state: int):
-    from sklearn.model_selection import StratifiedKFold
-
-    return list(StratifiedKFold(n_splits=n_folds, shuffle=True,
-                                random_state=random_state).split(np.zeros(len(y)), y))
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return " Every learner runs single-threaded, one fit at a time."
+    return (f" Every learner runs single-threaded; fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s "
+            "`n_jobs`), each in its own process and timed there, with the numerical libraries limited to "
+            "one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` "
+            "learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run "
+            "as a second sequential run (per-learner ratios and rankings alike); time ratios between "
+            "learners are reproducible to about +-10% either way.")
 
 
 # =============================================================== the loop ===
@@ -249,68 +254,17 @@ def run_section(
     verbose: bool = True,
 ) -> pd.DataFrame:
     """Runs one section: every `name` in `names` fit (via `build_fn`)
-    against every dataset, `n_folds`-fold cross-validation. One row per
+    against every dataset, `n_folds`-fold cross-validation
+    (`pyrulearn.experiments.runner.run_cv`). One row per
     (dataset, fold, name) with accuracy/n_rules/n_conditions/fit_time/
     overlap/error."""
-    rows: List[Dict[str, Any]] = []
-    timeout_runner = TimeoutRunner(fit_timeout) if fit_timeout is not None else None
-    try:
-        for entry in datasets:
-            if verbose:
-                print(f"{entry.name} ...", flush=True)
-            df, target = entry.load()
-            y_all = df[target].to_numpy()
-            folds = _stratified_folds(y_all, n_folds, RANDOM_STATE)
-
-            for fold, (train_idx, test_idx) in enumerate(folds):
-                train_df = df.iloc[train_idx].reset_index(drop=True)
-                test_df = df.iloc[test_idx].reset_index(drop=True)
-                spec = build_dataspec(train_df, target=target, max_intervals=MAX_INTERVALS,
-                                      skip_unusable=True).build()
-                train_rep = BooleanDataRepresentation(spec, binarize(spec, train_df),
-                                                       train_df[target].to_numpy())
-                test_rep = BooleanDataRepresentation(spec, binarize(spec, test_df),
-                                                      test_df[target].to_numpy())
-
-                for name in names:
-                    key = _cache_key(entry.name, n_folds, fold, name)
-                    cached = _cache_load(cache_dir, key)
-                    if verbose:
-                        print(f"  fold {fold + 1}/{n_folds}  {name:<20s} ...", end="", flush=True)
-                    if cached is not None:
-                        rows.append(cached)
-                        if verbose:
-                            print(" (cached)", flush=True)
-                        continue
-
-                    learner = build_fn(name)
-                    t0 = time.time()
-                    if timeout_runner is not None:
-                        model, error = timeout_runner.run(_fit_one, learner, train_rep)
-                    else:
-                        try:
-                            model, error = _fit_one(learner, train_rep), None
-                        except Exception as e:  # noqa: BLE001
-                            model, error = None, f"{type(e).__name__}: {e}"
-                    fit_time = time.time() - t0
-                    row = {"dataset": entry.name, "fold": fold, "name": name, "fit_time": fit_time,
-                          "error": error, "accuracy": np.nan, "n_rules": np.nan,
-                          "n_conditions": np.nan, "overlap": np.nan}
-                    if error is None:
-                        stats = model.evaluate(test_rep)
-                        row["accuracy"] = stats.confusion.accuracy if stats.confusion is not None else np.nan
-                        row["n_rules"] = stats.n_rules
-                        row["n_conditions"] = stats.n_conditions
-                        row["overlap"] = _overlap(model, test_rep)
-                    rows.append(row)
-                    _cache_save(cache_dir, key, row)
-                    if verbose:
-                        print(f" {fit_time:6.2f}s  acc={row['accuracy']:.3f}" if error is None
-                             else f" {error}", flush=True)
-    finally:
-        if timeout_runner is not None:
-            timeout_runner.close()
-    return pd.DataFrame(rows)
+    results = run_cv([build_fn(name) for name in names], datasets, n_folds=n_folds,
+                     fit_timeout=fit_timeout, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                     cache_dir=cache_dir, measure_fn=_overlap_measure, verbose=verbose, n_jobs=_n_jobs())
+    results = results.rename(columns={"learner": "name"})
+    if "overlap" not in results.columns:  # every fit failed
+        results["overlap"] = np.nan
+    return results
 
 
 # ================================================================= report ===
@@ -367,11 +321,11 @@ def _summary_table(results: pd.DataFrame, names: Sequence[str]) -> List[str]:
             continue
         row = summary.loc[name]
         cpr = row["n_conditions"] / row["n_rules"] if row["n_rules"] else float("nan")
-        cells = [name, f"{row['accuracy']:.3f}"]
+        cells = [name, format_accuracy(row['accuracy'])]
         if common_acc is not None:
-            cells.append(f"{common_acc.get(name, float('nan')):.3f}")
-        cells += [f"{row['n_rules']:.1f}", f"{cpr:.2f}", f"{row['fit_time']:.2f}",
-                 f"{row['overlap']:.2f}", str(int(failures.get(name, 0)))]
+            cells.append(format_accuracy(common_acc.get(name, float('nan'))))
+        cells += [format_mean_count(row['n_rules']), format_mean_count(cpr), f"{row['fit_time']:.2f}",
+                 format_mean_count(row['overlap']), str(int(failures.get(name, 0)))]
         lines.append("| " + " | ".join(cells) + " |\n")
     if note is not None:
         lines.append(f"\n*{note} (see the \"failures\" column). \"own cells\" is each name "
@@ -418,10 +372,10 @@ def _boosting_curve_table(results: pd.DataFrame, common: Optional[set] = None) -
             if name not in summary.index:
                 continue
             row = summary.loc[name]
-            cells = [family, str(n), f"{row['accuracy']:.3f}"]
+            cells = [family, str(n), format_accuracy(row['accuracy'])]
             if common_acc is not None:
-                cells.append(f"{common_acc.get(name, float('nan')):.3f}")
-            cells += [f"{row['n_rules']:.1f}", f"{row['fit_time']:.2f}", str(int(failures.get(name, 0)))]
+                cells.append(format_accuracy(common_acc.get(name, float('nan'))))
+            cells += [format_mean_count(row['n_rules']), f"{row['fit_time']:.2f}", str(int(failures.get(name, 0)))]
             lines.append("| " + " | ".join(cells) + " |\n")
 
     footnote_parts = []
@@ -459,8 +413,8 @@ def _comparative_discussion(section1_results: pd.DataFrame, section2_results: pd
 
     lines.append(
         f"Section 1's best covering-strategy point is `{best_name}` (mean accuracy "
-        f"{best_acc:.3f} over the cells every section-1 config completed). Section 2's best "
-        f"boosting point is `{best2_name}` ({best2_acc:.3f}, same restriction). "
+        f"{format_accuracy(best_acc)} over the cells every section-1 config completed). Section 2's best "
+        f"boosting point is `{best2_name}` ({format_accuracy(best2_acc)}, same restriction). "
     )
 
     # Ground the Slipper/ENDER-exponential kinship in the actual numbers
@@ -468,8 +422,8 @@ def _comparative_discussion(section1_results: pd.DataFrame, section2_results: pd
     top_budget = N_RULES_BUDGETS[-1]
     exp_name, slipper_name = f"ENDER-CSExp@{top_budget}", f"Slipper@{top_budget}"
     exp_acc, slipper_acc = s2.get(exp_name), s2.get(slipper_name)
-    kinship = (f"At budget {top_budget}, `{slipper_name}` scores {slipper_acc:.3f} and "
-              f"`{exp_name}` scores {exp_acc:.3f} -- close, as expected from the theory below. "
+    kinship = (f"At budget {top_budget}, `{slipper_name}` scores {format_accuracy(slipper_acc)} and "
+              f"`{exp_name}` scores {format_accuracy(exp_acc)} -- close, as expected from the theory below. "
               if exp_acc is not None and slipper_acc is not None else "")
 
     lines.append(
@@ -529,6 +483,7 @@ def _accuracy_vs_time_plot(
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
     from matplotlib.lines import Line2D
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -538,7 +493,7 @@ def _accuracy_vs_time_plot(
     s2_acc = _common_cell_means(section2_results, common)
     s2_time = section2_results.groupby("name")["fit_time"].mean()
 
-    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
 
     for name in SECTION1_NAMES:
         if name not in s1_acc.index or name not in s1_time.index:
@@ -564,6 +519,7 @@ def _accuracy_vs_time_plot(
     ax.set_xscale("log")
     ax.set_xlabel("fit time (s, log scale)")
     ax.set_ylabel(f"accuracy ({len(common)} common cells)")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_title("Accuracy vs. fit time: covering strategies and boosting")
     ax.grid(alpha=0.3, which="both")
 
@@ -583,13 +539,16 @@ def _accuracy_vs_time_plot(
         Line2D([0], [0], marker=m, color="gray", linestyle="", markersize=7, label=h)
         for h, m in _HEURISTIC_MARKERS.items()
     ] + [Line2D([0], [0], color="gray", linestyle="-", marker="o", markersize=4, label="rule budget")]
-    legend1 = ax.legend(handles=algorithm_handles, fontsize=6, loc="upper left",
-                        title="algorithm (color)", ncol=2)
+    # both legends outside the axes, to the right, so they cover no points
+    legend1 = ax.legend(handles=algorithm_handles, fontsize=7, loc="upper left",
+                        bbox_to_anchor=(1.02, 1.0), borderaxespad=0, title="algorithm (color)")
     ax.add_artist(legend1)
-    ax.legend(handles=heuristic_handles, fontsize=6, loc="lower right",
-             title="heuristic")
+    ax.legend(handles=heuristic_handles, fontsize=7, loc="lower left",
+              bbox_to_anchor=(1.02, 0.0), borderaxespad=0, title="heuristic")
 
-    fig.tight_layout()
+    # fixed margins, with the right fifth of the figure left to the legends
+    # (tight_layout and bbox_inches="tight" don't count the second legend)
+    fig.subplots_adjust(left=0.09, right=0.76, bottom=0.11, top=0.93)
     fig.savefig(path, dpi=110)
     plt.close(fig)
 
@@ -613,10 +572,13 @@ are no faster on it). Boosting (`Slipper`, `ENDER` x 3 configs,
 `Boomer`) on the same datasets/folds, at rule-count budgets
 {N_RULES_BUDGETS}.
 
-Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out or an error counts
+Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`), one
+`DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test
+fold encoded against that same `DataSpec`, in the library's default representation
+(N-lists). Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out or an error counts
 as a failure, not as the end of the run, and is excluded from every
 mean it would otherwise enter (a "failures" column reports the count
-instead).
+instead).{_concurrency_note()}
 
 Measures: accuracy, rule count, conditions per rule, fit time, and
 overlap (mean rules covering a test row, pooled across every concept --
@@ -649,11 +611,14 @@ see the module docstring for why this isn't restricted to one
 
     tag = "_quick" if quick else ""
     plot_path = os.path.join(PLOTS_DIR, f"{NAME}{tag}_accuracy_vs_time.png")
-    _accuracy_vs_time_plot(section1_results, section2_results, common1, plot_path)
+    # `_common_cells` has no set to give when every name has the same cells (nothing failed): they are all common
+    plot_common = common1 if common1 is not None else set(
+        zip(section1_results["dataset"], section1_results["fold"]))
+    _accuracy_vs_time_plot(section1_results, section2_results, plot_common, plot_path)
     L.append("## Accuracy vs. fit time\n\n")
     L.append(
         "Every point here is on the same accuracy basis as the tables above (the "
-        f"{len(common1)} common cells), against mean fit time on a log scale, since it spans "
+        f"{len(plot_common)} common cells), against mean fit time on a log scale, since it spans "
         "sub-second boosting fits to multi-minute (and timed-out) covering fits. Color is the "
         "algorithm family -- the four covering strategies, `CPAR`/`LRI`, and the five boosting "
         "families; for section 1, marker shape is the heuristic, so a covering strategy's three "
@@ -707,5 +672,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true", help="run the full comparison instead of the quick default")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(quick=not args.full)

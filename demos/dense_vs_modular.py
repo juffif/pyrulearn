@@ -11,7 +11,9 @@ runs on every data representation and takes any search. This demo asks
 what the components cost -- or save -- and what they allow:
 
 - **Pairs**: each dense learner next to its modular twin, on the same
-  Boolean data. They should learn the same models (up to ties and, for
+  data: the dense one on the Boolean matrix it is written for, the modular
+  one on N-lists, the library's default representation. They should learn
+  the same models (up to ties and, for
   `LRI`, the conditions a term already implies), so the report counts how
   often they do and compares fit times.
 - **Variants**: the modular learners take other settings than the dense
@@ -20,8 +22,8 @@ what the components cost -- or save -- and what they allow:
   without branching (PRM) and `ENDER` with the exponential loss (CS-Exp)
   and with the Newton criterion (MLRules) are further settings, run as
   pairs too.
-- **N-lists**: the modular learners again on `NListRepresentation`, the
-  library's default representation.
+- **Boolean data**: the modular learners again on `BooleanDataRepresentation`,
+  to compare them with the N-lists they run on in the main comparison.
 
 Exhaustive `ORB` (branch and bound over all conjunctions) is checked
 separately on a few very small datasets, where it finishes at all, and
@@ -64,7 +66,7 @@ import pandas as pd
 
 from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_setup_section
+from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_setup_section
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
 from pyrulearn.learners.boosting import (
@@ -103,6 +105,25 @@ REPORT_PATH = os.path.join(HERE, f"{NAME}_report.md")
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 QUICK_REPORT_PATH = os.path.join(HERE, f"{NAME}_quick_report.md")
 CACHE_DIR = os.path.join(HERE, "_dense_vs_modular_cache")
+
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return "Fits run one at a time."
+    return (f"Fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s `n_jobs`), each in its own process and "
+            "timed there, with the numerical libraries limited to one thread (`OMP_NUM_THREADS=1` and its "
+            "relatives). A check of the `dense_vs_modular` learners on 11 datasets found the fit times of 5 "
+            "concurrent fits as close to a sequential run as a second sequential run (per-learner ratios and "
+            "rankings alike); time ratios between learners are reproducible to about +-10% either way.")
 
 
 def _plot_paths(quick: bool):
@@ -196,6 +217,22 @@ def digest(model, test_rep) -> dict:
     return {"digest": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]}
 
 
+def _is_dense(learner) -> bool:
+    return learner.display_name.startswith("Dense")
+
+
+def run_on_own_representation(learners, datasets, n_folds, **kwargs):
+    """`run_cv` with each learner on the representation it is meant for: the
+    dense learners on the Boolean matrix they are written for, the modular
+    ones on N-lists, the library's default. (Handing a dense learner an N-list
+    would make it decode the matrix inside its fit and count that in its time.)"""
+    parts = [run_cv(group, datasets, n_folds=n_folds, representation=representation, **kwargs)
+             for group, representation in (([l for l in learners if _is_dense(l)], BooleanDataRepresentation),
+                                           ([l for l in learners if not _is_dense(l)], NListRepresentation))
+             if group]
+    return pd.concat(parts, ignore_index=True)
+
+
 # the roster for the report, one entry per algorithm: (name, description, [(variant, what differs)]);
 # the variants also have a dense twin where the description says so
 LEARNER_GROUPS = [
@@ -228,8 +265,7 @@ LEARNER_GROUPS = [
 
 # -- the exhaustive-ORB check ------------------------------------------------------------
 
-def _pct(x: float) -> str:
-    return f"{100 * x:.2f}%"
+_pct = format_accuracy
 
 
 def run_exhaustive_check(quick: bool):
@@ -238,9 +274,10 @@ def run_exhaustive_check(quick: bool):
     `(results, verdict)`: the `run_cv` table and a sentence built from the numbers."""
     names = QUICK_EXHAUSTIVE_DATASETS if quick else EXHAUSTIVE_DATASETS
     datasets = Catalog.default().select(names=names)
-    results = run_cv(build_exhaustive_learners(), datasets, n_folds=EXHAUSTIVE_FOLDS,
-                     fit_timeout=EXHAUSTIVE_TIMEOUT, max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS, random_state=RANDOM_STATE,
-                     cache_dir=CACHE_DIR, representation=BooleanDataRepresentation)
+    results = run_on_own_representation(
+        build_exhaustive_learners(), datasets, EXHAUSTIVE_FOLDS, fit_timeout=EXHAUSTIVE_TIMEOUT,
+        max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS, random_state=RANDOM_STATE,
+        cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     ok = results[results["error"].isna()]
     m = ok.groupby("learner")[["accuracy", "n_conditions", "fit_time"]].mean()
     failed = results[results["error"].notna()].groupby("learner").size()
@@ -285,8 +322,9 @@ def _build_description(datasets, quick: bool, exhaustive_verdict: str) -> str:
 matrix (`Dense...`), and built from the library's exchangeable components -- a
 `RuleSearch`, an `Objective`, a covering or boosting loop -- so that they run on every
 data representation and take any search. Each dense learner is paired with its
-modular twin on the same Boolean data; the modular learners are then run again on
-N-lists, the library's default representation; and the modular `ORB` and `LRI` are run
+modular twin on the same data -- the dense one on the Boolean matrix it is written for, the
+modular one on N-lists, the library's default representation; the modular learners are then
+run again on Boolean data; and the modular `ORB` and `LRI` are run
 with a beam search of width 5 and 10, which the dense versions don't have.
 
 {learner_lines}
@@ -299,14 +337,17 @@ isn't in the main comparison". {exhaustive_verdict}
 Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS})`), the test fold encoded against that same
-`DataSpec` -- every learner sees the identical Boolean feature matrix per fold; the
-`[N-list]` rows are the modular learners on the same data as N-lists. Each fit is capped at
+`DataSpec` -- every learner sees the identical binary features per fold, the dense learners as a
+Boolean matrix and the modular ones as N-lists; the `[Boolean]` rows are the modular learners on
+the same data as Boolean matrices. Each fit is capped at
 {FIT_TIMEOUT:.0f}s; a time-out or an error counts as a failure (and as last in the ranking), not as the end
-of the run. Fit times are wall-clock seconds of one fit in a worker process, with nothing else
-running.
+of the run. Fit times are wall-clock seconds of one fit in a worker process (see below for
+how many ran at once).
 
 Measures: test accuracy, number of rules and conditions, fit time, and whether a dense
 learner and its modular twin learned the same model (the same rules, whatever their order).
+
+Every learner runs single-threaded. {_concurrency_note()}
 """
 
 
@@ -320,8 +361,8 @@ def _summary_table(results) -> list:
              "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n"]
     for learner in ranks.sort_values().index:
         row = summary.loc[learner]
-        lines.append(f"| {learner} | {_pct(row['accuracy'])} | {row['n_rules']:.1f} | "
-                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
+        lines.append(f"| {learner} | {_pct(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                     f"{format_mean_count(row['n_conditions'])} | {format_mean_count(row['conds_per_rule'])} | "
                      f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
                      f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
     return lines
@@ -365,26 +406,26 @@ def _pair_table(results, size_of: dict) -> list:
     return lines
 
 
-def _nlist_table(results, nlist_results) -> list:
-    """Each modular learner on N-lists against the same learner on Boolean data."""
+def _boolean_table(results, boolean_results) -> list:
+    """Each modular learner on Boolean data against the same learner on N-lists."""
     ok = results[results["error"].isna()]
-    nl = nlist_results[nlist_results["error"].isna()].copy()
-    nl["learner"] = nl["learner"].str.replace(" [N-list]", "", regex=False)
-    lines = ["| learner | accuracy, Boolean | accuracy, N-list | time N-list / Boolean (geometric mean over datasets) |\n"
+    bo = boolean_results[boolean_results["error"].isna()].copy()
+    bo["learner"] = bo["learner"].str.replace(" [Boolean]", "", regex=False)
+    lines = ["| learner | accuracy, N-list | accuracy, Boolean | time Boolean / N-list (geometric mean over datasets) |\n"
              "|---|--:|--:|--:|\n"]
     for name in MODULAR:
-        a, b = ok[ok["learner"] == name], nl[nl["learner"] == name]
-        joined = a.merge(b, on=["dataset", "fold"], suffixes=("_b", "_n"))
+        a, b = ok[ok["learner"] == name], bo[bo["learner"] == name]
+        joined = a.merge(b, on=["dataset", "fold"], suffixes=("_n", "_b"))
         if joined.empty:
             continue
-        per_ds = joined.groupby("dataset")[["fit_time_b", "fit_time_n"]].mean()
-        ratio = np.exp(np.log(per_ds["fit_time_n"] / per_ds["fit_time_b"]).mean())
-        lines.append(f"| {name} | {_pct(joined['accuracy_b'].mean())} | {_pct(joined['accuracy_n'].mean())} | "
+        per_ds = joined.groupby("dataset")[["fit_time_n", "fit_time_b"]].mean()
+        ratio = np.exp(np.log(per_ds["fit_time_b"] / per_ds["fit_time_n"]).mean())
+        lines.append(f"| {name} | {_pct(joined['accuracy_n'].mean())} | {_pct(joined['accuracy_b'].mean())} | "
                      f"{ratio:.2f} |\n")
     return lines
 
 
-def write_report(results, nlist_results, datasets, report_path: str, plots: dict, quick: bool,
+def write_report(results, boolean_results, datasets, report_path: str, plots: dict, quick: bool,
                  exhaustive_results, exhaustive_verdict: str) -> None:
     results = results.copy()
     results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
@@ -411,7 +452,9 @@ def write_report(results, nlist_results, datasets, report_path: str, plots: dict
     lines.append("For each pair, over the folds where both fits finished: how often the two learned the "
                  "same model (the same rules in any order), their mean accuracy, and the ratio of the "
                  "modular to the dense fit time -- the geometric mean over datasets, so a value below 1 "
-                 "means the modular learner is faster. Both on the same Boolean data.\n\n")
+                 "means the modular learner is faster. The dense learner on the Boolean matrix, the modular one on "
+                 "N-lists (its default); the modular learners on Boolean data are compared with N-lists "
+                 "below.\n\n")
     lines += _pair_table(results, size_of)
     lines.append("\n")
 
@@ -441,16 +484,17 @@ def write_report(results, nlist_results, datasets, report_path: str, plots: dict
     for name in ("ORB(greedy)", "ORB(beam 5)", "ORB(beam 10)", "LRI", "LRI(beam 5)", "LRI(beam 10)"):
         sub = ok[ok["learner"] == name]
         if len(sub):
-            lines.append(f"| {name} | {_pct(sub['accuracy'].mean())} | {sub['n_conditions'].mean():.1f} | "
+            lines.append(f"| {name} | {_pct(sub['accuracy'].mean())} | {format_mean_count(sub['n_conditions'].mean())} | "
                          f"{sub['fit_time'].mean():.2f} |\n")
     lines.append("\n")
 
-    if len(nlist_results):
-        lines.append("## The modular learners on N-lists\n\n")
-        lines.append("The same modular learners on `NListRepresentation` (the library's default, which the "
-                     "dense learners don't use: they work on the Boolean matrix) against Boolean data, over "
-                     "the folds where both finished:\n\n")
-        lines += _nlist_table(results, nlist_results)
+    if len(boolean_results):
+        lines.append("## The modular learners on Boolean data\n\n")
+        lines.append("The modular learners above run on `NListRepresentation`, the library's default. Here "
+                     "they are run again on `BooleanDataRepresentation`, the matrix the dense learners work "
+                     "on, over the folds where both finished; a time ratio above 1 means the N-list is "
+                     "faster:\n\n")
+        lines += _boolean_table(results, boolean_results)
         lines.append("\n")
 
     lines.append("## Per-dataset results\n\nAccuracy (mean over the folds that finished):\n\n")
@@ -535,18 +579,18 @@ def main(datasets_spec: Optional[str] = None) -> None:
         ([d for d in datasets if d.size == "medium"], MEDIUM_FOLDS),
     ]
     common = dict(fit_timeout=FIT_TIMEOUT, max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS, random_state=RANDOM_STATE,
-                  cache_dir=CACHE_DIR, measure_fn=digest)
+                  cache_dir=CACHE_DIR, measure_fn=digest, n_jobs=_n_jobs())
     results = pd.concat([
-        run_cv(learners, group, n_folds=folds, representation=BooleanDataRepresentation, **common)
+        run_on_own_representation(learners, group, folds, **common)
         for group, folds in groups if group
     ], ignore_index=True)
-    nlist_results = pd.concat([
-        run_cv(modular, group, n_folds=folds, representation=NListRepresentation, **common)
+    boolean_results = pd.concat([
+        run_cv(modular, group, n_folds=folds, representation=BooleanDataRepresentation, **common)
         for group, folds in groups if group
     ], ignore_index=True)
-    nlist_results["learner"] = nlist_results["learner"] + " [N-list]"
+    boolean_results["learner"] = boolean_results["learner"] + " [Boolean]"
 
-    write_report(results, nlist_results, datasets, report_path, plots, quick, exhaustive_results,
+    write_report(results, boolean_results, datasets, report_path, plots, quick, exhaustive_results,
                  exhaustive_verdict)
     write_plots(results, plots)
 
@@ -559,5 +603,9 @@ if __name__ == "__main__":
                         help="run all the small and medium binary datasets instead of the quick default")
     parser.add_argument("--datasets", default=None,
                         help="Catalog.parse() spec for a full-scale run, e.g. 'vote,mushroom'")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))

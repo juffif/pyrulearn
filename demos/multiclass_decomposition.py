@@ -63,7 +63,9 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
@@ -94,6 +96,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "multiclass_decomposition"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_multiclass_decomposition_cache")
+
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return "Fits run one at a time."
+    return (f"Fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s `n_jobs`), each in its own process and "
+            "timed there, with the numerical libraries limited to one thread (`OMP_NUM_THREADS=1` and its "
+            "relatives). A check of the `dense_vs_modular` learners on 11 datasets found the fit times of 5 "
+            "concurrent fits as close to a sequential run as a second sequential run (per-learner ratios and "
+            "rankings alike); time ratios between learners are reproducible to about +-10% either way.")
 
 
 class Decomposition(NativeRuleLearner):
@@ -212,7 +233,7 @@ def run_default_confidence_check() -> pd.DataFrame:
                 for base in BASES for method in ("pw_smaller", "pw_larger")]
     return run_cv(learners, Catalog.default().select(names=CHECK_DATASETS), n_folds=CHECK_FOLDS,
                   fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
-                  cache_dir=CACHE_DIR, measure_fn=measure_default_confidence)
+                  cache_dir=CACHE_DIR, measure_fn=measure_default_confidence, n_jobs=_n_jobs())
 
 
 def variants(results: pd.DataFrame) -> pd.DataFrame:
@@ -349,7 +370,8 @@ Datasets, with their numbers of classes: {names}. Protocol: {folds}, one
 `DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`).
 Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out counts as a failure.
 Training time is measured inside the worker process, so it excludes
-shipping data and models between processes.
+shipping data and models between processes. Every learner runs single-threaded.
+{_concurrency_note()}
 """
 
 
@@ -390,7 +412,7 @@ def _weighted_vote_section(check: pd.DataFrame) -> list:
     L.append("| base learner | pair target | " + " | ".join(cols.values()) + " |\n"
              "|---|---|" + "--:|" * len(cols) + "\n")
     for (base, target), row in means.iterrows():
-        L.append(f"| {base} | {target} | " + " | ".join(f"{row[c]:.3f}" for c in cols) + " |\n")
+        L.append(f"| {base} | {target} | " + " | ".join(format_accuracy(row[c]) for c in cols) + " |\n")
     L.append(
         "\nCounted over the examples it decides, the default rule gets a weight near its real "
         "reliability, and the weighted vote comes up to the level of the other two -- but not "
@@ -402,7 +424,7 @@ def _weighted_vote_section(check: pd.DataFrame) -> list:
     L.append("Per dataset:\n\n| dataset | base learner | pair target | " + " | ".join(cols.values())
              + " |\n|---|---|---|" + "--:|" * len(cols) + "\n")
     for (ds, base, target), row in per_ds.iterrows():
-        L.append(f"| {ds} | {base} | {target} | " + " | ".join(f"{row[c]:.3f}" for c in cols) + " |\n")
+        L.append(f"| {ds} | {base} | {target} | " + " | ".join(format_accuracy(row[c]) for c in cols) + " |\n")
     L.append("\n")
     return L
 
@@ -425,8 +447,8 @@ def write_report(results, var, datasets, paths, quick: bool, n_folds: int, repor
                  "|---|--:|--:|--:|--:|--:|--:|--:|\n")
         for learner in ranks.sort_values().index:
             m = means.loc[learner]
-            L.append(f"| {learner.split(':', 1)[1]} | {m['accuracy']:.3f} | {ranks[learner]:.2f} | "
-                     f"{m['n_rules']:.1f} | {m['n_conditions']:.1f} | {m['train_time']:.2f} | "
+            L.append(f"| {learner.split(':', 1)[1]} | {format_accuracy(m['accuracy'])} | {ranks[learner]:.2f} | "
+                     f"{format_mean_count(m['n_rules'])} | {format_mean_count(m['n_conditions'])} | {m['train_time']:.2f} | "
                      f"{m['predict_time']:.3f} | {int(failures.get(learner, 0))} |\n")
         L.append("\nSorted by mean rank (accuracy rank across datasets, failures last). Rules and "
                  "conditions: all of a decomposition's models together. The three vote schemes of a "
@@ -463,7 +485,7 @@ def main(quick: bool = True) -> None:
     results = pd.concat([
         run_cv(build_learners(), group, n_folds=folds, fit_timeout=FIT_TIMEOUT,
                max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
-               measure_fn=measure)
+               measure_fn=measure, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)
     var = variants(results)
@@ -481,4 +503,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true",
                         help="all datasets, including the large kropt and letter (5-fold)")
-    main(quick=not parser.parse_args().full)
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
+    args = parser.parse_args()
+    N_JOBS = args.n_jobs
+    main(quick=not args.full)

@@ -50,7 +50,9 @@ from typing import Optional
 import numpy as np
 
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank, win_counts
 from pyrulearn.heuristics import (
@@ -108,6 +110,26 @@ QUICK_REPORT_PATH = os.path.join(HERE, "heuristic_comparison_quick_report.md")
 QUICK_TRADEOFF_PLOT_PATH = os.path.join(PLOTS_DIR, "heuristic_comparison_quick_tradeoff.png")
 QUICK_M_SWEEP_PLOT_PATH = os.path.join(PLOTS_DIR, "heuristic_comparison_quick_m_sweep.png")
 CACHE_DIR = os.path.join(HERE, "_heuristic_comparison_cache")
+
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return "\n\nEvery learner runs single-threaded, one fit at a time."
+    return (f"\n\nEvery learner runs single-threaded; fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s "
+            "`n_jobs`), each in its own process and timed there, with the numerical libraries limited to "
+            "one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` "
+            "learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run "
+            "as a second sequential run (per-learner ratios and rankings alike); time ratios between "
+            "learners are reproducible to about +-10% either way.")
 
 
 def _cost_ratio(c: float) -> float:
@@ -200,7 +222,7 @@ training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`) instead
 of the paper's tests at every midpoint. Each fit is capped at
 {FIT_TIMEOUT:.0f}s; a timeout counts as a failure.
 
-Measures: test accuracy, number of rules and conditions, fit time.
+Measures: test accuracy, number of rules and conditions, fit time.{_concurrency_note()}
 """
 
 
@@ -225,8 +247,8 @@ def write_report(results, datasets, n_folds: int, report_path: str,
                  "wins | mean rank | failures |\n|---|--:|--:|--:|--:|--:|--:|--:|--:|\n")
     for learner in summary["accuracy"].sort_values(ascending=False).index:
         row = summary.loc[learner]
-        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
-                     f"{row['n_conditions']:.1f} | {row['conds_per_rule']:.2f} | "
+        lines.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                     f"{format_mean_count(row['n_conditions'])} | {format_mean_count(row['conds_per_rule'])} | "
                      f"{row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
                      f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
     lines.append("\n`wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
@@ -255,6 +277,7 @@ def write_plots(results, tradeoff_plot_path: str, m_sweep_plot_path: str) -> Non
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.ticker import PercentFormatter
     except ImportError:
         return
     os.makedirs(os.path.dirname(tradeoff_plot_path), exist_ok=True)
@@ -274,6 +297,7 @@ def write_plots(results, tradeoff_plot_path: str, m_sweep_plot_path: str) -> Non
     ax.set_xscale("log")
     ax.set_xlabel("mean number of conditions (log)")
     ax.set_ylabel("mean test accuracy")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_title("accuracy vs. theory size per heuristic")
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -288,6 +312,7 @@ def write_plots(results, tradeoff_plot_path: str, m_sweep_plot_path: str) -> Non
     ax1.set_xscale("log", base=2)
     ax1.set_xlabel("m (log scale)")
     ax1.set_ylabel("mean test accuracy", color="tab:blue")
+    ax1.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax1.axvline(PAPER_M, color="gray", linestyle=":", label=f"paper's m={PAPER_M}")
     ax2 = ax1.twinx()
     ax2.plot(ms, [summary.loc[l, "n_conditions"] for _, l in sweep], "s--", color="tab:orange")
@@ -311,7 +336,8 @@ def main(datasets_spec: Optional[str] = None) -> None:
 
     datasets = Catalog.default().parse(spec, random_state=RANDOM_STATE)
     results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     n_jobs=_n_jobs())
     write_report(results, datasets, n_folds, report_path, tradeoff_plot_path, m_sweep_plot_path, quick)
     write_plots(results, tradeoff_plot_path, m_sweep_plot_path)
 
@@ -325,5 +351,9 @@ if __name__ == "__main__":
                              "the quick default")
     parser.add_argument("--datasets", default=None,
                         help="Catalog.parse() spec for a full-scale run, e.g. 'vote,mushroom'")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))

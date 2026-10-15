@@ -842,6 +842,17 @@ different orders, so it only works while every value is `True`.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
+- **Parallel learners** (not planned for now, 2026-10-14): every native
+  learner runs on one thread. Some would parallelize well because they
+  consist of independent searches: `PyLORD` runs one rule search per
+  training example, and a random forest (`SKLRandomForest`, the candidate
+  pool of `RuleFit` and of the pool distillers) grows independent trees;
+  other ensembles and pool generators may qualify too. The reference
+  implementations already do this: `mlrl-boomer` uses every core and the
+  Java LORD half of them by default -- the demos limit both to one thread
+  so that fit times compare like with like. A learner's own threads and
+  `run_cv(n_jobs=...)` compete for the same cores, so the two would need
+  to be coordinated (e.g. a thread budget per worker).
 
 ## Design decisions and known behaviour
 

@@ -67,7 +67,6 @@ studies at full scale and writes the canonical report.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import pickle
 import time
@@ -77,11 +76,12 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner
-from pyrulearn.data import BooleanDataRepresentation
-from pyrulearn.data.io import binarize, build_dataspec
+from pyrulearn.data import DataRepresentation
 from pyrulearn.experiments.catalog import Catalog, CatalogEntry
-from pyrulearn.experiments.report import render_results_table, render_setup_section
-from pyrulearn.experiments.runner import TimeoutRunner
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
+from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.interfaces.sklearn import SKLRandomForest
 from pyrulearn.learners.associative import CARMiner, CBA, CMAR
@@ -140,6 +140,12 @@ STUDY2_QUICK_FOLDS = 3
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "pool_distillers"
 CACHE_DIR = os.path.join(HERE, "_pool_distillers_cache")
+# the pools stage 1 builds, read back by stage 2 (one pickle per pool and training fold)
+POOL_DIR = os.path.join(CACHE_DIR, "pools")
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
 
 
 # =============================================================== NoDistill ===
@@ -158,15 +164,15 @@ class NoDistill(NativeRuleLearner):
         self.combiner = combiner
 
     @produces(FlatRuleSet)
-    def _fit_native(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
+    def _fit_native(self, data: DataRepresentation, **kw) -> FlatRuleSet:
         return FlatRuleSet(list(self.rules.rules), default_prediction=MajorityClass(data),
                           combiner=self.combiner)
 
 
 # ============================================================ generators ===
 
-def build_pool(name: str, data: BooleanDataRepresentation) -> FlatRuleSet:
-    """Module-level (picklable by reference for `TimeoutRunner`): build
+def build_pool(name: str, data: DataRepresentation) -> FlatRuleSet:
+    """Module-level (picklable by reference for a worker process): build
     one named pool from `data`."""
     if name == "CAR":
         return CARMiner(min_support=CAR_MIN_SUPPORT, max_len=CAR_MAX_LEN).fit(data)
@@ -186,9 +192,9 @@ def build_distiller(name: str, pool: FlatRuleSet):
     if name == "CMAR":
         return CMAR(rules=pool)
     if name == "IDS":
-        return IDS(rules=pool)
+        return IDS(rules=pool, seed=RANDOM_STATE)
     if name == "IDS-greedy":
-        return IDS(rules=pool, optimizer=GreedySelection())
+        return IDS(rules=pool, optimizer=GreedySelection(), seed=RANDOM_STATE)
     if name == "Max":
         return NoDistill(rules=pool, combiner=HeuristicMaxCombiner())
     if name == "Vote":
@@ -196,190 +202,148 @@ def build_distiller(name: str, pool: FlatRuleSet):
     raise ValueError(f"unknown distiller {name!r}")
 
 
-def _fit_one(learner, train_rep: BooleanDataRepresentation):
-    """The one module-level function handed to `TimeoutRunner` for a
-    distiller fit -- same pattern as `pyrulearn.experiments.runner`'s
-    own `_fit_one`."""
-    return learner.fit(train_rep)
+def _fingerprint(data: DataRepresentation) -> str:
+    """Identifies one training fold: its features and its labels in order.
+    Both stages see the very same folds (`run_cv`, same seed), so the
+    distiller stage finds the pool the pool stage built on its fold."""
+    h = hashlib.sha256()
+    h.update("\x1f".join(data.spec.feature_names).encode("utf-8"))
+    h.update(f"|{data.n_samples}|".encode("utf-8"))
+    h.update("\x1f".join(map(str, np.asarray(data.y))).encode("utf-8"))
+    return h.hexdigest()
 
 
-def _build_pool_call(name: str, train_rep: BooleanDataRepresentation):
-    """Same, for a pool build."""
-    return build_pool(name, train_rep)
+def _pool_path(pool_dir: str, pool_name: str, fingerprint: str) -> str:
+    return os.path.join(pool_dir, f"{pool_name}_{fingerprint}.pkl")
 
 
-# ================================================================ caching ===
+class PoolBuilder:
+    """Stage 1, as a `run_cv` learner: builds one named pool on a training
+    fold. Its fit time is the pool's build time."""
 
-def _cache_paths(cache_dir: str, key: str) -> Tuple[str, str]:
-    h = hashlib.sha256(key.encode()).hexdigest()
-    return os.path.join(cache_dir, f"{h}.json"), os.path.join(cache_dir, f"{h}.pkl")
+    def __init__(self, pool_name: str):
+        self.pool_name = pool_name
 
+    @property
+    def display_name(self) -> str:
+        return self.pool_name
 
-def _cache_load_row(cache_dir: Optional[str], key: str) -> Optional[Dict[str, Any]]:
-    if cache_dir is None:
-        return None
-    json_path, _ = _cache_paths(cache_dir, key)
-    if os.path.exists(json_path):
-        with open(json_path, encoding="utf-8") as f:
-            return json.load(f)
-    return None
+    def _provenance_params(self) -> Dict[str, Any]:
+        return {"pool_name": self.pool_name}
 
-
-def _cache_save_row(cache_dir: Optional[str], key: str, row: Dict[str, Any]) -> None:
-    if cache_dir is None:
-        return
-    os.makedirs(cache_dir, exist_ok=True)
-    json_path, _ = _cache_paths(cache_dir, key)
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(row, f)
+    def fit(self, data: DataRepresentation) -> FlatRuleSet:
+        pool = build_pool(self.pool_name, data)
+        pool.pool_generator = self.pool_name
+        pool.fold_fingerprint = _fingerprint(data)
+        return pool
 
 
-def _cache_load_pool(cache_dir: Optional[str], key: str) -> Optional[FlatRuleSet]:
-    if cache_dir is None:
-        return None
-    _, pkl_path = _cache_paths(cache_dir, key)
-    if os.path.exists(pkl_path):
-        with open(pkl_path, "rb") as f:
-            return pickle.load(f)
-    return None
-
-
-def _cache_save_pool(cache_dir: Optional[str], key: str, pool: FlatRuleSet) -> None:
-    if cache_dir is None:
-        return
-    os.makedirs(cache_dir, exist_ok=True)
-    _, pkl_path = _cache_paths(cache_dir, key)
-    with open(pkl_path, "wb") as f:
+def _store_pool(pool: FlatRuleSet, test_rep) -> dict:
+    """Stage 1's `measure_fn`, run in the parent on every pool built: stores
+    the pool for stage 2 and records its size."""
+    os.makedirs(POOL_DIR, exist_ok=True)
+    path = _pool_path(POOL_DIR, pool.pool_generator, pool.fold_fingerprint)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "wb") as f:
         pickle.dump(pool, f)
+    os.replace(tmp, path)
+    return {"pool_rules": len(pool.rules)}
 
 
-def _stratified_folds(y: np.ndarray, n_folds: int, random_state: int):
-    from sklearn.model_selection import StratifiedKFold
+class DistillerOnPool:
+    """Stage 2, as a `run_cv` learner: one distiller fit on the pool that
+    stage 1 built on the same training fold. Loading the pool is timed
+    separately and taken out of the fit time afterwards. `pool_dir` travels
+    with the learner, so a worker process reads where the parent wrote."""
 
-    return list(StratifiedKFold(n_splits=n_folds, shuffle=True,
-                                random_state=random_state).split(np.zeros(len(y)), y))
+    def __init__(self, pool_name: str, distiller_name: str, pool_dir: str):
+        self.pool_name = pool_name
+        self.distiller_name = distiller_name
+        self.pool_dir = pool_dir
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.pool_name}|{self.distiller_name}"
+
+    def _provenance_params(self) -> Dict[str, Any]:
+        return {"pool_name": self.pool_name, "distiller_name": self.distiller_name}
+
+    def fit(self, data: DataRepresentation):
+        t0 = time.time()
+        path = _pool_path(self.pool_dir, self.pool_name, _fingerprint(data))
+        if not os.path.exists(path):
+            raise RuntimeError(f"no {self.pool_name} pool for this fold (its build failed)")
+        with open(path, "rb") as f:
+            pool = pickle.load(f)
+        load_time = time.time() - t0
+        model = build_distiller(self.distiller_name, pool).fit(data)
+        model.pool_load_time = load_time
+        return model
+
+
+def _pool_load_time(model, test_rep) -> dict:
+    return {"pool_load_time": getattr(model, "pool_load_time", 0.0)}
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return " Every learner runs single-threaded, one fit at a time."
+    return (f" Every learner runs single-threaded; fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s "
+            "`n_jobs`), each in its own process and timed there, with the numerical libraries limited to "
+            "one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` "
+            "learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run "
+            "as a second sequential run (per-learner ratios and rankings alike); time ratios between "
+            "learners are reproducible to about +-10% either way.")
 
 
 # =============================================================== the loop ===
 
 def run_study(
     datasets: Sequence[CatalogEntry], pool_names: Sequence[str], distiller_names: Sequence[str],
-    n_folds: int, cache_dir: Optional[str] = CACHE_DIR, fit_timeout: float = FIT_TIMEOUT,
+    n_folds: int, cache_dir: Optional[str] = None, fit_timeout: float = FIT_TIMEOUT,
     pool_fit_timeout: float = POOL_FIT_TIMEOUT, verbose: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Runs one study: for every dataset, every fold, every pool in
-    `pool_names` is built once (cached as both its measured stats and
-    the pool object itself, since a later run still needs the object,
-    not just its numbers) and then every distiller in `distiller_names`
-    is fit against that same pool.
+    """Runs one study in two `run_cv` passes over the same folds: first every
+    pool in `pool_names` is built on every training fold (stored on disk for
+    the second pass), then every distiller in `distiller_names` is fit on
+    each of those pools. Both passes run `n_jobs` fits at a time.
 
     Pool-building and distiller-fitting are capped separately
     (`pool_fit_timeout` vs. `fit_timeout`) since the two costs don't
-    scale alike -- see `POOL_FIT_TIMEOUT`. Both share one
-    `TimeoutRunner` (one persistent worker process), with
-    `pool_fit_timeout` passed as a per-call override for the
-    pool-building calls only: two concurrent `spawn`-context worker
-    processes were observed to corrupt each other's Windows pipe
-    handles, turning an unrelated, normally sub-second fit into a
-    300s timeout.
+    scale alike -- see `POOL_FIT_TIMEOUT`.
 
     Returns `(pool_stats, results)`: `pool_stats` has one row per
     (dataset, fold, pool) with its build time and rule count;
     `results` has one row per (dataset, fold, pool, learner) with
-    accuracy/n_rules/fit_time/error.
+    accuracy/n_rules/fit_time/error -- none for a pool that failed to build.
     """
-    pool_rows: List[Dict[str, Any]] = []
-    result_rows: List[Dict[str, Any]] = []
-    timeout_runner = TimeoutRunner(fit_timeout) if fit_timeout is not None else None
-    try:
-        for entry in datasets:
-            if verbose:
-                print(f"{entry.name} ...", flush=True)
-            df, target = entry.load()
-            y_all = df[target].to_numpy()
-            folds = _stratified_folds(y_all, n_folds, RANDOM_STATE)
+    cache_dir = CACHE_DIR if cache_dir is None else cache_dir
+    common = dict(n_folds=n_folds, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                  cache_dir=cache_dir, verbose=verbose, n_jobs=_n_jobs())
 
-            for fold, (train_idx, test_idx) in enumerate(folds):
-                train_df = df.iloc[train_idx].reset_index(drop=True)
-                test_df = df.iloc[test_idx].reset_index(drop=True)
-                spec = build_dataspec(train_df, target=target, max_intervals=MAX_INTERVALS,
-                                      skip_unusable=True).build()
-                train_rep = BooleanDataRepresentation(spec, binarize(spec, train_df),
-                                                       train_df[target].to_numpy())
-                test_rep = BooleanDataRepresentation(spec, binarize(spec, test_df),
-                                                      test_df[target].to_numpy())
+    if verbose:
+        print("--- pools ---", flush=True)
+    pools = run_cv([PoolBuilder(name) for name in pool_names], datasets, fit_timeout=pool_fit_timeout,
+                   measure_fn=_store_pool, **common)
+    pool_stats = pools.rename(columns={"learner": "pool", "fit_time": "build_time"})
+    pool_stats["n_rules"] = pool_stats["pool_rules"] if "pool_rules" in pool_stats else np.nan
+    pool_stats = pool_stats[["dataset", "fold", "pool", "build_time", "n_rules", "error"]]
 
-                for pool_name in pool_names:
-                    pool_key = f"{entry.name}|folds={n_folds}|fold={fold}|rs={RANDOM_STATE}|pool={pool_name}"
-                    cached_stats = _cache_load_row(cache_dir, pool_key)
-                    pool = _cache_load_pool(cache_dir, pool_key) if cached_stats is not None else None
-                    if verbose:
-                        print(f"  fold {fold + 1}/{n_folds}  pool={pool_name:<6s} ...", end="", flush=True)
-                    if pool is not None:
-                        pool_rows.append({**cached_stats})
-                        if verbose:
-                            print(" (cached)", flush=True)
-                    else:
-                        t0 = time.time()
-                        if timeout_runner is not None:
-                            pool, error = timeout_runner.run(_build_pool_call, pool_name, train_rep,
-                                                             timeout=pool_fit_timeout)
-                        else:
-                            try:
-                                pool, error = build_pool(pool_name, train_rep), None
-                            except Exception as e:  # noqa: BLE001
-                                pool, error = None, f"{type(e).__name__}: {e}"
-                        build_time = time.time() - t0
-                        n_rules = len(pool.rules) if pool is not None else np.nan
-                        stats_row = {"dataset": entry.name, "fold": fold, "pool": pool_name,
-                                    "build_time": build_time, "n_rules": n_rules, "error": error}
-                        pool_rows.append(stats_row)
-                        if error is None:
-                            _cache_save_row(cache_dir, pool_key, stats_row)
-                            _cache_save_pool(cache_dir, pool_key, pool)
-                        if verbose:
-                            print(f" {build_time:6.2f}s  {n_rules}" if error is None
-                                 else f" {error}", flush=True)
-                        if error is not None:
-                            continue  # no pool -- every distiller for it is a failure too
-
-                    for learner_name in distiller_names:
-                        key = (f"{entry.name}|folds={n_folds}|fold={fold}|rs={RANDOM_STATE}"
-                              f"|pool={pool_name}|learner={learner_name}")
-                        cached = _cache_load_row(cache_dir, key)
-                        if verbose:
-                            print(f"    {learner_name:<8s} ...", end="", flush=True)
-                        if cached is not None:
-                            result_rows.append(cached)
-                            if verbose:
-                                print(" (cached)", flush=True)
-                            continue
-                        learner = build_distiller(learner_name, pool)
-                        t0 = time.time()
-                        if timeout_runner is not None:
-                            model, error = timeout_runner.run(_fit_one, learner, train_rep)
-                        else:
-                            try:
-                                model, error = _fit_one(learner, train_rep), None
-                            except Exception as e:  # noqa: BLE001
-                                model, error = None, f"{type(e).__name__}: {e}"
-                        fit_time = time.time() - t0
-                        row = {"dataset": entry.name, "fold": fold, "pool": pool_name,
-                              "learner": learner_name, "fit_time": fit_time, "error": error,
-                              "accuracy": np.nan, "n_rules": np.nan}
-                        if error is None:
-                            stats = model.evaluate(test_rep)
-                            row["accuracy"] = stats.confusion.accuracy if stats.confusion is not None else np.nan
-                            row["n_rules"] = stats.n_rules
-                        result_rows.append(row)
-                        _cache_save_row(cache_dir, key, row)
-                        if verbose:
-                            print(f" {fit_time:6.2f}s  acc={row['accuracy']:.3f}" if error is None
-                                 else f" {error}", flush=True)
-    finally:
-        if timeout_runner is not None:
-            timeout_runner.close()
-    return pd.DataFrame(pool_rows), pd.DataFrame(result_rows)
+    if verbose:
+        print("--- distillers ---", flush=True)
+    distillers = [DistillerOnPool(pool, name, POOL_DIR) for pool in pool_names for name in distiller_names]
+    fits = run_cv(distillers, datasets, fit_timeout=fit_timeout, measure_fn=_pool_load_time, **common)
+    fits[["pool", "learner"]] = fits["learner"].str.split("|", n=1, expand=True)
+    if "pool_load_time" in fits:
+        fits["fit_time"] = fits["fit_time"] - fits["pool_load_time"].fillna(0.0)
+    built = pool_stats.loc[pool_stats["error"].isna(), ["dataset", "fold", "pool"]]
+    results = fits.merge(built, on=["dataset", "fold", "pool"])  # no rows for a pool that failed to build
+    results = results[["dataset", "fold", "pool", "learner", "fit_time", "error", "accuracy", "n_rules"]]
+    return pool_stats, results
 
 
 # ================================================================= report ===
@@ -413,10 +377,10 @@ def _pool_stats_table(pool_stats: pd.DataFrame, results: pd.DataFrame) -> List[s
     lines = ["| " + " | ".join(cols) + " |\n", "|---|" + "--:|" * (len(cols) - 1) + "\n"]
     for pool_name in pool_names:
         build_time = f"{build.loc[pool_name, 'build_time']:.2f}" if pool_name in build.index else "--"
-        n_rules = f"{build.loc[pool_name, 'n_rules']:.1f}" if pool_name in build.index else "--"
-        cells = [pool_name, build_time, n_rules, f"{mean_acc.get(pool_name, float('nan')):.3f}"]
+        n_rules = format_mean_count(build.loc[pool_name, 'n_rules']) if pool_name in build.index else "--"
+        cells = [pool_name, build_time, n_rules, format_accuracy(mean_acc.get(pool_name, float('nan')))]
         if common_acc is not None:
-            cells.append(f"{common_acc.get(pool_name, float('nan')):.3f}")
+            cells.append(format_accuracy(common_acc.get(pool_name, float('nan'))))
         cells.append(str(failures.get(pool_name, 0)))
         lines.append("| " + " | ".join(cells) + " |\n")
     if note is not None:
@@ -439,8 +403,8 @@ def _grid_table(results: pd.DataFrame, pool_names: Sequence[str],
             if (pool_name, learner_name) not in summary.index:
                 continue
             row = summary.loc[(pool_name, learner_name)]
-            lines.append(f"| {pool_name} | {learner_name} | {row['accuracy']:.3f} | "
-                        f"{row['n_rules']:.1f} | {row['fit_time']:.2f} | "
+            lines.append(f"| {pool_name} | {learner_name} | {format_accuracy(row['accuracy'])} | "
+                        f"{format_mean_count(row['n_rules'])} | {row['fit_time']:.2f} | "
                         f"{int(failures.get((pool_name, learner_name), 0))} |\n")
     return lines
 
@@ -541,7 +505,7 @@ def _ids_section(study1_results: pd.DataFrame) -> List[str]:
             if (pool_name, learner_name) not in summary.index:
                 continue
             row = summary.loc[(pool_name, learner_name)]
-            lines.append(f"| {pool_name} | {learner_name} | {row['accuracy']:.3f} | "
+            lines.append(f"| {pool_name} | {learner_name} | {format_accuracy(row['accuracy'])} | "
                         f"{row['fit_time']:.2f} |\n")
     plain_ids = study1_results[study1_results["learner"] == "IDS"]
     by_cell = plain_ids.groupby(["dataset", "pool"])["fit_time"].mean().sort_values()
@@ -560,8 +524,8 @@ def _ids_section(study1_results: pd.DataFrame) -> List[str]:
             f"deterministic pass -- not a cost that scales predictably with the data, but "
             f"per-instance variance. A second, independent symptom of the same instability: on "
             f"`kr-vs-kp` (Study 2's pool generator, `SKLRandomForest`, tested there before plain "
-            f"`IDS` was dropped from that study), one fold's accuracy came in at 0.523 (near "
-            f"chance) against 0.840-0.897 on the other two folds of the same dataset and pool. "
+            f"`IDS` was dropped from that study), one fold's accuracy came in at 52.30% (near "
+            f"chance) against 84.00-89.70% on the other two folds of the same dataset and pool. "
             f"Both the speed and the accuracy can apparently collapse independently of data size "
             f"-- why plain `IDS` stays out of Study 2 (see Setup) while `IDS-greedy`, "
             f"deterministic, stays in.\n\n")
@@ -589,7 +553,9 @@ distiller. `IDS`/`IDS-greedy` are the same native
 `pyrulearn.learners.ids.IDS`, differing only in `optimizer=`: `"sls"`
 (Smooth Local Search, the paper-faithful default -- stochastic, no
 convergence guarantee for a non-monotone objective) vs. `"greedy"` (a
-cheap, deterministic fallback). `Max`/`Vote` are the same `FlatRuleSet`
+cheap, deterministic fallback); both are seeded (`seed={RANDOM_STATE}`) -- the
+objective's weights are chosen on a random validation split, and SLS samples
+at random -- so every run learns the same models. `Max`/`Vote` are the same `FlatRuleSet`
 wrapper, differing only in `combiner=`.
 
 Two studies, since the pool generators don't scale alike (see the
@@ -610,12 +576,16 @@ module docstring):
   see "Why IDS is slow and unstable" below), so repeating it on bigger
   data wasn't worth the time. `IDS-greedy` stays.
 
-Discretization: `max_intervals={MAX_INTERVALS}`. Distiller fits are
+Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`) in two
+passes over the same folds -- first every pool is built on every training fold, then
+every distiller is fit on the pool built on its fold (the time to load the stored pool is
+not counted in the distiller's fit time). Data in the library's default representation
+(N-lists). Discretization: `max_intervals={MAX_INTERVALS}`. Distiller fits are
 capped at {FIT_TIMEOUT:.0f}s; pool building gets a longer cap of
 {POOL_FIT_TIMEOUT:.0f}s, since `pylord_candidates`' cost grows
 super-linearly with row count and can need much longer than any
 distiller fit on the biggest Study 2 datasets. A time-out or an error
-counts as a failure, not as the end of the run.
+counts as a failure, not as the end of the run.{_concurrency_note()}
 
 Measures: pool build time and rule count per generator; per
 (pool, distiller) mean accuracy, rule count and fit time; mean rank of
@@ -696,5 +666,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true",
                         help="run both studies at full scale instead of the quick default")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(quick=not args.full)

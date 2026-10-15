@@ -3,6 +3,42 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- `pyrulearn.evaluation.format_accuracy` and `format_mean_count`: the one way
+  pyrulearn shows numbers -- accuracies as percentages with two decimals
+  (`86.31%`), means of counts (rules, conditions, conditions per rule) with
+  one decimal (`12.3`). `ModelStats`' repr, `run_cv`'s progress lines and
+  `experiments.report.render_results_table` use them (accuracy columns
+  print as percentages, `n_rules`, `n_conditions`, `conds_per_rule`,
+  `conditions/rule`, `n_features` and `overlap` with one decimal).
+- `JavaLord(thread_count=...)` and `run_lord(thread_count=...)`: limit the
+  threads of the reference LORD, which uses half the machine's cores by
+  default. `None` (the default) keeps that.
+- `run_cv(n_jobs=...)` -- fits cells in parallel worker processes, with the
+  number capped at the available cores unless given as `"N!"` (see the
+  entry on `main`).
+- Demos: `--n-jobs N` for every demo that fits through `run_cv`;
+  `covering_boosting` and `pool_distillers` now fit through `run_cv` too (the
+  latter in two passes: first the pools, then the distillers on them).
+
+### Changed
+
+- Every demo and its report shows accuracies as percentages and counts with
+  one decimal, and (except `covering`, `heuristic_isometrics` and
+  `numeric_discretization`, which use their own data setup) runs on the
+  library's default representation, N-lists. `dense_vs_modular` compares
+  the dense learners on the Boolean matrix with the modular ones on N-lists,
+  and has a separate section for the modular learners on Boolean data.
+- `native_vs_interfaced` runs `MLRL:Boomer` and `seco_learners_comparison`
+  the reference LORD on one thread, as every native learner does (in these
+  demos only; the learners themselves keep their defaults).
+- `pool_distillers` seeds both IDS variants, so a run is reproducible.
+- `covering_boosting`: the legends of the accuracy-vs-fit-time plot sit outside
+  the axes; the report no longer fails when no fit timed out.
+
 ## 0.3.1 (2026-10-14)
 
 A memory-efficiency release: the N-list and sparse representations hold
