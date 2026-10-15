@@ -289,9 +289,9 @@ def _ovr_seconds(base: str, rep) -> float:
 
 
 def _growth_jobs(datasets, folds_of: dict):
-    """``(dataset, n_classes, class_counts, fraction, rows, rep)`` for every dataset with a large
-    enough training fold: nested, stratified subsamples of its first training fold, each with
-    its own `DataSpec`, as `run_cv` builds one per fold."""
+    """``(dataset, n_classes, class_counts, [(fraction, rows, rep), ...])`` for every dataset with
+    a large enough training fold: nested, stratified subsamples of its first training fold,
+    smallest first, each with its own `DataSpec`, as `run_cv` builds one per fold."""
     from sklearn.model_selection import StratifiedKFold
 
     for entry in datasets:
@@ -305,17 +305,21 @@ def _growth_jobs(datasets, folds_of: dict):
         y_train = y[train_idx]
         by_class = {c: rng.permutation(train_idx[y_train == c]) for c in np.unique(y_train)}
         counts = {c: len(rows) for c, rows in by_class.items()}
-        for fraction in GROWTH_FRACTIONS:
+        subsamples = []
+        for fraction in sorted(GROWTH_FRACTIONS):
             rows = np.sort(np.concatenate([r[:max(1, int(round(fraction * len(r))))] for r in by_class.values()]))
             sub = df.iloc[rows].reset_index(drop=True)
             spec = build_dataspec(sub, target=target, max_intervals=MAX_INTERVALS, skip_unusable=True).build()
             rep = encode(spec, sub, sub[target].to_numpy(), representation=default_representation())
-            yield entry.name, len(counts), counts, fraction, len(rows), rep
+            subsamples.append((fraction, len(rows), rep))
+        yield entry.name, len(counts), counts, subsamples
 
 
 def run_growth(datasets, folds_of: dict) -> pd.DataFrame:
     """One-vs-rest training time of every base learner on the subsamples of `_growth_jobs`,
-    `n_jobs` fits at a time (a thread with its own worker process each), cached."""
+    `n_jobs` (dataset, learner) pairs at a time (a thread with its own worker process each),
+    cached. A pair goes through its subsamples smallest first and stops at a timeout: the
+    larger ones would only time out too."""
     import json
     import queue
     import threading
@@ -332,21 +336,30 @@ def run_growth(datasets, folds_of: dict) -> pd.DataFrame:
             job = jobs.get()
             if job is None:
                 return
-            ds, c, counts, fraction, n, rep, base = job
-            path = cache_path(ds, base, fraction)
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    row = json.load(f)
-            else:
-                seconds, error = runner.run(_ovr_seconds, base, rep)
-                row = {"dataset": ds, "base": base, "fraction": fraction, "rows": n, "classes": c,
-                       "class_counts": [int(v) for v in counts.values()], "seconds": seconds, "error": error}
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(row, f)
-            status = row["error"] if row["error"] else f"{row['seconds']:.2f}s"
-            with lock:
-                rows.append(row)
-                print(f"  growth {ds} {base:7s} {fraction:4.2f} ({n} rows) {status}", flush=True)
+            ds, c, counts, subsamples, base = job
+            stopped = False
+            for fraction, n, rep in subsamples:
+                if stopped:
+                    row = {"dataset": ds, "base": base, "fraction": fraction, "rows": n, "classes": c,
+                           "class_counts": [int(v) for v in counts.values()], "seconds": None,
+                           "error": "skipped after a timeout"}
+                else:
+                    path = cache_path(ds, base, fraction)
+                    if os.path.exists(path):
+                        with open(path, encoding="utf-8") as f:
+                            row = json.load(f)
+                    else:
+                        seconds, error = runner.run(_ovr_seconds, base, rep)
+                        row = {"dataset": ds, "base": base, "fraction": fraction, "rows": n, "classes": c,
+                               "class_counts": [int(v) for v in counts.values()], "seconds": seconds,
+                               "error": error}
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(row, f)
+                    stopped = row["error"] == "timeout"
+                status = row["error"] if row["error"] else f"{row['seconds']:.2f}s"
+                with lock:
+                    rows.append(row)
+                    print(f"  growth {ds} {base:7s} {fraction:4.2f} ({n} rows) {status}", flush=True)
 
     workers = int(str(N_JOBS).rstrip("!"))  # as many as the cross-validation runs side by side
     runners = [TimeoutRunner(FIT_TIMEOUT) for _ in range(max(1, workers))]
@@ -354,9 +367,9 @@ def run_growth(datasets, folds_of: dict) -> pd.DataFrame:
     for t in threads:
         t.start()
     try:
-        for ds, c, counts, fraction, n_rows, rep in _growth_jobs(datasets, folds_of):
+        for ds, c, counts, subsamples in _growth_jobs(datasets, folds_of):
             for base in BASES:
-                jobs.put((ds, c, counts, fraction, n_rows, rep, base))
+                jobs.put((ds, c, counts, subsamples, base))
         for _ in threads:
             jobs.put(None)
         for t in threads:
@@ -372,7 +385,8 @@ def growth_exponents(growth: pd.DataFrame) -> pd.DataFrame:
     over log rows across the subsamples that finished), and the one-vs-rest / pairwise time ratio a
     learner with that b would give on this dataset's classes: c * n^b / sum over pairs (n_i + n_j)^b."""
     out = []
-    ok = growth[growth["error"].isna() & (growth["seconds"] > 0)]
+    ok = growth[growth["error"].isna()]
+    ok = ok[ok["seconds"].astype(float) > 0]
     for (ds, base), g in ok.groupby(["dataset", "base"]):
         if len(g) < 2:
             continue
@@ -383,7 +397,8 @@ def growth_exponents(growth: pd.DataFrame) -> pd.DataFrame:
         out.append({"dataset": ds, "base": base, "classes": c, "rows": int(n), "b": b, "points": len(g),
                     "predicted": c * n ** b / np.sum(pairs ** b),
                     "predicted_linear": c * n / np.sum(pairs)})
-    return pd.DataFrame(out)
+    return pd.DataFrame(out, columns=["dataset", "base", "classes", "rows", "b", "points", "predicted",
+                                      "predicted_linear"])
 
 
 def write_plots(results: pd.DataFrame, n_classes: dict, quick: bool,
@@ -599,7 +614,8 @@ def _growth_section(results, growth, paths, img, n_classes: dict) -> list:
          f"dataset with at least {GROWTH_MIN_ROWS:,} training rows: one-vs-rest is fitted on nested, "
          "stratified subsamples of the first training fold ("
          + ", ".join(f"{f:.0%}" for f in GROWTH_FRACTIONS)
-         + " of it, outside the cross-validation, each with its own discretization), and b is the "
+         + " of it, outside the cross-validation, each with its own discretization; a learner that "
+         "times out on one is not tried on the larger ones), and b is the "
          "least-squares slope of log time over log rows. The predicted ratio uses the fold's real class "
          "counts; the measured one is the cross-validation's one-vs-rest / pairwise (`pw_smaller`) "
          "training time. Pairwise also has costs per pair the model leaves out -- building each pair's "

@@ -17,7 +17,8 @@ ranking statistics or report writing again. Needs `pandas`/`scipy`
 - `pyrulearn.experiments.runner` -- `run_cv`, the cross-validation loop
   (dataset loading, per-fold binarization, per-fit timeout via
   `TimeoutRunner`, uniform measurement) -- returns one long-format
-  result table.
+  result table; `timed_out` lists the (dataset, learner) pairs of such a
+  table whose cross-validation timed out.
 - `pyrulearn.experiments.stats` -- optional, separately-callable
   statistics over a `run_cv` table: `mean_rank`, `friedman_test`,
   `critical_difference_diagram`. Never invoked automatically by `run_cv`.

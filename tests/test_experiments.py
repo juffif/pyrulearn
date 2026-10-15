@@ -162,6 +162,24 @@ def test_timeout_runner_records_a_timeout_instead_of_raising():
         runner.close()
 
 
+def test_timeout_runner_exits_cleanly_after_killing_a_worker_that_never_read_its_task():
+    """A worker killed before reading its task (here: still starting up) used to leave the
+    queue's feeder thread blocked on a full pipe, and Python joins that thread at exit --
+    the process hung. Run in a subprocess, so a regression fails the test instead of
+    hanging it."""
+    import os
+    import subprocess
+    import sys
+    code = ("from pyrulearn.experiments.runner import TimeoutRunner\n"
+            "runner = TimeoutRunner(timeout=0.001)\n"
+            "print(runner.run(len, b'x' * (8 << 20)))\n"
+            "runner.close()\n")
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, env=env)
+    assert proc.returncode == 0, proc.stderr
+    assert "timeout" in proc.stdout
+
+
 def test_run_cv_records_a_failed_fit_without_raising():
     class AlwaysFails(Pypper):
         def fit(self, data, model=None, **model_kwargs):
@@ -305,10 +323,30 @@ def test_run_cv_stop_on_timeout_fails_the_whole_cross_validation(tmp_path, n_job
     cached = [json.load(open(f)) for f in tmp_path.glob("*.json")]
     fold0 = [r for r in cached if r["learner"] == name and r["fold"] == 0]
     assert fold0 and fold0[0]["error"] is None
+    from pyrulearn.experiments.runner import timed_out
+    assert timed_out(results) == {("synth_a", name)}
     if n_jobs == 1:   # sequentially, the folds after the timed-out one are not run at all
         first_slow = sizes.index(slow)
         later = slow_rows[slow_rows["fold"] > first_slow]
         assert later["fit_time"].isna().all()
+
+
+def test_timed_out_on_a_table_without_timeouts_and_the_closing_line(capsys):
+    from pyrulearn.experiments.runner import timed_out
+    entries = [_synthetic_entry("synth_a")]
+    results = run_cv(LEARNERS, entries, n_folds=2, fit_timeout=None, random_state=0, verbose=True)
+    assert timed_out(results) == set()
+    assert "timed out:" not in capsys.readouterr().out
+    assert timed_out(pd.DataFrame()) == set()
+
+
+def test_run_cv_names_the_timed_out_pairs_at_the_end(capsys):
+    entry = _synthetic_entry("synth_a", n=61)
+    sizes = _fold_train_sizes(entry, 3)
+    slow = next(s for s in sizes[1:] if s != sizes[0])
+    learner = _SlowOnSize(slow, random_state=0)
+    run_cv([learner], [entry], n_folds=3, fit_timeout=3.0, random_state=0, verbose=True)
+    assert f"timed out: synth_a/{learner.display_name}" in capsys.readouterr().out
 
 
 def test_run_cv_without_stop_on_timeout_counts_folds_on_their_own():

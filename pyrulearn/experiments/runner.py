@@ -43,7 +43,7 @@ import sys
 import time
 import warnings
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
 import numpy as np
 
@@ -145,6 +145,13 @@ class TimeoutRunner:
                 self.proc.kill()
                 self.proc.join()
         _kill_tree(pid)
+        # A task the dead worker never read can leave the queue's feeder thread blocked on
+        # a full pipe -- and Python joins that thread at exit, so the process would hang.
+        # Closing the queues (this process holds the pipe's other end) breaks the pipe,
+        # which ends the thread; and it is no longer joined at exit.
+        for q in (self.task_q, self.result_q):
+            q.cancel_join_thread()
+            q.close()
 
     def run(self, fn: Callable, *args, timeout: Optional[float] = None, **kwargs):
         """Returns `(result, None)` on success, or `(None, error_message)`
@@ -402,6 +409,33 @@ def _whole_cv_timed_out(results):
     return results
 
 
+def timed_out(results) -> Set[Tuple[str, str]]:
+    """The ``(dataset, learner)`` pairs of a `run_cv` table whose cross-validation timed
+    out -- with `stop_on_timeout` (the default) every fold of such a pair is a timeout;
+    without it, the pairs with at least one timed-out fold. For a caller that goes on
+    with what finished, e.g. a run over growing training sets that drops a learner once
+    it timed out at a smaller size::
+
+        dropped = set()
+        for entry in entries_of_growing_size:
+            active = [l for l in learners if l.display_name not in dropped]
+            results = run_cv(active, [entry], ...)
+            dropped |= {learner for _, learner in timed_out(results)}
+    """
+    if results.empty or "error" not in results:
+        return set()
+    hit = results.loc[results["error"] == "timeout", ["dataset", "learner"]].drop_duplicates()
+    return set(hit.itertuples(index=False, name=None))
+
+
+def _report_timeouts(results, verbose: bool) -> None:
+    """With `verbose`, one closing line naming the pairs that timed out -- a progress log
+    of thousands of lines otherwise hides them."""
+    pairs = timed_out(results) if verbose else set()
+    if pairs:
+        print("timed out: " + ", ".join(f"{d}/{l}" for d, l in sorted(pairs)), flush=True)
+
+
 def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
                         measure_fn, cache_dir: Optional[str], verbose: bool,
                         stop_on_timeout: bool = False) -> List[Dict[str, Any]]:
@@ -562,6 +596,8 @@ def run_cv(
     finished folds. With `n_jobs > 1`, folds already running when another
     fold of the same pair times out still finish; only the ones not yet
     started are skipped. `False`: every fold is run and counted on its own.
+    `timed_out(results)` lists the pairs that timed out, and with `verbose`
+    the run ends with a line naming them.
 
     Fold caching (`cache_dir`, off by default): one JSON file per
     `cache_dir`, keyed by a stable hash of (dataset name + OpenML id +
@@ -621,7 +657,9 @@ def run_cv(
         rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose,
                                    stop_on_timeout)
         results = pd.DataFrame(rows)
-        return _whole_cv_timed_out(results) if stop_on_timeout else results
+        results = _whole_cv_timed_out(results) if stop_on_timeout else results
+        _report_timeouts(results, verbose)
+        return results
 
     rows: List[Dict[str, Any]] = []
     timed_out: set = set()  # (dataset, learner) with a timed-out fold
@@ -657,4 +695,6 @@ def run_cv(
             timeout_runner.close()
 
     results = pd.DataFrame(rows)
-    return _whole_cv_timed_out(results) if stop_on_timeout else results
+    results = _whole_cv_timed_out(results) if stop_on_timeout else results
+    _report_timeouts(results, verbose)
+    return results

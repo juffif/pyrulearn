@@ -14,6 +14,19 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   no mean rests on just the folds that happened to finish. Only timeouts. The
   cache keeps each fold's real outcome. `stop_on_timeout=False` restores the
   old behaviour.
+- `experiments.runner.timed_out(results)`: the (dataset, learner) pairs of a
+  `run_cv` table whose cross-validation timed out -- e.g. to drop a learner
+  from the larger sizes of a growing-size run. A verbose `run_cv` ends with a
+  line naming them. The multi-class demo's growth phase goes through each
+  learner's subsamples smallest first and skips the larger ones after a
+  timeout.
+
+### Fixed
+
+- A process using `TimeoutRunner` (so `run_cv`) could hang at exit after a
+  worker was killed before it had read its task: the queue's feeder thread
+  stayed blocked on the full pipe, and Python joins it at exit. The old
+  queues are now closed when a worker is killed.
 - `NListRepresentation.select_rows` (and `PrePostNListRepresentation`'s) derives the
   subset's tree from the existing one instead of building it anew: the nodes no
   selected row passes through are dropped and the rest renumbered, keeping the
