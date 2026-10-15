@@ -1005,12 +1005,30 @@ class NListRepresentation(DataRepresentation):
     # patterns covered, not the rows -- the compression the PPC-tree
     # stands for.
 
+    #: the distinct row patterns are multiplied as a dense matrix when at least this
+    #: share of its cells is true -- measured with ENDER on the synthetic data of
+    #: `demos/representations.py`: dense pays off from about 2% (and is a third faster
+    #: than the sparse product on real data with negation features, about 50%), while
+    #: on wide sparse data (0.1%) it is several times slower
+    DENSE_PATTERNS_MIN_DENSITY = 0.02
+    #: ... and at most this many cells (one byte each)
+    DENSE_PATTERNS_MAX_CELLS = 1 << 26
+
     @functools.cached_property
     def _row_patterns(self):
-        """``(pattern of every row, CSR of the distinct patterns)`` -- a
-        pattern is an end node -- built once, on first use."""
+        """``(pattern of every row, the distinct patterns)`` -- a pattern is
+        an end node; the patterns as a CSR matrix, or as a dense bool array
+        when that is dense and small enough (see `DENSE_PATTERNS_MIN_DENSITY`)
+        -- built once, on first use."""
         ends, pattern_of = np.unique(self._row_end, return_inverse=True)
-        return pattern_of.astype(np.int64).ravel(), self._decode(ends).astype(float)
+        matrix = self._decode(ends)
+        cells = matrix.shape[0] * matrix.shape[1]
+        if cells and matrix.nnz >= self.DENSE_PATTERNS_MIN_DENSITY * cells \
+                and cells <= self.DENSE_PATTERNS_MAX_CELLS:
+            matrix = matrix.toarray()
+        else:
+            matrix = matrix.astype(float)
+        return pattern_of.astype(np.int64).ravel(), matrix
 
     def _pattern_sums(self, rows: np.ndarray, values: np.ndarray) -> np.ndarray:
         """``values`` (one row per entry of `rows`) summed per feature over
@@ -1021,6 +1039,8 @@ class NListRepresentation(DataRepresentation):
         hit = np.flatnonzero(np.bincount(p, minlength=n_patterns))
         per_pattern = np.column_stack([np.bincount(p, weights=values[:, j], minlength=n_patterns)[hit]
                                        for j in range(values.shape[1])])
+        if isinstance(matrix, np.ndarray):
+            return matrix[hit].T.astype(float) @ per_pattern
         return np.asarray(matrix[hit].T @ per_pattern)
 
     def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):

@@ -16,6 +16,15 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   is what pairwise and ordered decompositions spend most of their time on.
   `relabel` shares the tree and only rebuilds the per-class sums. An integer
   index that reorders or repeats rows still builds anew.
+- N-lists count candidate features in one batch (`batch_cover_sums`,
+  `batch_cover_counts` -- ENDER, Boomer, ORB) with a dense product over the
+  distinct row patterns when at least 2% of the pattern matrix is true (and it
+  has at most 2^26 cells), the sparse product otherwise. On real data with
+  negation features the boosting learners now run about as fast on N-lists as
+  on Boolean data (credit-g: ENDER 1.68 s -> 1.25 s, Boolean 1.18 s; Boomer
+  3.08 s -> 2.23 s, faster than Boolean), while wide sparse data keeps the
+  sparse product (20,000 features: unchanged). The dense patterns cost one byte
+  per cell, built on first use.
 
 ## 0.3.2 (2026-10-15)
 
