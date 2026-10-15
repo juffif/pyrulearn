@@ -1013,6 +1013,9 @@ class NListRepresentation(DataRepresentation):
     DENSE_PATTERNS_MIN_DENSITY = 0.02
     #: ... and at most this many cells (one byte each)
     DENSE_PATTERNS_MAX_CELLS = 1 << 26
+    #: the dense product converts the covered patterns to floats a block of at most this
+    #: many cells at a time (8 bytes each), so its temporary copy stays small
+    DENSE_PATTERNS_BLOCK_CELLS = 1 << 18
 
     @functools.cached_property
     def _row_patterns(self):
@@ -1040,7 +1043,11 @@ class NListRepresentation(DataRepresentation):
         per_pattern = np.column_stack([np.bincount(p, weights=values[:, j], minlength=n_patterns)[hit]
                                        for j in range(values.shape[1])])
         if isinstance(matrix, np.ndarray):
-            return matrix[hit].T.astype(float) @ per_pattern
+            out = np.zeros((matrix.shape[1], per_pattern.shape[1]))
+            step = max(1, self.DENSE_PATTERNS_BLOCK_CELLS // max(matrix.shape[1], 1))
+            for s in range(0, len(hit), step):
+                out += matrix[hit[s:s + step]].T.astype(float) @ per_pattern[s:s + step]
+            return out
         return np.asarray(matrix[hit].T @ per_pattern)
 
     def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
