@@ -315,7 +315,7 @@ def test_nlist_incremental_cover_on_wide_varied_frequency_data(rep_cls):
     orig_reanchor = getattr(rep_cls, "_reanchor", None)
     if orig_reanchor is not None:
         def counted(self, anchor_item, active, feature, mask_words):
-            words = self._path_words[feature]
+            words = self._words_of(feature)
             branch_counts["bitmask" if (active.size == 0 or active.size >= words.shape[0]) else "interval"] += 1
             return orig_reanchor(self, anchor_item, active, feature, mask_words)
         rep_cls._reanchor = counted
@@ -348,7 +348,7 @@ def test_nlist_tree_is_more_compact_than_the_dense_matrix():
     # rows sharing prefixes collapse: fewer tree nodes than n*k matrix cells
     brep, _ = _dataset(n=600, k=20, seed=11)
     nrep = NListRepresentation.from_boolean(brep)
-    n_nodes = sum(w.shape[0] for w in nrep._path_words)
+    n_nodes = len(nrep._words)
     assert n_nodes < brep.n_samples * brep.spec.n_features
     print(f"N-list PPC-tree: {n_nodes} nodes < {brep.n_samples * brep.spec.n_features} matrix cells: OK")
 
@@ -451,3 +451,22 @@ def test_external_learner_converts_any_representation(rep_cls):
     mb, mo = SKLDecisionTree(max_depth=3, random_state=0).fit(brep), learner.fit(other)
     assert str(mb) == str(mo)
     assert np.array_equal(np.asarray(mb.predict(brep)), np.asarray(mo.predict(other)))
+
+
+@pytest.mark.parametrize("chunk_cells", [1, 37, 1 << 16])
+@pytest.mark.parametrize("n", [0, 1, 129])
+def test_to_csr_is_the_matrix_without_caching_it(n, chunk_cells):
+    # built a block of rows at a time (chunk_cells=1: one row per block), int32 indices,
+    # and the Boolean source keeps no unpacked X -- what from_boolean of the sparse and
+    # N-list representations relies on
+    rng = np.random.default_rng(n)
+    X = rng.random((n, 19)) < 0.3
+    brep = BooleanDataRepresentation(DataSpec([f"f{i}" for i in range(19)]), X, np.array(["a"] * n))
+    csr = brep.to_csr(chunk_cells=chunk_cells)
+    assert csr.shape == (n, 19) and csr.dtype == bool
+    assert csr.indices.dtype == np.int32 and csr.indptr.dtype == np.int32
+    assert np.array_equal(csr.toarray(), X) and csr.has_sorted_indices
+    assert "X" not in vars(brep)
+    for rep_cls in ALT_REPS:
+        rep_cls.from_boolean(brep)
+        assert "X" not in vars(brep)

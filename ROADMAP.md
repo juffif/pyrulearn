@@ -608,7 +608,8 @@ only part corresponding to the paper's N-lists), `_node_class_counts` 1.6
 and it keeps the trie's leaf nodes alive -- probably most of the
 unaccounted 15 MiB; not verified). 105,271 tree nodes. `Sparse`: CSR 3.0
 + CSC 2.9 MiB (`int32` indices, `bool` data) against 10.2 MiB from
-`tracemalloc` -- the gap is unexplained.
+`tracemalloc` -- the gap was the Boolean source's cached `X` (see
+"Done" below).
 
 *The tree is the bottleneck, as in Huynh et al.* -- but only while
 building: the Python `_PPCNode` trie (a dict of children and a Python list
@@ -644,9 +645,7 @@ never be smaller than `Sparse`.
   replace `_entry_node` (one node id per true cell) by per-node offsets
   and `np.repeat(hit, sizes)` instead of `hit[entry_node]` (needs a
   timing check). Estimate: ~38 -> ~6-7 MiB here (still ~12x Boolean;
-  `_row_idx` alone is ~4x at this density). For `Sparse`: drop the CSR
-  copy, `features_of` from the base's packed rows (~6 -> ~3.5 MiB).
-  Storage only, so identical rules (the equality tests cover it);
+  `_row_idx` alone is ~4x at this density). Storage only, so identical rules (the equality tests cover it);
   benchmark old vs new as usual (worktree,
   sequential, best of 3), since `features_of` and coverage are hot paths.
 - **B. Counts kept up to date -- prototype later.** Per node pre/post
@@ -669,6 +668,108 @@ never be smaller than `Sparse`.
 
 `PrePostNListRepresentation` already stores pre/post codes, but
 *alongside* the row ids, not instead of them.
+
+*Done (2026-10-13, branch `memory-efficiency`): `from_boolean` without
+the unpacked matrix.* `Sparse`/`NList`/`PrePostNList.from_boolean(b)` read
+`b.X`, a cached property, so the Boolean source kept the unpacked `n x k`
+matrix (8x its packed size) for as long as it lived -- and the demo's
+`tracemalloc` counted it against the new representation. They now build
+from `BooleanDataRepresentation.to_csr()`, which unpacks a block of rows
+at a time (2^16 cells: lower peak than larger blocks, and no slower) into
+an `int32` CSR and caches nothing. `adult`, n=32,000
+(held / peak while building, MiB):
+
+| | without negation, before | after | with negation, before | after |
+|---|--:|--:|--:|--:|
+| Sparse | 10.2 / 18.8 | 5.9 / 5.9 | 50.4 / 113.0 | 41.9 / 41.9 |
+| NList | 38.4 / 75.2 | 27.9 / 65.4 | 165.7 / 528.3 | 136.6 / 503.5 |
+| PrePostNList | 41.7 / 97.5 | 31.2 / 87.7 | 190.3 / 706.3 | 161.2 / 681.5 |
+
+N-list gains more than the 4.3 MiB of `X`, because its `_row_feats` are
+now `int32` views into the CSR's indices instead of separate `int64`
+arrays. Identical `features_of`, `X` and Pypper models; build times
+unchanged within noise.
+
+*Done (2026-10-14, branch `memory-efficiency`): the tree is the data
+(option D).* Instead of slimming the layout (C), `NListRepresentation`
+now stores the tree *instead of* the table, not next to it. The nodes
+are numbered in pre-order and the rows kept in the order of the node they
+end at, so the rows through a node are one contiguous range of that
+order. Stored per node: the path bitmask (as before, for the search) and
+its row range (2 `int32`); per row: its place in the order and its end
+node (2 `int32`). `features_of`, `X` and the batched counting's row
+patterns are decoded from the end nodes' path bitmasks; `select_rows`,
+`relabel` and `without_negations` decode to a sparse matrix (no dense `X`
+cached). Class counts are differences of cumulative per-class sums over
+the rows in tree order -- under a mask or weights built once per search.
+The tree is built in numpy (rows sorted by their ranked feature
+sequences; nodes read off the shared prefixes of neighbouring rows), no
+Python node objects. `PrePostNListRepresentation` coincides in storage:
+it only keeps the two pre/post codes per node (which the base needs
+during the build anyway) and overrides the re-anchoring strategy.
+
+`adult`, n=32,000, held / peak while building, build time (against the
+`from_boolean` fix above):
+
+| | before | after |
+|---|--:|--:|
+| NList, no negation | 27.9 / 65.4 MiB, 0.88 s | 4.2 / 44.2 MiB, 0.14 s |
+| PrePost, no negation | 31.2 / 87.7 MiB, 1.09 s | 5.0 / 44.2 MiB, 0.14 s |
+| NList, with negation | 136.6 / 503.5 MiB, 5.13 s | 37.7 / 289.2 MiB, 0.82 s |
+| PrePost, with negation | 161.2 / 681.5 MiB, 6.66 s | 43.8 / 289.2 MiB, 1.01 s |
+
+Now slightly below `Sparse` (5.9 / 41.9 MiB); packed Boolean is still
+far smaller (0.55 / 1.1 MiB). Fits on N-lists, `adult` n=8,000, new / old,
+best of 3 (identical models in all 14 cases; a video stream ran during
+some of it, so +-10% is noise): CN2 1.01 / 0.82 (without / with
+negation), PFossil 1.05 / 0.77, ENDER 1.00 / 0.93, CPAR 0.96 / 0.91, LRI
+0.96 / 0.68, Pypper 1.15-1.18 / 0.88-1.09, PyLORD 1.03 / 1.03-1.27. The
+cost is in `coverage`: the old layout kept a row-id list per feature
+(one integer per true cell -- the memory saved), the new one expands the
+matching nodes' row ranges on every call (34 against 22 us per call; of
+three formulations the cumulative "steps" one is the fastest), which
+the coverage-heavy learners (Pypper's pruning, PyLORD) feel.
+
+*Decided (2026-10-14), after the full re-run of
+`demos/representations.py` with the memory a fit costs in total:*
+`NListRepresentation` stays the default, for speed (the
+separate-and-conquer learners are fastest on it on real data, and a fit
+costs 1.3-1.7x Boolean's memory with negation features, about half
+without); `BooleanDataRepresentation` for dense and normal data when
+memory matters; `SparseDataRepresentation` for sparse data (without
+negation features). `PrePostNListRepresentation` stays an opt-in: equal
+to N-lists in most of the report, faster on the largest dense data (CN2,
+`adult` with negation, 32,000 rows: 22 s against 31 s). Written up in the
+README ("Which one to use"). Worth a look separately: a fit on Boolean
+allocates 30-90 MiB at 32,000 rows although the data holds 0.55-1.1 MiB
+-- probably temporary unpacked or float matrices in the counting.
+
+*Still open for N-lists:* on wide, sparse data the path bitmasks
+dominate -- `k/64` words per node, and with little prefix sharing about
+one node per true cell (estimate for the width sweep at k=5,000: ~11-12
+MiB, against 0.6 for Boolean and 0.2 for `Sparse`). Replacing them by
+ancestor tests through the pre/post codes (a binary search per feature,
+as `PrePostNListRepresentation` already does for re-anchoring) would make
+a node ~20-24 bytes whatever k, so N-lists could beat Boolean below about
+1 true cell in 160-190 -- at a speed cost (the PrePost trade-off);
+possibly only above some width.
+
+*Sparse: what is left, and why it stays (for now).* The remaining
+5.9 MiB is CSR 3.0 + CSC 2.9 (`int32` indices, `bool` data) -- close to the
+floor for two index copies. Both copies are hot paths: CSC answers
+`coverage` and `refine_cover`, CSR `features_of` and the batched counting
+(`_row_sums`, one sparse product over the covered rows) -- dropping either
+saves ~3 MiB but slows one of them; benchmark first if ever wanted.
+`uint16` indices would mean leaving scipy (only `int32`/`int64`):
+not worth it. The `bool` `data` arrays (all `True`, one byte per true
+cell and copy: 1.2 MiB of the 5.9, 8.9 of 41.9 with negation) stay too:
+dropping them means leaving scipy, and a numpy `bincount` version of the
+batched counting was tried (2026-10-13) and lost -- 4-6x slower than
+scipy's product on large covered sets (faster only below ~100 rows),
+whole fits 1.02-2.03x slower (CN2, PFossil, Pypper, ENDER on `adult`,
+identical models). Sharing one `data` array between CSR and CSC (half
+the saving, no time cost) was left out: the two store the cells in
+different orders, so it only works while every value is `True`.
 
 ## Other planned work
 
@@ -741,12 +842,33 @@ never be smaller than `Sparse`.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
+- **Parallel learners** (not planned for now, 2026-10-14): every native
+  learner runs on one thread. Some would parallelize well because they
+  consist of independent searches: `PyLORD` runs one rule search per
+  training example, and a random forest (`SKLRandomForest`, the candidate
+  pool of `RuleFit` and of the pool distillers) grows independent trees;
+  other ensembles and pool generators may qualify too. The reference
+  implementations already do this: `mlrl-boomer` uses every core and the
+  Java LORD half of them by default -- the demos limit both to one thread
+  so that fit times compare like with like. A learner's own threads and
+  `run_cv(n_jobs=...)` compete for the same cores, so the two would need
+  to be coordinated (e.g. a thread budget per worker).
 
 ## Design decisions and known behaviour
 
 Not to-dos: choices made deliberately, with the behaviour they imply, so
 they aren't reopened by accident.
 
+- **Negations are stored explicitly, never derived as complements
+  (2026-10-13).** A negated feature is a feature of its own in every
+  representation, not computed at query time as "all rows minus the
+  positive feature's rows". The cost shows in `SparseDataRepresentation`
+  with negation: every complement is stored, so half the cells are true
+  (`adult`, n=32,000: 41.9 MiB against 5.9 without negation) -- for sparse
+  data, build without negations (`without_negations()`). Note that a
+  negation isn't always the exact complement anyway: with missing values
+  (`MissingStrategy.NEVER_COVERS`) a row can satisfy neither `>=t` nor
+  `<t`.
 - **ENDER-style matrix-multiply counting, tried for `BooleanDataRepresentation`
   and parked, not adopted (2026-10-07).** Following up on the numeric-
   threshold-counting item above, `BooleanDataRepresentation.batch_cover_counts`

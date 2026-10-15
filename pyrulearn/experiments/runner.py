@@ -48,6 +48,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
 import numpy as np
 
 from ..data import DataRepresentation, default_representation
+from ..evaluation import format_accuracy
 from ..data.io import build_dataspec, encode
 from ..learners.base import RuleLearner
 from .catalog import CatalogEntry
@@ -368,7 +369,7 @@ def _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_
 
 
 def _outcome(row: Dict[str, Any]) -> str:
-    return row["error"] if row["error"] is not None else f"acc={row['accuracy']:.3f}"
+    return row["error"] if row["error"] is not None else f"acc={format_accuracy(row['accuracy'])}"
 
 
 def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],

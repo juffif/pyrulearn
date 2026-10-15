@@ -25,11 +25,17 @@ the equality at every point:
    and without negation features.
 2. **Density** -- synthetic data with a fixed learnable concept and a
    fixed number of features, whose noise features get sparser and sparser.
+3. **Width** -- the same concept, a fixed number of true features per
+   example, and more and more features: how sparse data usually looks
+   (one-hot encodings of many-valued attributes, text), and where the
+   sparse representations should start to pay off in memory.
 
-Both also record the **memory** each representation holds after it is
+All three also record the **memory** each representation holds after it is
 built (and its peak while building), measured with `tracemalloc` in a
 separate, untimed pass -- next to the unpacked `n x k` bool matrix a
-learner gets from `data.X`.
+learner gets from `data.X` -- and what a fit costs in total: that, plus
+the peak the fit allocates on top of it (caches a representation builds
+while a learner runs included), again in a separate, untimed pass.
 
 Learners: CN2, PFossil, Pypper and PyLORD, each with its defaults. Every
 fit runs in a worker process under a `FIT_TIMEOUT` cap; after a time-out
@@ -86,6 +92,10 @@ DENSITY_N_SIGNAL = 4
 DENSITY_SIGNAL_P = 0.4
 DENSITIES = [0.5, 0.3, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002]
 QUICK_DENSITIES = [0.5, 0.05, 0.005]
+WIDTH_N = 1000
+WIDTH_NOISE_PER_ROW = 16      # expected true noise features per example, whatever k
+WIDTHS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+QUICK_WIDTHS = [100, 1000, 5000]
 COVERAGE_TRIALS = 800
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -110,6 +120,19 @@ def timed_fit(learner_name: str, rep):
     model = make_learner(learner_name).fit(rep)
     wall, cpu = time.perf_counter() - w0, time.process_time() - c0
     return model, (cpu if wall - cpu > 30 else wall)
+
+
+def measured_fit(learner_name: str, rep) -> int:
+    """Runs in the worker process: the peak memory the fit allocates on top
+    of `rep` (which arrived before tracing starts) -- the learner's own
+    work and whatever the representation caches while it runs. Untimed:
+    tracing slows allocation down."""
+    tracemalloc.start()
+    try:
+        make_learner(learner_name).fit(rep)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
 
 
 def _digest(text: str) -> str:
@@ -191,6 +214,10 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
             cached = ""
         else:
             cached = " (cached)"
+        if row["error"] is None and "fit_peak" not in row:
+            (peak, err) = runner.run(measured_fit, learner, reps[kind])
+            row = {**row, "fit_peak": peak if err is None else None}
+            cache.put(row)
         status = f"{row['fit_time']:.2f}s" if row["error"] is None else row["error"]
         print(f"    {learner:8s} {kind:12s} {status}{cached}", flush=True)
         if row["error"] is not None:
@@ -241,31 +268,72 @@ def _synthetic(noise_p: float, seed: int, n: int):
     return X, y
 
 
+def _synthetic_point(base: dict, X, y, Xt, yt):
+    """One point of a synthetic sweep: build every representation, time
+    `COVERAGE_TRIALS` `coverage()` calls for random rules of 1-4 conditions,
+    measure the memory, and fit every learner."""
+    k = X.shape[1]
+    spec = DataSpec([f"f{i}" for i in range(k)])
+    rrng = np.random.default_rng(0)
+    probe = [Rule(sorted(int(f) for f in rrng.choice(k, size=int(rrng.integers(1, 5)), replace=False)),
+                  target="pos", dataspec=spec)
+             for _ in range(COVERAGE_TRIALS)]
+    rows, reps, test_reps = [], {}, {}
+    for kind in REPRESENTATIONS:
+        reps[kind], build_s = _build(kind, spec, X, y)
+        test_reps[kind] = _build(kind, spec, Xt, yt)[0]
+        timings = []
+        for _ in range(3):  # best of three: the first pass also pays warm-up costs
+            t = time.perf_counter()
+            for r in probe:
+                reps[kind].coverage(r)
+            timings.append(time.perf_counter() - t)
+        rows.append({**base, "learner": None, "rep": kind, "build_time": build_s,
+                     "coverage_ms": min(timings) * 1000, "density": float(X.mean()),
+                     **_measure_memory(kind, spec, X, y)})
+    return rows, reps, test_reps
+
+
 def run_density_sweep(runner, cache, densities) -> List[dict]:
-    spec = DataSpec([f"f{i}" for i in range(DENSITY_K)])
     rows, skip = [], set()
     for p in densities:
         X, y = _synthetic(p, seed=0, n=DENSITY_N)
         Xt, yt = _synthetic(p, seed=1, n=DENSITY_N)
-        reps, test_reps = {}, {}
         base = {"part": "density", "noise_density": p}
-        rrng = np.random.default_rng(0)
-        probe = [Rule(sorted(int(f) for f in rrng.choice(DENSITY_K, size=int(rrng.integers(1, 5)),
-                                                          replace=False)), target="pos", dataspec=spec)
-                 for _ in range(COVERAGE_TRIALS)]
-        for kind in REPRESENTATIONS:
-            reps[kind], build_s = _build(kind, spec, X, y)
-            test_reps[kind] = _build(kind, spec, Xt, yt)[0]
-            timings = []
-            for _ in range(3):  # best of three: the first pass also pays warm-up costs
-                t = time.perf_counter()
-                for r in probe:
-                    reps[kind].coverage(r)
-                timings.append(time.perf_counter() - t)
-            rows.append({**base, "learner": None, "rep": kind, "build_time": build_s,
-                         "coverage_ms": min(timings) * 1000, "density": float(X.mean()),
-                         **_measure_memory(kind, spec, X, y)})
+        point, reps, test_reps = _synthetic_point(base, X, y, Xt, yt)
+        rows += point
         print(f"  noise density {p} (overall {X.mean():.3f})", flush=True)
+        for learner in LEARNERS:
+            rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
+    return rows
+
+
+# -- part 3: width -------------------------------------------------------------------------
+
+def _wide(k: int, seed: int, n: int):
+    """The density sweep's concept on `DENSITY_N_SIGNAL` signal features, plus
+    `k - DENSITY_N_SIGNAL` noise features of which each example has
+    `WIDTH_NOISE_PER_ROW` true on average (a binomial count, at random
+    positions) -- so the true features per example stay fixed as k grows."""
+    rng = np.random.default_rng(seed)
+    signal = rng.random((n, DENSITY_N_SIGNAL)) < DENSITY_SIGNAL_P
+    m = k - DENSITY_N_SIGNAL
+    noise = np.zeros((n, m), dtype=bool)
+    for i, c in enumerate(rng.binomial(m, min(1.0, WIDTH_NOISE_PER_ROW / m), size=n)):
+        noise[i, rng.choice(m, size=c, replace=False)] = True
+    y = np.where((signal[:, 0] & ~signal[:, 1]) ^ (rng.random(n) < 0.05), "pos", "neg")
+    return np.concatenate([signal, noise], axis=1), y
+
+
+def run_width_sweep(runner, cache, widths) -> List[dict]:
+    rows, skip = [], set()
+    for k in widths:
+        X, y = _wide(k, seed=0, n=WIDTH_N)
+        Xt, yt = _wide(k, seed=1, n=WIDTH_N)
+        base = {"part": "width", "k": k}
+        point, reps, test_reps = _synthetic_point(base, X, y, Xt, yt)
+        rows += point
+        print(f"  k={k} (density {X.mean():.4f}, {X.sum(axis=1).mean():.1f} true per example)", flush=True)
         for learner in LEARNERS:
             rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
     return rows
@@ -290,15 +358,17 @@ def _save(fig, name: str, quick: bool) -> str:
 
 
 def _plain_log_y(ax) -> None:
-    """Log y axis with tick labels as plain numbers (0.6, 2, 40), not 6x10^-1."""
+    """Log y axis with tick labels as plain numbers (0.6, 2, 40), not 6x10^-1;
+    of the minor ticks only the 2s and 5s are labeled, so they don't overlap."""
+    import math
     from matplotlib.ticker import FuncFormatter
     ax.set_yscale("log")
-    fmt = FuncFormatter(lambda v, _: f"{v:g}")
-    ax.yaxis.set_major_formatter(fmt)
-    ax.yaxis.set_minor_formatter(fmt)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.yaxis.set_minor_formatter(FuncFormatter(
+        lambda v, _: f"{v:g}" if v > 0 and round(v / 10 ** math.floor(math.log10(v)), 6) in (2, 5) else ""))
 
 
-def write_plots(size_rows, density_rows, quick: bool) -> Dict[str, str]:
+def write_plots(size_rows, density_rows, width_rows, quick: bool) -> Dict[str, str]:
     plt = _plt()
     paths = {}
     fits = [r for r in size_rows if r["learner"] and r["error"] is None]
@@ -413,6 +483,54 @@ def write_plots(size_rows, density_rows, quick: bool) -> Dict[str, str]:
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3, which="both")
     paths["density_memory"] = _save(fig, "density_memory", quick)
+
+    widths = sorted({r["k"] for r in width_rows})
+
+    def width_x(ax) -> None:
+        from matplotlib.ticker import NullLocator
+        ax.set_xscale("log")
+        ax.set_xticks(widths)
+        ax.set_xticklabels([f"{k:,}" for k in widths], rotation=30)
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.set_xlabel(f"features k (n={WIDTH_N}, about {WIDTH_NOISE_PER_ROW + DENSITY_N_SIGNAL * DENSITY_SIGNAL_P:.0f} "
+                      "true per example)")
+        ax.grid(alpha=0.3, which="both")
+
+    for value, ylabel, title, key in (
+            ("mem_bytes", "memory held (MiB)", "memory of the representation vs. width", "width_memory"),
+            ("coverage_ms", f"time for {COVERAGE_TRIALS} coverage() calls (ms)", "coverage() alone vs. width",
+             "width_coverage")):
+        fig, ax = plt.subplots(figsize=(6.5, 4.8))
+        scale = 2 ** -20 if value == "mem_bytes" else 1
+        for kind in REPRESENTATIONS:
+            marker, color = STYLE[kind]
+            pts = sorted((r["k"], r[value] * scale) for r in width_rows if r["learner"] is None and r["rep"] == kind)
+            ax.plot(*zip(*pts), "-", marker=marker, color=color, markersize=4, label=kind)
+        if value == "mem_bytes":
+            pts = sorted((r["k"], r["x_bytes"] * scale) for r in width_rows
+                         if r["learner"] is None and r["rep"] == "Boolean")
+            ax.plot(*zip(*pts), ":", color="gray", label="unpacked X")
+        _plain_log_y(ax)
+        width_x(ax)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.legend(fontsize=8)
+        paths[key] = _save(fig, key, quick)
+
+    wfits = [r for r in width_rows if r["learner"] and r["error"] is None]
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7.5))
+    for ax, learner in zip(axes.ravel(), LEARNERS):
+        for kind in REPRESENTATIONS:
+            marker, color = STYLE[kind]
+            pts = sorted((r["k"], r["fit_time"]) for r in wfits if r["learner"] == learner and r["rep"] == kind)
+            if pts:
+                ax.plot(*zip(*pts), "-", marker=marker, color=color, markersize=4, label=kind)
+        _plain_log_y(ax)
+        width_x(ax)
+        ax.set_ylabel("fit time (s)")
+        ax.set_title(learner)
+        ax.legend(fontsize=7)
+    paths["width_fit"] = _save(fig, "width_fit", quick)
     return paths
 
 
@@ -425,7 +543,7 @@ def _agreement(rows) -> tuple:
     for r in rows:
         if r["learner"] and r["error"] is None:
             k = json.dumps({x: r[x] for x in r if x not in (
-                "key", "rep", "fit_time", "error", "rules", "preds", "n_rules")}, sort_keys=True)
+                "key", "rep", "fit_time", "error", "rules", "preds", "n_rules", "fit_peak")}, sort_keys=True)
             groups.setdefault(k, {})[r["rep"]] = r
     compared, agreed, bad = 0, 0, []
     for k, by_rep in groups.items():
@@ -504,11 +622,42 @@ def _memory_table(rows, x_field: str, x_label: str, field: str = "mem_bytes", ne
     return "".join(lines)
 
 
-def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) -> None:
+def _fit_memory_table(rows, x_field: str, x_label: str, negation=None) -> str:
+    """One row per (learner, representation): the memory a fit costs in
+    total at each `x_field` value -- what the representation holds plus the
+    peak the fit allocates on top of it -- each non-Boolean cell with its
+    ratio to Boolean in parentheses."""
+    rows = [r for r in rows if negation is None or r.get("negation") == negation]
+    held = {(r["rep"], r[x_field]): r["mem_bytes"] for r in rows if r["learner"] is None}
+    fits = [r for r in rows if r["learner"] and r["error"] is None and r.get("fit_peak") is not None]
+    xs = sorted({r[x_field] for r in rows if r["learner"]}, reverse=(x_field == "noise_density"))
+    lines = [f"| learner | representation | " + " | ".join(f"{x_label}={x}" for x in xs) + " |\n",
+             "|---|---|" + "--:|" * len(xs) + "\n"]
+    for learner in LEARNERS:
+        boolean_at = {}
+        for kind in REPRESENTATIONS:
+            cells = []
+            for x in xs:
+                r = next((r for r in fits if r["learner"] == learner and r["rep"] == kind and r[x_field] == x), None)
+                if r is None or (kind, x) not in held:
+                    cells.append("")
+                    continue
+                total = held[(kind, x)] + r["fit_peak"]
+                if kind == "Boolean":
+                    boolean_at[x] = total
+                    cells.append(_bytes(total))
+                else:
+                    ref = boolean_at.get(x)
+                    cells.append(_bytes(total) + (f" ({100 * total / ref:.0f}%)" if ref else ""))
+            lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
+    return "".join(lines)
+
+
+def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report_path: str) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda key, alt: f"![{alt}]({plots}/{os.path.basename(paths[key])})\n\n"  # noqa: E731
     size_info = {(r["negation"], r["n"]): r for r in size_rows if r["learner"] is None and r["rep"] == "Boolean"}
-    compared, agreed, bad = _agreement(size_rows + density_rows)
+    compared, agreed, bad = _agreement(size_rows + density_rows + width_rows)
     L = ["# Data representations: same rules, different speed\n\n"]
     L.append(
         ("**Quick run** (training sets up to 1,000 examples, short density sweep) -- a fast sanity "
@@ -578,6 +727,11 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
     L.append(img("size_memory", "memory vs. training-set size"))
     L.append("With negation:\n\n" + _memory_table(size_rows, "n", "n", negation=True) + "\n")
     L.append("Without negation:\n\n" + _memory_table(size_rows, "n", "n", negation=False) + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass), with negation:\n\n"
+             + _fit_memory_table(size_rows, "n", "n", negation=True) + "\n")
+    L.append("Without negation:\n\n" + _fit_memory_table(size_rows, "n", "n", negation=False) + "\n")
     L.append("Peak memory while building (with negation) -- the vertical indexes need more than "
              "they keep:\n\n" + _memory_table(size_rows, "n", "n", "mem_peak_bytes", negation=True) + "\n")
 
@@ -599,6 +753,34 @@ def write_report(size_rows, density_rows, paths, quick: bool, report_path: str) 
              "unpacked bool matrix):\n\n")
     L.append(img("density_memory", "memory vs. density"))
     L.append(_memory_table(density_rows, "noise_density", "p") + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass):\n\n"
+             + _fit_memory_table(density_rows, "noise_density", "p") + "\n")
+
+    L.append("## 3. Width\n\n")
+    L.append(
+        f"Synthetic data again, {WIDTH_N} training and {WIDTH_N} test examples, the same concept on "
+        f"{DENSITY_N_SIGNAL} signal features -- but now the number of *true* features per example stays "
+        f"fixed (on average {WIDTH_NOISE_PER_ROW} noise features, plus the signal ones) while the number "
+        "of features grows. That is how sparse data usually looks: one-hot encodings of attributes with "
+        "many values, or words in a text. The packed Boolean matrix grows with the number of features "
+        "(one bit per cell); a sparse representation with the number of true cells, which stays the same. "
+        "`Sparse` keeps two copies of a 4-byte index plus a 1-byte value per true cell, about 10 bytes "
+        "against 1/8 byte per cell for Boolean, so it should take less memory below a density of about "
+        f"1/80 -- here from about {80 * (WIDTH_NOISE_PER_ROW + DENSITY_N_SIGNAL * DENSITY_SIGNAL_P):,.0f} "
+        "features on.\n\n")
+    L.append(img("width_memory", "memory vs. width"))
+    L.append("Memory held by each representation (share of Boolean in parentheses; the last row is the "
+             "unpacked bool matrix):\n\n" + _memory_table(width_rows, "k", "k") + "\n")
+    L.append(f"{COVERAGE_TRIALS} `coverage()` calls for random rules of 1-4 conditions:\n\n")
+    L.append(img("width_coverage", "coverage() time vs. width"))
+    L.append(img("width_fit", "fit time vs. width"))
+    L.append("Fit time in seconds:\n\n" + _fit_table(width_rows, "k", "k") + "\n")
+    L.append("Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on "
+             "top of it, caches the representation builds during the fit included (`tracemalloc`, a "
+             "separate untimed pass):\n\n"
+             + _fit_memory_table(width_rows, "k", "k") + "\n")
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(L)
@@ -613,9 +795,11 @@ def main(quick: bool = True) -> None:
         size_rows = run_size_curve(runner, cache, QUICK_SIZES if quick else SIZES)
         print("Part 2: density", flush=True)
         density_rows = run_density_sweep(runner, cache, QUICK_DENSITIES if quick else DENSITIES)
-    paths = write_plots(size_rows, density_rows, quick)
+        print("Part 3: width", flush=True)
+        width_rows = run_width_sweep(runner, cache, QUICK_WIDTHS if quick else WIDTHS)
+    paths = write_plots(size_rows, density_rows, width_rows, quick)
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(size_rows, density_rows, paths, quick, report)
+    write_report(size_rows, density_rows, width_rows, paths, quick, report)
 
 
 if __name__ == "__main__":

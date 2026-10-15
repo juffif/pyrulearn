@@ -48,9 +48,11 @@ unexplained absence. It's binary-only regardless (see `IModSlipper`'s
 docstring), so it would have needed dropping from any multi-class run
 anyway.
 
-All four main-comparison learners see the identical per-fold
-`BooleanDataRepresentation` (`build_dataspec`/`binarize`, `MAX_INTERVALS`
-discretization) -- no learner here gets the raw, non-binarized data.
+All four main-comparison learners see the identical per-fold binarized
+data (`build_dataspec`/`binarize`, `MAX_INTERVALS` discretization), in the
+library's default representation, N-lists (the Weka learners convert it to
+the dense matrix they need) -- no learner here gets the raw, non-binarized
+data.
 That comparison (a learner's own intrinsic numeric handling vs. our
 discretization) is a deliberately separate, later demo
 (`examples/REVISION_PLAN.md`'s comparison (e)); this one used to also
@@ -78,7 +80,9 @@ from typing import Optional
 import numpy as np
 
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
 from pyrulearn.interfaces.imodels import IModSlipper
@@ -124,6 +128,26 @@ QUICK_ACCURACY_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_accu
 QUICK_FIT_TIME_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_fit_time.png")
 QUICK_CD_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_cd.png")
 CACHE_DIR = os.path.join(HERE, "_ripper_comparison_cache")
+
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return "\n\nEvery learner runs single-threaded, one fit at a time."
+    return (f"\n\nEvery learner runs single-threaded; fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s "
+            "`n_jobs`), each in its own process and timed there, with the numerical libraries limited to "
+            "one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` "
+            "learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run "
+            "as a second sequential run (per-learner ratios and rankings alike); time ratios between "
+            "learners are reproducible to about +-10% either way.")
 
 # Full run: every small/medium (<=10,000 rows) binary dataset in the
 # catalog -- 44 of them as of this writing (25 small + 19 medium; see
@@ -180,14 +204,15 @@ Protocol: `{n_folds}`-fold stratified cross-validation
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical
-Boolean feature matrix per fold, so differences reflect the algorithms,
-not the data preparation. Each fit is capped at {FIT_TIMEOUT:.0f}s; a
+binary features per fold (as N-lists, the library's default representation;
+the Weka learners convert them to the matrix they need), so differences
+reflect the algorithms, not the data preparation. Each fit is capped at {FIT_TIMEOUT:.0f}s; a
 timeout or an exception is recorded as a failure, not fatal to the run.
 
 Measures: test accuracy, rule count, total condition count, fit time
 (seconds, JVM startup included for Weka:JRip). Witt:RIPPER auto-dispatches
 one-vs-rest for multi-class (see the module docstring); every other
-learner handles multi-class natively.
+learner handles multi-class natively.{_concurrency_note()}
 """
 
 
@@ -229,14 +254,15 @@ def run_preliminary_slipper_check():
     datasets = Catalog.default().select(names=PRELIM_DATASETS)
     results = run_cv([Slipper(random_state=RANDOM_STATE), IModSlipper(random_state=RANDOM_STATE)],
                      datasets, n_folds=PRELIM_FOLDS, fit_timeout=PRELIM_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     n_jobs=_n_jobs())
     by_learner = results.groupby("learner").agg(accuracy=("accuracy", "mean"), fit_time=("fit_time", "mean"))
     slipper, imod = by_learner.loc["Slipper"], by_learner.loc["IMod:Slipper"]
     ratio = imod["fit_time"] / slipper["fit_time"] if slipper["fit_time"] else float("inf")
     acc_cmp = ("no more accurate" if imod["accuracy"] <= slipper["accuracy"] else "more accurate")
     verdict = (
         f"Across {len(datasets)} datasets ({PRELIM_FOLDS}-fold), IMod:Slipper was {acc_cmp} than "
-        f"Slipper (mean accuracy {imod['accuracy']:.3f} vs. {slipper['accuracy']:.3f}) while taking "
+        f"Slipper (mean accuracy {format_accuracy(imod['accuracy'])} vs. {format_accuracy(slipper['accuracy'])}) while taking "
         f"{ratio:.0f}x as long per fit ({imod['fit_time']:.2f}s vs. {slipper['fit_time']:.2f}s, mean) "
         f"-- not worth its cost at the scale of the main comparison below."
     )
@@ -273,8 +299,8 @@ def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict
                 "|---|--:|--:|--:|--:|--:|--:|\n")
     for learner in ranks.index:  # ranks is already sorted best-first
         row = summary.loc[learner]
-        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.2f} | "
-                     f"{row['conds_per_rule']:.2f} | {row['fit_time']:.2f} | "
+        lines.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                     f"{format_mean_count(row['conds_per_rule'])} | {row['fit_time']:.2f} | "
                      f"{wins.get(learner, 0.0):.1f} | {ranks[learner]:.2f} |\n")
     lines.append("\n`wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie "
                 "split evenly (`pyrulearn.experiments.stats.win_counts`); `mean rank` -- average "
@@ -296,8 +322,7 @@ def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict
             sub = results[results["learner"] == learner]
             bin_acc = sub[sub["dataset"].isin(binary_names)]["accuracy"].mean()
             multi_acc = sub[sub["dataset"].isin(multiclass_names)]["accuracy"].mean()
-            fmt = lambda v: f"{v:.3f}" if v == v else "n/a"  # noqa: E731 -- v == v is False for NaN
-            lines.append(f"| {learner} | {fmt(bin_acc)} | {fmt(multi_acc)} |\n")
+            lines.append(f"| {learner} | {format_accuracy(bin_acc)} | {format_accuracy(multi_acc)} |\n")
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
@@ -309,6 +334,7 @@ def write_plots(results, accuracy_plot_path: str, fit_time_plot_path: str, cd_pl
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.ticker import PercentFormatter
     except ImportError:
         return
 
@@ -323,6 +349,7 @@ def write_plots(results, accuracy_plot_path: str, fit_time_plot_path: str, cd_pl
                        color=COLORS[learner], marker=MARKERS[learner], alpha=0.7, s=45)
     ax1.set_xlabel("total conditions (rule set complexity)")
     ax1.set_ylabel("test accuracy")
+    ax1.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax1.set_title("accuracy vs. rule-set complexity")
     ax1.set_xscale("symlog")
     ax1.legend()
@@ -384,7 +411,8 @@ def main(datasets_spec: Optional[str] = None) -> None:
 
     datasets = select_datasets(spec)
     results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     n_jobs=_n_jobs())
     write_report(results, datasets, n_folds, prelim_results, prelim_verdict,
                 report_path, accuracy_plot_path, fit_time_plot_path, cd_plot_path, quick)
     write_plots(results, accuracy_plot_path, fit_time_plot_path, cd_plot_path)
@@ -406,5 +434,9 @@ if __name__ == "__main__":
                              "With neither --full nor --datasets, runs the quick default instead "
                              f"({QUICK_DATASETS_SPEC.count(',') + 1} small datasets, "
                              f"{QUICK_FOLDS}-fold, output not checked in).")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(args.datasets or (FULL_DATASETS_SPEC if args.full else None))

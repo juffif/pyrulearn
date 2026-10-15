@@ -99,7 +99,9 @@ import numpy as np
 from pyrulearn.data import BooleanDataRepresentation, DataSpecBuilder
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.stats import mean_rank, win_counts
 from pyrulearn.interfaces.weka import J48Importer, JRipImporter, WekaJ48, WekaJRip, _resolve_weka, _weka_cli_options
 
@@ -417,7 +419,7 @@ def run(datasets, n_folds: int, verbose: bool = True):
                     _cache_save(key, row)
                     rows.append(row)
                     if verbose:
-                        outcome = row["error"] if row["error"] is not None else f"acc={row['accuracy']:.3f}"
+                        outcome = row["error"] if row["error"] is not None else f"acc={format_accuracy(row['accuracy'])}"
                         print(f" {row['fit_time']:6.2f}s  {outcome}", flush=True)
 
     return pd.DataFrame(rows)
@@ -435,7 +437,7 @@ def write_report(results, datasets, n_folds: int, report_path: str, plot_path: s
     feat = results[results["prep"] != "raw"].groupby("prep")["n_features"].mean()
     lines.append("| prep | mean binary features |\n|---|--:|\n")
     for prep in [p for p in PREPS if p != "raw"]:
-        lines.append(f"| {prep} | {feat.get(prep, float('nan')):.1f} |\n")
+        lines.append(f"| {prep} | {format_mean_count(feat.get(prep, float('nan')))} |\n")
     lines.append("\n")
 
     lines.append("## Summary by variant (mean across every dataset and fold)\n\n")
@@ -447,8 +449,8 @@ def write_report(results, datasets, n_folds: int, report_path: str, plot_path: s
                 "|---|--:|--:|--:|--:|--:|--:|\n")
     for learner in ranks.index:
         row = summary.loc[learner]
-        lines.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.2f} | "
-                     f"{row['conds_per_rule']:.2f} | {row['fit_time']:.2f} | "
+        lines.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                     f"{format_mean_count(row['conds_per_rule'])} | {row['fit_time']:.2f} | "
                      f"{wins.get(learner, 0.0):.1f} | {ranks[learner]:.2f} |\n")
     lines.append("\n`wins` -- datasets where a variant's mean accuracy was (tied-for-)best, a tie "
                 "split evenly; `mean rank` -- average accuracy rank across datasets, failures tied "
@@ -476,6 +478,7 @@ def write_plots(results, plot_path: str) -> None:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.ticker import PercentFormatter
     except ImportError:
         return
 
@@ -493,6 +496,7 @@ def write_plots(results, plot_path: str) -> None:
     ax.set_xticks(list(LEVELS))
     ax.set_xlabel("discretization level (intervals)")
     ax.set_ylabel("mean test accuracy")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_title("accuracy vs. discretization level")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)

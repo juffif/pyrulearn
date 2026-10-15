@@ -15,6 +15,21 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
+from ..evaluation import format_accuracy, format_mean_count  # noqa: F401 -- re-exported for the demos
+
+#: columns holding a mean of integers (rule and condition counts, and ratios of
+#: them), shown with one decimal -- see `format_mean_count`
+COUNT_COLUMNS = frozenset({"n_rules", "n_conditions", "conds_per_rule", "conditions/rule",
+                           "n_features", "overlap"})
+
+
+def _formatter(column: str, float_format: str):
+    if "accuracy" in column.lower():
+        return format_accuracy
+    if column in COUNT_COLUMNS:
+        return format_mean_count
+    return lambda v: "n/a" if v != v else float_format.format(v)
+
 
 def render_setup_section(description: str) -> str:
     """The report's Setup section, from one `DESCRIPTION` string a demo
@@ -34,7 +49,10 @@ def render_results_table(results, columns: Sequence[str], group_by: Union[str, S
     per-dataset-then-overall accuracy/runtime table. Values are the
     plain mean across whatever rows fall in that group (`run_cv`'s
     per-fold rows, most commonly) -- NaN (every fold failed) prints as
-    ``n/a``. `results` is not mutated.
+    ``n/a``. `results` is not mutated. A column whose name contains
+    ``accuracy`` prints as a percentage (`format_accuracy`), one of
+    `COUNT_COLUMNS` with one decimal (`format_mean_count`), any other with
+    `float_format`.
 
     `group_by` can also be a list of columns, e.g. ``["dataset",
     "learner"]`` for one row per (dataset, learner) pair -- **the usual
@@ -71,6 +89,6 @@ def render_results_table(results, columns: Sequence[str], group_by: Union[str, S
         # always a scalar, padded out to the same column count.
         key_parts = list(name) if isinstance(name, tuple) else [name] + [""] * (len(group_cols) - 1)
         cells = [str(k) for k in key_parts] + \
-            [(float_format.format(v) if v == v else "n/a") for v in row]  # v == v is False for NaN
+            [_formatter(col, float_format)(v) for col, v in zip(columns, row)]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"

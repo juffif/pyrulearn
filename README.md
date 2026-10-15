@@ -184,7 +184,7 @@ details.
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, fastest for every native learner measured, though it holds far more memory than the bit-packed Boolean matrix, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, stored instead of the table; the fastest for the separate-and-conquer learners, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
@@ -216,26 +216,51 @@ produces byte-identical rules:
   tid-lists), rarest feature first. This is the N-list *without* the
   prefix tree.
 - `NListRepresentation` -- the default representation (first in the
-  preference order below; faster than Boolean for every native learner
-  measured, also after this package's own Boolean speedups, but at a
-  price in memory: 166 MiB against the packed Boolean matrix's 1.1 MiB at
-  32,000 training examples with negation (70-190 times as much across
-  the sizes measured, about three times that at its peak while being
-  built; the unpacked 0/1 matrix of `data.X` is 8.5 MiB) --
-  `demos/representations_report.md`): the FP-tree / N-list
-  vertical index Huynh, Fürnkranz & Beck's LORD builds. Each row's
-  true-feature set is inserted
-  (most-frequent-first) into a prefix trie with shared prefixes; a
-  rule's coverage is a vectorized `uint64` word-AND over one item's
-  N-list, no `(n_rows, n_features)` matrix ever materialized.
-  `PrePostNListRepresentation` adds pre/post visit codes, giving its search
-  fast path a second way to narrow a common feature's occurrences down to
-  the current search branch. A deliberate opt-in, not a flag on
-  `NListRepresentation`: it's correct (see `demos/representations.py`,
-  which runs it alongside the other three) but measured to be about
-  break-even with plain `NListRepresentation` at the data scales this
-  library deals with -- see `demos/representations_report.md` and its own
-  docstring for the numbers and when it might actually help.
+  preference order below): the FP-tree / N-list vertical index Huynh,
+  Fürnkranz & Beck's LORD builds. Each row's true-feature set is inserted
+  (most-frequent-first) into a prefix trie with shared prefixes, and the
+  tree is stored *instead of* the table: per node, the bitmask of the
+  features on its path and the range of rows passing through it (the rows
+  are kept in tree order, so that range is contiguous); per row, its place
+  in that order and the node it ends at. A rule's coverage is a vectorized
+  `uint64` word-AND over one item's N-list plus the matching nodes' row
+  ranges; `features_of` and `X` are decoded from the tree.
+  `PrePostNListRepresentation` also keeps the nodes' pre/post visit codes,
+  giving its search a second way to narrow a feature's nodes down to the
+  current search branch. An opt-in: about equal to plain N-lists in most
+  of `demos/representations_report.md`, faster on the largest dense data,
+  where a feature's N-list gets long (`adult` with negation features: CN2
+  on 32,000 rows 22 s against 31 s, PyLORD on 8,000 rows 91 s against
+  101 s), at about 15% more memory.
+
+**Which one to use.** Every learner learns the same rules on all of
+them; only time and memory differ (`demos/representations_report.md`,
+which measures both on real data, over density, and over the number of
+features):
+
+- *For speed -- the default:* `NListRepresentation`. The
+  separate-and-conquer learners fit fastest on it on real data (`adult`,
+  32,000 rows, with negation features: Pypper 4.4 s against 32.2 s on
+  Boolean, CN2 31 s against 59 s), and what a fit costs in memory in total
+  (the representation plus what the fit allocates) is in the range of
+  Boolean's: 1.3-1.7 times as much with negation features, about half
+  without.
+- *For dense and normal data, when memory matters:*
+  `BooleanDataRepresentation`, one bit per cell -- by far the smallest to
+  hold (`adult`, 32,000 rows: 0.55 MiB without negation features, 1.1 MiB
+  with, against 4-44 MiB for the others), at the cost of speed on larger
+  data.
+- *For sparse data* -- many features, few of them true per example
+  (one-hot encodings of many-valued attributes, text), built without
+  negation features: `SparseDataRepresentation`. About 10 bytes per true
+  cell against 1/8 byte per cell for Boolean, so it is the smaller one
+  below a density of about 1/80, and fast there (1,000 examples, 20,000
+  features, about 18 true per example: 257 KiB against 2.4 MiB for
+  Boolean and 38.7 MiB for N-lists; CN2 1.8 s against 24 s on Boolean).
+  N-lists are as fast on such data but large, since their path bitmasks
+  grow with the number of features.
+- Negation features make any data dense (every test or its negation
+  holds), so with them, N-lists or Boolean.
 
 `pyrulearn.data.REPRESENTATION_PREFERENCE_ORDER` ranks them --
 `NListRepresentation`, `PrePostNListRepresentation`,
@@ -2769,7 +2794,7 @@ If you use pyrulearn, please cite it via [`CITATION.cff`](CITATION.cff)
   author  = {F{\"u}rnkranz, Johannes},
   title   = {pyrulearn},
   year    = {2026},
-  version = {0.3.0},
+  version = {0.3.2},
   url     = {https://github.com/juffif/pyrulearn}
 }
 ```

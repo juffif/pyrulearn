@@ -324,6 +324,28 @@ class BooleanDataRepresentation(DataRepresentation):
         n_features = self.spec.n_features
         return np.unpackbits(self._packed, axis=1)[:, :n_features].astype(bool)
 
+    def to_csr(self, chunk_cells: int = 1 << 16):
+        """The matrix as a `scipy.sparse` CSR matrix (bool data, `int32`
+        indices when they fit), unpacked a block of rows at a time -- so,
+        unlike `X`, nothing dense of the full ``(n_samples, n_features)``
+        size is formed, and nothing is cached here. What the sparse and
+        N-list representations are built from (`from_boolean`)."""
+        from scipy import sparse
+
+        n, k = self._n_samples, self.spec.n_features
+        index_dtype = np.int32 if n * k < 2 ** 31 else np.int64   # n * k bounds the nonzeros
+        step = max(1, chunk_cells // max(k, 1))
+        indptr = np.zeros(n + 1, dtype=index_dtype)
+        cols = [np.zeros(0, dtype=index_dtype)]
+        for start in range(0, n, step):
+            block = np.unpackbits(self._packed[start:start + step], axis=1)[:, :k]
+            indptr[start + 1:start + 1 + len(block)] = indptr[start] + np.cumsum(block.sum(axis=1, dtype=np.int64))
+            cols.append(np.nonzero(block)[1].astype(index_dtype))   # row-major: ascending per row
+            del block
+        indices = np.concatenate(cols)
+        del cols
+        return sparse.csr_matrix((np.ones(len(indices), dtype=bool), indices, indptr), shape=(n, k))
+
     @property
     def n_samples(self) -> int:
         return self._n_samples
@@ -557,45 +579,22 @@ def _weighted_counts(w: np.ndarray, cov: np.ndarray, pos_mask: np.ndarray) -> Tu
     return tp, fp, float(pw.sum()) - tp, float(nw.sum()) - fp
 
 
-class _PPCNode:
-    """A node of the PPC- (pre/post-code) prefix tree -- an FP-tree-like
-    trie over each row's set of True features, ordered most-frequent
-    first so common prefixes are shared. Only what
-    `NListRepresentation` needs during construction lives here; the
-    finished index is flat numpy arrays, not a graph of these.
-
-    No pre/post visit numbers on the node itself -- `PrePostNListRepresentation`
-    (see its own docstring, and the comment above `NListRepresentation.
-    refine_cover`) derives them in a side dict instead, precisely so this
-    class -- shared by both -- doesn't carry that cost for the common
-    case that doesn't use them."""
-
-    __slots__ = ("item", "children", "rows")
-
-    def __init__(self, item: int):
-        self.item = item          # feature index this node stands for (-1 = root)
-        self.children: dict = {}   # feature index -> _PPCNode
-        self.rows: list = []       # row indices whose path passes through here
-
-
 class _NListMaskContext:
     """Per-search state shared, unchanged, by every handle
     `NListRepresentation.initial_cover`/`refine_cover` produce for one
-    search: the `example_mask` (or `None`) plus a lazily-filled cache of
-    per-item masked node class-counts. Every handle from the same
-    `initial_cover` call carries a reference to the *same* instance, so
-    an item that becomes the anchor for several different candidates
-    within that one search only pays the mask-intersection cost the
-    first time -- the cache is purely additive (never invalidated,
-    never wrong to reuse), since the mask itself never changes within
-    one search."""
+    search: the `example_mask` (or `None`), the effective row weights (or
+    `None`), and -- built on first use, once per search -- the cumulative
+    per-class sums of those over the rows in tree order. A node's rows are
+    one contiguous range of that order, so its (masked, weighted) class
+    counts are the difference of two rows of the cumulative sums: one pass
+    over the rows per search, then two lookups per node."""
 
-    __slots__ = ("mask", "weights", "_node_counts", "_scope_totals")
+    __slots__ = ("mask", "weights", "_cum", "_scope_totals")
 
     def __init__(self, mask: Optional[np.ndarray], weights: Optional[np.ndarray] = None):
         self.mask = mask
         self.weights = weights          # effective row weights (zero outside the mask), or None
-        self._node_counts: dict = {}
+        self._cum: Optional[np.ndarray] = None
         self._scope_totals: Optional[np.ndarray] = None
 
     def scope_totals(self, rep: "NListRepresentation") -> np.ndarray:
@@ -611,27 +610,15 @@ class _NListMaskContext:
                 self._scope_totals = np.bincount(rep._y_idx[self.mask], minlength=rep._n_classes)
         return self._scope_totals
 
-    def node_counts(self, rep: "NListRepresentation", item: int) -> np.ndarray:
-        """Per-node, per-class counts for `item`, restricted to this
-        context's mask -- `rep`'s own precomputed (unmasked) counts if
-        there's no mask, otherwise derived once (by intersecting that
-        item's row list with the mask) and cached."""
+    def cum(self, rep: "NListRepresentation") -> np.ndarray:
+        """`rep._class_cum` restricted to this context's scope: the
+        representation's own (unmasked) sums if there's no mask, otherwise
+        derived once from the mask or weights and cached."""
         if self.mask is None:
-            return rep._node_class_counts[item]
-        cached = self._node_counts.get(item)
-        if cached is None:
-            m = rep._path_words[item].shape[0]
-            weighted = self.weights is not None
-            counts = np.zeros((m, rep._n_classes), dtype=float if weighted else np.int64)
-            row_idx, entry_node = rep._row_idx[item], rep._entry_node[item]
-            if row_idx.size:
-                in_mask = self.mask[row_idx]
-                rows = row_idx[in_mask]
-                np.add.at(counts, (entry_node[in_mask], rep._y_idx[rows]),
-                          self.weights[rows] if weighted else 1)
-            cached = counts
-            self._node_counts[item] = cached
-        return cached
+            return rep._class_cum
+        if self._cum is None:
+            self._cum = rep._cumulative_class_sums(self.weights if self.weights is not None else self.mask)
+        return self._cum
 
 
 def _class_value_columns(y: np.ndarray, positive_class: Any, w: Optional[np.ndarray]) -> np.ndarray:
@@ -659,205 +646,165 @@ class NListRepresentation(DataRepresentation):
     """A PPC-tree / N-list encoding of a Boolean dataset -- the vertical
     index Huynh, Fürnkranz & Beck's LORD builds before learning -- exposed
     behind the same `DataRepresentation` interface as
-    `BooleanDataRepresentation`, so every `pyrulearn.learners.seco` learner (CN2,
-    AQR, `pyrulearn.learners.pylord.PyLORD`, ...) runs on it unchanged.
+    `BooleanDataRepresentation`, so every learner runs on it unchanged.
+    The tree *is* the data: it is stored instead of the Boolean table, not
+    next to it.
 
     How it works
     ------------
     Each row is the set of features that are True in it. Sort those
     features most-frequent-first and insert the resulting path into a
-    trie (`_PPCNode`); rows with a shared prefix share tree nodes. Every
-    node records the exact set of row indices that pass through it
-    (`rows`) and -- derived once, up front -- the bitmask of every
-    feature on its root-to-here path (`path_mask`).
+    trie; rows with a shared prefix share tree nodes, and each row ends at
+    one node (the root for a row with no True feature). The nodes are
+    numbered in pre-order, and the rows are kept in the order of the node
+    they end at -- so the rows whose path passes through a node, those
+    ending in its subtree, are one contiguous range of that order
+    (`_row_lo`/`_row_hi`). Every node also keeps the bitmask of the
+    features on its root-to-here path (`_words`). That is all that is
+    stored per node; per row, only its place in the order (`_perm`) and the
+    node it ends at (`_row_end`). A row's features are the bits of its end
+    node's path, so `features_of` and `X` read the data back from the tree.
 
     A rule ``f1 ∧ ... ∧ fm`` covers exactly the rows whose path contains
-    a node for every ``fi``. Equivalently: take ``iy``, the deepest
-    (least frequent) of the ``fi``; among the nodes registering ``iy``,
-    keep those whose ``path_mask`` is a superset of the rule's feature
-    set; the rule's coverage is the union of those nodes' row sets. That
-    superset test is a vectorized ``uint64`` word-AND over the item's
-    N-list -- `coverage` never materializes an ``(n_rows, n_features)``
-    matrix and never falls back to a packed bit-matrix.
+    a node for every ``fi``. Take ``iy``, the deepest (least frequent) of
+    the ``fi``; among the nodes registering ``iy`` (its N-list, contiguous
+    in `_words` -- `_item_ptr`), keep those whose path bitmask has every
+    ``fi``; the rule's coverage is the union of their row ranges (disjoint:
+    no node of an item lies below another of the same item). Class counts
+    of a node are differences of cumulative per-class sums over the rows
+    in tree order (`_class_cum`) -- and under an `example_mask` or weights,
+    of cumulative sums of those, built once per search
+    (`_NListMaskContext`).
 
     `coverage`/`features_of` (used outside a search: prediction, pruning,
     `RuleStats.from_rule`) always recompute from scratch this way.
     `pyrulearn.learners.seco.BeamSearch`/`HillClimbing` instead go through
-    `initial_cover`/`refine_cover`/`cover_counts` -- see their own
-    docstrings just below `_build` for the real LORD-style incremental
-    scheme: a handle tracks the deepest feature fixed so far (its
-    "anchor") and the still-shrinking set of that item's nodes still
-    satisfying the rule, so refining by a feature no deeper than the
-    anchor is just a filter over the *current* (already narrow) set --
-    cheaper the further a search has already gone -- and only refining
-    by a strictly deeper feature needs a fresh look at that item's own
-    N-list (see the comment above `refine_cover` for why that fresh look
-    stays a plain bitmask scan here rather than a pre/post-code shortcut
-    -- tried, measured, and kept as the opt-in `PrePostNListRepresentation`
-    subclass instead, not folded in here). `example_mask` (a
-    grow/prune split, a SeCo loop's shrinking "remaining" set) is handled
-    the same way as masking is everywhere in this module: applied once,
-    in `initial_cover`, not re-applied on every downstream call --
-    `_NListMaskContext` also memoizes the masked per-item node counts it
-    derives, shared by every handle from one search, so an item that
-    anchors several different candidates only pays that cost once.
+    `initial_cover`/`refine_cover`/`cover_counts` -- see the comment above
+    `initial_cover` for the LORD-style incremental scheme: a handle tracks
+    the deepest feature fixed so far (its "anchor") and the still-shrinking
+    set of that item's nodes still satisfying the rule, so refining by a
+    feature no deeper than the anchor is just a filter over the *current*
+    (already narrow) set, and only refining by a strictly deeper feature
+    needs a fresh look at that item's own N-list.
 
-    Negation hurts this representation too, for a different reason than
-    `SparseDataRepresentation`: pairing every feature with its negation
-    doubles each row's path length (every original feature *or* its
-    negation is now True, so both occupy a tree position), which lengthens
-    every root-to-leaf path without adding information -- fewer rows end
-    up sharing a full prefix, so the tree gets more nodes, not fewer, for
-    the same underlying data (e.g. one demo dataset: 6863 tree nodes with
-    negation vs. 2415 without, same rows). `without_negations()` before
-    building (or on an already-negated representation) is the fix here
-    too.
+    Negation hurts this representation too: pairing every feature with
+    its negation doubles each row's path length (every original feature
+    *or* its negation is True, so both occupy a tree position), so fewer
+    rows share a full prefix and the tree gets more nodes for the same
+    underlying data. `without_negations()` before building (or on an
+    already-negated representation) is the fix.
 
     Build it from an existing `BooleanDataRepresentation` with
     `from_boolean`, or from raw arrays via the constructor / `from_xy` /
     `from_dataframe`, mirroring `BooleanDataRepresentation`.
     """
 
+    #: keep each node's pre-order number and subtree end after the build
+    #: (`PrePostNListRepresentation` searches with them; here they are
+    #: only needed to derive the row ranges)
+    _KEEP_PRE_POST = False
+
     def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
                  weights: Optional[np.ndarray] = None):
         super().__init__(spec)
-        from scipy.sparse import issparse
+        from scipy import sparse
 
-        if issparse(X):
-            csr = X.tocsr()
-            if csr.dtype != bool:
-                csr = csr.astype(bool)
-            n, k = csr.shape
-            if k != spec.n_features:
-                raise ValueError(f"X has {k} columns but this DataSpec has {spec.n_features} features")
-            # per-feature true-counts without ever forming a dense
-            # (n_samples, n_features) array: csr.indices lists every
-            # nonzero entry's column across all rows, so counting how
-            # often each column index appears *is* each feature's count
-            # -- the same number `X.sum(axis=0)` gives the dense path,
-            # from the sparse structure alone.
-            freq = np.bincount(csr.indices, minlength=k)
-            row_source: Any = csr
-        else:
-            X = np.asarray(X)
-            if X.dtype != bool:
-                X = X.astype(bool)
-            n, k = X.shape
-            if k != spec.n_features:
-                raise ValueError(f"X has {k} columns but this DataSpec has {spec.n_features} features")
-            freq = X.sum(axis=0)
-            row_source = X
+        csr = sparse.csr_matrix(X if sparse.issparse(X) else np.asarray(X, dtype=bool))
+        if csr.dtype != bool:
+            csr = csr.astype(bool)
+        csr.eliminate_zeros()
+        n, k = csr.shape
+        if k != spec.n_features:
+            raise ValueError(f"X has {k} columns but this DataSpec has {spec.n_features} features")
         self._n_samples: int = n
         self.y: Optional[np.ndarray] = None if y is None else np.asarray(y)
-        self._build(n, k, freq, row_source)
+        self._build(csr)
         self._set_weights(weights)
 
     # -- construction ---------------------------------------------------
 
-    def _build(self, n: int, k: int, freq: np.ndarray, row_source: Any) -> "_PPCNode":
-        """Builds the trie and every per-item array this class needs,
-        and returns the finished root node -- not kept as `self._root`,
-        since nothing here needs the node graph once the flat arrays
-        exist; a subclass that does (e.g. to derive more structure from
-        it, via `_prepare_extra_per_item`) gets it as the return value
-        instead, rather than paying to retain it unconditionally.
-
-        `row_source` is either the dense `(n, k)` bool array itself, or
-        a CSR `scipy.sparse` matrix -- `__init__` already reduced both
-        to `n`/`k`/`freq` uniformly, so this never needs to branch on
-        which one it got except to read one row's own features out of
-        it (a plain slice either way: `row_source[i]`'s `flatnonzero`,
-        or `indices[indptr[i]:indptr[i+1]]`)."""
+    def _build(self, csr) -> None:
+        """Builds the tree from `csr` (``(n, k)``, bool) without a Python
+        node graph: every row as the sequence of its features' ranks
+        (most frequent first), padded with -1 into an ``(n, max_len)``
+        matrix and sorted lexicographically -- in that order the tree's
+        nodes appear in pre-order, a row's nodes from its longest common
+        prefix with the previous row on are new, and the others are the
+        previous rows' nodes at the same depth."""
+        n, k = csr.shape
         self._n_features = k
-        self._word_count = (k + 63) // 64 or 1
-
-        # most-frequent feature first -> shared prefixes near the root
-        order = np.argsort(-freq, kind="stable")
+        W = self._word_count = (k + 63) // 64 or 1
+        freq = np.bincount(csr.indices, minlength=k)
+        order = np.argsort(-freq, kind="stable")         # rank -> feature
         rank = np.empty(k, dtype=np.int64)
         rank[order] = np.arange(k)
         self._rank = rank
 
-        root = _PPCNode(-1)
-        row_feats: list = [None] * n          # per row: its features, ascending
-        leaf_of: list = [root] * n            # per row: the node its path ends at
-        is_sparse = not isinstance(row_source, np.ndarray)
-        if is_sparse:
-            indptr, indices = row_source.indptr, row_source.indices
-        for i in range(n):
-            feats = indices[indptr[i]:indptr[i + 1]] if is_sparse else np.flatnonzero(row_source[i])
-            row_feats[i] = feats
-            node = root
-            for f in sorted((int(v) for v in feats), key=lambda v: rank[v]):
-                child = node.children.get(f)
-                if child is None:
-                    child = _PPCNode(f)
-                    node.children[f] = child
-                child.rows.append(i)
-                node = child
-            leaf_of[i] = node
-        self._row_feats = row_feats
-        self._leaf_of = leaf_of
+        lens = np.diff(csr.indptr).astype(np.int64)
+        L = int(lens.max()) if n else 0
+        # P[i, :lens[i]] = row i's feature ranks, ascending; -1 after
+        P = np.full((n, max(L, 1)), -1, dtype=np.int32)
+        if csr.nnz:
+            row_of = np.repeat(np.arange(n), lens)
+            ranks = rank[csr.indices]
+            o = np.lexsort((ranks, row_of))
+            P[row_of[o], np.arange(csr.nnz) - np.repeat(csr.indptr[:-1], lens)] = ranks[o]
+        perm = np.lexsort(P.T[::-1]).astype(np.int64)    # rows in tree (pre-)order
+        S, slens = P[perm], lens[perm]
+        del P
 
-        # extension point (see PrePostNListRepresentation): tree-wide
-        # preprocessing that needs the finished trie but runs before the
-        # per-item traversal below -- e.g. assigning pre/post visit codes,
-        # and setting up per-item accumulator lists for `_extra_per_item`
-        # to fill in during that same traversal (guaranteeing they end up
-        # in the identical per-item node order as `_path_words` etc.,
-        # rather than depending on two separate traversals staying in
-        # sync). No-op here.
-        self._prepare_extra_per_item(root, k)
+        # longest common prefix with the previous row (in sorted order)
+        lcp = np.zeros(n, dtype=np.int64)
+        if n > 1:
+            same = S[1:] == S[:-1]
+            lcp[1:] = np.minimum(np.where(same.all(axis=1), L, same.argmin(axis=1)),
+                                 np.minimum(slens[1:], slens[:-1]))
+            del same
+        depth = np.arange(S.shape[1])
+        new = (depth >= lcp[:, None]) & (depth < slens[:, None])   # the tree's nodes, in pre-order
+        ids = np.where(new, np.cumsum(new.ravel()).reshape(new.shape), 0).astype(np.int32)
+        node_at = np.maximum.accumulate(ids, axis=0)    # every row's node at every depth of its path
+        N = int(new.sum())                               # nodes 1..N; 0 is the root
 
-        # one traversal: per item, the N-list of (path_mask, row set)
-        masks_by_item: list = [[] for _ in range(k)]
-        rows_by_item: list = [[] for _ in range(k)]
-        stack = [(root, 0)]
-        while stack:
-            node, pmask = stack.pop()
-            for child in node.children.values():
-                cmask = pmask | (1 << child.item)
-                masks_by_item[child.item].append(cmask)
-                rows_by_item[child.item].append(child.rows)
-                self._extra_per_item(child, cmask)
-                stack.append((child, cmask))
+        item = np.full(N + 1, -1, dtype=np.int64)
+        node_depth = np.zeros(N + 1, dtype=np.int64)
+        parent = np.zeros(N + 1, dtype=np.int64)
+        ri, di = np.nonzero(new)                         # row-major: ascending node id
+        item[1:] = order[S[ri, di]]
+        node_depth[1:] = di
+        parent[1:] = np.where(di > 0, node_at[ri, np.maximum(di - 1, 0)], 0)
+        end_sorted = np.where(slens > 0, node_at[np.arange(n), np.maximum(slens - 1, 0)], 0) if n else \
+            np.zeros(0, dtype=np.int64)
+        del S, new, ids, node_at, ri, di
 
-        W = self._word_count
-        empty_rows = np.empty(0, dtype=np.int64)
-        self._path_words: list = []   # per item: uint64 (n_nodes_i, W)
-        self._row_idx: list = []      # per item: int64  (total_i,)  rows, node-grouped
-        self._entry_node: list = []   # per item: int64  (total_i,)  node id per row entry
-        for it in range(k):
-            masks = masks_by_item[it]
-            m = len(masks)
-            words = np.zeros((m, W), dtype=np.uint64)
-            for ni, mm in enumerate(masks):
-                wj = 0
-                while mm:
-                    words[ni, wj] = np.uint64(mm & 0xFFFFFFFFFFFFFFFF)
-                    mm >>= 64
-                    wj += 1
-            self._path_words.append(words)
-            node_rows = rows_by_item[it]
-            if node_rows:
-                self._row_idx.append(
-                    np.concatenate([np.asarray(r, dtype=np.int64) for r in node_rows])
-                )
-                self._entry_node.append(
-                    np.concatenate([
-                        np.full(len(r), ni, dtype=np.int64) for ni, r in enumerate(node_rows)
-                    ])
-                )
-            else:
-                self._row_idx.append(empty_rows)
-                self._entry_node.append(empty_rows)
+        # subtree sizes bottom-up, one depth level at a time; path bitmasks top-down
+        size = np.ones(N + 1, dtype=np.int64)
+        words = np.zeros((N + 1, W), dtype=np.uint64)
+        levels = [np.flatnonzero(node_depth[1:] == d) + 1 for d in range(L)]
+        for nodes in reversed(levels):
+            np.add.at(size, parent[nodes], size[nodes])
+        for nodes in levels:
+            words[nodes] = words[parent[nodes]]
+            f = item[nodes]
+            words[nodes, f >> 6] |= np.left_shift(np.uint64(1), (f & 63).astype(np.uint64))
+        subtree_end = np.arange(N + 1) + size - 1
 
-        self._finalize_extra_per_item(k)  # extension point -- no-op here
+        # per item, its nodes in pre-order: the N-lists, one flat array each
+        flat = np.argsort(item[1:], kind="stable") + 1   # node ids grouped by item
+        self._item_ptr = np.concatenate(([0], np.cumsum(np.bincount(item[1:], minlength=k)))).astype(np.int64)
+        self._words = words[flat]
+        self._row_lo = np.searchsorted(end_sorted, flat, side="left").astype(np.int32)
+        self._row_hi = np.searchsorted(end_sorted, subtree_end[flat], side="right").astype(np.int32)
+        if self._KEEP_PRE_POST:
+            self._node_pre = flat.astype(np.int32)
+            self._node_end = subtree_end[flat].astype(np.int32)
+        position = np.full(N + 1, -1, dtype=np.int64)
+        position[flat] = np.arange(N)
+        row_end = np.empty(n, dtype=np.int32)
+        row_end[perm] = position[end_sorted]             # -1: the row ends at the root
+        self._row_end = row_end
+        self._perm = perm.astype(np.int32)
 
-        # per-node, per-class counts -- built once so an *unmasked*
-        # refine_cover's stats are a sum over the (already-shrinking)
-        # active node set, never touching a row-id array at all. Under a
-        # mask, `_NListMaskContext` derives the masked equivalent lazily,
-        # once per (item, search) -- see `refine_cover`/`cover_counts`.
         if self.y is not None:
             classes, y_idx = np.unique(self.y, return_inverse=True)
             self._classes = classes
@@ -865,40 +812,77 @@ class NListRepresentation(DataRepresentation):
             self._y_idx = y_idx.astype(np.int64)
             self._n_classes = len(classes)
             self._class_totals = np.bincount(self._y_idx, minlength=self._n_classes)
-            self._node_class_counts: list = []
-            for it in range(k):
-                m = self._path_words[it].shape[0]
-                counts = np.zeros((m, self._n_classes), dtype=np.int64)
-                entry_node = self._entry_node[it]
-                if entry_node.size:
-                    np.add.at(counts, (entry_node, self._y_idx[self._row_idx[it]]), 1)
-                self._node_class_counts.append(counts)
+            self._class_cum = self._cumulative_class_sums(None)
         else:
             self._classes = self._class_index = self._y_idx = None
-            self._n_classes = self._class_totals = self._node_class_counts = None
+            self._n_classes = self._class_totals = self._class_cum = None
 
-        return root
+    def _cumulative_class_sums(self, row_values: Optional[np.ndarray]) -> np.ndarray:
+        """``(n_samples + 1, n_classes)``: row ``i`` the per-class sums of
+        `row_values` (a bool mask or weights; 1 per row if ``None``) over
+        the first ``i`` rows in tree order -- so the rows of a node, the
+        range ``[lo, hi)``, sum to ``cum[hi] - cum[lo]``. Integer unless
+        weighted."""
+        n, c = self._n_samples, self._n_classes
+        weighted = row_values is not None and row_values.dtype != bool
+        per_row = np.zeros((n, c), dtype=float if weighted else np.int64)
+        y = self._y_idx[self._perm]
+        per_row[np.arange(n), y] = 1 if row_values is None else row_values[self._perm]
+        out = np.zeros((n + 1, c), dtype=per_row.dtype)
+        np.cumsum(per_row, axis=0, out=out[1:])
+        return out
 
-    def _prepare_extra_per_item(self, root: "_PPCNode", k: int) -> None:
-        """Extension hook, called once, right after the trie is built and
-        before the per-item traversal below -- for tree-wide
-        preprocessing (e.g. `PrePostNListRepresentation` assigning pre/
-        post visit codes) and setting up whatever per-item accumulator
-        lists `_extra_per_item` will fill in. No-op here."""
+    # -- reading the data back from the tree ------------------------------
 
-    def _extra_per_item(self, node: "_PPCNode", path_mask: int) -> None:
-        """Extension hook, called once per registered tree node, at
-        exactly the point `masks_by_item[node.item]`/`rows_by_item[
-        node.item]` are appended to -- so a subclass's own per-item
-        accumulator lists end up in the identical node order as
-        `_path_words`/`_row_idx`/`_entry_node`, by construction rather
-        than by two traversals happening to agree. No-op here."""
+    def _words_of(self, item: int) -> np.ndarray:
+        """`item`'s N-list: the path bitmasks of its nodes, in pre-order."""
+        return self._words[self._item_ptr[item]:self._item_ptr[item + 1]]
 
-    def _finalize_extra_per_item(self, k: int) -> None:
-        """Extension hook, called once the per-item arrays this class
-        keeps (`_path_words` etc.) are finished -- for a subclass to
-        convert its own per-item accumulator lists (built up via
-        `_extra_per_item`) into its final form. No-op here."""
+    def _rows_of(self, positions: np.ndarray) -> np.ndarray:
+        """The rows passing through the nodes at flat `positions` (no two
+        of them on one path, so their ranges are disjoint), in tree order."""
+        if len(positions) <= 8:      # the common case in a search: a few slices beat the vectorized gather
+            perm, lo, hi = self._perm, self._row_lo, self._row_hi
+            parts = [perm[lo[p]:hi[p]] for p in positions.tolist()]
+            if not parts:
+                return np.empty(0, dtype=np.int64)
+            return parts[0] if len(parts) == 1 else np.concatenate(parts)
+        # the positions in tree order as one cumulative sum: steps of 1 within
+        # a range, and a jump from the end of one range to the start of the next
+        lo, hi = self._row_lo[positions].astype(np.int64), self._row_hi[positions].astype(np.int64)
+        ends = np.cumsum(hi - lo)
+        steps = np.ones(ends[-1], dtype=np.int64)
+        steps[0] = lo[0]
+        steps[ends[:-1]] = lo[1:] - hi[:-1] + 1
+        return self._perm[np.cumsum(steps)]
+
+    def _path_features(self, ends: np.ndarray) -> np.ndarray:
+        """``(len(ends), n_features)`` bool: the features on the paths of the
+        nodes at flat positions `ends` (-1: the root, no feature) -- the
+        bits of their path bitmasks."""
+        words = self._words[np.maximum(ends, 0)]
+        words[ends < 0] = 0
+        bits = np.unpackbits(words.astype("<u8").view(np.uint8), axis=1, bitorder="little")
+        return bits[:, :self._n_features].astype(bool)
+
+    def _end_features(self, rows: np.ndarray) -> np.ndarray:
+        """``(len(rows), n_features)`` bool: the features of `rows`, those on
+        the path of the node each ends at."""
+        return self._path_features(self._row_end[rows])
+
+    def _decode(self, ends: np.ndarray, chunk_cells: int = 1 << 16):
+        """`_path_features` of `ends` as a `scipy.sparse` CSR matrix, decoded
+        a block at a time -- nothing dense of the full size is formed."""
+        from scipy import sparse
+
+        k = self._n_features
+        step = max(1, chunk_cells // max(k, 1))
+        blocks = [sparse.csr_matrix(self._path_features(ends[s:s + step])) for s in range(0, len(ends), step)]
+        return sparse.vstack(blocks, format="csr") if blocks else sparse.csr_matrix((0, k), dtype=bool)
+
+    def _csr(self):
+        """The data as a `scipy.sparse` CSR matrix, decoded from the tree."""
+        return self._decode(self._row_end)
 
     # -- the two DataRepresentation primitives -------------------------
 
@@ -909,33 +893,27 @@ class NListRepresentation(DataRepresentation):
         return w
 
     def _coverage_of_features(self, feats: Sequence[int]) -> np.ndarray:
-        """The from-scratch N-list computation `coverage` and (for now)
-        `cover_counts`/`cover_rows` share: look only at the *deepest*
-        feature's own N-list and keep the nodes whose full root-to-node
-        path contains every one of `feats`. `coverage(rule)` is just this
-        applied to `rule`'s conditions."""
+        """The from-scratch N-list computation behind `coverage`: look only
+        at the *deepest* feature's own N-list, keep the nodes whose path
+        contains every one of `feats`, and take their rows."""
         feats = list(feats)
         out = np.zeros(self._n_samples, dtype=bool)
         if not feats:
             out[:] = True
             return out
         iy = max(feats, key=lambda f: self._rank[f])   # deepest item in the tree
-        words = self._path_words[iy]
-        if words.shape[0] == 0:
-            return out
+        words = self._words_of(iy)
         want = self._feature_words(feats)
-        hit = np.all((words & want) == want, axis=1)     # nodes whose path has every fi
-        if not hit.any():
-            return out
-        sel = hit[self._entry_node[iy]]
-        out[self._row_idx[iy][sel]] = True
+        hit = np.flatnonzero(np.all((words & want) == want, axis=1))
+        if hit.size:
+            out[self._rows_of(self._item_ptr[iy] + hit)] = True
         return out
 
     def coverage(self, rule) -> np.ndarray:
         return self._coverage_of_features([int(l.feature) for l in rule.conditions])
 
     def features_of(self, row: int) -> np.ndarray:
-        return np.sort(np.asarray(self._row_feats[row], dtype=np.int64))
+        return np.flatnonzero(self._end_features(np.array([row]))[0]).astype(np.int64)
 
     # -- incremental coverage (search fast path) -----------------------
     #
@@ -943,7 +921,7 @@ class NListRepresentation(DataRepresentation):
     #
     # - `anchor_item` is the *deepest* (least frequent) feature fixed so
     #   far, or `None` for the empty rule. `active` indexes into that
-    #   item's own N-list (`_path_words[anchor_item]` etc.) -- the nodes
+    #   item's own N-list (`_words_of(anchor_item)` etc.) -- the nodes
     #   whose path already satisfies every feature fixed so far.
     # - Refining by a feature no deeper than the anchor only needs to
     #   test the *new* bit against the already-narrow `active` set --
@@ -953,36 +931,16 @@ class NListRepresentation(DataRepresentation):
     # - Refining by a feature *deeper* than the anchor re-anchors: no
     #   node registered under the old anchor can tell us anything about
     #   an item that only appears *below* it, so this re-scans the new
-    #   item's own global N-list, filtered by the full accumulated mask.
-    #   Exactly `coverage`'s cost for that one item, never worse, and it
-    #   only happens when a strictly deeper feature is introduced.
-    #
-    #   Pre/post visit codes would, *in principle*, make this cheaper
-    #   still: `active`'s nodes -- no two of the same item can be
-    #   ancestor/descendant of each other -- occupy disjoint subtree
-    #   intervals, so binary-searching the new item's pre-sorted
-    #   occurrences against those (few) intervals only touches
-    #   occurrences that could possibly matter, instead of the new
-    #   item's *entire* N-list. This was built, correctness-tested
-    #   exhaustively, then measured, and kept out of *this* class: at the
-    #   data scales this library actually deals with (thousands of rows,
-    #   hundreds of features), the win is real in elements-touched but
-    #   not in wall-clock time -- the interval-join path needs roughly
-    #   4-5x as many separate vectorized numpy calls as the plain bitmask
-    #   scan, and each call's own fixed dispatch overhead is on the same
-    #   order as the work being saved, so the measured net effect across
-    #   realistic feature orderings is roughly break-even to slightly
-    #   negative -- including on data deliberately built to favor it. See
-    #   `PrePostNListRepresentation`, below, for that version -- kept as
-    #   a separate, explicitly opt-in subclass (not a flag here) for the
-    #   regime it hasn't been measured on: a single feature's N-list
-    #   running into the tens of thousands while `active` stays tiny.
+    #   item's own N-list, filtered by the full accumulated mask --
+    #   exactly `coverage`'s cost for that one item. (Pre/post codes
+    #   give a second way, searching the new item's nodes inside the
+    #   active nodes' subtrees: `PrePostNListRepresentation`, measured
+    #   about break-even, hence a separate, opt-in subclass.)
     # - `mask_words` is the accumulated feature bitmask (needed for the
     #   re-anchor case's full-mask test). `ctx` (`_NListMaskContext`)
-    #   carries `example_mask`, shared unchanged by every handle from one
-    #   `initial_cover` call, memoizing per-item masked node counts so an
-    #   item that becomes the anchor for several candidates in the same
-    #   search only pays the mask/count derivation once.
+    #   carries `example_mask` and the weights, shared unchanged by every
+    #   handle from one `initial_cover` call, with the cumulative class
+    #   sums that turn a node's row range into its counts.
 
     def initial_cover(self, example_mask: Optional[np.ndarray] = None):
         support, w = self.scope(example_mask)
@@ -996,12 +954,12 @@ class NListRepresentation(DataRepresentation):
         new_mask_words[feature >> 6] |= np.uint64(1 << (feature & 63))
 
         if anchor_item is None or self._rank[feature] > self._rank[anchor_item]:
-            words = self._path_words[feature]
+            words = self._words_of(feature)
             hit = np.all((words & new_mask_words) == new_mask_words, axis=1)
             return feature, np.flatnonzero(hit), new_mask_words, ctx
 
         wj, bit = feature >> 6, np.uint64(1 << (feature & 63))
-        keep = (self._path_words[anchor_item][active, wj] & bit) == bit
+        keep = (self._words_of(anchor_item)[active, wj] & bit) == bit
         return anchor_item, active[keep], new_mask_words, ctx
 
     def cover_counts(self, handle, positive_class: Any) -> Tuple[int, int, int, int]:
@@ -1017,7 +975,9 @@ class NListRepresentation(DataRepresentation):
         if anchor_item is None:
             tp, fp = n_pos, n_neg  # the empty rule covers everything in scope
         else:
-            active_counts = ctx.node_counts(self, anchor_item)[active].sum(axis=0)
+            positions = self._item_ptr[anchor_item] + active
+            cum = ctx.cum(self)
+            active_counts = (cum[self._row_hi[positions]] - cum[self._row_lo[positions]]).sum(axis=0)
             tp = num(active_counts[pos_idx])
             fp = num(active_counts.sum()) - tp
         return tp, fp, n_pos - tp, n_neg - fp
@@ -1026,9 +986,8 @@ class NListRepresentation(DataRepresentation):
         anchor_item, active, _, ctx = handle
         if anchor_item is None:
             return np.ones(self._n_samples, dtype=bool) if ctx.mask is None else ctx.mask.copy()
-        row_idx, entry_node = self._row_idx[anchor_item], self._entry_node[anchor_item]
         out = np.zeros(self._n_samples, dtype=bool)
-        out[row_idx[np.isin(entry_node, active)]] = True
+        out[self._rows_of(self._item_ptr[anchor_item] + active)] = True
         if ctx.mask is not None:
             out &= ctx.mask
         return out
@@ -1036,37 +995,18 @@ class NListRepresentation(DataRepresentation):
     # -- batched counting ----------------------------------------------
     #
     # Rows with the same feature set end at the same tree node, so the
-    # covered rows' values are first summed per distinct row pattern, and
-    # only the patterns that occur are multiplied with the pattern matrix
-    # (CSR: per pattern, its features): cost grows with the distinct
+    # covered rows' values are first summed per end node, and only the end
+    # nodes that occur are multiplied with their path matrix (CSR: per end
+    # node, the features on its path): cost grows with the distinct row
     # patterns covered, not the rows -- the compression the PPC-tree
-    # stands for. Reading feature counts off a tree node's path instead
-    # would need the node at which a row's path *ends*: an ancestor's path
-    # misses the features below it, the depth trap that broke both
-    # `chain_cover_counts` attempts (`ROADMAP.md`).
+    # stands for.
 
     @functools.cached_property
     def _row_patterns(self):
-        """``(pattern of every row, CSR of the distinct patterns)``, built
-        once, on first use, from the stored per-row feature sets."""
-        from scipy import sparse
-
-        ids: dict = {}
-        pattern_of = np.empty(self._n_samples, dtype=np.int64)
-        patterns: list = []
-        for i, feats in enumerate(self._row_feats):
-            feats = np.asarray(feats, dtype=np.int64)
-            key = feats.tobytes()
-            j = ids.get(key)
-            if j is None:
-                j = ids[key] = len(patterns)
-                patterns.append(feats)
-            pattern_of[i] = j
-        indptr = np.concatenate(([0], np.cumsum([len(p) for p in patterns])))
-        indices = np.concatenate(patterns) if patterns else np.empty(0, dtype=np.int64)
-        matrix = sparse.csr_matrix((np.ones(len(indices)), indices, indptr),
-                                   shape=(len(patterns), self._n_features))
-        return pattern_of, matrix
+        """``(pattern of every row, CSR of the distinct patterns)`` -- a
+        pattern is an end node -- built once, on first use."""
+        ends, pattern_of = np.unique(self._row_end, return_inverse=True)
+        return pattern_of.astype(np.int64).ravel(), self._decode(ends).astype(float)
 
     def _pattern_sums(self, rows: np.ndarray, values: np.ndarray) -> np.ndarray:
         """``values`` (one row per entry of `rows`) summed per feature over
@@ -1108,28 +1048,38 @@ class NListRepresentation(DataRepresentation):
 
     @functools.cached_property
     def X(self) -> np.ndarray:
-        """The unpacked ``(n_samples, n_features)`` bool matrix, rebuilt
-        from the stored per-row feature sets on first access -- for
-        handing a plain array to external tooling. The coverage path
-        never triggers this."""
-        X = np.zeros((self._n_samples, self._n_features), dtype=bool)
-        for i, feats in enumerate(self._row_feats):
-            X[i, feats] = True
-        return X
+        """The unpacked ``(n_samples, n_features)`` bool matrix, decoded
+        from the tree on first access and held thereafter -- for handing a
+        plain array to external tooling. The coverage path never triggers
+        this, and neither do `select_rows`, `relabel` or
+        `without_negations` (they decode to a sparse matrix instead)."""
+        return self._end_features(np.arange(self._n_samples))
+
+    def select_rows(self, mask: np.ndarray) -> "NListRepresentation":
+        y = None if self.y is None else self.y[mask]
+        w = None if self.weights is None else self.weights[mask]
+        return type(self)(self.spec, self._csr()[mask], y, weights=w)
+
+    def relabel(self, new_y: Any) -> "NListRepresentation":
+        return type(self)(self.spec, self._csr(), np.asarray(new_y), weights=self.weights)
+
+    def _reindexed(self, new_spec, source, is_complement):
+        if is_complement is not None and np.any(is_complement):
+            return super()._reindexed(new_spec, source, is_complement)   # complements are dense anyway
+        return type(self)(new_spec, self._csr()[:, np.asarray(source)], self.y, weights=self.weights)
 
     @classmethod
     def from_boolean(cls, data: "BooleanDataRepresentation") -> "NListRepresentation":
         """Build the N-list index for an existing
         `BooleanDataRepresentation`, reusing its `DataSpec`, labels and
         row weights."""
-        return cls(data.spec, data.X, data.y, weights=data.weights)
+        return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
     @classmethod
     def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "NListRepresentation":
         """Build the PPC-tree / N-list index from a `scipy.sparse` matrix
-        matching `spec`'s feature order -- the constructor now builds
-        directly from a sparse matrix's own CSR structure, no dense
-        `(n_samples, n_features)` array ever formed."""
+        matching `spec`'s feature order -- no dense `(n_samples,
+        n_features)` array is ever formed."""
         return cls(spec, matrix, y)
 
     @classmethod
@@ -1157,144 +1107,59 @@ class NListRepresentation(DataRepresentation):
         )
 
     def __repr__(self) -> str:
-        n_nodes = sum(w.shape[0] for w in self._path_words)
         return (
             f"{type(self).__name__}(spec={self.spec!r}, n_samples={self.n_samples}, "
-            f"n_tree_nodes={n_nodes})"
+            f"n_tree_nodes={len(self._words)})"
         )
-
-    # `_reindexed` uses the base's dense-projection fallback: the PPC-tree
-    # has to be rebuilt over the new feature set either way.
 
 
 class PrePostNListRepresentation(NListRepresentation):
-    """`NListRepresentation` plus pre/post visit codes on every trie
-    node, giving `refine_cover`'s "deeper feature" case (see the base
-    class's own comment above `refine_cover`) a second way to answer
-    "which of this feature's nodes are compatible with the rule so far":
-    instead of scanning the feature's *entire* N-list, binary-search its
-    pre-order-sorted occurrences against the current active nodes'
-    ``[pre, subtree_end]`` subtree intervals (disjoint, since no two
-    nodes of the same item can be ancestor/descendant of each other) and
-    keep only what falls inside one -- skipping everything outside every
-    active subtree entirely. `_reanchor` picks whichever of the two
-    (plain scan vs. interval join) should be cheaper for the actual
-    sizes involved, falling back to the plain scan -- identical to the
-    base class -- whenever the active set isn't meaningfully smaller
+    """`NListRepresentation` searching with the nodes' pre/post codes:
+    `refine_cover`'s "deeper feature" case (see the comment above the base
+    class's `initial_cover`) finds the new feature's nodes compatible with
+    the rule so far by binary-searching its pre-order-sorted nodes against
+    the active nodes' ``[pre, subtree_end]`` intervals (disjoint, since no
+    two nodes of the same item can be ancestor/descendant of each other),
+    instead of scanning its whole N-list. `_reanchor` picks the plain scan
+    -- identical to the base class -- whenever the active set isn't smaller
     than the feature's own N-list.
 
-    **Opt-in, not the default**, and not because it's unfinished: it was
-    built, correctness-tested exhaustively (see
-    `tests/test_representations.py`), and then *measured* -- at the data
-    scales this library's own demos exercise (thousands of rows,
-    hundreds of features) it comes out roughly break-even to slightly
-    *worse* than `NListRepresentation`'s plain scan, including on data
-    deliberately built to favor it (a handful of features present in 95%
-    of rows, refined into from a small, already-narrowed active set).
-    The interval-join path needs roughly 4-5x as many separate
-    vectorized numpy calls (two `searchsorted`s, a `cumsum`, several
-    `repeat`s, the final gather) as the plain scan (AND + compare +
-    reduce), and each call's own fixed dispatch overhead is on the same
-    order as the work being saved at these sizes -- the "touches fewer
-    elements" argument is real, but numpy's per-call overhead eats it
-    before it shows up in wall-clock time. It's kept as this separate,
-    opt-in subclass -- rather than deleted, or folded into
-    `NListRepresentation` behind a flag -- for the case it hasn't been
-    measured on: a single feature's N-list running into the tens of
-    thousands of rows while the active set stays tiny, where the
-    element-count saving should eventually be large enough to clear that
-    per-call overhead. Try it there; don't reach for it by default.
+    The same tree and the same storage as `NListRepresentation`, which
+    needs the pre/post codes to derive its row ranges anyway; this class
+    only keeps them (two integers per node) for the search. **Opt-in, not
+    the default**: measured at the data scales of this library's demos
+    (thousands of rows, hundreds of features), the interval join comes out
+    roughly break-even to slightly *worse* than the plain scan -- it needs
+    several more vectorized numpy calls, whose fixed overhead is on the
+    order of the work saved. Kept for the case it hasn't been measured on:
+    a single feature's N-list running into the tens of thousands of nodes
+    while the active set stays tiny.
     """
 
-    @staticmethod
-    def _assign_pre_post(root: "_PPCNode") -> Tuple[dict, dict]:
-        """Number every node with a pre-order visit number (`pre`) and,
-        bottom-up, the largest `pre` among its own descendants
-        (`subtree_end`) -- so a node's whole subtree is exactly the
-        contiguous range ``[pre, subtree_end]``, and "is A an ancestor of
-        B" reduces to ``A.pre <= B.pre <= A.subtree_end``. Returns
-        ``({id(node): pre}, {id(node): subtree_end})`` rather than
-        storing these on the node itself -- `_PPCNode.__slots__` stays
-        exactly what the base class needs, so `NListRepresentation`
-        doesn't pay for this even indirectly; only this one opt-in
-        subclass, and only during its own one-time build, ever computes
-        it. Iterative (not recursive), so a wide/deep tree can't hit
-        Python's recursion limit. Nodes stay referenced by the tree/the
-        traversal lists throughout, so `id()` is safe to use as a key
-        here (no premature reuse)."""
-        order: list = []
-        stack = [root]
-        pre_of: dict = {}
-        counter = 0
-        while stack:
-            node = stack.pop()
-            pre_of[id(node)] = counter
-            counter += 1
-            order.append(node)
-            for child in node.children.values():
-                stack.append(child)
-        end_of: dict = {}
-        for node in reversed(order):
-            end = pre_of[id(node)]
-            for child in node.children.values():
-                cend = end_of[id(child)]
-                if cend > end:
-                    end = cend
-            end_of[id(node)] = end
-        return pre_of, end_of
-
-    def _prepare_extra_per_item(self, root: "_PPCNode", k: int) -> None:
-        self._pre_of, self._end_of = self._assign_pre_post(root)
-        self._pre_by_item: list = [[] for _ in range(k)]
-        self._end_by_item: list = [[] for _ in range(k)]
-
-    def _extra_per_item(self, node: "_PPCNode", path_mask: int) -> None:
-        self._pre_by_item[node.item].append(self._pre_of[id(node)])
-        self._end_by_item[node.item].append(self._end_of[id(node)])
-
-    def _finalize_extra_per_item(self, k: int) -> None:
-        self._pre: list = []
-        self._subtree_end: list = []
-        self._pre_order: list = []
-        self._pre_sorted: list = []
-        for it in range(k):
-            pre = np.asarray(self._pre_by_item[it], dtype=np.int64)
-            self._pre.append(pre)
-            self._subtree_end.append(np.asarray(self._end_by_item[it], dtype=np.int64))
-            po = np.argsort(pre, kind="stable").astype(np.int64)
-            self._pre_order.append(po)
-            self._pre_sorted.append(pre[po])
-        del self._pre_by_item, self._end_by_item, self._pre_of, self._end_of
+    _KEEP_PRE_POST = True
 
     def _reanchor(self, anchor_item: int, active: np.ndarray, feature: int, mask_words: np.ndarray) -> np.ndarray:
         """Which of `feature`'s own nodes satisfy every bit in
         `mask_words`, given that `active` already lists the `anchor_item`
-        nodes satisfying every bit *except* `feature`'s. See this class's
-        own docstring for the two strategies and why the choice between
-        them is a simple, conservative size comparison rather than a
-        precise cost model -- it just needs to guarantee this never picks
-        the interval join in a case where the plain scan would clearly
-        have been cheaper, not to pick the optimal strategy every time.
-        """
-        words = self._path_words[feature]
-        m_feature = words.shape[0]
-        if active.size == 0 or active.size >= m_feature:
+        nodes satisfying every bit *except* `feature`'s: those in an active
+        node's subtree (every node there has the active node's path, and
+        `feature`'s nodes are the ones with `feature` on it)."""
+        words = self._words_of(feature)
+        if active.size == 0 or active.size >= words.shape[0]:
             hit = np.all((words & mask_words) == mask_words, axis=1)
             return np.flatnonzero(hit).astype(np.int64)
 
-        pre_sorted, order = self._pre_sorted[feature], self._pre_order[feature]
-        lo = np.searchsorted(pre_sorted, self._pre[anchor_item][active], side="left")
-        hi = np.searchsorted(pre_sorted, self._subtree_end[anchor_item][active], side="right")
+        s, e = self._item_ptr[feature], self._item_ptr[feature + 1]
+        pre_sorted = self._node_pre[s:e]                  # an item's nodes are stored in pre-order
+        a = self._item_ptr[anchor_item] + active
+        lo = np.searchsorted(pre_sorted, self._node_pre[a], side="left")
+        hi = np.searchsorted(pre_sorted, self._node_end[a], side="right")
         counts = hi - lo
         total = int(counts.sum())
         if total == 0:
             return np.empty(0, dtype=np.int64)
-        # vectorized ragged-range gather (no Python loop over `active` --
-        # that loop's own overhead was the first thing measured to erase
-        # the saving this is supposed to buy)
-        group_start = np.concatenate(([0], np.cumsum(counts)[:-1]))
-        offset_in_group = np.arange(total) - np.repeat(group_start, counts)
-        return order[np.repeat(lo, counts) + offset_in_group]
+        # vectorized ragged-range gather (no Python loop over `active`)
+        return (np.repeat(lo - (np.cumsum(counts) - counts), counts) + np.arange(total)).astype(np.int64)
 
     def refine_cover(self, handle, feature: int):
         anchor_item, active, mask_words, ctx = handle
@@ -1303,7 +1168,7 @@ class PrePostNListRepresentation(NListRepresentation):
         new_mask_words[feature >> 6] |= np.uint64(1 << (feature & 63))
 
         if anchor_item is None:
-            m = self._path_words[feature].shape[0]
+            m = self._item_ptr[feature + 1] - self._item_ptr[feature]
             return feature, np.arange(m, dtype=np.int64), new_mask_words, ctx
 
         if self._rank[feature] > self._rank[anchor_item]:
@@ -1311,7 +1176,7 @@ class PrePostNListRepresentation(NListRepresentation):
             return feature, new_active, new_mask_words, ctx
 
         wj, bit = feature >> 6, np.uint64(1 << (feature & 63))
-        keep = (self._path_words[anchor_item][active, wj] & bit) == bit
+        keep = (self._words_of(anchor_item)[active, wj] & bit) == bit
         return anchor_item, active[keep], new_mask_words, ctx
 
 
@@ -1499,7 +1364,7 @@ class SparseDataRepresentation(DataRepresentation):
 
     @classmethod
     def from_boolean(cls, data: "BooleanDataRepresentation") -> "SparseDataRepresentation":
-        return cls(data.spec, data.X, data.y, weights=data.weights)
+        return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
     @classmethod
     def from_dataframe(

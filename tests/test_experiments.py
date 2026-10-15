@@ -386,11 +386,27 @@ def test_render_results_table_group_by_list_breaks_out_every_column():
     })
     out = render_results_table(results, ["accuracy"], group_by=["dataset", "learner"])
     assert "| dataset | learner | accuracy |" in out
-    assert "| d1 | A | 0.800 |" in out
-    assert "| d1 | B | 0.600 |" in out
-    assert "| d2 | A | 0.900 |" in out
-    assert "| d2 | B | 0.700 |" in out
-    assert "| overall |  | 0.750 |" in out  # padded blank for the second group_by column
+    assert "| d1 | A | 80.00% |" in out
+    assert "| d1 | B | 60.00% |" in out
+    assert "| d2 | A | 90.00% |" in out
+    assert "| d2 | B | 70.00% |" in out
+    assert "| overall |  | 75.00% |" in out  # padded blank for the second group_by column
+
+
+def test_report_number_formats():
+    from pyrulearn.experiments.report import format_accuracy, format_mean_count
+    assert format_accuracy(0.86314) == "86.31%"
+    assert format_accuracy(1.0) == "100.00%"
+    assert format_accuracy(float("nan")) == "n/a"
+    assert format_mean_count(12.345) == "12.3"
+    assert format_mean_count(float("nan")) == "n/a"
+
+
+def test_render_results_table_formats_counts_and_other_columns():
+    results = pd.DataFrame({"dataset": ["d1", "d1"], "accuracy": [0.8, 0.9], "n_rules": [3, 4],
+                            "fit_time": [0.25, 0.75]})
+    out = render_results_table(results, ["accuracy", "n_rules", "fit_time"], include_overall=False)
+    assert "| d1 | 85.00% | 3.5 | 0.500 |" in out
 
 
 def test_render_results_table_include_overall_false_omits_the_row():
@@ -400,6 +416,6 @@ def test_render_results_table_include_overall_false_omits_the_row():
         "accuracy": [0.8, 0.6],
     })
     out = render_results_table(results, ["accuracy"], group_by="learner", include_overall=False)
-    assert "| A | 0.800 |" in out
-    assert "| B | 0.600 |" in out
+    assert "| A | 80.00% |" in out
+    assert "| B | 60.00% |" in out
     assert "overall" not in out

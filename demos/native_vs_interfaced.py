@@ -108,7 +108,9 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import render_results_table, render_setup_section
+from pyrulearn.experiments.report import (
+    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+)
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank, win_counts
 from pyrulearn.interfaces.boomer import MLRLBoomer
@@ -214,10 +216,15 @@ class RuleFitRF(RuleFit):
 # for the same accuracy (measured: 534 rules/1942 conditions vs. native's
 # 131/474 on one dataset) -- "none"/"none" matches native's full-data
 # search and brings it down to 116/423, now comparable.
+# MLRL's own default is to use every core of the machine (on this one: ~70 for a single fit),
+# while every native learner here is single-threaded -- one thread each makes the fit times comparable.
+# Set here, for this comparison only; `MLRLBoomer` itself keeps MLRL's default.
+MLRL_SINGLE_THREAD = {"parallel_rule_refinement": "false", "parallel_statistic_update": "false",
+                      "parallel_prediction": "false"}
 PAIRS = {
     "RuleFit": (RuleFitRF, {"random_state": RANDOM_STATE}, IModRuleFit, {"random_state": RANDOM_STATE}),
     "Boomer": (Boomer, {"random_state": RANDOM_STATE}, MLRLBoomer,
-              {"instance_sampling": "none", "feature_sampling": "none"}),
+              {"instance_sampling": "none", "feature_sampling": "none", **MLRL_SINGLE_THREAD}),
     "CBA": (CBA, {"max_len": ITEMSET_MAX_LEN}, PArcCBA, {"max_len": ITEMSET_MAX_LEN}),
     "Pypper": (Pypper, {"random_state": RANDOM_STATE}, WekaJRip, {"jar": WEKA_JAR, "java": WEKA_JAVA}),
 }
@@ -226,6 +233,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "native_vs_interfaced"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_native_vs_interfaced_cache")
+
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _concurrency_note() -> str:
+    if N_JOBS.rstrip("!") == "1":
+        return "Fits run one at a time."
+    return (f"Fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s `n_jobs`), each in its own process and "
+            "timed there, with the numerical libraries limited to one thread (`OMP_NUM_THREADS=1` and its "
+            "relatives). A check of the `dense_vs_modular` learners on 11 datasets found the fit times of 5 "
+            "concurrent fits as close to a sequential run as a second sequential run (per-learner ratios and "
+            "rankings alike); time ratios between learners are reproducible to about +-10% either way.")
 
 LEARNER_NOTES = {
     "RuleFit": "A sparse (L1) logistic regression over a random forest's leaves "
@@ -247,7 +273,9 @@ LEARNER_NOTES = {
     "Boomer": "ENDER configured as BOOMER's single-label case: logistic loss, L2-regularized "
              "Newton steps, up to 1,000 rules.",
     "MLRL:Boomer": "The reference BOOMER implementation (`mlrl-boomer`), with its instance/feature "
-                  "sampling turned off to match native Boomer's full-data search (see PAIRS above).",
+                  "sampling turned off to match native Boomer's full-data search (see PAIRS above), "
+                  "and, in this demo only, run on a single thread: by default it uses every core "
+                  "of the machine, which the native learners (all single-threaded) don't.",
     "ORB": "Optimal rule boosting: each round's rule is the exact best by branch-and-bound "
            "search (10 rounds by default), not grown greedily.",
     "RKD:RuleBoosting": "The reference optimal-rule-boosting implementation (`realkd`).",
@@ -309,15 +337,15 @@ def run_preliminary_optimal_rule_boosting_check():
     # realkd's exhaustive search (its default) vs. ORB with the matching search
     results = run_cv([ORB(search=BranchAndBoundSearch()), RKDRuleBoosting()], datasets, n_folds=PRELIM_FOLDS,
                      fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
-                     cache_dir=CACHE_DIR)
+                     cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     by_learner = results.groupby("learner").agg(accuracy=("accuracy", "mean"), fit_time=("fit_time", "mean"))
     native, ext = by_learner.loc["ORB"], by_learner.loc["RKD:RuleBoosting"]
     acc_gap = abs(native["accuracy"] - ext["accuracy"])
     agree = "closely" if acc_gap < 0.02 else "reasonably" if acc_gap < 0.05 else "not closely"
     verdict = (
         f"Across {len(datasets)} small datasets ({PRELIM_FOLDS}-fold), ORB and "
-        f"RKD:RuleBoosting agreed {agree} on accuracy (mean {native['accuracy']:.3f} vs. "
-        f"{ext['accuracy']:.3f}, {acc_gap:.3f} apart; mean fit time {native['fit_time']:.2f}s vs. "
+        f"RKD:RuleBoosting agreed {agree} on accuracy (mean {format_accuracy(native['accuracy'])} vs. "
+        f"{format_accuracy(ext['accuracy'])}, {100 * acc_gap:.2f} points apart; mean fit time {native['fit_time']:.2f}s vs. "
         f"{ext['fit_time']:.2f}s) -- but neither's exhaustive search scales to the main comparison's "
         f"wider, one-hot-encoded feature counts within the {FIT_TIMEOUT:.0f}s cap, a limit of the "
         f"exhaustive-search approach itself rather than of either implementation, so the pair is "
@@ -364,6 +392,14 @@ as last in the ranking), not as the end of the run -- CBA/PArc:CBA's
 itemset mining is the likeliest to hit this on wider data.
 
 Measures: test accuracy, number of rules and conditions, fit time.
+
+Threads: every learner here runs on one thread. `mlrl-boomer` would use every core of the machine by
+default (about 70 for a single fit on the machine these results were measured on), which no native
+learner does, so `MLRL:Boomer` is limited to one thread
+(`parallel_rule_refinement`, `parallel_statistic_update` and `parallel_prediction` set to `false`)
+to compare like with like. This limit is set by this demo only: `MLRLBoomer` itself keeps MLRL's
+default and uses every core, and with that it would be faster than reported here.
+{_concurrency_note()}
 """
 
 
@@ -382,8 +418,8 @@ def _pair_table(results: pd.DataFrame) -> list:
             if name not in summary.index:
                 continue
             row = summary.loc[name]
-            lines.append(f"| {key} | {name} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
-                        f"{row['n_conditions']:.1f} | {row['fit_time']:.2f} | "
+            lines.append(f"| {key} | {name} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                        f"{format_mean_count(row['n_conditions'])} | {row['fit_time']:.2f} | "
                         f"{int(failures.get(name, 0))} |\n")
     return lines
 
@@ -422,8 +458,8 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
              "failures |\n|---|--:|--:|--:|--:|--:|--:|--:|\n")
     for learner in ranks.sort_values().index:
         row = summary.loc[learner]
-        L.append(f"| {learner} | {row['accuracy']:.3f} | {row['n_rules']:.1f} | "
-                f"{row['n_conditions']:.1f} | {row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
+        L.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
+                f"{format_mean_count(row['n_conditions'])} | {row['fit_time']:.2f} | {wins.get(learner, 0.0):.1f} | "
                 f"{ranks[learner]:.2f} | {int(failures.get(learner, 0))} |\n")
     L.append("\nSorted by mean rank. `wins` -- datasets where a learner's mean accuracy was "
             "(tied-for-)best, a tie split evenly; `mean rank` -- average accuracy rank across "
@@ -437,8 +473,8 @@ def write_report(results, datasets, n_folds: int, report_path: str, plots: dict,
                 "|---|--:|--:|--:|--:|--:|\n")
         for learner, g in large.groupby("learner"):
             ok = g[g["error"].isna()]
-            cells = ([f"{ok['accuracy'].mean():.3f}", f"{ok['n_rules'].mean():.1f}",
-                     f"{ok['n_conditions'].mean():.1f}", f"{ok['fit_time'].mean():.2f}"]
+            cells = ([format_accuracy(ok['accuracy'].mean()), format_mean_count(ok['n_rules'].mean()),
+                     format_mean_count(ok['n_conditions'].mean()), f"{ok['fit_time'].mean():.2f}"]
                     if len(ok) else ["--"] * 4)
             L.append(f"| {learner} | {len(ok)}/{len(g)} | " + " | ".join(cells) + " |\n")
         L.append("\n")
@@ -457,6 +493,7 @@ def write_plots(results: pd.DataFrame, learner_names, quick: bool) -> dict:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
 
     stem = f"{NAME}_{'quick_' if quick else ''}"
     os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -489,6 +526,7 @@ def write_plots(results: pd.DataFrame, learner_names, quick: bool) -> dict:
     ax.set_xscale("symlog")
     ax.set_xlabel("total conditions (rule set complexity)")
     ax.set_ylabel("test accuracy")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_title("accuracy vs. complexity (filled = native, open = interfaced,\n"
                 "line = same dataset)")
     ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=4)
@@ -542,7 +580,7 @@ def main(quick: bool = True) -> None:
     max_intervals = QUICK_MAX_INTERVALS if quick else MAX_INTERVALS
     results = pd.concat([
         run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, max_intervals=max_intervals,
-              random_state=RANDOM_STATE, cache_dir=CACHE_DIR)
+              random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)
 
@@ -557,5 +595,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true",
                         help=f"run all {len(FULL_DATASETS)} datasets instead of the quick default")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
     args = parser.parse_args()
+    N_JOBS = args.n_jobs
     main(quick=not args.full)
