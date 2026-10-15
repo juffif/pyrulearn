@@ -3,6 +3,29 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Changed
+
+- `NListRepresentation.select_rows` (and `PrePostNListRepresentation`'s) derives the
+  subset's tree from the existing one instead of building it anew: the nodes no
+  selected row passes through are dropped and the rest renumbered, keeping the
+  full data's feature order. Coverage, rows and counts are those of a rebuilt
+  N-list (weighted sums up to floating-point rounding). 5-8x faster on the
+  multi-class datasets measured (the pairs of `letter`: 21.3 s -> 3.1 s), which
+  is what pairwise and ordered decompositions spend most of their time on.
+  `relabel` shares the tree and only rebuilds the per-class sums. An integer
+  index that reorders or repeats rows still builds anew.
+- N-lists count candidate features in one batch (`batch_cover_sums`,
+  `batch_cover_counts` -- ENDER, Boomer, ORB) with a dense product over the
+  distinct row patterns when at least 2% of the pattern matrix is true (and it
+  has at most 2^26 cells), the sparse product otherwise. On real data with
+  negation features the boosting learners now run about as fast on N-lists as
+  on Boolean data (credit-g: ENDER 1.68 s -> 1.25 s, Boolean 1.18 s; Boomer
+  3.08 s -> 2.23 s, faster than Boolean), while wide sparse data keeps the
+  sparse product (20,000 features: unchanged). The dense patterns cost one byte
+  per cell, built on first use.
+
 ## 0.3.2 (2026-10-15)
 
 Parallel experiments and consistent numbers: `run_cv` takes `n_jobs`, every demo that fits through it takes
