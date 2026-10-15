@@ -76,6 +76,23 @@ from .data import DataRepresentation
 from .models import FlatRuleSet, RuleList, RuleModel
 from .rule import Rule
 
+
+# -- how numbers are shown ------------------------------------------------------
+# One convention for everything pyrulearn prints -- reprs, progress lines and the
+# demos' reports: accuracies as percentages with two decimals, means of counts
+# (rules, conditions, conditions per rule) with one decimal.
+
+def format_accuracy(value: float) -> str:
+    """An accuracy (a fraction) as a percentage with two decimals, ``86.31%``;
+    NaN prints as ``n/a``."""
+    return "n/a" if value != value else f"{100 * value:.2f}%"
+
+
+def format_mean_count(value: float) -> str:
+    """A mean of integers (number of rules, of conditions, conditions per rule)
+    with one decimal, ``12.3``; NaN prints as ``n/a``."""
+    return "n/a" if value != value else f"{value:.1f}"
+
 if TYPE_CHECKING:
     from .heuristics import GainHeuristic, RuleHeuristic
 
@@ -487,7 +504,7 @@ class ModelStats:
         self.n_conditions = n_conditions
 
     def __repr__(self) -> str:
-        acc = f", accuracy={self.confusion.accuracy:.3f}" if self.confusion is not None else ""
+        acc = f", accuracy={format_accuracy(self.confusion.accuracy)}" if self.confusion is not None else ""
         return (f"ModelStats(n_rows={self.n_rows}, n_rules={self.n_rules}, "
                 f"n_conditions={self.n_conditions}{acc})")
 

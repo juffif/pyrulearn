@@ -37,14 +37,18 @@ import json
 import multiprocessing as mp
 import os
 import queue
+import re
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+import warnings
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
 
 import numpy as np
 
 from ..data import DataRepresentation, default_representation
+from ..evaluation import format_accuracy
 from ..data.io import build_dataspec, encode
 from ..learners.base import RuleLearner
 from .catalog import CatalogEntry
@@ -180,6 +184,15 @@ def _fit_one(learner: RuleLearner, train_rep: DataRepresentation):
     return learner.fit(train_rep)
 
 
+def _timed_fit(learner: RuleLearner, train_rep: DataRepresentation):
+    """`_fit_one` plus the seconds `learner.fit` took, measured inside the
+    worker: with `n_jobs > 1` a cell can wait for a free worker, so the
+    parent can't time a fit from the outside."""
+    t0 = time.time()
+    model = learner.fit(train_rep)
+    return model, time.time() - t0
+
+
 # =================================================================== run_cv
 
 
@@ -261,8 +274,12 @@ def _measure(learner: RuleLearner, train_rep: DataRepresentation, test_rep: Data
             model, error = _fit_one(learner, train_rep), None
         except Exception as e:  # noqa: BLE001 -- a failed fit is recorded, not fatal
             model, error = None, f"{type(e).__name__}: {e}"
-    fit_time = time.time() - t0
+    return _score(model, error, time.time() - t0, test_rep, measure_fn)
 
+
+def _score(model, error: Optional[str], fit_time: float, test_rep: DataRepresentation,
+           measure_fn: Optional[Callable[[Any, DataRepresentation], dict]]) -> Dict[str, Any]:
+    """The measured columns of one cell, from its (possibly failed) fit."""
     row: Dict[str, Any] = {"fit_time": fit_time, "error": error,
                            "accuracy": np.nan, "n_rules": np.nan, "n_conditions": np.nan}
     if error is not None:
@@ -276,6 +293,155 @@ def _measure(learner: RuleLearner, train_rep: DataRepresentation, test_rep: Data
     return row
 
 
+def _available_cpus() -> int:
+    """The cores this process may use (its affinity mask where the platform
+    has one, which respects `taskset` and cluster allocations)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not available on Windows and macOS
+        return os.cpu_count() or 1
+
+
+def _resolve_n_jobs(n_jobs: Union[int, str]) -> int:
+    """`n_jobs` as the number of workers to start: a positive integer, capped
+    at the available cores with a warning, unless it is given as a string
+    ending in ``!`` (``"10!"``), which is used as it is."""
+    force = False
+    if isinstance(n_jobs, str):
+        match = re.fullmatch(r"(\d+)(!?)", n_jobs.strip())
+        if match is None:
+            raise ValueError(f"n_jobs must be a positive integer, or one followed by '!' to force it "
+                             f"(e.g. '10!'), got {n_jobs!r}")
+        n_jobs, force = int(match.group(1)), bool(match.group(2))
+    if isinstance(n_jobs, bool) or not isinstance(n_jobs, int) or n_jobs < 1:
+        raise ValueError(f"n_jobs must be a positive integer, or one followed by '!' to force it "
+                         f"(e.g. '10!'), got {n_jobs!r}")
+    available = _available_cpus()
+    if n_jobs > available and not force:
+        warnings.warn(f"n_jobs={n_jobs} is more than the {available} available core(s); using "
+                      f"n_jobs={available}. Pass n_jobs='{n_jobs}!' to start {n_jobs} workers anyway "
+                      f"(they would share the cores, and the per-fit time limit would count the waiting).",
+                      RuntimeWarning, stacklevel=3)
+        n_jobs = available
+    return n_jobs
+
+
+@dataclass
+class _Cell:
+    """One (dataset, fold, learner) cell of `run_cv`, ready to fit."""
+    index: int                      # position in the sequential order -- the row order of the result
+    dataset: str
+    fold: int
+    n_folds: int
+    learner: RuleLearner
+    key: str                        # cache key
+    cached: Optional[Dict[str, Any]]
+    train_rep: DataRepresentation
+    test_rep: DataRepresentation
+
+
+def _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,
+                representation, verbose):
+    """Yield every cell in (dataset, fold, learner) order, loading and
+    encoding each dataset and fold only when the consumer asks for its
+    first cell -- so a parallel run holds just the folds in flight."""
+    index = 0
+    for entry in datasets:
+        if verbose:
+            print(f"{entry.name} ...", flush=True)
+        df, target = entry.load()
+        y_all = df[target].to_numpy()
+        folds = _stratified_folds(y_all, n_folds, random_state)
+
+        for fold, (train_idx, test_idx) in enumerate(folds):
+            train_df = df.iloc[train_idx].reset_index(drop=True)
+            test_df = df.iloc[test_idx].reset_index(drop=True)
+            spec = build_dataspec(train_df, target=target, max_intervals=max_intervals,
+                                  skip_unusable=True).build()
+            train_rep = encode(spec, train_df, train_df[target].to_numpy(), representation=representation)
+            test_rep = encode(spec, test_df, test_df[target].to_numpy(), representation=representation)
+
+            for learner in learners:
+                key = _cache_key(entry, n_folds, fold, random_state, learner, representation)
+                yield _Cell(index, entry.name, fold, n_folds, learner, key,
+                            _cache_load(cache_dir, key), train_rep, test_rep)
+                index += 1
+
+
+def _outcome(row: Dict[str, Any]) -> str:
+    return row["error"] if row["error"] is not None else f"acc={format_accuracy(row['accuracy'])}"
+
+
+def _run_cells_parallel(cells, n_jobs: int, fit_timeout: Optional[float],
+                        measure_fn, cache_dir: Optional[str], verbose: bool) -> List[Dict[str, Any]]:
+    """The cells of `_iter_cells`, `n_jobs` fits at a time, each in its own
+    `TimeoutRunner` worker process (a thread per worker waits on it). The
+    parent only encodes folds, evaluates finished fits and writes the cache.
+    At most `2 * n_jobs` cells are in flight, which bounds the folds held
+    in memory. Rows come back in the cells' own order."""
+    import threading
+
+    # started one after the other: concurrent spawns have corrupted each other's pipes on Windows
+    runners = [TimeoutRunner(fit_timeout) for _ in range(n_jobs)]
+    todo: "queue.Queue[Optional[_Cell]]" = queue.Queue()
+    done: "queue.Queue[tuple]" = queue.Queue()
+
+    def worker(runner: TimeoutRunner) -> None:
+        while True:
+            cell = todo.get()
+            if cell is None:
+                return
+            t0 = time.time()
+            try:
+                out, error = runner.run(_timed_fit, cell.learner, cell.train_rep)
+            except Exception as e:  # noqa: BLE001 -- keep the cell, don't lose the worker
+                out, error = None, f"{type(e).__name__}: {e}"
+            if error is None:
+                model, fit_time = out
+            else:
+                model, fit_time = None, time.time() - t0
+            done.put((cell, model, error, fit_time))
+
+    rows: Dict[int, Dict[str, Any]] = {}
+
+    def finish() -> None:
+        cell, model, error, fit_time = done.get()
+        row = {"dataset": cell.dataset, "fold": cell.fold, "learner": cell.learner.display_name}
+        row.update(_score(model, error, fit_time, cell.test_rep, measure_fn))
+        _cache_save(cache_dir, cell.key, row)
+        rows[cell.index] = row
+        if verbose:
+            print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
+                  f"{cell.learner.display_name:<15s} {row['fit_time']:6.2f}s  {_outcome(row)}", flush=True)
+
+    threads = [threading.Thread(target=worker, args=(r,), daemon=True) for r in runners]
+    try:
+        for t in threads:
+            t.start()
+        in_flight = 0
+        for cell in cells:
+            if cell.cached is not None:
+                rows[cell.index] = cell.cached
+                if verbose:
+                    print(f"  {cell.dataset} fold {cell.fold + 1}/{cell.n_folds}  "
+                          f"{cell.learner.display_name:<15s} (cached)", flush=True)
+                continue
+            while in_flight >= 2 * n_jobs:
+                finish()
+                in_flight -= 1
+            todo.put(cell)
+            in_flight += 1
+        while in_flight:
+            finish()
+            in_flight -= 1
+    finally:
+        for _ in threads:
+            todo.put(None)
+        for r in runners:
+            r.close()
+    return [rows[i] for i in sorted(rows)]
+
+
 def run_cv(
     learners: Sequence[RuleLearner],
     datasets: Sequence[CatalogEntry],
@@ -287,6 +453,7 @@ def run_cv(
     measure_fn: Optional[Callable[[Any, DataRepresentation], dict]] = None,
     verbose: bool = True,
     representation: Optional[Type[DataRepresentation]] = None,
+    n_jobs: Union[int, str] = 1,
 ):
     """Run every learner in `learners` against every dataset in
     `datasets`, `n_folds`-fold cross-validation, and return one
@@ -355,48 +522,60 @@ def run_cv(
     of doing any work at all for a row `cache_dir` already has. Each
     line is flushed immediately, so progress is visible live even when
     stdout is redirected to a file or piped.
+
+    `n_jobs` (default 1) fits that many cells at the same time, each in
+    its own `TimeoutRunner` worker process; the cells are independent, so
+    the table has the same rows, in the same order, and the same accuracies
+    and rule counts as with `n_jobs=1` -- for learners whose result is fixed
+    by their `random_state`. Two things change: (1) a fit's `fit_time` is
+    then measured inside its worker, around `learner.fit` alone (with
+    `n_jobs=1` it includes handing the learner and the data to the worker
+    and the model back); (2) progress lines come out as cells finish, each
+    naming its dataset, not as they start. Concurrent fits compete for
+    memory bandwidth and caches, so **do not compare `fit_time`s from runs
+    with `n_jobs > 1` with each other, or with a sequential run** --
+    parallelize only runs that report accuracy, sizes or counts. The
+    parent keeps at most `2 * n_jobs` cells' folds in memory, and every
+    worker holds its own copy of its fold; a learner passed with `n_jobs > 1`
+    must be picklable by reference like any other (no class defined inside
+    a function).
+
+    `n_jobs` larger than the cores available to the process (its affinity
+    mask) is capped at that number, with a `RuntimeWarning`: workers beyond
+    the cores only share them, and since the per-fit `fit_timeout` counts wall
+    time, they would also make fits time out that finish when run alone. To
+    start exactly that many workers anyway, give a string ending in ``!``:
+    ``n_jobs="10!"``.
     """
     import pandas as pd
 
+    n_jobs = _resolve_n_jobs(n_jobs)
+
     resolved_representation = representation or default_representation()
+    cells = _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,
+                        resolved_representation, verbose)
+    if n_jobs > 1:
+        rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose)
+        return pd.DataFrame(rows)
+
     rows: List[Dict[str, Any]] = []
     timeout_runner = TimeoutRunner(fit_timeout) if fit_timeout is not None else None
     try:
-        for entry in datasets:
+        for cell in cells:
             if verbose:
-                print(f"{entry.name} ...", flush=True)
-            df, target = entry.load()
-            y_all = df[target].to_numpy()
-            folds = _stratified_folds(y_all, n_folds, random_state)
-
-            for fold, (train_idx, test_idx) in enumerate(folds):
-                train_df = df.iloc[train_idx].reset_index(drop=True)
-                test_df = df.iloc[test_idx].reset_index(drop=True)
-                spec = build_dataspec(train_df, target=target, max_intervals=max_intervals,
-                                      skip_unusable=True).build()
-                train_rep = encode(spec, train_df, train_df[target].to_numpy(),
-                                   representation=resolved_representation)
-                test_rep = encode(spec, test_df, test_df[target].to_numpy(),
-                                  representation=resolved_representation)
-
-                for learner in learners:
-                    if verbose:
-                        print(f"  fold {fold + 1}/{n_folds}  {learner.display_name:<15s} ...",
-                             end="", flush=True)
-                    key = _cache_key(entry, n_folds, fold, random_state, learner, resolved_representation)
-                    cached = _cache_load(cache_dir, key)
-                    if cached is not None:
-                        rows.append(cached)
-                        if verbose:
-                            print(" (cached)", flush=True)
-                        continue
-                    row = {"dataset": entry.name, "fold": fold, "learner": learner.display_name}
-                    row.update(_measure(learner, train_rep, test_rep, timeout_runner, measure_fn))
-                    _cache_save(cache_dir, key, row)
-                    rows.append(row)
-                    if verbose:
-                        outcome = row["error"] if row["error"] is not None else f"acc={row['accuracy']:.3f}"
-                        print(f" {row['fit_time']:6.2f}s  {outcome}", flush=True)
+                print(f"  fold {cell.fold + 1}/{n_folds}  {cell.learner.display_name:<15s} ...",
+                      end="", flush=True)
+            if cell.cached is not None:
+                rows.append(cell.cached)
+                if verbose:
+                    print(" (cached)", flush=True)
+                continue
+            row = {"dataset": cell.dataset, "fold": cell.fold, "learner": cell.learner.display_name}
+            row.update(_measure(cell.learner, cell.train_rep, cell.test_rep, timeout_runner, measure_fn))
+            _cache_save(cache_dir, cell.key, row)
+            rows.append(row)
+            if verbose:
+                print(f" {row['fit_time']:6.2f}s  {_outcome(row)}", flush=True)
     finally:
         if timeout_runner is not None:
             timeout_runner.close()
