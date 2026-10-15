@@ -10,14 +10,14 @@ they are modeled on, on 15 small/medium and
 Two more pairs are covered by their own demos instead: Slipper vs.
 IMod:Slipper (`ripper_comparison.py`'s own preliminary check), and PyLORD
 vs. the reference JavaLord (`demos/seco_learners_comparison.py`). A
-fifth pair, OptimalRuleBoosting vs. RKD:RuleBoosting, is checked
+fifth pair, ORB vs. RKD:RuleBoosting, is checked
 separately below instead of in the main comparison -- see "Why optimal
-rule boosting isn't in the main comparison". Across 2 small datasets (3-fold), OptimalRuleBoosting and RKD:RuleBoosting agreed closely on accuracy (mean 0.898 vs. 0.899, 0.001 apart; mean fit time 34.38s vs. 7.80s) -- but neither's exhaustive search scales to the main comparison's wider, one-hot-encoded feature counts within the 300s cap, a limit of the exhaustive-search approach itself rather than of either implementation, so the pair is checked here instead of in the main table below.
+rule boosting isn't in the main comparison". Across 2 small datasets (3-fold), ORB and RKD:RuleBoosting agreed closely on accuracy (mean 89.78% vs. 89.89%, 0.11 points apart; mean fit time 87.11s vs. 7.86s) -- but neither's exhaustive search scales to the main comparison's wider, one-hot-encoded feature counts within the 300s cap, a limit of the exhaustive-search approach itself rather than of either implementation, so the pair is checked here instead of in the main table below.
 
 - **RuleFit** -- A sparse (L1) logistic regression over a random forest's leaves (100 trees, depth 4) -- the candidate pool native RuleFit doesn't yet grow itself (see the module docstring). Its own sparsity knob is a plain regularization strength (`C`, optionally `cv`-selected by predictive score) with no cap on the final rule count -- unlike IMod:RuleFit (right), it ends up keeping noticeably more, smaller rules for similar accuracy (measured: 70.8 rules/268.7 conditions vs. 25.3/59.6, mean). Neither a smaller fixed `C` nor `cv=` reproduces IMod:RuleFit's rule count reliably across datasets (tested: `cv=5` went from 67->28 rules on one dataset but 29->39, the wrong way, on another) -- it's a different sparsity *mechanism*, not a mismatched default, so left unmatched here.
   **IMod:RuleFit** -- imodels' RuleFit: gradient-boosted trees as the rule pool, then a sparse regression over their leaves, deliberately capped at `max_rules=30` -- it searches the regularization path for the sparsest fit under that ceiling (`get_best_alpha_under_max_rules`), rather than picking strength by predictive score alone.
 - **Boomer** -- ENDER configured as BOOMER's single-label case: logistic loss, L2-regularized Newton steps, up to 1,000 rules.
-  **MLRL:Boomer** -- The reference BOOMER implementation (`mlrl-boomer`), with its instance/feature sampling turned off to match native Boomer's full-data search (see PAIRS above).
+  **MLRL:Boomer** -- The reference BOOMER implementation (`mlrl-boomer`), with its instance/feature sampling turned off to match native Boomer's full-data search (see PAIRS above), and, in this demo only, run on a single thread: by default it uses every core of the machine, which the native learners (all single-threaded) don't.
 - **CBA** -- Classification Based on Associations: mine class association rules (here capped at max_len=3, see ROADMAP.md), sort by precedence, select by database coverage (CBA-CB, "M1").
   **PArc:CBA** -- The reference CBA implementation (`pyarc`), mining with Borgelt's `fim`; its defaults mirror the native CBA's.
 - **Pypper** -- IREP* growth-and-pruning plus `ReplaceReviseOptimization`, run per class -- a re-implementation of RIPPER, not a port.
@@ -32,44 +32,52 @@ itemset mining is the likeliest to hit this on wider data.
 
 Measures: test accuracy, number of rules and conditions, fit time.
 
+Threads: every learner here runs on one thread. `mlrl-boomer` would use every core of the machine by
+default (about 70 for a single fit on the machine these results were measured on), which no native
+learner does, so `MLRL:Boomer` is limited to one thread
+(`parallel_rule_refinement`, `parallel_statistic_update` and `parallel_prediction` set to `false`)
+to compare like with like. This limit is set by this demo only: `MLRLBoomer` itself keeps MLRL's
+default and uses every core, and with that it would be faster than reported here.
+Fits run 10 at a time (`run_cv`'s `n_jobs`), each in its own process and timed there, with the numerical libraries limited to one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run as a second sequential run (per-learner ratios and rankings alike); time ratios between learners are reproducible to about +-10% either way.
+
 ![accuracy vs. rule-set complexity](native_vs_interfaced_plots/native_vs_interfaced_accuracy.png)
 
 ![fit time, native vs. interfaced](native_vs_interfaced_plots/native_vs_interfaced_fit_time.png)
 
 ## Why optimal rule boosting isn't in the main comparison
 
-Across 2 small datasets (3-fold), OptimalRuleBoosting and RKD:RuleBoosting agreed closely on accuracy (mean 0.898 vs. 0.899, 0.001 apart; mean fit time 34.38s vs. 7.80s) -- but neither's exhaustive search scales to the main comparison's wider, one-hot-encoded feature counts within the 300s cap, a limit of the exhaustive-search approach itself rather than of either implementation, so the pair is checked here instead of in the main table below.
+Across 2 small datasets (3-fold), ORB and RKD:RuleBoosting agreed closely on accuracy (mean 89.78% vs. 89.89%, 0.11 points apart; mean fit time 87.11s vs. 7.86s) -- but neither's exhaustive search scales to the main comparison's wider, one-hot-encoded feature counts within the 300s cap, a limit of the exhaustive-search approach itself rather than of either implementation, so the pair is checked here instead of in the main table below.
 
 | learner | accuracy | fit_time |
 |---|---|---|
-| OptimalRuleBoosting | 0.898 | 34.381 |
-| RKD:RuleBoosting | 0.899 | 7.801 |
+| ORB | 89.78% | 87.107 |
+| RKD:RuleBoosting | 89.89% | 7.861 |
 
 ## Native vs. interfaced, pair by pair (mean across the 15 small/medium datasets and their folds)
 
 | pair | learner | accuracy | n_rules | n_conditions | fit_time (s) | failures |
 |---|---|--:|--:|--:|--:|--:|
-| RuleFit | RuleFit | 0.836 | 70.8 | 268.7 | 1.90 | 0 |
-| RuleFit | IMod:RuleFit | 0.823 | 25.3 | 59.6 | 2.66 | 0 |
-| Boomer | Boomer | 0.839 | 234.1 | 1313.5 | 6.96 | 1 |
-| Boomer | MLRL:Boomer | 0.835 | 229.8 | 1264.1 | 2.47 | 0 |
-| CBA | CBA | 0.832 | 63.6 | 182.7 | 26.72 | 0 |
-| CBA | PArc:CBA | 0.832 | 63.4 | 182.1 | 16.61 | 0 |
-| Pypper | Pypper | 0.840 | 3.4 | 8.9 | 0.42 | 0 |
-| Pypper | Weka:JRip | 0.842 | 4.0 | 10.4 | 0.87 | 0 |
+| RuleFit | RuleFit | 83.60% | 70.8 | 268.7 | 2.06 | 0 |
+| RuleFit | IMod:RuleFit | 82.25% | 25.3 | 59.6 | 2.13 | 0 |
+| Boomer | Boomer | 84.22% | 232.5 | 1307.1 | 2.34 | 0 |
+| Boomer | MLRL:Boomer | 83.58% | 232.6 | 1282.0 | 3.58 | 0 |
+| CBA | CBA | 83.18% | 63.6 | 182.7 | 42.87 | 0 |
+| CBA | PArc:CBA | 83.21% | 63.4 | 182.1 | 17.63 | 0 |
+| Pypper | Pypper | 83.97% | 3.4 | 8.9 | 0.09 | 0 |
+| Pypper | Weka:JRip | 84.20% | 4.0 | 10.4 | 1.00 | 0 |
 
 ## Summary by learner (mean rank across the same datasets)
 
 | learner | accuracy | n_rules | n_conditions | fit_time (s) | wins | mean rank | failures |
 |---|--:|--:|--:|--:|--:|--:|--:|
-| Boomer | 0.839 | 234.1 | 1313.5 | 6.96 | 3.0 | 3.63 | 1 |
-| Weka:JRip | 0.842 | 4.0 | 10.4 | 0.87 | 2.5 | 3.83 | 0 |
-| Pypper | 0.840 | 3.4 | 8.9 | 0.42 | 5.0 | 4.27 | 0 |
-| RuleFit | 0.836 | 70.8 | 268.7 | 1.90 | 0.7 | 4.30 | 0 |
-| MLRL:Boomer | 0.835 | 229.8 | 1264.1 | 2.47 | 1.9 | 4.50 | 0 |
-| CBA | 0.832 | 63.6 | 182.7 | 26.72 | 0.5 | 5.10 | 0 |
-| IMod:RuleFit | 0.823 | 25.3 | 59.6 | 2.66 | 1.0 | 5.17 | 0 |
-| PArc:CBA | 0.832 | 63.4 | 182.1 | 16.61 | 0.5 | 5.20 | 0 |
+| Boomer | 84.22% | 232.5 | 1307.1 | 2.34 | 3.0 | 3.53 | 0 |
+| Weka:JRip | 84.20% | 4.0 | 10.4 | 1.00 | 2.5 | 3.80 | 0 |
+| Pypper | 83.97% | 3.4 | 8.9 | 0.09 | 5.0 | 4.27 | 0 |
+| RuleFit | 83.60% | 70.8 | 268.7 | 2.06 | 0.7 | 4.33 | 0 |
+| MLRL:Boomer | 83.58% | 232.6 | 1282.0 | 3.58 | 1.9 | 4.47 | 0 |
+| CBA | 83.18% | 63.6 | 182.7 | 42.87 | 0.5 | 5.17 | 0 |
+| PArc:CBA | 83.21% | 63.4 | 182.1 | 17.63 | 0.5 | 5.20 | 0 |
+| IMod:RuleFit | 82.25% | 25.3 | 59.6 | 2.13 | 1.0 | 5.23 | 0 |
 
 Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie split evenly; `mean rank` -- average accuracy rank across datasets, failures tied for last.
 
@@ -79,137 +87,137 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 
 | learner | folds | accuracy | n_rules | n_conditions | fit_time (s) |
 |---|--:|--:|--:|--:|--:|
-| Boomer | 3/3 | 0.868 | 751.0 | 6818.3 | 133.49 |
+| Boomer | 3/3 | 86.83% | 753.0 | 6868.7 | 45.24 |
 | CBA | 0/3 | -- | -- | -- | -- |
-| IMod:RuleFit | 3/3 | 0.850 | 26.0 | 42.7 | 68.16 |
-| MLRL:Boomer | 3/3 | 0.868 | 754.3 | 7067.3 | 53.73 |
+| IMod:RuleFit | 3/3 | 84.97% | 26.0 | 42.7 | 40.36 |
+| MLRL:Boomer | 3/3 | 86.88% | 768.7 | 7241.0 | 169.06 |
 | PArc:CBA | 0/3 | -- | -- | -- | -- |
-| Pypper | 3/3 | 0.847 | 12.7 | 70.3 | 183.39 |
-| RuleFit | 3/3 | 0.866 | 405.3 | 1612.0 | 111.18 |
-| Weka:JRip | 3/3 | 0.848 | 19.3 | 110.3 | 103.65 |
+| Pypper | 3/3 | 84.65% | 12.7 | 70.3 | 6.68 |
+| RuleFit | 3/3 | 86.59% | 405.3 | 1612.0 | 69.69 |
+| Weka:JRip | 3/3 | 84.80% | 19.3 | 110.3 | 73.70 |
 
 ## Per-dataset results, per learner (mean across folds)
 
 | dataset | learner | accuracy | n_rules | n_conditions | fit_time |
 |---|---|---|---|---|---|
-| SPECT | Boomer | 0.816 | 128.200 | 581.000 | 0.258 |
-| SPECT | CBA | 0.809 | 33.800 | 81.800 | 1.203 |
-| SPECT | IMod:RuleFit | 0.817 | 21.200 | 49.800 | 1.417 |
-| SPECT | MLRL:Boomer | 0.813 | 127.200 | 564.600 | 1.344 |
-| SPECT | PArc:CBA | 0.805 | 31.800 | 76.600 | 0.355 |
-| SPECT | Pypper | 0.787 | 1.000 | 5.200 | 0.064 |
-| SPECT | RuleFit | 0.828 | 35.200 | 132.800 | 0.616 |
-| SPECT | Weka:JRip | 0.828 | 1.000 | 5.200 | 0.318 |
-| breast-cancer | Boomer | 0.710 | 263.800 | 1445.800 | 0.390 |
-| breast-cancer | CBA | 0.682 | 69.200 | 199.600 | 2.729 |
-| breast-cancer | IMod:RuleFit | 0.724 | 27.200 | 70.400 | 1.493 |
-| breast-cancer | MLRL:Boomer | 0.717 | 230.000 | 1112.600 | 1.303 |
-| breast-cancer | PArc:CBA | 0.699 | 68.800 | 198.600 | 1.285 |
-| breast-cancer | Pypper | 0.745 | 1.200 | 2.000 | 0.067 |
-| breast-cancer | RuleFit | 0.692 | 68.800 | 269.200 | 0.702 |
-| breast-cancer | Weka:JRip | 0.724 | 1.200 | 2.400 | 0.325 |
-| colic | Boomer | 0.840 | 290.200 | 1406.400 | 0.715 |
-| colic | CBA | 0.793 | 79.000 | 232.400 | 41.165 |
-| colic | IMod:RuleFit | 0.753 | 28.600 | 60.200 | 1.540 |
-| colic | MLRL:Boomer | 0.780 | 337.800 | 2150.200 | 2.064 |
-| colic | PArc:CBA | 0.791 | 80.000 | 235.400 | 20.188 |
-| colic | Pypper | 0.851 | 1.600 | 3.400 | 0.296 |
-| colic | RuleFit | 0.802 | 73.800 | 277.200 | 0.956 |
-| colic | Weka:JRip | 0.845 | 2.600 | 5.200 | 0.481 |
-| credit-approval | Boomer | 0.848 | 374.400 | 2420.400 | 1.104 |
-| credit-approval | CBA | 0.852 | 130.200 | 379.600 | 19.664 |
-| credit-approval | IMod:RuleFit | 0.861 | 24.200 | 55.000 | 1.665 |
-| credit-approval | MLRL:Boomer | 0.848 | 343.400 | 2035.000 | 2.095 |
-| credit-approval | PArc:CBA | 0.851 | 129.400 | 377.400 | 9.840 |
-| credit-approval | Pypper | 0.865 | 2.800 | 7.200 | 0.388 |
-| credit-approval | RuleFit | 0.849 | 92.800 | 362.000 | 1.327 |
-| credit-approval | Weka:JRip | 0.862 | 4.200 | 8.800 | 0.547 |
-| credit-g | Boomer | 0.741 | 571.000 | 3992.800 | 1.878 |
-| credit-g | CBA | 0.730 | 147.000 | 436.400 | 55.611 |
-| credit-g | IMod:RuleFit | 0.715 | 26.200 | 62.600 | 2.240 |
-| credit-g | MLRL:Boomer | 0.746 | 583.200 | 4072.400 | 2.854 |
-| credit-g | PArc:CBA | 0.727 | 146.800 | 435.800 | 35.439 |
-| credit-g | Pypper | 0.699 | 2.400 | 7.400 | 0.475 |
-| credit-g | RuleFit | 0.737 | 211.800 | 834.600 | 1.677 |
-| credit-g | Weka:JRip | 0.716 | 3.400 | 12.600 | 0.681 |
-| dresses-sales | Boomer | 0.570 | 359.200 | 2398.600 | 1.131 |
-| dresses-sales | CBA | 0.574 | 155.200 | 448.400 | 102.299 |
-| dresses-sales | IMod:RuleFit | 0.596 | 28.200 | 78.400 | 1.827 |
-| dresses-sales | MLRL:Boomer | 0.592 | 291.400 | 1593.800 | 2.252 |
-| dresses-sales | PArc:CBA | 0.580 | 153.200 | 442.800 | 37.991 |
-| dresses-sales | Pypper | 0.622 | 1.200 | 1.400 | 0.339 |
-| dresses-sales | RuleFit | 0.576 | 125.600 | 480.200 | 0.965 |
-| dresses-sales | Weka:JRip | 0.616 | 1.600 | 2.200 | 0.641 |
-| heart-c | Boomer | 0.799 | 240.800 | 1231.800 | 0.391 |
-| heart-c | CBA | 0.792 | 62.200 | 182.400 | 6.088 |
-| heart-c | IMod:RuleFit | 0.805 | 26.600 | 54.400 | 1.103 |
-| heart-c | MLRL:Boomer | 0.789 | 239.800 | 1185.000 | 1.603 |
-| heart-c | PArc:CBA | 0.792 | 62.800 | 184.200 | 2.882 |
-| heart-c | Pypper | 0.766 | 2.400 | 6.200 | 0.106 |
-| heart-c | RuleFit | 0.789 | 61.400 | 232.800 | 0.702 |
-| heart-c | Weka:JRip | 0.752 | 3.200 | 7.200 | 0.372 |
-| heart-h | Boomer | 0.813 | 167.600 | 832.000 | 0.333 |
-| heart-h | CBA | 0.786 | 59.400 | 164.000 | 3.822 |
-| heart-h | IMod:RuleFit | 0.697 | 26.000 | 63.400 | 1.054 |
-| heart-h | MLRL:Boomer | 0.758 | 165.200 | 810.800 | 1.483 |
-| heart-h | PArc:CBA | 0.786 | 59.400 | 164.000 | 1.839 |
-| heart-h | Pypper | 0.796 | 1.600 | 2.400 | 0.085 |
-| heart-h | RuleFit | 0.793 | 53.800 | 195.000 | 0.615 |
-| heart-h | Weka:JRip | 0.782 | 2.200 | 3.600 | 0.387 |
-| heart-statlog | Boomer | 0.767 | 198.400 | 952.000 | 0.374 |
-| heart-statlog | CBA | 0.796 | 52.200 | 152.800 | 6.384 |
-| heart-statlog | IMod:RuleFit | 0.796 | 24.200 | 50.000 | 1.539 |
-| heart-statlog | MLRL:Boomer | 0.774 | 211.600 | 998.000 | 1.459 |
-| heart-statlog | PArc:CBA | 0.789 | 52.600 | 154.000 | 3.641 |
-| heart-statlog | Pypper | 0.793 | 3.600 | 7.800 | 0.205 |
-| heart-statlog | RuleFit | 0.789 | 57.800 | 220.000 | 0.817 |
-| heart-statlog | Weka:JRip | 0.807 | 3.400 | 7.400 | 0.353 |
-| hepatitis | Boomer | 0.781 | 94.000 | 361.800 | 0.266 |
-| hepatitis | CBA | 0.768 | 18.800 | 51.200 | 10.019 |
-| hepatitis | IMod:RuleFit | 0.723 | 30.600 | 72.600 | 1.575 |
-| hepatitis | MLRL:Boomer | 0.787 | 84.400 | 316.400 | 1.320 |
-| hepatitis | PArc:CBA | 0.768 | 18.800 | 51.200 | 3.511 |
-| hepatitis | Pypper | 0.761 | 1.800 | 2.400 | 0.077 |
-| hepatitis | RuleFit | 0.761 | 28.800 | 91.600 | 0.552 |
-| hepatitis | Weka:JRip | 0.794 | 2.200 | 4.800 | 0.342 |
-| kr-vs-kp | Boomer | 0.995 | 121.400 | 684.200 | 2.066 |
-| kr-vs-kp | CBA | 0.977 | 41.800 | 122.000 | 3.878 |
-| kr-vs-kp | IMod:RuleFit | 0.967 | 19.200 | 52.400 | 2.682 |
-| kr-vs-kp | MLRL:Boomer | 0.995 | 145.400 | 807.800 | 2.269 |
-| kr-vs-kp | PArc:CBA | 0.977 | 41.800 | 122.000 | 2.185 |
-| kr-vs-kp | Pypper | 0.986 | 11.800 | 40.200 | 1.069 |
-| kr-vs-kp | RuleFit | 0.987 | 61.400 | 231.600 | 3.627 |
-| kr-vs-kp | Weka:JRip | 0.991 | 13.400 | 40.400 | 0.954 |
-| mushroom | Boomer | 1.000 | 41.250 | 143.500 | 89.970 |
-| mushroom | CBA | 1.000 | 9.200 | 27.600 | 102.732 |
-| mushroom | IMod:RuleFit | 0.999 | 20.600 | 43.800 | 13.500 |
-| mushroom | MLRL:Boomer | 1.000 | 59.000 | 197.800 | 8.865 |
-| mushroom | PArc:CBA | 1.000 | 9.200 | 27.600 | 113.339 |
-| mushroom | Pypper | 1.000 | 6.600 | 9.800 | 2.071 |
-| mushroom | RuleFit | 1.000 | 16.800 | 61.400 | 8.347 |
-| mushroom | Weka:JRip | 1.000 | 6.000 | 9.400 | 5.397 |
-| sick | Boomer | 0.985 | 277.000 | 1628.200 | 4.546 |
-| sick | CBA | 0.977 | 52.000 | 138.000 | 42.733 |
-| sick | IMod:RuleFit | 0.982 | 28.600 | 69.200 | 5.069 |
-| sick | MLRL:Boomer | 0.980 | 282.000 | 1706.800 | 5.197 |
-| sick | PArc:CBA | 0.977 | 51.600 | 136.800 | 15.811 |
-| sick | Pypper | 0.980 | 2.800 | 8.800 | 0.728 |
-| sick | RuleFit | 0.982 | 77.000 | 296.200 | 4.880 |
-| sick | Weka:JRip | 0.981 | 4.800 | 15.400 | 1.451 |
-| tic-tac-toe | Boomer | 1.000 | 245.800 | 1059.800 | 0.656 |
-| tic-tac-toe | CBA | 1.000 | 10.000 | 30.000 | 1.942 |
-| tic-tac-toe | IMod:RuleFit | 0.948 | 20.400 | 52.400 | 1.732 |
-| tic-tac-toe | MLRL:Boomer | 1.000 | 254.800 | 1098.200 | 1.550 |
-| tic-tac-toe | PArc:CBA | 1.000 | 10.000 | 30.000 | 0.664 |
-| tic-tac-toe | Pypper | 0.983 | 8.000 | 24.200 | 0.233 |
-| tic-tac-toe | RuleFit | 0.994 | 68.800 | 262.400 | 1.689 |
-| tic-tac-toe | Weka:JRip | 0.981 | 8.400 | 26.000 | 0.471 |
-| vote | Boomer | 0.956 | 99.800 | 329.800 | 0.367 |
-| vote | CBA | 0.940 | 34.400 | 94.600 | 0.487 |
-| vote | IMod:RuleFit | 0.956 | 27.000 | 59.800 | 1.512 |
-| vote | MLRL:Boomer | 0.949 | 91.400 | 311.600 | 1.424 |
-| vote | PArc:CBA | 0.940 | 34.400 | 94.600 | 0.153 |
-| vote | Pypper | 0.963 | 2.600 | 5.600 | 0.061 |
-| vote | RuleFit | 0.961 | 28.400 | 84.200 | 1.080 |
-| vote | Weka:JRip | 0.949 | 2.200 | 5.000 | 0.299 |
+| SPECT | Boomer | 81.63% | 128.2 | 581.0 | 1.736 |
+| SPECT | CBA | 80.92% | 33.8 | 81.8 | 2.328 |
+| SPECT | IMod:RuleFit | 81.66% | 21.2 | 49.8 | 1.641 |
+| SPECT | MLRL:Boomer | 81.25% | 126.8 | 563.2 | 0.506 |
+| SPECT | PArc:CBA | 80.54% | 31.8 | 76.6 | 0.685 |
+| SPECT | Pypper | 78.67% | 1.0 | 5.2 | 0.042 |
+| SPECT | RuleFit | 82.77% | 35.2 | 132.8 | 0.797 |
+| SPECT | Weka:JRip | 82.77% | 1.0 | 5.2 | 0.550 |
+| breast-cancer | Boomer | 70.99% | 263.8 | 1445.8 | 1.644 |
+| breast-cancer | CBA | 68.19% | 69.2 | 199.6 | 4.426 |
+| breast-cancer | IMod:RuleFit | 72.37% | 27.2 | 70.4 | 1.348 |
+| breast-cancer | MLRL:Boomer | 72.40% | 229.0 | 1095.0 | 0.602 |
+| breast-cancer | PArc:CBA | 69.93% | 68.8 | 198.6 | 1.453 |
+| breast-cancer | Pypper | 74.45% | 1.2 | 2.0 | 0.032 |
+| breast-cancer | RuleFit | 69.24% | 68.8 | 269.2 | 0.861 |
+| breast-cancer | Weka:JRip | 72.40% | 1.2 | 2.4 | 0.482 |
+| colic | Boomer | 83.98% | 288.2 | 1391.0 | 1.831 |
+| colic | CBA | 79.34% | 79.0 | 232.4 | 72.090 |
+| colic | IMod:RuleFit | 75.29% | 28.6 | 60.2 | 1.345 |
+| colic | MLRL:Boomer | 78.01% | 342.6 | 2178.2 | 2.477 |
+| colic | PArc:CBA | 79.07% | 80.0 | 235.4 | 29.606 |
+| colic | Pypper | 85.06% | 1.6 | 3.4 | 0.043 |
+| colic | RuleFit | 80.17% | 73.8 | 277.2 | 1.108 |
+| colic | Weka:JRip | 84.52% | 2.6 | 5.2 | 0.616 |
+| credit-approval | Boomer | 84.78% | 374.4 | 2420.4 | 2.322 |
+| credit-approval | CBA | 85.22% | 130.2 | 379.6 | 35.264 |
+| credit-approval | IMod:RuleFit | 86.09% | 24.2 | 55.0 | 1.586 |
+| credit-approval | MLRL:Boomer | 84.78% | 356.6 | 2114.8 | 2.274 |
+| credit-approval | PArc:CBA | 85.07% | 129.4 | 377.4 | 13.477 |
+| credit-approval | Pypper | 86.52% | 2.8 | 7.2 | 0.072 |
+| credit-approval | RuleFit | 84.93% | 92.8 | 362.0 | 1.519 |
+| credit-approval | Weka:JRip | 86.23% | 4.2 | 8.8 | 0.755 |
+| credit-g | Boomer | 74.70% | 578.2 | 4055.8 | 2.988 |
+| credit-g | CBA | 73.00% | 147.0 | 436.4 | 96.847 |
+| credit-g | IMod:RuleFit | 71.50% | 26.2 | 62.6 | 1.662 |
+| credit-g | MLRL:Boomer | 75.20% | 582.6 | 4079.4 | 3.943 |
+| credit-g | PArc:CBA | 72.70% | 146.8 | 435.8 | 50.476 |
+| credit-g | Pypper | 69.90% | 2.4 | 7.4 | 0.094 |
+| credit-g | RuleFit | 73.70% | 211.8 | 834.6 | 2.170 |
+| credit-g | Weka:JRip | 71.60% | 3.4 | 12.6 | 0.974 |
+| dresses-sales | Boomer | 57.60% | 371.2 | 2505.4 | 2.121 |
+| dresses-sales | CBA | 57.40% | 155.2 | 448.4 | 192.393 |
+| dresses-sales | IMod:RuleFit | 59.60% | 28.2 | 78.4 | 1.578 |
+| dresses-sales | MLRL:Boomer | 59.00% | 296.4 | 1635.6 | 2.575 |
+| dresses-sales | PArc:CBA | 58.00% | 153.2 | 442.8 | 59.231 |
+| dresses-sales | Pypper | 62.20% | 1.2 | 1.4 | 0.041 |
+| dresses-sales | RuleFit | 57.60% | 125.6 | 480.2 | 1.152 |
+| dresses-sales | Weka:JRip | 61.60% | 1.6 | 2.2 | 0.916 |
+| heart-c | Boomer | 79.89% | 240.8 | 1231.8 | 1.794 |
+| heart-c | CBA | 79.22% | 62.2 | 182.4 | 14.456 |
+| heart-c | IMod:RuleFit | 80.51% | 26.6 | 54.4 | 1.368 |
+| heart-c | MLRL:Boomer | 78.90% | 242.4 | 1197.2 | 1.226 |
+| heart-c | PArc:CBA | 79.22% | 62.8 | 184.2 | 4.918 |
+| heart-c | Pypper | 76.56% | 2.4 | 6.2 | 0.041 |
+| heart-c | RuleFit | 78.89% | 61.4 | 232.8 | 0.914 |
+| heart-c | Weka:JRip | 75.25% | 3.2 | 7.2 | 0.558 |
+| heart-h | Boomer | 81.29% | 167.6 | 832.0 | 1.540 |
+| heart-h | CBA | 78.56% | 59.4 | 164.0 | 8.667 |
+| heart-h | IMod:RuleFit | 69.74% | 26.0 | 63.4 | 1.213 |
+| heart-h | MLRL:Boomer | 75.84% | 168.0 | 827.8 | 0.864 |
+| heart-h | PArc:CBA | 78.56% | 59.4 | 164.0 | 2.584 |
+| heart-h | Pypper | 79.56% | 1.6 | 2.4 | 0.030 |
+| heart-h | RuleFit | 79.25% | 53.8 | 195.0 | 0.906 |
+| heart-h | Weka:JRip | 78.20% | 2.2 | 3.6 | 0.501 |
+| heart-statlog | Boomer | 76.67% | 198.4 | 952.0 | 1.628 |
+| heart-statlog | CBA | 79.63% | 52.2 | 152.8 | 12.470 |
+| heart-statlog | IMod:RuleFit | 79.63% | 24.2 | 50.0 | 1.315 |
+| heart-statlog | MLRL:Boomer | 77.41% | 215.6 | 1017.2 | 0.960 |
+| heart-statlog | PArc:CBA | 78.89% | 52.6 | 154.0 | 4.749 |
+| heart-statlog | Pypper | 79.26% | 3.6 | 7.8 | 0.052 |
+| heart-statlog | RuleFit | 78.89% | 57.8 | 220.0 | 0.915 |
+| heart-statlog | Weka:JRip | 80.74% | 3.4 | 7.4 | 0.523 |
+| hepatitis | Boomer | 78.06% | 94.0 | 361.8 | 1.355 |
+| hepatitis | CBA | 76.77% | 18.8 | 51.2 | 16.173 |
+| hepatitis | IMod:RuleFit | 72.26% | 30.6 | 72.6 | 1.472 |
+| hepatitis | MLRL:Boomer | 78.71% | 86.0 | 321.4 | 0.713 |
+| hepatitis | PArc:CBA | 76.77% | 18.8 | 51.2 | 4.615 |
+| hepatitis | Pypper | 76.13% | 1.8 | 2.4 | 0.021 |
+| hepatitis | RuleFit | 76.13% | 28.8 | 91.6 | 0.663 |
+| hepatitis | Weka:JRip | 79.35% | 2.2 | 4.8 | 0.447 |
+| kr-vs-kp | Boomer | 99.50% | 121.4 | 684.2 | 2.747 |
+| kr-vs-kp | CBA | 97.75% | 41.8 | 122.0 | 5.331 |
+| kr-vs-kp | IMod:RuleFit | 96.65% | 19.2 | 52.4 | 1.861 |
+| kr-vs-kp | MLRL:Boomer | 99.50% | 150.4 | 831.2 | 3.898 |
+| kr-vs-kp | PArc:CBA | 97.75% | 41.8 | 122.0 | 2.677 |
+| kr-vs-kp | Pypper | 98.56% | 11.8 | 40.2 | 0.375 |
+| kr-vs-kp | RuleFit | 98.69% | 61.4 | 231.6 | 3.843 |
+| kr-vs-kp | Weka:JRip | 99.12% | 13.4 | 40.4 | 1.287 |
+| mushroom | Boomer | 100.00% | 41.6 | 144.4 | 6.564 |
+| mushroom | CBA | 100.00% | 9.2 | 27.6 | 137.537 |
+| mushroom | IMod:RuleFit | 99.91% | 20.6 | 43.8 | 8.061 |
+| mushroom | MLRL:Boomer | 100.00% | 56.0 | 187.0 | 23.461 |
+| mushroom | PArc:CBA | 100.00% | 9.2 | 27.6 | 69.450 |
+| mushroom | Pypper | 99.96% | 6.6 | 9.8 | 0.207 |
+| mushroom | RuleFit | 100.00% | 16.8 | 61.4 | 7.427 |
+| mushroom | Weka:JRip | 99.98% | 6.0 | 9.4 | 4.621 |
+| sick | Boomer | 98.52% | 274.6 | 1610.8 | 3.646 |
+| sick | CBA | 97.67% | 52.0 | 138.0 | 41.523 |
+| sick | IMod:RuleFit | 98.20% | 28.6 | 69.2 | 4.147 |
+| sick | MLRL:Boomer | 98.01% | 291.4 | 1779.0 | 8.334 |
+| sick | PArc:CBA | 97.69% | 51.6 | 136.8 | 19.509 |
+| sick | Pypper | 98.01% | 2.8 | 8.8 | 0.095 |
+| sick | RuleFit | 98.22% | 77.0 | 296.2 | 5.355 |
+| sick | Weka:JRip | 98.14% | 4.8 | 15.4 | 1.688 |
+| tic-tac-toe | Boomer | 100.00% | 245.8 | 1059.8 | 1.920 |
+| tic-tac-toe | CBA | 100.00% | 10.0 | 30.0 | 2.862 |
+| tic-tac-toe | IMod:RuleFit | 94.78% | 20.4 | 52.4 | 1.558 |
+| tic-tac-toe | MLRL:Boomer | 100.00% | 253.8 | 1093.4 | 1.429 |
+| tic-tac-toe | PArc:CBA | 100.00% | 10.0 | 30.0 | 0.744 |
+| tic-tac-toe | Pypper | 98.33% | 8.0 | 24.2 | 0.135 |
+| tic-tac-toe | RuleFit | 99.37% | 68.8 | 262.4 | 1.987 |
+| tic-tac-toe | Weka:JRip | 98.12% | 8.4 | 26.0 | 0.624 |
+| vote | Boomer | 95.63% | 99.8 | 329.8 | 1.260 |
+| vote | CBA | 94.02% | 34.4 | 94.6 | 0.687 |
+| vote | IMod:RuleFit | 95.63% | 27.0 | 59.8 | 1.808 |
+| vote | MLRL:Boomer | 94.71% | 91.2 | 309.6 | 0.500 |
+| vote | PArc:CBA | 94.02% | 34.4 | 94.6 | 0.211 |
+| vote | Pypper | 96.32% | 2.6 | 5.6 | 0.048 |
+| vote | RuleFit | 96.09% | 28.4 | 84.2 | 1.259 |
+| vote | Weka:JRip | 94.94% | 2.2 | 5.0 | 0.399 |
 
