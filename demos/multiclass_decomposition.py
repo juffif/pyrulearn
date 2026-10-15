@@ -5,8 +5,9 @@ demos/multiclass_decomposition.py
 Multi-class problems decomposed into two-class problems for a rule
 learner: one-vs-rest against pairwise (round robin) classification, after
 Fürnkranz, *Round Robin Classification* (JMLR 2002). The base learners
-are Pypper (pyrulearn's RIPPER, standing in for the Ripper of the paper)
-and PFossil, both fast.
+are Pypper (pyrulearn's RIPPER, standing in for the Ripper of the paper),
+PFossil, and CN2, whose cost grows faster than linearly with the number of
+examples -- where the paper expects pairwise classification to gain most.
 
 Decompositions (`DECOMPOSITIONS`), each through the base learner's
 `fit(data, model=...)`:
@@ -69,7 +70,7 @@ from pyrulearn.experiments.report import (
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
-from pyrulearn.learners.seco import PFossil, Pypper
+from pyrulearn.learners.seco import CN2, PFossil, Pypper
 from pyrulearn.models import (
     AccuracyWeightedVote, ConceptCascade, ConceptSet, MajorityVote, PairwiseModel, WeightedVote,
 )
@@ -80,7 +81,7 @@ LARGE_FOLDS = 5
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
 
-BASES = ("Pypper", "PFossil")
+BASES = ("Pypper", "PFossil", "CN2")
 DECOMPOSITIONS = ("ovr", "ordered", "pw_smaller", "pw_larger", "pw_both")
 # the vote schemes compared: report column -> combiner
 VOTES = {"vote": MajorityVote, "weighted_vote": WeightedVote, "accuracy_vote": AccuracyWeightedVote}
@@ -139,7 +140,7 @@ class Decomposition(NativeRuleLearner):
         return params
 
     def fit(self, data):
-        learner = {"Pypper": Pypper, "PFossil": PFossil}[self.base](random_state=self.random_state)
+        learner = {"Pypper": Pypper, "PFossil": PFossil, "CN2": CN2}[self.base](random_state=self.random_state)
         kwargs = {
             "ovr": {"model": ConceptSet},
             "ordered": {"model": ConceptCascade},
@@ -279,7 +280,7 @@ def write_plots(results: pd.DataFrame, n_classes: dict, quick: bool) -> dict:
     os.makedirs(PLOTS_DIR, exist_ok=True)
     tag = "_quick" if quick else ""
     paths = {}
-    markers = {"Pypper": ("o", "tab:blue"), "PFossil": ("s", "tab:orange")}
+    markers = {"Pypper": ("o", "tab:blue"), "PFossil": ("s", "tab:orange"), "CN2": ("^", "tab:green")}
     specs = [
         ("train_ratio", "train_time", "pw_smaller", "training time: one-vs-rest / pairwise",
          lambda c: c / (c - 1), "c / (c - 1): learner linear in the examples"),
@@ -335,9 +336,15 @@ def _description(datasets, quick: bool, n_folds: int) -> str:
 {mode}A rule learner that learns rules for one class against the rest has to
 decompose a problem with several classes into two-class problems. This
 demo compares the ways of doing that in pyrulearn, with Pypper
-(pyrulearn's RIPPER) and PFossil as base learners -- in essence the
+(pyrulearn's RIPPER), PFossil and CN2 as base learners -- in essence the
 experiments of Fürnkranz, *Round Robin Classification* (JMLR 2002), with
-Pypper standing in for Ripper:
+Pypper standing in for Ripper. The paper's argument for pairwise
+classification is its cost: a pairwise decomposition trains on about
+(c - 1) times the examples in all, one-vs-rest on c times as many, but in many
+small problems -- a large gain for a learner whose cost grows faster than
+linearly with the examples. Of the three, PFossil is about linear, Pypper and
+CN2 superlinear (on `adult`, from 2,000 to 16,000 examples, roughly n^1.0,
+n^1.3-1.8 and n^1.4-1.6; see `demos/representations.py`):
 
 - **ovr** -- one-vs-rest: one model per class, "this class vs. all
   others", every model trained on all examples; conflicts resolved by the
