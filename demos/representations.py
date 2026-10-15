@@ -37,9 +37,13 @@ learner gets from `data.X` -- and what a fit costs in total: that, plus
 the peak the fit allocates on top of it (caches a representation builds
 while a learner runs included), again in a separate, untimed pass.
 
-Learners: CN2, PFossil, Pypper and PyLORD, each with its defaults. Every
-fit runs in a worker process under a `FIT_TIMEOUT` cap; after a time-out
-the remaining, larger points of that curve are skipped.
+Learners: CN2, PFossil, Pypper, PyLORD and ENDER, each with its defaults.
+Every fit runs in a worker process under a `FIT_TIMEOUT` cap; after a
+time-out the remaining, larger points of that curve are skipped.
+`--parallel` first prepares every point (representations, their memory,
+the `coverage()` timings) with nothing else running, and then fits the
+learners side by side, one worker process each, every learner's fits one
+after another.
 
 Run: `python demos/representations.py` is the **quick** default
 (sizes up to 1,000, a short density sweep); its report/plots go to
@@ -54,6 +58,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import tracemalloc
 from typing import Dict, List, Optional
@@ -70,6 +75,7 @@ from pyrulearn.data import (
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.runner import TimeoutRunner
+from pyrulearn.learners.boosting import ENDER
 from pyrulearn.learners.pylord import PyLORD
 from pyrulearn.learners.seco import CN2, PFossil, Pypper
 
@@ -79,7 +85,7 @@ FIT_TIMEOUT = 300.0
 REPRESENTATIONS = ("Boolean", "NList", "PrePostNList", "Sparse")
 _VERTICAL = {"NList": NListRepresentation, "PrePostNList": PrePostNListRepresentation,
              "Sparse": SparseDataRepresentation}
-LEARNERS = ("CN2", "PFossil", "Pypper", "PyLORD")
+LEARNERS = ("CN2", "PFossil", "Pypper", "PyLORD", "ENDER")
 
 SIZE_DATASET = "adult"
 SIZE_TEST_FRACTION = 0.2
@@ -108,7 +114,7 @@ STYLE = {"Boolean": ("o", "tab:blue"), "NList": ("s", "tab:orange"),
 
 
 def make_learner(name: str):
-    return {"CN2": CN2, "PFossil": PFossil, "Pypper": Pypper, "PyLORD": PyLORD}[name](
+    return {"CN2": CN2, "PFossil": PFossil, "Pypper": Pypper, "PyLORD": PyLORD, "ENDER": ENDER}[name](
         random_state=RANDOM_STATE)
 
 
@@ -173,6 +179,7 @@ class Cache:
     def __init__(self, path: str):
         self.path = path
         self.rows: Dict[str, dict] = {}
+        self._lock = threading.Lock()  # the learners' threads of a --parallel run share it
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 for line in f:
@@ -183,13 +190,14 @@ class Cache:
         return self.rows.get(key)
 
     def put(self, row: dict) -> None:
-        self.rows[row["key"]] = row
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
+        with self._lock:
+            self.rows[row["key"]] = row
+            with open(self.path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row) + "\n")
 
 
 def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_reps: dict,
-               skip: set) -> List[dict]:
+               skip: set, label: str = "") -> List[dict]:
     """Fits `learner` on every representation in `reps` (unless its curve
     already timed out, see `skip`), checking rules and test predictions
     against Boolean."""
@@ -219,7 +227,7 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
             row = {**row, "fit_peak": peak if err is None else None}
             cache.put(row)
         status = f"{row['fit_time']:.2f}s" if row["error"] is None else row["error"]
-        print(f"    {learner:8s} {kind:12s} {status}{cached}", flush=True)
+        print(f"    {label}{learner:8s} {kind:12s} {status}{cached}", flush=True)
         if row["error"] is not None:
             skip.add((learner, key_base.get("negation"), kind))
         rows.append(row)
@@ -228,7 +236,7 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
 
 # -- part 1: training-set size -------------------------------------------------------
 
-def run_size_curve(runner, cache, sizes) -> List[dict]:
+def run_size_curve(runner, cache, sizes, defer: Optional[list] = None) -> List[dict]:
     entry = Catalog.default().select(names=[SIZE_DATASET])[0]
     df, target = entry.load()
     rng = np.random.default_rng(RANDOM_STATE)
@@ -253,6 +261,9 @@ def run_size_curve(runner, cache, sizes) -> List[dict]:
                              **_measure_memory(kind, spec, X, y)})
             print(f"  {SIZE_DATASET}, {'with' if negation else 'without'} negation, n={n} "
                   f"({spec.n_features} features, density {X.mean():.3f})", flush=True)
+            if defer is not None:  # --parallel: the fits come later, see _fit_points_parallel
+                defer.append((base, f"n={n} {'neg' if negation else 'pos'} ", reps, test_reps))
+                continue
             for learner in LEARNERS:
                 rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
     return rows
@@ -294,7 +305,7 @@ def _synthetic_point(base: dict, X, y, Xt, yt):
     return rows, reps, test_reps
 
 
-def run_density_sweep(runner, cache, densities) -> List[dict]:
+def run_density_sweep(runner, cache, densities, defer: Optional[list] = None) -> List[dict]:
     rows, skip = [], set()
     for p in densities:
         X, y = _synthetic(p, seed=0, n=DENSITY_N)
@@ -303,6 +314,9 @@ def run_density_sweep(runner, cache, densities) -> List[dict]:
         point, reps, test_reps = _synthetic_point(base, X, y, Xt, yt)
         rows += point
         print(f"  noise density {p} (overall {X.mean():.3f})", flush=True)
+        if defer is not None:
+            defer.append((base, f"p={p} ", reps, test_reps))
+            continue
         for learner in LEARNERS:
             rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
     return rows
@@ -325,7 +339,7 @@ def _wide(k: int, seed: int, n: int):
     return np.concatenate([signal, noise], axis=1), y
 
 
-def run_width_sweep(runner, cache, widths) -> List[dict]:
+def run_width_sweep(runner, cache, widths, defer: Optional[list] = None) -> List[dict]:
     rows, skip = [], set()
     for k in widths:
         X, y = _wide(k, seed=0, n=WIDTH_N)
@@ -334,9 +348,41 @@ def run_width_sweep(runner, cache, widths) -> List[dict]:
         point, reps, test_reps = _synthetic_point(base, X, y, Xt, yt)
         rows += point
         print(f"  k={k} (density {X.mean():.4f}, {X.sum(axis=1).mean():.1f} true per example)", flush=True)
+        if defer is not None:
+            defer.append((base, f"k={k} ", reps, test_reps))
+            continue
         for learner in LEARNERS:
             rows += _fit_point(runner, cache, base, learner, reps, test_reps, skip)
     return rows
+
+
+# -- --parallel: the learners side by side ---------------------------------------------------
+
+def _fit_points_parallel(points, cache) -> List[dict]:
+    """Fits every learner at every prepared point: one thread per learner,
+    each with its own worker process, going through the points in order --
+    so the learners run side by side, a learner's own fits one after
+    another, and a time-out still skips the rest of that learner's curve."""
+    runners = [TimeoutRunner(timeout=FIT_TIMEOUT) for _ in LEARNERS]  # started one after the other
+    rows: Dict[str, List[dict]] = {learner: [] for learner in LEARNERS}
+
+    def work(learner: str, runner) -> None:
+        skips: Dict[str, set] = {}  # one per part, as in the sequential run
+        for base, label, reps, test_reps in points:
+            skip = skips.setdefault(base["part"], set())
+            rows[learner] += _fit_point(runner, cache, base, learner, reps, test_reps, skip, label=label)
+
+    threads = [threading.Thread(target=work, args=(learner, runner), daemon=True)
+               for learner, runner in zip(LEARNERS, runners)]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        for runner in runners:
+            runner.close()
+    return [r for learner in LEARNERS for r in rows[learner]]
 
 
 # -- plots ---------------------------------------------------------------------------------
@@ -518,7 +564,9 @@ def write_plots(size_rows, density_rows, width_rows, quick: bool) -> Dict[str, s
         paths[key] = _save(fig, key, quick)
 
     wfits = [r for r in width_rows if r["learner"] and r["error"] is None]
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7.5))
+    fig, axes = plt.subplots(2, 3, figsize=(15, 7.5))
+    for ax in axes.ravel()[len(LEARNERS):]:
+        ax.set_visible(False)
     for ax, learner in zip(axes.ravel(), LEARNERS):
         for kind in REPRESENTATIONS:
             marker, color = STYLE[kind]
@@ -593,6 +641,36 @@ def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
     return "".join(lines)
 
 
+#: the growth exponent is fitted from this training-set size on: below it a fit's fixed
+#: costs (setting up the search, the first rule) still dominate the time
+GROWTH_MIN_N = 2000
+
+
+def _growth_table(rows) -> str:
+    """How fit time grows with the training-set size: the exponent ``b`` of
+    ``time ~ n^b``, the least-squares slope of log time over log n across the
+    sizes from `GROWTH_MIN_N` on that finished (1: linear, 2: quadratic). A
+    curve that a time-out cut short is fitted on fewer points, shown in
+    parentheses; with fewer than three, no exponent."""
+    fits = [r for r in rows if r["learner"] and r["error"] is None and r["n"] >= GROWTH_MIN_N]
+    lines = ["| learner | representation | with negation | without negation |\n", "|---|---|--:|--:|\n"]
+    sizes = sorted({r["n"] for r in rows if r["n"] >= GROWTH_MIN_N})
+    for learner in [l for l in LEARNERS if any(r["learner"] == l for r in fits)]:
+        for kind in REPRESENTATIONS:
+            cells = []
+            for negation in (True, False):
+                pts = sorted((r["n"], r["fit_time"]) for r in fits
+                             if r["learner"] == learner and r["rep"] == kind and r["negation"] == negation
+                             and r["fit_time"] and r["fit_time"] > 0)
+                if len(pts) < 3:
+                    cells.append("--")
+                    continue
+                b = np.polyfit(np.log([n for n, _ in pts]), np.log([t for _, t in pts]), 1)[0]
+                cells.append(f"{b:.2f}" + ("" if len(pts) == len(sizes) else f" ({len(pts)} points)"))
+            lines.append(f"| {learner} | {kind} | " + " | ".join(cells) + " |\n")
+    return "".join(lines)
+
+
 def _bytes(n: float) -> str:
     return f"{n / 1024:.0f} KiB" if n < 1024 ** 2 else f"{n / 1024 ** 2:.1f} MiB"
 
@@ -653,7 +731,8 @@ def _fit_memory_table(rows, x_field: str, x_label: str, negation=None) -> str:
     return "".join(lines)
 
 
-def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report_path: str) -> None:
+def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report_path: str,
+                 parallel: bool = False) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda key, alt: f"![{alt}]({plots}/{os.path.basename(paths[key])})\n\n"  # noqa: E731
     size_info = {(r["negation"], r["n"]): r for r in size_rows if r["learner"] is None and r["rep"] == "Boolean"}
@@ -679,12 +758,16 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "- **Sparse** -- `scipy` sparse matrices: per-feature example lists without the prefix "
         "tree.\n\n"
         "All four must lead to exactly the same rules, so the only thing that differs is time. "
-        "This demo measures that time for four learners -- CN2, PFossil, Pypper and PyLORD, "
-        "each with its default settings -- and checks the rules and the test-set predictions "
+        "This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and "
+        "ENDER, each with its default settings -- and checks the rules and the test-set predictions "
         "against the Boolean version at every point. Each fit runs in a separate process and is "
         f"capped at {FIT_TIMEOUT:.0f}s; after a time-out, the larger points of that curve are "
-        "skipped.\n\n"
-        f"**Equality check:** at {compared} points where Boolean and at least one other "
+        "skipped. "
+        + ("The learners ran side by side, one worker process each, every learner's fits one after "
+           "another; building the representations, timing `coverage()` and measuring memory came "
+           "first, with nothing else running.\n\n" if parallel else
+           "Everything ran one at a time.\n\n")
+        + f"**Equality check:** at {compared} points where Boolean and at least one other "
         f"representation finished, {agreed} gave identical rules and predictions for every "
         f"representation" + (".\n\n" if not bad else
                               f"; mismatches: {bad}.\n\n"))
@@ -716,6 +799,12 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         L.append(" ".join(pair) + "\n\n")
     L.append("Fit time in seconds, with negation:\n\n" + _fit_table(size_rows, "n", "n", True) + "\n")
     L.append("Without negation:\n\n" + _fit_table(size_rows, "n", "n", False) + "\n")
+    L.append(f"**Growth.** How fast each learner's fit time grows with the training-set size: the exponent "
+             f"*b* of time ~ n^*b*, fitted by least squares to log time over log n from n={GROWTH_MIN_N:,} on "
+             "(below that, a fit's fixed costs still dominate). 1 is linear, 2 quadratic; a curve cut short "
+             "by a time-out is fitted on the points that finished. This is what decides, for example, how much "
+             "a learner gains from splitting a problem into smaller ones (`demos/multiclass_decomposition.py`):"
+             "\n\n" + _growth_table(size_rows) + "\n")
     L.append("Building a vertical index is paid once per fit, on top of the fit itself:\n\n")
     L.append(img("size_build", "index build time vs. training-set size"))
     L.append(
@@ -787,19 +876,26 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
     print(f"Report -> {report_path}")
 
 
-def main(quick: bool = True) -> None:
+def main(quick: bool = True, parallel: bool = False) -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
     cache = Cache(os.path.join(CACHE_DIR, f"{'quick' if quick else 'full'}.jsonl"))
+    points = [] if parallel else None
     with TimeoutRunner(timeout=FIT_TIMEOUT) as runner:
         print(f"Part 1: training-set size ({SIZE_DATASET})", flush=True)
-        size_rows = run_size_curve(runner, cache, QUICK_SIZES if quick else SIZES)
+        size_rows = run_size_curve(runner, cache, QUICK_SIZES if quick else SIZES, defer=points)
         print("Part 2: density", flush=True)
-        density_rows = run_density_sweep(runner, cache, QUICK_DENSITIES if quick else DENSITIES)
+        density_rows = run_density_sweep(runner, cache, QUICK_DENSITIES if quick else DENSITIES, defer=points)
         print("Part 3: width", flush=True)
-        width_rows = run_width_sweep(runner, cache, QUICK_WIDTHS if quick else WIDTHS)
+        width_rows = run_width_sweep(runner, cache, QUICK_WIDTHS if quick else WIDTHS, defer=points)
+    if parallel:
+        print(f"Fitting {len(LEARNERS)} learners side by side", flush=True)
+        fits = _fit_points_parallel(points, cache)
+        size_rows += [r for r in fits if r["part"] == "size"]
+        density_rows += [r for r in fits if r["part"] == "density"]
+        width_rows += [r for r in fits if r["part"] == "width"]
     paths = write_plots(size_rows, density_rows, width_rows, quick)
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(size_rows, density_rows, width_rows, paths, quick, report)
+    write_report(size_rows, density_rows, width_rows, paths, quick, report, parallel=parallel)
 
 
 if __name__ == "__main__":
@@ -808,4 +904,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true",
                         help="full curves (training sets up to 32,000, the whole density sweep)")
-    main(quick=not parser.parse_args().full)
+    parser.add_argument("--parallel", action="store_true",
+                        help="prepare every point first, then fit the learners side by side, one process each")
+    args = parser.parse_args()
+    main(quick=not args.full, parallel=args.parallel)
