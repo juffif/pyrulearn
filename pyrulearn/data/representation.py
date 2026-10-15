@@ -804,7 +804,11 @@ class NListRepresentation(DataRepresentation):
         row_end[perm] = position[end_sorted]             # -1: the row ends at the root
         self._row_end = row_end
         self._perm = perm.astype(np.int32)
+        self._init_labels()
 
+    def _init_labels(self) -> None:
+        """The per-class structures over `self.y`: the classes, every row's
+        class index, the class totals and their cumulative sums in tree order."""
         if self.y is not None:
             classes, y_idx = np.unique(self.y, return_inverse=True)
             self._classes = classes
@@ -1056,12 +1060,81 @@ class NListRepresentation(DataRepresentation):
         return self._end_features(np.arange(self._n_samples))
 
     def select_rows(self, mask: np.ndarray) -> "NListRepresentation":
-        y = None if self.y is None else self.y[mask]
-        w = None if self.weights is None else self.weights[mask]
-        return type(self)(self.spec, self._csr()[mask], y, weights=w)
+        """The rows `mask` selects, as an N-list derived from this one's tree
+        instead of built anew: the nodes no selected row passes through
+        are dropped -- whole subtrees, since a node's rows are those ending
+        in its subtree -- and the remaining ranges, end nodes and N-lists
+        renumbered. The feature order stays this data's (most frequent
+        first here, not in the subset); any fixed order gives a correct
+        tree, so coverage and counts are exactly those of a rebuilt one.
+        An integer index array that is not sorted and duplicate-free
+        (rows reordered or repeated) falls back to building anew."""
+        mask = np.asarray(mask)
+        if mask.dtype != bool:
+            idx = mask.astype(np.int64)
+            if idx.size and (np.any(np.diff(idx) <= 0) or idx[0] < 0 or idx[-1] >= self._n_samples):
+                y = None if self.y is None else self.y[idx]
+                w = None if self.weights is None else self.weights[idx]
+                return type(self)(self.spec, self._csr()[idx], y, weights=w)
+            mask = np.zeros(self._n_samples, dtype=bool)
+            mask[idx] = True
+        if mask.shape != (self._n_samples,):
+            raise ValueError(f"mask must have shape ({self._n_samples},), got {mask.shape}")
+        return self._derived(mask)
 
     def relabel(self, new_y: Any) -> "NListRepresentation":
-        return type(self)(self.spec, self._csr(), np.asarray(new_y), weights=self.weights)
+        """Same rows, a different `y`: shares the tree, only the per-class
+        structures are new."""
+        new_y = np.asarray(new_y)
+        if new_y.shape != (self._n_samples,):
+            raise ValueError(f"new_y must have shape ({self._n_samples},), got {new_y.shape}")
+        new = self._copy_index()
+        new.y = new_y
+        new._init_labels()
+        new._set_weights(self.weights)
+        return new
+
+    def _copy_index(self) -> "NListRepresentation":
+        """A new representation sharing this one's tree arrays (they are
+        never modified in place), without its lazily computed caches (`X`,
+        the row patterns)."""
+        new = object.__new__(type(self))
+        DataRepresentation.__init__(new, self.spec)
+        for name in ("_n_samples", "_n_features", "_word_count", "_rank", "_item_ptr", "_words",
+                     "_row_lo", "_row_hi", "_row_end", "_perm"):
+            setattr(new, name, getattr(self, name))
+        if self._KEEP_PRE_POST:
+            new._node_pre, new._node_end = self._node_pre, self._node_end
+        return new
+
+    def _derived(self, mask: np.ndarray) -> "NListRepresentation":
+        """`select_rows` for a boolean `mask` over the rows, see there."""
+        keep = mask[self._perm]                                  # tree order
+        cs = np.concatenate(([0], np.cumsum(keep))).astype(np.int64)
+        lo, hi = cs[self._row_lo], cs[self._row_hi]
+        alive = hi > lo                                          # nodes with a selected row
+        n_items = len(self._item_ptr) - 1
+        item_of = np.repeat(np.arange(n_items), np.diff(self._item_ptr))
+
+        new = self._copy_index()
+        m = int(cs[-1])
+        new._n_samples = m
+        new._item_ptr = np.concatenate(([0], np.cumsum(np.bincount(item_of[alive], minlength=n_items)))
+                                       ).astype(np.int64)
+        new._words = self._words[alive]
+        new._row_lo = lo[alive].astype(np.int32)
+        new._row_hi = hi[alive].astype(np.int32)
+        if self._KEEP_PRE_POST:   # ancestor tests only compare these numbers: no renumbering needed
+            new._node_pre, new._node_end = self._node_pre[alive], self._node_end[alive]
+        new_id = np.cumsum(mask) - 1                              # old row -> new row
+        new._perm = new_id[self._perm[keep]].astype(np.int32)
+        new_position = np.cumsum(alive) - 1                       # old node -> new node
+        old_end = self._row_end[mask]
+        new._row_end = np.where(old_end >= 0, new_position[np.maximum(old_end, 0)], -1).astype(np.int32)
+        new.y = None if self.y is None else self.y[mask]
+        new._init_labels()
+        new._set_weights(None if self.weights is None else self.weights[mask])
+        return new
 
     def _reindexed(self, new_spec, source, is_complement):
         if is_complement is not None and np.any(is_complement):

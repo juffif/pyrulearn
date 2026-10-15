@@ -227,6 +227,79 @@ def test_select_rows_subsets_and_stays_the_same_type(rep_cls):
     print(f"{rep_cls.__name__}.select_rows: subsets, same type, coverage consistent: OK")
 
 
+def _masks(n, y, rng):
+    yield "random", rng.random(n) < 0.4
+    yield "one class", y == "pos"
+    yield "all rows", np.ones(n, dtype=bool)
+    yield "a single row", np.arange(n) == 7
+    yield "no rows", np.zeros(n, dtype=bool)
+    yield "sorted indices", np.flatnonzero(rng.random(n) < 0.3)
+
+
+@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation])
+@pytest.mark.parametrize("negation", [False, True])
+def test_nlist_subset_derived_from_the_tree_matches_a_rebuilt_one(rep_cls, negation):
+    """select_rows derives the subset's tree from the existing one (keeping its
+    feature order); everything a learner can observe must equal a fresh build."""
+    brep, ds = _dataset(n=300, k=12, seed=21, negation=negation)
+    X, y = np.asarray(brep.X), brep.y
+    weights = np.random.default_rng(1).uniform(0.5, 2.0, size=len(y))
+    rep = rep_cls(ds, X, y, weights=weights)
+    rng = np.random.default_rng(5)
+    rules = _random_rules(ds, rng, n_rules=60, max_len=4)
+    for name, mask in _masks(len(y), y, rng):
+        sub = rep.select_rows(mask)
+        fresh = rep_cls(ds, X[mask], y[mask], weights=weights[mask])
+        assert type(sub) is rep_cls and sub.n_samples == fresh.n_samples, name
+        assert np.array_equal(sub.y, fresh.y) and np.array_equal(sub.weights, fresh.weights), name
+        assert np.array_equal(np.asarray(sub.X), np.asarray(fresh.X)), name
+        for row in range(sub.n_samples):
+            assert np.array_equal(sub.features_of(row), fresh.features_of(row)), name
+        for rule in rules:
+            assert np.array_equal(sub.coverage(rule), fresh.coverage(rule)), name
+        if sub.n_samples and len(set(sub.y)) > 1:
+            # the search path: incremental cover handles and their class counts
+            for rule in rules[:20]:
+                hs, hf = sub.initial_cover(), fresh.initial_cover()
+                for f in rule.pos:
+                    hs, hf = sub.refine_cover(hs, f), fresh.refine_cover(hf, f)
+                # weighted sums: same rows, added up in another order (the tree keeps the
+                # full data's feature order), so equal up to floating-point rounding
+                assert np.allclose(sub.cover_counts(hs, "pos"), fresh.cover_counts(hf, "pos"),
+                                   rtol=1e-12, atol=0), name
+            for learner in (CN2(random_state=0), PFossil(random_state=0)):
+                assert str(learner.fit(sub)) == str(learner.fit(fresh)), (name, type(learner).__name__)
+    nested = rep.select_rows(y == "pos").select_rows(np.arange(int((y == "pos").sum())) % 2 == 0)
+    once = rep_cls(ds, X[y == "pos"][::2], y[y == "pos"][::2], weights=weights[y == "pos"][::2])
+    assert np.array_equal(np.asarray(nested.X), np.asarray(once.X))
+    assert all(np.array_equal(nested.coverage(r), once.coverage(r)) for r in rules)
+    print(f"{rep_cls.__name__}: subsets derived from the tree match rebuilt ones: OK")
+
+
+@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation])
+def test_nlist_select_rows_with_unsorted_or_repeated_indices_rebuilds(rep_cls):
+    brep, ds = _dataset(n=120, k=10, seed=3)
+    X, y = np.asarray(brep.X), brep.y
+    rep = rep_cls(ds, X, y)
+    for idx in (np.array([5, 3, 9, 3, 0]), np.array([10, 2, 77])):
+        sub = rep.select_rows(idx)
+        assert np.array_equal(np.asarray(sub.X), X[idx]) and np.array_equal(sub.y, y[idx])
+
+
+@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation])
+def test_nlist_relabel_shares_the_tree(rep_cls):
+    brep, ds = _dataset(n=200, k=12, seed=8)
+    X, y = np.asarray(brep.X), brep.y
+    rep = rep_cls(ds, X, y)
+    new_y = np.where(np.arange(len(y)) % 3 == 0, "a", np.where(y == "pos", "b", "c"))
+    rel, fresh = rep.relabel(new_y), rep_cls(ds, X, new_y)
+    assert rel._words is rep._words  # shared, not rebuilt
+    assert np.array_equal(rel.y, new_y) and np.array_equal(rep.y, y)  # the original keeps its labels
+    for rule in _random_rules(ds, np.random.default_rng(2), n_rules=40, max_len=3):
+        assert np.array_equal(rel.coverage(rule), fresh.coverage(rule))
+    assert str(CN2(random_state=0).fit(rel)) == str(CN2(random_state=0).fit(fresh))
+
+
 @pytest.mark.parametrize("rep_cls", ALT_REPS)
 def test_constructors_mirror_boolean(rep_cls):
     rng = np.random.default_rng(4)
