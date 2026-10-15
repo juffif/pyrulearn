@@ -3,7 +3,16 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.3.3 (2026-10-15)
+
+Faster N-lists for the cases the demos showed to be slow, and a `run_cv` that gives up
+on a timed-out cross-validation: row subsets of an N-list are derived from its tree
+(5-8x faster, which pairwise and ordered decompositions need), batch counting uses a
+dense product where the patterns are dense (the boosting learners are now as fast on
+N-lists as on Boolean data or faster), and a timed-out fold fails the whole
+cross-validation of its learner and dataset (`stop_on_timeout`, with `timed_out` for the
+caller). All demos re-run. No change to what any learner learns, apart from rare
+tie-breaking.
 
 ### Added
 
