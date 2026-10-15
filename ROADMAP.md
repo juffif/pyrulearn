@@ -842,6 +842,20 @@ different orders, so it only works while every value is `True`.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
+- **Growth and the pairwise speed-up, controlled** (2026-10-15). The
+  multi-class demo estimates each base learner's growth b from three nested
+  subsamples of one training fold per dataset and sets the predicted one-vs-rest
+  / pairwise ratio against the measured one: the points follow the line only
+  roughly (PFossil, b about 0.5, never gains; PFoil and Pypper, b about 1.3,
+  gain on some datasets; Pypper on kropt is far off, 0.34 measured vs. 4.36
+  predicted). Rule learners' run times are noisy -- one rule more or less
+  changes the time a lot and the quality hardly. A controlled experiment would
+  vary the training-set size on a single dataset (several sizes, several
+  repetitions) and compare the decompositions there. Open question as well:
+  whether a covering learner's cost depends on the total size of a sub-problem
+  at all, or rather on its number of positive examples (the rules it learns)
+  times its size (the cost of each search) -- then one-vs-rest and pairwise
+  would cost about the same, about n^2 in both cases.
 - **The number of classes in CN2's (and Opus') Laplace heuristic under a
   decomposition** (open, 2026-10-15). `_ClassCountLaplace` sets
   `Laplace(n_classes=c)` once per `fit`, from the whole problem, so every

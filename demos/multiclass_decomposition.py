@@ -604,7 +604,11 @@ def _growth_section(results, growth, paths, img, n_classes: dict) -> list:
          "counts; the measured one is the cross-validation's one-vs-rest / pairwise (`pw_smaller`) "
          "training time. Pairwise also has costs per pair the model leaves out -- building each pair's "
          "data, evaluating its model for the vote weights -- which weigh most with many classes and few "
-         "examples.\n\n"]
+         "examples.\n\n"
+         "Run times of rule learners are noisy in a way their results are not: one rule more or less can "
+         "change a fit's time a lot and its quality hardly at all, so b from three subsamples, and the "
+         "ratios, scatter. The points follow the line only roughly; a controlled experiment, varying the "
+         "training-set size on a single dataset, would separate the growth from the noise better.\n\n"]
     if "growth" in paths:
         L.append(img("growth", "pairwise speed-up, measured vs. predicted"))
     L.append("| dataset | classes | training rows | base | b | ovr / pairwise, measured | predicted (b) | "
