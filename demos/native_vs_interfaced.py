@@ -391,6 +391,8 @@ at {FIT_TIMEOUT:.0f}s; a time-out or an error counts as a failure (and
 as last in the ranking), not as the end of the run -- CBA/PArc:CBA's
 itemset mining is the likeliest to hit this on wider data.
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, number of rules and conditions, fit time.
 
 Threads: every learner here runs on one thread. `mlrl-boomer` would use every core of the machine by

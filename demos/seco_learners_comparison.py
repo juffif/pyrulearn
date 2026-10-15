@@ -324,6 +324,8 @@ not as the end of the run. The cap is deliberately kept for the large
 datasets too: which learners scale to tens of thousands of examples is
 part of the result (a single CN2 fit on adult takes about 20 minutes).{_concurrency_note()}
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, number of rules and conditions, fit time.
 """
 

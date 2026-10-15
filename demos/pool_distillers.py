@@ -587,6 +587,8 @@ super-linearly with row count and can need much longer than any
 distiller fit on the biggest Study 2 datasets. A time-out or an error
 counts as a failure, not as the end of the run.{_concurrency_note()}
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: pool build time and rule count per generator; per
 (pool, distiller) mean accuracy, rule count and fit time; mean rank of
 the distillers, computed separately per pool; per-dataset detail

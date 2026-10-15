@@ -222,6 +222,8 @@ training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`) instead
 of the paper's tests at every midpoint. Each fit is capped at
 {FIT_TIMEOUT:.0f}s; a timeout counts as a failure.
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, number of rules and conditions, fit time.{_concurrency_note()}
 """
 

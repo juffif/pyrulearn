@@ -506,6 +506,13 @@ def _accuracy_vs_time_plot(
         ax.scatter(t, acc, color=_COVERING_COLORS[cov_name], marker=_HEURISTIC_MARKERS[heur_name],
                   s=55, zorder=3)
 
+    # each covering strategy's three points on one dotted line, in the order Laplace, m-estimate, WRAcc
+    for cov_name, color in _COVERING_COLORS.items():
+        names = [f"{cov_name}+{h}" for h in ("Laplace", "MEstimate16", "WRAcc")]
+        names = [n for n in names if n in s1_acc.index and n in s1_time.index]
+        if len(names) > 1:
+            ax.plot([s1_time[n] for n in names], [s1_acc[n] for n in names], ":", color=color, lw=1.2, zorder=2)
+
     for family in BOOSTING_FAMILIES:
         xs, ys = [], []
         for n in N_RULES_BUDGETS:
@@ -535,13 +542,14 @@ def _accuracy_vs_time_plot(
         Line2D([0], [0], marker=_FAMILY_MARKERS[n], color=c, linestyle="-", markersize=5, label=n)
         for n, c in _FAMILY_COLORS.items()
     ]
+    # the heuristics in the order the dotted lines connect them, each with a dotted line through its marker
     heuristic_handles = [
-        Line2D([0], [0], marker=m, color="gray", linestyle="", markersize=7, label=h)
-        for h, m in _HEURISTIC_MARKERS.items()
+        Line2D([0], [0], marker=_HEURISTIC_MARKERS[h], color="gray", linestyle=":", markersize=7, label=h)
+        for h in ("Laplace", "MEstimate16", "WRAcc")
     ] + [Line2D([0], [0], color="gray", linestyle="-", marker="o", markersize=4, label="rule budget")]
     # both legends outside the axes, to the right, so they cover no points
     legend1 = ax.legend(handles=algorithm_handles, fontsize=7, loc="upper left",
-                        bbox_to_anchor=(1.02, 1.0), borderaxespad=0, title="algorithm (color)")
+                        bbox_to_anchor=(1.02, 1.0), borderaxespad=0, title="algorithm")
     ax.add_artist(legend1)
     ax.legend(handles=heuristic_handles, fontsize=7, loc="lower left",
               bbox_to_anchor=(1.02, 0.0), borderaxespad=0, title="heuristic")
@@ -579,6 +587,8 @@ fold encoded against that same `DataSpec`, in the library's default representati
 as a failure, not as the end of the run, and is excluded from every
 mean it would otherwise enter (a "failures" column reports the count
 instead).{_concurrency_note()}
+
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
 
 Measures: accuracy, rule count, conditions per rule, fit time, and
 overlap (mean rules covering a test row, pooled across every concept --
@@ -622,7 +632,8 @@ see the module docstring for why this isn't restricted to one
         "sub-second boosting fits to multi-minute (and timed-out) covering fits. Color is the "
         "algorithm family -- the four covering strategies, `CPAR`/`LRI`, and the five boosting "
         "families; for section 1, marker shape is the heuristic, so a covering strategy's three "
-        "heuristic variants show up as same-color points of different shapes. A boosting "
+        "heuristic variants show up as same-color points of different shapes, joined by a dotted "
+        "line in the order Laplace, m-estimate, WRAcc. A boosting "
         "family's four rule-count budgets (10/20/50/100) are connected by a line, tracing out "
         "that family's own accuracy-vs-cost curve rather than four unrelated points. `Boomer` "
         "and `ENDER-Newton`'s lines nearly overlap at the top right -- both reach similarly high "

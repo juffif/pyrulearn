@@ -344,6 +344,8 @@ the same data as Boolean matrices. Each fit is capped at
 of the run. Fit times are wall-clock seconds of one fit in a worker process (see below for
 how many ran at once).
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, number of rules and conditions, fit time, and whether a dense
 learner and its modular twin learned the same model (the same rules, whatever their order).
 

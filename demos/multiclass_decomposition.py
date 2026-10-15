@@ -538,7 +538,9 @@ class. Prediction goes the other way: every pair model has to be asked.
 
 Datasets, with their numbers of classes: {names}. Protocol: {folds}, one
 `DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`).
-Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out counts as a failure.
+Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out counts as a failure, and it fails the whole
+cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are
+not run, and all its folds count as failures.
 Training time is measured inside the worker process, so it excludes
 shipping data and models between processes. Every learner runs single-threaded.
 {_concurrency_note()}
