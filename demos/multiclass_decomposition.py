@@ -67,7 +67,9 @@ from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
-from pyrulearn.experiments.runner import run_cv
+from pyrulearn.data import default_representation
+from pyrulearn.data.io import build_dataspec, encode
+from pyrulearn.experiments.runner import TimeoutRunner, run_cv
 from pyrulearn.experiments.stats import mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.seco import PFoil, PFossil, Pypper
@@ -97,6 +99,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "multiclass_decomposition"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_multiclass_decomposition_cache")
+
+#: how a base learner's one-vs-rest training time grows with the examples: fitted on nested,
+#: stratified subsamples of the first training fold (these shares of it), outside the
+#: cross-validation
+GROWTH_FRACTIONS = (0.25, 0.5, 1.0)
+#: ... only where the whole training fold has at least this many rows (on smaller ones a
+#: fit's fixed costs swamp the estimate)
+GROWTH_MIN_ROWS = 1000
 
 
 # fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
@@ -271,7 +281,113 @@ def _ratios(results: pd.DataFrame, n_classes: dict, pairwise: str, value: str) -
     return pd.DataFrame(rows)
 
 
-def write_plots(results: pd.DataFrame, n_classes: dict, quick: bool) -> dict:
+# -- growth of the base learners ----------------------------------------------------------
+
+def _ovr_seconds(base: str, rep) -> float:
+    """Runs in the worker: one-vs-rest with `base` on `rep`, the seconds the fit itself took."""
+    return Decomposition(base, "ovr").fit(rep).fit_seconds
+
+
+def _growth_jobs(datasets, folds_of: dict):
+    """``(dataset, n_classes, class_counts, fraction, rows, rep)`` for every dataset with a large
+    enough training fold: nested, stratified subsamples of its first training fold, each with
+    its own `DataSpec`, as `run_cv` builds one per fold."""
+    from sklearn.model_selection import StratifiedKFold
+
+    for entry in datasets:
+        df, target = entry.load()
+        y = df[target].to_numpy()
+        train_idx, _ = next(StratifiedKFold(folds_of[entry.name], shuffle=True, random_state=RANDOM_STATE)
+                            .split(np.zeros(len(y)), y))
+        if len(train_idx) < GROWTH_MIN_ROWS:
+            continue
+        rng = np.random.default_rng(RANDOM_STATE)
+        y_train = y[train_idx]
+        by_class = {c: rng.permutation(train_idx[y_train == c]) for c in np.unique(y_train)}
+        counts = {c: len(rows) for c, rows in by_class.items()}
+        for fraction in GROWTH_FRACTIONS:
+            rows = np.sort(np.concatenate([r[:max(1, int(round(fraction * len(r))))] for r in by_class.values()]))
+            sub = df.iloc[rows].reset_index(drop=True)
+            spec = build_dataspec(sub, target=target, max_intervals=MAX_INTERVALS, skip_unusable=True).build()
+            rep = encode(spec, sub, sub[target].to_numpy(), representation=default_representation())
+            yield entry.name, len(counts), counts, fraction, len(rows), rep
+
+
+def run_growth(datasets, folds_of: dict) -> pd.DataFrame:
+    """One-vs-rest training time of every base learner on the subsamples of `_growth_jobs`,
+    `n_jobs` fits at a time (a thread with its own worker process each), cached."""
+    import json
+    import queue
+    import threading
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    jobs, rows = queue.Queue(), []
+    lock = threading.Lock()
+
+    def cache_path(ds, base, fraction):
+        return os.path.join(CACHE_DIR, f"growth_{ds}_{base}_{fraction}_{folds_of[ds]}.json")
+
+    def work(runner):
+        while True:
+            job = jobs.get()
+            if job is None:
+                return
+            ds, c, counts, fraction, n, rep, base = job
+            path = cache_path(ds, base, fraction)
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    row = json.load(f)
+            else:
+                seconds, error = runner.run(_ovr_seconds, base, rep)
+                row = {"dataset": ds, "base": base, "fraction": fraction, "rows": n, "classes": c,
+                       "class_counts": [int(v) for v in counts.values()], "seconds": seconds, "error": error}
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(row, f)
+            status = row["error"] if row["error"] else f"{row['seconds']:.2f}s"
+            with lock:
+                rows.append(row)
+                print(f"  growth {ds} {base:7s} {fraction:4.2f} ({n} rows) {status}", flush=True)
+
+    workers = int(str(N_JOBS).rstrip("!"))  # as many as the cross-validation runs side by side
+    runners = [TimeoutRunner(FIT_TIMEOUT) for _ in range(max(1, workers))]
+    threads = [threading.Thread(target=work, args=(r,), daemon=True) for r in runners]
+    for t in threads:
+        t.start()
+    try:
+        for ds, c, counts, fraction, n_rows, rep in _growth_jobs(datasets, folds_of):
+            for base in BASES:
+                jobs.put((ds, c, counts, fraction, n_rows, rep, base))
+        for _ in threads:
+            jobs.put(None)
+        for t in threads:
+            t.join()
+    finally:
+        for r in runners:
+            r.close()
+    return pd.DataFrame(rows)
+
+
+def growth_exponents(growth: pd.DataFrame) -> pd.DataFrame:
+    """Per dataset and base learner: the exponent b of time ~ n^b (least-squares slope of log time
+    over log rows across the subsamples that finished), and the one-vs-rest / pairwise time ratio a
+    learner with that b would give on this dataset's classes: c * n^b / sum over pairs (n_i + n_j)^b."""
+    out = []
+    ok = growth[growth["error"].isna() & (growth["seconds"] > 0)]
+    for (ds, base), g in ok.groupby(["dataset", "base"]):
+        if len(g) < 2:
+            continue
+        b = float(np.polyfit(np.log(g["rows"]), np.log(g["seconds"]), 1)[0])
+        counts = np.asarray(g["class_counts"].iloc[0], dtype=float)
+        n, c = counts.sum(), len(counts)
+        pairs = (counts[:, None] + counts[None, :])[np.triu_indices(c, 1)]
+        out.append({"dataset": ds, "base": base, "classes": c, "rows": int(n), "b": b, "points": len(g),
+                    "predicted": c * n ** b / np.sum(pairs ** b),
+                    "predicted_linear": c * n / np.sum(pairs)})
+    return pd.DataFrame(out)
+
+
+def write_plots(results: pd.DataFrame, n_classes: dict, quick: bool,
+                growth: Optional[pd.DataFrame] = None) -> dict:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -320,6 +436,33 @@ def write_plots(results: pd.DataFrame, n_classes: dict, quick: bool) -> dict:
         plt.close(fig)
         paths[key] = path
         print(f"Plot   -> {path}")
+    if growth is not None and len(growth):
+        measured = _ratios(results, n_classes, "pw_smaller", "train_time")
+        both = growth.merge(measured[["dataset", "base", "ratio"]], on=["dataset", "base"])
+        if len(both):
+            fig, ax = plt.subplots(figsize=(6.5, 5.2))
+            for base, (marker, color) in markers.items():
+                sub = both[both["base"] == base]
+                ax.scatter(sub["predicted"], sub["ratio"], marker=marker, color=color, s=40,
+                           label=f"{base} (median b = {sub['b'].median():.2f})" if len(sub) else base)
+                for _, r in sub.iterrows():
+                    ax.annotate(r["dataset"], (r["predicted"], r["ratio"]), fontsize=6,
+                                xytext=(3, 3), textcoords="offset points")
+            lo = min(both["predicted"].min(), both["ratio"].min()) * 0.8
+            hi = max(both["predicted"].max(), both["ratio"].max()) * 1.25
+            ax.plot([lo, hi], [lo, hi], "--", color="gray", lw=1, label="measured = predicted")
+            ax.axhline(1, color="black", lw=0.6)
+            ax.set_xscale("log"); ax.set_yscale("log")
+            ax.set_xlabel("predicted from the learner's growth b: c n^b / sum over pairs (n_i + n_j)^b")
+            ax.set_ylabel("measured: one-vs-rest / pairwise training time")
+            ax.set_title("pairwise speed-up, measured vs. predicted from the growth of the base learner",
+                         fontsize=9)
+            ax.legend(fontsize=7)
+            ax.grid(alpha=0.3, which="both")
+            fig.tight_layout()
+            paths["growth"] = os.path.join(PLOTS_DIR, f"{NAME}{tag}_growth.png")
+            fig.savefig(paths["growth"], dpi=110)
+            plt.close(fig)
     return paths
 
 
@@ -441,8 +584,43 @@ def _weighted_vote_section(check: pd.DataFrame) -> list:
     return L
 
 
+def _growth_section(results, growth, paths, img, n_classes: dict) -> list:
+    """How the measured pairwise speed-up compares with the one the base learner's own growth
+    predicts."""
+    if growth is None or not len(growth):
+        return []
+    measured = _ratios(results, n_classes, "pw_smaller", "train_time")
+    both = growth.merge(measured[["dataset", "base", "ratio"]], on=["dataset", "base"], how="left")
+    L = ["## Growth of the base learners and the pairwise speed-up\n\n",
+         "The argument for pairwise classification is about cost: if a learner's training time grows "
+         "like n^b with the number of examples n, one-vs-rest costs c n^b for c classes, pairwise the sum "
+         "over the pairs of (n_i + n_j)^b -- about (c - 1) n examples in all, but in many small problems, "
+         "so the larger b, the more pairwise gains. Here b is measured for each base learner on each "
+         f"dataset with at least {GROWTH_MIN_ROWS:,} training rows: one-vs-rest is fitted on nested, "
+         "stratified subsamples of the first training fold ("
+         + ", ".join(f"{f:.0%}" for f in GROWTH_FRACTIONS)
+         + " of it, outside the cross-validation, each with its own discretization), and b is the "
+         "least-squares slope of log time over log rows. The predicted ratio uses the fold's real class "
+         "counts; the measured one is the cross-validation's one-vs-rest / pairwise (`pw_smaller`) "
+         "training time. Pairwise also has costs per pair the model leaves out -- building each pair's "
+         "data, evaluating its model for the vote weights -- which weigh most with many classes and few "
+         "examples.\n\n"]
+    if "growth" in paths:
+        L.append(img("growth", "pairwise speed-up, measured vs. predicted"))
+    L.append("| dataset | classes | training rows | base | b | ovr / pairwise, measured | predicted (b) | "
+             "predicted (b = 1) |\n|---|--:|--:|---|--:|--:|--:|--:|\n")
+    for _, r in both.sort_values(["rows", "dataset", "base"]).iterrows():
+        meas = f"{r['ratio']:.2f}" if r["ratio"] == r["ratio"] else "--"
+        pts = "" if r["points"] == len(GROWTH_FRACTIONS) else f" ({int(r['points'])} points)"
+        L.append(f"| {r['dataset']} | {int(r['classes'])} | {int(r['rows']):,} | {r['base']} | {r['b']:.2f}{pts} | "
+                 f"{meas} | {r['predicted']:.2f} | {r['predicted_linear']:.2f} |\n")
+    med = both.groupby("base")["b"].median()
+    L.append("\nMedian b: " + ", ".join(f"{b} {v:.2f}" for b, v in med.items()) + ".\n\n")
+    return L
+
+
 def write_report(results, var, datasets, paths, quick: bool, n_folds: int, report_path: str,
-                 check: pd.DataFrame) -> None:
+                 check: pd.DataFrame, growth: Optional[pd.DataFrame] = None) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda k, alt: f"![{alt}]({plots}/{os.path.basename(paths[k])})\n\n"  # noqa: E731
     L = ["# Multi-class decomposition: one-vs-rest vs. pairwise\n\n"]
@@ -473,6 +651,7 @@ def write_report(results, var, datasets, paths, quick: bool, n_folds: int, repor
     L.append(img("train_ratio", "training time ratio, one-vs-rest / pairwise"))
     L.append(img("train_ratio_double", "training time ratio, one-vs-rest / double round robin"))
     L.append(img("predict_ratio", "prediction time ratio, one-vs-rest / pairwise"))
+    L += _growth_section(results, growth, paths, img, {d.name: d.n_classes for d in datasets})
 
     L.append("## Per dataset (mean across folds)\n\n")
     L.append(render_results_table(var.assign(learner=var["learner"]),
@@ -502,11 +681,15 @@ def main(quick: bool = True) -> None:
     ], ignore_index=True)
     var = variants(results)
     n_classes = {d.name: d.n_classes for d in datasets}
-    paths = write_plots(results, n_classes, quick)
+    print("Growth of the base learners ...", flush=True)
+    folds_of = {d.name: QUICK_FOLDS if quick else (LARGE_FOLDS if d.size == "large" else N_FOLDS)
+                for d in datasets}
+    growth = growth_exponents(run_growth(datasets, folds_of))
+    paths = write_plots(results, n_classes, quick, growth)
     print("Default-confidence check ...")
     check = run_default_confidence_check()
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(results, var, datasets, paths, quick, n_folds, report, check)
+    write_report(results, var, datasets, paths, quick, n_folds, report, check, growth)
 
 
 if __name__ == "__main__":
