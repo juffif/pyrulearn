@@ -842,6 +842,26 @@ different orders, so it only works while every value is `True`.
 - **Demo plots**: on logarithmic axes, the plain-number tick labels also
   label the minor ticks, which overlap where the axis spans several
   decades (e.g. `demos/representations_plots/size_index_build.png`).
+- **The number of classes in CN2's (and Opus') Laplace heuristic under a
+  decomposition** (open, 2026-10-15). `_ClassCountLaplace` sets
+  `Laplace(n_classes=c)` once per `fit`, from the whole problem, so every
+  sub-problem uses it: on `letter`, c = 26 in each pair of classes, although a
+  pair's data has only two. Intended: c = the number of the original classes
+  with examples in the local problem -- 26 for one-vs-rest, 26, 25, ..., 2 for
+  the stages of ordered, 2 for a pair. Preferred way (not done yet): the
+  class count as part of `RuleStats`, set by the search from the data, and an
+  unset `Laplace()` using it -- which raises the general question whether
+  statistics should describe the current problem (shrinking under covering)
+  or the whole dataset. Alternative: c from the prior, (n_pos + n_neg) / n_pos,
+  which needs no plumbing but changes during covering. Measured on one fold of
+  `letter` (pairwise): c = 26 gives 89.75% test accuracy in 56 s, c = 2 78.65%
+  in 14 s -- c = 2 leaves slightly more of each pair's class uncovered (96.4%
+  vs. 99.8%), and with 26 classes the pairwise vote turns that into many
+  errors (the true class leads the best wrong one by only 1.5-2 of 25 votes).
+  The m-estimate with the pair's own prior (m = 26: 89.85%, m = 8: 89.65% in
+  35 s) shows it is the heuristic's strength, not the class count, that
+  matters for accuracy. Until this is settled, the multi-class demo uses PFoil
+  instead of CN2 as its superlinear learner.
 - **Parallel learners** (not planned for now, 2026-10-14): every native
   learner runs on one thread. Some would parallelize well because they
   consist of independent searches: `PyLORD` runs one rule search per
