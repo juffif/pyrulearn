@@ -30,7 +30,7 @@ many classes (left for the multi-class demo) are not included.
 AQR, the AQ baseline CN2 was designed to improve on, and Opus with the
 Laplace estimate were checked separately and left out -- see "Why AQR and
 Opus(Laplace) aren't in the main comparison".
-Across 4 small datasets (3-fold), AQR was less accurate than CN2 (mean accuracy 70.27% vs. 75.08%), learned rules 7.4x as long (17.6 vs. 2.4 conditions per rule; 494.3 vs. 22.6 conditions in total), and took 120x as long per fit (5.1s vs. 0.04s, mean) -- requiring every rule to be consistent overfits noisy data, and on larger datasets with numeric attributes the fit times would dominate the whole comparison. Opus with the Laplace estimate (at most 3 conditions per rule), which finds the rule CN2's beam search only approximates, was not less accurate than CN2 (mean accuracy 76.60%), learned 4.5x as many rules (41.5 vs. 9.2, mean) and took 2158x as long per fit (91.4s, mean). Webb (1993) found classifiers that optimize the Laplace estimate exactly often less accurate than those of a heuristic search that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The main comparison runs Opus with WRAcc instead.
+Across 4 small datasets (3-fold), AQR was less accurate than CN2 (mean accuracy 70.27% vs. 75.08%), learned rules 7.4x as long (17.6 vs. 2.4 conditions per rule; 494.3 vs. 22.6 conditions in total), and took 120x as long per fit (5.1s vs. 0.04s, mean) -- requiring every rule to be consistent overfits noisy data, and on larger datasets with numeric attributes the fit times would dominate the whole comparison. Opus with the Laplace estimate (at most 3 conditions per rule), which finds the rule CN2's beam search only approximates, was not less accurate than CN2 (mean accuracy 75.41%), learned 3.7x as many rules (34.0 vs. 9.2, mean) and took 2158x as long per fit (91.4s, mean). Webb (1993) found classifiers that optimize the Laplace estimate exactly often less accurate than those of a heuristic search that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The main comparison runs Opus with WRAcc instead.
 
 Protocol: 10-fold stratified cross-validation (5-fold for the large adult, connect-4)
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
@@ -45,6 +45,8 @@ part of the result (a single CN2 fit on adult takes about 20 minutes).
 
 Every learner runs single-threaded; the reference Java LORD, which by default uses half the machine's cores, is limited to one thread here (`thread_count=1`, for this comparison only). Fits run 10 at a time (`run_cv`'s `n_jobs`), each in its own process and timed there, with the numerical libraries limited to one thread (`OMP_NUM_THREADS=1` and its relatives). A check of the `dense_vs_modular` learners on 11 datasets found the fit times of 5 concurrent fits as close to a sequential run as a second sequential run (per-learner ratios and rankings alike); time ratios between learners are reproducible to about +-10% either way.
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, number of rules and conditions, fit time.
 
 ![accuracy vs. rule-set complexity](seco_learners_comparison_plots/seco_learners_comparison_accuracy.png)
@@ -55,7 +57,7 @@ Measures: test accuracy, number of rules and conditions, fit time.
 
 ## Why AQR and Opus(Laplace) aren't in the main comparison
 
-Across 4 small datasets (3-fold), AQR was less accurate than CN2 (mean accuracy 70.27% vs. 75.08%), learned rules 7.4x as long (17.6 vs. 2.4 conditions per rule; 494.3 vs. 22.6 conditions in total), and took 120x as long per fit (5.1s vs. 0.04s, mean) -- requiring every rule to be consistent overfits noisy data, and on larger datasets with numeric attributes the fit times would dominate the whole comparison. Opus with the Laplace estimate (at most 3 conditions per rule), which finds the rule CN2's beam search only approximates, was not less accurate than CN2 (mean accuracy 76.60%), learned 4.5x as many rules (41.5 vs. 9.2, mean) and took 2158x as long per fit (91.4s, mean). Webb (1993) found classifiers that optimize the Laplace estimate exactly often less accurate than those of a heuristic search that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The main comparison runs Opus with WRAcc instead.
+Across 4 small datasets (3-fold), AQR was less accurate than CN2 (mean accuracy 70.27% vs. 75.08%), learned rules 7.4x as long (17.6 vs. 2.4 conditions per rule; 494.3 vs. 22.6 conditions in total), and took 120x as long per fit (5.1s vs. 0.04s, mean) -- requiring every rule to be consistent overfits noisy data, and on larger datasets with numeric attributes the fit times would dominate the whole comparison. Opus with the Laplace estimate (at most 3 conditions per rule), which finds the rule CN2's beam search only approximates, was not less accurate than CN2 (mean accuracy 75.41%), learned 3.7x as many rules (34.0 vs. 9.2, mean) and took 2158x as long per fit (91.4s, mean). Webb (1993) found classifiers that optimize the Laplace estimate exactly often less accurate than those of a heuristic search that fails to -- the result behind Quinlan & Cameron-Jones's 'oversearching'. The main comparison runs Opus with WRAcc instead.
 
 | dataset | learner | accuracy | n_rules | n_conditions | conds_per_rule | fit_time |
 |---|---|---|---|---|---|---|
@@ -64,7 +66,7 @@ Across 4 small datasets (3-fold), AQR was less accurate than CN2 (mean accuracy 
 | breast-cancer | Opus(Laplace) | 66.44% | 58.7 | 171.7 | 2.9 | 57.206 |
 | credit-approval | AQR | 75.94% | 37.0 | 1155.0 | 31.3 | 13.541 |
 | credit-approval | CN2 | 78.99% | 16.3 | 46.0 | 2.8 | 0.074 |
-| credit-approval | Opus(Laplace) | 81.96% | 75.0 | 217.5 | 2.9 | 277.231 |
+| credit-approval | Opus(Laplace) | n/a | n/a | n/a | n/a | 277.231 |
 | heart-statlog | AQR | 67.41% | 17.0 | 277.0 | 16.1 | 2.477 |
 | heart-statlog | CN2 | 70.37% | 8.0 | 19.3 | 2.4 | 0.034 |
 | heart-statlog | Opus(Laplace) | 81.11% | 29.0 | 85.0 | 2.9 | 28.547 |
@@ -80,12 +82,12 @@ Without the two large datasets (adult, connect-4), where most learners hit the t
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
 | PFoil | 82.52% | 56.9 | 243.9 | 3.6 | 0.21 | 4.2 | 3.57 | 0 |
 | PyLORD | 82.70% | 133.7 | 695.0 | 4.0 | 4.69 | 2.2 | 3.87 | 0 |
-| JavaLord | 81.84% | 129.2 | 618.0 | 3.7 | 8.58 | 4.2 | 4.00 | 0 |
-| PFossil | 81.80% | 13.1 | 47.1 | 4.1 | 0.06 | 5.0 | 4.09 | 0 |
-| Pypper | 81.27% | 4.9 | 16.2 | 2.8 | 0.20 | 6.0 | 4.37 | 0 |
-| Weka:JRip | 81.02% | 5.6 | 18.7 | 2.8 | 1.40 | 2.5 | 4.43 | 0 |
-| Opus(WRAcc) | 78.64% | 9.8 | 25.5 | 2.6 | 39.31 | 2.5 | 5.54 | 19 |
-| CN2 | 78.21% | 22.8 | 78.2 | 2.8 | 0.27 | 0.2 | 6.13 | 0 |
+| JavaLord | 81.84% | 129.2 | 618.0 | 3.7 | 8.58 | 4.2 | 3.96 | 0 |
+| PFossil | 81.80% | 13.1 | 47.1 | 4.1 | 0.06 | 5.0 | 4.06 | 0 |
+| Pypper | 81.27% | 4.9 | 16.2 | 2.8 | 0.20 | 6.0 | 4.33 | 0 |
+| Weka:JRip | 81.02% | 5.6 | 18.7 | 2.8 | 1.40 | 2.5 | 4.39 | 0 |
+| Opus(WRAcc) | 78.65% | 9.8 | 25.5 | 2.6 | 39.31 | 2.5 | 5.72 | 20 |
+| CN2 | 78.21% | 22.8 | 78.2 | 2.8 | 0.27 | 0.2 | 6.09 | 0 |
 
 Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tied-for-)best, a tie split evenly; `mean rank` -- average accuracy rank across datasets, failures tied for last. Means over successful fits only; `failures` counts the fits that timed out or raised.
 
@@ -97,12 +99,12 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
 | PFoil | 79.46% | 44.2 | 153.4 | 3.1 | 0.11 | 3.0 | 3.59 | 0 |
 | PyLORD | 79.68% | 92.5 | 400.0 | 3.5 | 0.90 | 1.0 | 3.88 | 0 |
-| JavaLord | 78.26% | 87.3 | 356.9 | 3.2 | 0.58 | 3.0 | 4.32 | 0 |
-| PFossil | 78.24% | 11.9 | 39.4 | 3.9 | 0.03 | 3.0 | 4.38 | 0 |
-| Weka:JRip | 77.33% | 3.7 | 8.7 | 2.4 | 0.65 | 1.5 | 4.50 | 0 |
-| Pypper | 77.44% | 3.1 | 7.5 | 2.4 | 0.07 | 3.0 | 4.71 | 0 |
-| Opus(WRAcc) | 77.26% | 9.6 | 25.0 | 2.6 | 28.45 | 2.5 | 4.74 | 9 |
-| CN2 | 76.13% | 11.9 | 28.5 | 2.4 | 0.06 | 0.0 | 5.88 | 0 |
+| JavaLord | 78.26% | 87.3 | 356.9 | 3.2 | 0.58 | 3.0 | 4.26 | 0 |
+| PFossil | 78.24% | 11.9 | 39.4 | 3.9 | 0.03 | 3.0 | 4.32 | 0 |
+| Weka:JRip | 77.33% | 3.7 | 8.7 | 2.4 | 0.65 | 1.5 | 4.44 | 0 |
+| Pypper | 77.44% | 3.1 | 7.5 | 2.4 | 0.07 | 3.0 | 4.65 | 0 |
+| Opus(WRAcc) | 77.27% | 9.6 | 25.0 | 2.6 | 28.45 | 2.5 | 5.03 | 10 |
+| CN2 | 76.13% | 11.9 | 28.5 | 2.4 | 0.06 | 0.0 | 5.82 | 0 |
 
 ### Medium datasets only (10, 1,000 to 10,000 examples)
 
@@ -129,7 +131,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | PFossil | 82.71% | 80.24% |
 | Pypper | 83.00% | 78.33% |
 | Weka:JRip | 82.56% | 78.39% |
-| Opus(WRAcc) | 81.69% | 73.18% |
+| Opus(WRAcc) | 81.72% | 73.18% |
 | CN2 | 80.70% | 73.99% |
 
 ## The large datasets: adult, connect-4
@@ -152,7 +154,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | connect-4 | PFoil | 0/5 | -- | -- | -- | -- |
 | connect-4 | PFossil | 5/5 | 65.83% | 0.0 | 0.0 | 0.99 |
 | connect-4 | PyLORD | 0/5 | -- | -- | -- | -- |
-| connect-4 | Pypper | 4/5 | 76.59% | 67.8 | 579.8 | 171.34 |
+| connect-4 | Pypper | 0/5 | -- | -- | -- | -- |
 | connect-4 | Weka:JRip | 0/5 | -- | -- | -- | -- |
 
 ## Per-dataset results, per learner (mean across folds)
@@ -233,7 +235,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | credit-g | Weka:JRip | 71.80% | 3.9 | 15.9 | 1.018 |
 | cylinder-bands | CN2 | 69.44% | 25.1 | 35.2 | 0.088 |
 | cylinder-bands | JavaLord | 72.96% | 129.5 | 303.1 | 1.375 |
-| cylinder-bands | Opus(WRAcc) | 75.93% | 8.0 | 22.0 | 298.135 |
+| cylinder-bands | Opus(WRAcc) | n/a | n/a | n/a | 298.135 |
 | cylinder-bands | PFoil | 78.70% | 49.6 | 183.0 | 0.172 |
 | cylinder-bands | PFossil | 70.37% | 9.4 | 64.4 | 0.063 |
 | cylinder-bands | PyLORD | 78.33% | 128.2 | 306.1 | 1.015 |

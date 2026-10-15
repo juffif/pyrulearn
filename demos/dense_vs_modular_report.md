@@ -29,7 +29,7 @@ with a beam search of width 5 and 10, which the dense versions don't have.
 All learners run with their defaults (listed above) on 44 binary datasets from
 `pyrulearn.experiments.catalog` -- every one of the small and medium size classes in the full run, numeric and symbolic attributes alike; `ORB` boosts a binary loss, so no multi-class
 datasets. Exhaustive `ORB` was checked separately and left out -- see "Why exhaustive ORB
-isn't in the main comparison". On 5 very small datasets (monks-problems-3, mofn-3-7-10, vote, tic-tac-toe, breast-cancer), exhaustive `ORB` reached a mean accuracy of 95.51% against 88.65% for a beam search of width 10 and 88.24% for greedy search (over the fits that finished), in 13.0s per fit against 0.21s and 0.02s -- 62x as long as the beam search; 5 of its 15 fits hit the 120s cap. Branch and bound is exponential in the number of conditions it may combine, so it doesn't scale to the feature spaces of most datasets (dozens to hundreds of binary features after discretizing numeric attributes) -- it is left out of the main comparison.
+isn't in the main comparison". On 5 very small datasets (monks-problems-3, mofn-3-7-10, vote, tic-tac-toe, breast-cancer), exhaustive `ORB` reached a mean accuracy of 96.67% against 88.65% for a beam search of width 10 and 88.24% for greedy search (over the fits that finished), in 1.3s per fit against 0.21s and 0.02s -- 6x as long as the beam search; 6 of its 15 fits hit the 120s cap. Branch and bound is exponential in the number of conditions it may combine, so it doesn't scale to the feature spaces of most datasets (dozens to hundreds of binary features after discretizing numeric attributes) -- it is left out of the main comparison.
 
 Protocol: 10-fold stratified cross-validation (5-fold for the medium datasets)
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
@@ -40,6 +40,8 @@ the same data as Boolean matrices. Each fit is capped at
 300s; a time-out or an error counts as a failure (and as last in the ranking), not as the end
 of the run. Fit times are wall-clock seconds of one fit in a worker process (see below for
 how many ran at once).
+
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
 
 Measures: test accuracy, number of rules and conditions, fit time, and whether a dense
 learner and its modular twin learned the same model (the same rules, whatever their order).
@@ -54,7 +56,7 @@ Every learner runs single-threaded. Fits run 10 at a time (`run_cv`'s `n_jobs`),
 
 ## Why exhaustive ORB isn't in the main comparison
 
-On 5 very small datasets (monks-problems-3, mofn-3-7-10, vote, tic-tac-toe, breast-cancer), exhaustive `ORB` reached a mean accuracy of 95.51% against 88.65% for a beam search of width 10 and 88.24% for greedy search (over the fits that finished), in 13.0s per fit against 0.21s and 0.02s -- 62x as long as the beam search; 5 of its 15 fits hit the 120s cap. Branch and bound is exponential in the number of conditions it may combine, so it doesn't scale to the feature spaces of most datasets (dozens to hundreds of binary features after discretizing numeric attributes) -- it is left out of the main comparison.
+On 5 very small datasets (monks-problems-3, mofn-3-7-10, vote, tic-tac-toe, breast-cancer), exhaustive `ORB` reached a mean accuracy of 96.67% against 88.65% for a beam search of width 10 and 88.24% for greedy search (over the fits that finished), in 1.3s per fit against 0.21s and 0.02s -- 6x as long as the beam search; 6 of its 15 fits hit the 120s cap. Branch and bound is exponential in the number of conditions it may combine, so it doesn't scale to the feature spaces of most datasets (dozens to hundreds of binary features after discretizing numeric attributes) -- it is left out of the main comparison.
 
 Accuracy (mean over the folds that finished):
 
@@ -63,7 +65,7 @@ Accuracy (mean over the folds that finished):
 | breast-cancer | 69.58% | 69.94% | 67.49% | 69.58% |  |  |
 | mofn-3-7-10 | 93.73% | 95.09% | 95.32% | 93.73% | 95.47% | 95.47% |
 | monks-problems-3 | 98.92% | 98.92% | 98.92% | 98.92% | 98.92% | 98.92% |
-| tic-tac-toe | 83.09% | 87.89% | 85.91% | 83.09% | 83.92% | 85.00% |
+| tic-tac-toe | 83.09% | 87.89% | 85.91% | 83.09% | 83.92% |  |
 | vote | 95.86% | 95.86% | 95.63% | 95.86% | 95.63% | 95.63% |
 
 Fit time in seconds (mean over the folds that finished; a blank cell: every fold hit the cap):
@@ -73,7 +75,7 @@ Fit time in seconds (mean over the folds that finished; a blank cell: every fold
 | breast-cancer | 0.02 | 0.22 | 0.41 | 0.00 |  |  |
 | mofn-3-7-10 | 0.02 | 0.07 | 0.11 | 0.01 | 0.27 | 0.66 |
 | monks-problems-3 | 0.01 | 0.07 | 0.13 | 0.00 | 0.41 | 0.94 |
-| tic-tac-toe | 0.02 | 0.12 | 0.22 | 0.01 | 58.94 | 118.14 |
+| tic-tac-toe | 0.02 | 0.12 | 0.22 | 0.01 | 58.94 |  |
 | vote | 0.01 | 0.10 | 0.18 | 0.00 | 1.60 | 2.35 |
 
 ## Dense vs. modular

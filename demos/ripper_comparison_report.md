@@ -22,6 +22,8 @@ the Weka learners convert them to the matrix they need), so differences
 reflect the algorithms, not the data preparation. Each fit is capped at 180s; a
 timeout or an exception is recorded as a failure, not fatal to the run.
 
+A fold that times out fails the whole cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are not run, and all its folds count as failures, so no mean rests on just the folds that finished.
+
 Measures: test accuracy, rule count, total condition count, fit time
 (seconds, JVM startup included for Weka:JRip). Witt:RIPPER auto-dispatches
 one-vs-rest for multi-class (see the module docstring); every other
