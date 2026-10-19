@@ -504,12 +504,13 @@ def test_preference_order_and_default_representation(monkeypatch):
     from pyrulearn.learners import base
 
     assert representation.REPRESENTATION_PREFERENCE_ORDER == (
-        NListRepresentation, PrePostNListRepresentation, HorizontalBitmapRepresentation, SparseDataRepresentation)
-    assert representation.default_representation() is NListRepresentation
+        VerticalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation,
+        HorizontalBitmapRepresentation, SparseDataRepresentation)
+    assert representation.default_representation() is VerticalBitmapRepresentation
     assert base.REPRESENTATION_PREFERENCE_ORDER is representation.REPRESENTATION_PREFERENCE_ORDER
     ds = DataSpec(["f0", "f1"])
     df = pd.DataFrame({"f0": [True, False], "f1": [False, True]})
-    assert isinstance(encode(ds, df), NListRepresentation)
+    assert isinstance(encode(ds, df), VerticalBitmapRepresentation)
     # read when called: reordering the module attribute changes the library-wide default
     monkeypatch.setattr(representation, "REPRESENTATION_PREFERENCE_ORDER",
                         (HorizontalBitmapRepresentation, NListRepresentation))

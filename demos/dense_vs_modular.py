@@ -12,7 +12,7 @@ what the components cost -- or save -- and what they allow:
 
 - **Pairs**: each dense learner next to its modular twin, on the same
   data: the dense one on the Boolean matrix it is written for, the modular
-  one on N-lists, the library's default representation. They should learn
+  one on vertical bitmaps, the library's default representation. They should learn
   the same models (up to ties and, for
   `LRI`, the conditions a term already implies), so the report counts how
   often they do and compares fit times.
@@ -22,8 +22,8 @@ what the components cost -- or save -- and what they allow:
   without branching (PRM) and `ENDER` with the exponential loss (CS-Exp)
   and with the Newton criterion (MLRules) are further settings, run as
   pairs too.
-- **Boolean data**: the modular learners again on `HorizontalBitmapRepresentation`,
-  to compare them with the N-lists they run on in the main comparison.
+- **Horizontal bitmap**: the modular learners again on `HorizontalBitmapRepresentation`,
+  to compare them with the vertical bitmaps they run on in the main comparison.
 
 Exhaustive `ORB` (branch and bound over all conjunctions) is checked
 separately on a few very small datasets, where it finishes at all, and
@@ -64,7 +64,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from pyrulearn.data import HorizontalBitmapRepresentation, NListRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, default_representation
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_setup_section
 from pyrulearn.experiments.runner import run_cv
@@ -224,11 +224,11 @@ def _is_dense(learner) -> bool:
 def run_on_own_representation(learners, datasets, n_folds, **kwargs):
     """`run_cv` with each learner on the representation it is meant for: the
     dense learners on the Boolean matrix they are written for, the modular
-    ones on N-lists, the library's default. (Handing a dense learner an N-list
-    would make it decode the matrix inside its fit and count that in its time.)"""
+    ones on the library's default (vertical bitmaps). (Handing a dense learner
+    another representation would make it decode the matrix inside its fit and count that in its time.)"""
     parts = [run_cv(group, datasets, n_folds=n_folds, representation=representation, **kwargs)
              for group, representation in (([l for l in learners if _is_dense(l)], HorizontalBitmapRepresentation),
-                                           ([l for l in learners if not _is_dense(l)], NListRepresentation))
+                                           ([l for l in learners if not _is_dense(l)], default_representation()))
              if group]
     return pd.concat(parts, ignore_index=True)
 
@@ -323,8 +323,8 @@ matrix (`Dense...`), and built from the library's exchangeable components -- a
 `RuleSearch`, an `Objective`, a covering or boosting loop -- so that they run on every
 data representation and take any search. Each dense learner is paired with its
 modular twin on the same data -- the dense one on the Boolean matrix it is written for, the
-modular one on N-lists, the library's default representation; the modular learners are then
-run again on Boolean data; and the modular `ORB` and `LRI` are run
+modular one on vertical bitmaps, the library's default representation; the modular learners are then
+run again on the horizontal bitmap; and the modular `ORB` and `LRI` are run
 with a beam search of width 5 and 10, which the dense versions don't have.
 
 {learner_lines}
@@ -338,8 +338,8 @@ Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS})`), the test fold encoded against that same
 `DataSpec` -- every learner sees the identical binary features per fold, the dense learners as a
-Boolean matrix and the modular ones as N-lists; the `[Boolean]` rows are the modular learners on
-the same data as Boolean matrices. Each fit is capped at
+Boolean matrix and the modular ones as vertical bitmaps; the `[HBitmap]` rows are the modular learners on
+the same data as horizontal bitmaps. Each fit is capped at
 {FIT_TIMEOUT:.0f}s; a time-out or an error counts as a failure (and as last in the ranking), not as the end
 of the run. Fit times are wall-clock seconds of one fit in a worker process (see below for
 how many ran at once).
@@ -409,11 +409,11 @@ def _pair_table(results, size_of: dict) -> list:
 
 
 def _boolean_table(results, boolean_results) -> list:
-    """Each modular learner on Boolean data against the same learner on N-lists."""
+    """Each modular learner on the horizontal bitmap against the same learner on the vertical one."""
     ok = results[results["error"].isna()]
     bo = boolean_results[boolean_results["error"].isna()].copy()
-    bo["learner"] = bo["learner"].str.replace(" [Boolean]", "", regex=False)
-    lines = ["| learner | accuracy, N-list | accuracy, Boolean | time Boolean / N-list (geometric mean over datasets) |\n"
+    bo["learner"] = bo["learner"].str.replace(" [HBitmap]", "", regex=False)
+    lines = ["| learner | accuracy, VBitmap | accuracy, HBitmap | time HBitmap / VBitmap (geometric mean over datasets) |\n"
              "|---|--:|--:|--:|\n"]
     for name in MODULAR:
         a, b = ok[ok["learner"] == name], bo[bo["learner"] == name]
@@ -455,8 +455,8 @@ def write_report(results, boolean_results, datasets, report_path: str, plots: di
                  "same model (the same rules in any order), their mean accuracy, and the ratio of the "
                  "modular to the dense fit time -- the geometric mean over datasets, so a value below 1 "
                  "means the modular learner is faster. The dense learner on the Boolean matrix, the modular one on "
-                 "N-lists (its default); the modular learners on Boolean data are compared with N-lists "
-                 "below.\n\n")
+                 "vertical bitmaps (the default); the modular learners on the horizontal bitmap are compared with "
+                 "them below.\n\n")
     lines += _pair_table(results, size_of)
     lines.append("\n")
 
@@ -491,10 +491,10 @@ def write_report(results, boolean_results, datasets, report_path: str, plots: di
     lines.append("\n")
 
     if len(boolean_results):
-        lines.append("## The modular learners on Boolean data\n\n")
-        lines.append("The modular learners above run on `NListRepresentation`, the library's default. Here "
+        lines.append("## The modular learners on the horizontal bitmap\n\n")
+        lines.append("The modular learners above run on `VerticalBitmapRepresentation`, the library's default. Here "
                      "they are run again on `HorizontalBitmapRepresentation`, the matrix the dense learners work "
-                     "on, over the folds where both finished; a time ratio above 1 means the N-list is "
+                     "on, over the folds where both finished; a time ratio above 1 means the vertical bitmap is "
                      "faster:\n\n")
         lines += _boolean_table(results, boolean_results)
         lines.append("\n")
@@ -590,7 +590,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
         run_cv(modular, group, n_folds=folds, representation=HorizontalBitmapRepresentation, **common)
         for group, folds in groups if group
     ], ignore_index=True)
-    boolean_results["learner"] = boolean_results["learner"] + " [Boolean]"
+    boolean_results["learner"] = boolean_results["learner"] + " [HBitmap]"
 
     write_report(results, boolean_results, datasets, report_path, plots, quick, exhaustive_results,
                  exhaustive_verdict)

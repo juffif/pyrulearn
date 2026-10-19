@@ -569,9 +569,8 @@ def run_cv(
     column can turn constant or entirely missing within one fold), and
     both splits are then `encode`d into `representation` (default
     `pyrulearn.data.representation.default_representation()`, the first
-    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `NListRepresentation`,
-    the fastest for every native learner measured, see
-    `demos/representations_report.md`) against that same fold's `DataSpec` --
+    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `VerticalBitmapRepresentation`,
+    see `demos/representations_report.md`) against that same fold's `DataSpec` --
     a learner that needs another representation (an external tool's
     dense matrix, say) converts on its own, see
     `RuleLearner.ensure_representation` --

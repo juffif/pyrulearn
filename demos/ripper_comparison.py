@@ -50,7 +50,7 @@ anyway.
 
 All four main-comparison learners see the identical per-fold binarized
 data (`build_dataspec`/`binarize`, `MAX_INTERVALS` discretization), in the
-library's default representation, N-lists (the Weka learners convert it to
+library's default representation, vertical bitmaps (the Weka learners convert it to
 the dense matrix they need) -- no learner here gets the raw, non-binarized
 data.
 That comparison (a learner's own intrinsic numeric handling vs. our
@@ -204,7 +204,7 @@ Protocol: `{n_folds}`-fold stratified cross-validation
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical
-binary features per fold (as N-lists, the library's default representation;
+binary features per fold (as vertical bitmaps, the library's default representation;
 the Weka learners convert them to the matrix they need), so differences
 reflect the algorithms, not the data preparation. Each fit is capped at {FIT_TIMEOUT:.0f}s; a
 timeout or an exception is recorded as a failure, not fatal to the run.

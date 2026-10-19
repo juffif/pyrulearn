@@ -23,10 +23,9 @@ Both readers build the chosen representation via `encode` -- a
 `scipy.sparse` intermediate, straight into whichever `representation`
 is asked for (`read_arff`/`read_csv`'s own `representation=` parameter,
 default `pyrulearn.data.representation.default_representation()`, the
-first entry of `REPRESENTATION_PREFERENCE_ORDER`, `NListRepresentation`
--- the representations demo (`demos/representations_report.md`)
-confirms it's still the fastest for every SeCo-built learner even after
-this package's Boolean-representation speedups). `binarize` is `encode`'s
+first entry of `REPRESENTATION_PREFERENCE_ORDER`,
+`VerticalBitmapRepresentation` -- see `demos/representations_report.md`
+for how the representations compare). `binarize` is `encode`'s
 older, simpler sibling: a `DataSpec` + a dataframe of raw values -> a
 dense Boolean matrix, kept as the low-level helper for callers that
 want that dense matrix directly or explicitly want
@@ -330,7 +329,7 @@ def encode(
 ) -> DataRepresentation:
     """Like `binarize`, but builds `representation` (default
     `pyrulearn.data.representation.default_representation()`, the first
-    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `NListRepresentation`)
+    entry of `REPRESENTATION_PREFERENCE_ORDER` -- `VerticalBitmapRepresentation`)
     directly from a `scipy.sparse` intermediate instead of
     writing into a dense `(n_samples, n_features)` array first.
 
@@ -453,7 +452,7 @@ def read_arff(
 ) -> DataRepresentation:
     """Read an ARFF file (path or file-like object) into a
     `DataRepresentation` -- `representation` (default
-    `default_representation()`, `NListRepresentation`, via `encode`; pass
+    `default_representation()`, `VerticalBitmapRepresentation`, via `encode`; pass
     `HorizontalBitmapRepresentation` for the dense matrix instead).
 
     If `dataspec` is given, the file's header is validated against it
@@ -519,7 +518,7 @@ def read_csv(
 ) -> DataRepresentation:
     """Read a CSV file (path or file-like object) into a
     `DataRepresentation` -- `representation` (default
-    `default_representation()`, `NListRepresentation`, via `encode`; pass
+    `default_representation()`, `VerticalBitmapRepresentation`, via `encode`; pass
     `HorizontalBitmapRepresentation` for the dense matrix instead). CSV carries no declared column types,
     so when `dataspec` is omitted, types are guessed heuristically
     (`_infer_csv_column_type`); pass an explicit `dataspec` whenever that

@@ -17,6 +17,17 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Changed
 
+- `VerticalBitmapRepresentation` is the default representation (first in
+  `REPRESENTATION_PREFERENCE_ORDER`): what `read_arff`/`read_csv`/`encode`
+  and `run_cv` build when no `representation=` is given, instead of
+  `NListRepresentation`. On `adult` (32,000 rows, with negation features)
+  CN2, PFossil and Pypper fit 1.5-2.7x faster on it than on N-lists,
+  PyLORD finishes 16,000 rows where every other representation times out,
+  ENDER is about 10% slower; a CN2 fit needs 4.5 MiB in total instead of
+  72 MiB. Building one from a `scipy.sparse` matrix sets the bits
+  directly, without a dense intermediate. The timed demos run on it, and
+  `dense_vs_modular` compares the modular learners on it with the
+  horizontal bitmap.
 - `BooleanDataRepresentation` is renamed to
   `HorizontalBitmapRepresentation`, so that the two bitmaps' names say
   what distinguishes them: the matrix packed by example (horizontal) or by

@@ -264,7 +264,7 @@ def test_missing_values_sentinel_recognition():
 # the whole point is dropping in as a replacement.
 
 @pytest.mark.parametrize("rep_cls", _ENCODE_REPS)
-def test_encode_defaults_to_nlist_and_matches_binarize(rep_cls):
+def test_encode_matches_binarize(rep_cls):
     text = "color,age,label\nred,20,neg\nblue,30,neg\n,25,pos\n"
     boolean_rep = read_csv(io.StringIO(text), target="label")
     spec = boolean_rep.spec
@@ -278,14 +278,14 @@ def test_encode_defaults_to_nlist_and_matches_binarize(rep_cls):
     print(f"encode matches binarize+{rep_cls.__name__} (NEVER_COVERS default): OK")
 
 
-def test_encode_with_no_representation_arg_defaults_to_nlist():
+def test_encode_with_no_representation_arg_defaults_to_vertical_bitmap():
     b = DataSpecBuilder()
     b.add_nominal("color", ["red", "blue"])
     ds = b.build()
     df = pd.DataFrame({"color": ["red", "blue", "red"]})
     got = encode(ds, df)
-    assert isinstance(got, NListRepresentation)
-    print("encode defaults to NListRepresentation with no representation=: OK")
+    assert isinstance(got, VerticalBitmapRepresentation)
+    print("encode defaults to VerticalBitmapRepresentation with no representation=: OK")
 
 
 @pytest.mark.parametrize("rep_cls", _ENCODE_REPS)

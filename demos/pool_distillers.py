@@ -580,7 +580,7 @@ Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`) in
 passes over the same folds -- first every pool is built on every training fold, then
 every distiller is fit on the pool built on its fold (the time to load the stored pool is
 not counted in the distiller's fit time). Data in the library's default representation
-(N-lists). Discretization: `max_intervals={MAX_INTERVALS}`. Distiller fits are
+(vertical bitmaps (`VerticalBitmapRepresentation`)). Discretization: `max_intervals={MAX_INTERVALS}`. Distiller fits are
 capped at {FIT_TIMEOUT:.0f}s; pool building gets a longer cap of
 {POOL_FIT_TIMEOUT:.0f}s, since `pylord_candidates`' cost grows
 super-linearly with row count and can need much longer than any

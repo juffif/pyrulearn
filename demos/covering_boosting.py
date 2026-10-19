@@ -583,7 +583,7 @@ are no faster on it). Boosting (`Slipper`, `ENDER` x 3 configs,
 Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`), one
 `DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test
 fold encoded against that same `DataSpec`, in the library's default representation
-(N-lists). Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out or an error counts
+(vertical bitmaps (`VerticalBitmapRepresentation`)). Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out or an error counts
 as a failure, not as the end of the run, and is excluded from every
 mean it would otherwise enter (a "failures" column reports the count
 instead).{_concurrency_note()}

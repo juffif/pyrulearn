@@ -1544,9 +1544,10 @@ class VerticalBitmapRepresentation(DataRepresentation):
             from scipy.sparse import issparse
         except ImportError:  # pragma: no cover
             issparse = lambda _o: False  # noqa: E731
-        X = X.toarray() if issparse(X) else np.asarray(X)
-        if X.dtype != bool:
-            X = X.astype(bool)
+        if not issparse(X):
+            X = np.asarray(X)
+            if X.dtype != bool:
+                X = X.astype(bool)
         if X.ndim != 2 or X.shape[1] != spec.n_features:
             raise ValueError(
                 f"X has {X.shape[1] if X.ndim == 2 else '?'} columns but this DataSpec has "
@@ -1554,8 +1555,15 @@ class VerticalBitmapRepresentation(DataRepresentation):
             )
         n = X.shape[0]
         words = np.zeros((spec.n_features, (n + 63) // 64 * 8), dtype=np.uint8)
-        packed = np.packbits(X.T, axis=1, bitorder="little")
-        words[:, :packed.shape[1]] = packed
+        if issparse(X):
+            # set the bits of the nonzero cells directly -- no dense matrix
+            coo = X.tocoo()
+            nz = coo.data != 0
+            rows, cols = coo.row[nz].astype(np.int64), coo.col[nz].astype(np.int64)
+            np.bitwise_or.at(words, (cols, rows >> 3), (1 << (rows & 7)).astype(np.uint8))
+        else:
+            packed = np.packbits(X.T, axis=1, bitorder="little")
+            words[:, :packed.shape[1]] = packed
         self._init_storage(words.view(_WORD), n, y, weights)
 
     def _init_storage(self, words: np.ndarray, n_samples: int, y, weights) -> None:
@@ -1808,15 +1816,16 @@ class VerticalBitmapRepresentation(DataRepresentation):
 #: is given (`default_representation()`, the first entry), and how
 #: `RuleLearner.ensure_representation` breaks ties when a learner's
 #: `NATIVE_REPRESENTATIONS` names more than one type and the data matches
-#: none of them. `NListRepresentation` first: every native learner
-#: measured is faster on it than on `HorizontalBitmapRepresentation`, also
-#: after this package's own Boolean speedups (`demos/representations.py`).
-#: `PrePostNListRepresentation` right after it -- the same index plus
-#: pre/post codes, measured about break-even with plain N-lists but
-#: slower to build. Read at call time, so reassigning this module
-#: attribute changes the library-wide default.
+#: none of them. `VerticalBitmapRepresentation` first: on real data the
+#: separate-and-conquer learners and PyLORD fit fastest on it, ENDER close
+#: to the fastest, and it holds the least memory, one bit per cell
+#: (`demos/representations_report.md`). `NListRepresentation` and
+#: `PrePostNListRepresentation` next -- the same index, the second with
+#: pre/post codes, measured about break-even with the first but slower to
+#: build. Read at call time, so reassigning this module attribute changes
+#: the library-wide default.
 REPRESENTATION_PREFERENCE_ORDER: Tuple[type, ...] = (
-    NListRepresentation, PrePostNListRepresentation,
+    VerticalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation,
     HorizontalBitmapRepresentation, SparseDataRepresentation,
 )
 

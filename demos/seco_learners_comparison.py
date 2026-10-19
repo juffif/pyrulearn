@@ -317,7 +317,7 @@ Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
 (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical binary
-features per fold (as N-lists, the library's default representation; the learners
+features per fold (as vertical bitmaps, the library's default representation; the learners
 that need the dense matrix convert them). Each fit is capped at {FIT_TIMEOUT:.0f}s; a
 time-out or an error counts as a failure (and as last in the ranking),
 not as the end of the run. The cap is deliberately kept for the large
