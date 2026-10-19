@@ -774,8 +774,9 @@ def _weka_cli_options(options: Optional[Dict[str, Any]]) -> List[str]:
 
 def _write_boolean_arff(X: Any, y: Any, path: str, block_cells: int = 1 << 22) -> None:
     """Write the Boolean matrix `X` (``n x k``) and labels `y` as an ARFF
-    file for Weka -- byte for byte what `pyrulearn.data.io.write_arff`
-    writes for the same data (features ``f0..f{k-1}`` as nominal
+    file for Weka -- the same text `pyrulearn.data.io.write_arff` writes
+    for the same data (its line endings are the platform's, these always
+    ``\n``) (features ``f0..f{k-1}`` as nominal
     attributes with the values ``False``/``True`` that occur in the
     column, then ``class`` with `y`'s distinct values, sorted), but built
     as byte arrays a block of rows at a time: the general writer converts

@@ -185,10 +185,12 @@ def test_jrip_single_rule_is_the_first_rule_of_that_labels_own_segment():
         WekaJRip().fit(rep, model=SingleRule)
 
 
-def test_boolean_arff_writer_matches_write_arff_byte_for_byte(tmp_path):
-    """`run_weka`'s fast writer must produce exactly `write_arff`'s file: JRip
+def test_boolean_arff_writer_matches_write_arff(tmp_path):
+    """`run_weka`'s fast writer must produce exactly `write_arff`'s text: JRip
     seeds its random splits from instance text, so any difference in how a
-    value is spelled would change its rules."""
+    value is spelled would change its rules. Line endings aside --
+    `write_arff` writes in text mode, so ``\r\n`` on Windows; Weka reads
+    either."""
     import pandas as pd
 
     from pyrulearn.data.io import write_arff
@@ -205,4 +207,5 @@ def test_boolean_arff_writer_matches_write_arff_byte_for_byte(tmp_path):
         df["class"] = y
         write_arff(df, "class", tmp_path / "old.arff", arff_types={c: "nominal" for c in names})
         _write_boolean_arff(X, y, tmp_path / "new.arff", block_cells=int(rng.integers(1, 300)))
-        assert (tmp_path / "old.arff").read_bytes() == (tmp_path / "new.arff").read_bytes(), trial
+        old = (tmp_path / "old.arff").read_text(encoding="utf-8")   # text mode: \r\n read as \n
+        assert old == (tmp_path / "new.arff").read_text(encoding="utf-8"), trial
