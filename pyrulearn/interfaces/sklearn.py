@@ -76,7 +76,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from .base import ObjectRuleImporter, deprecated_aliases, register_importer
+from .base import ObjectRuleImporter, register_importer
 from ..combiners import HeuristicMaxCombiner, RuleCombiner
 from ..data import HorizontalBitmapRepresentation, DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
@@ -610,6 +610,3 @@ def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -
 
 SKLDecisionTree.TOOL = "SKL"
 SKLRandomForest.TOOL = "SKL"
-
-#: the pre-0.2.0 names, deprecated
-__getattr__ = deprecated_aliases(globals(), {'DecisionTree': 'SKLDecisionTree', 'RandomForest': 'SKLRandomForest'})

@@ -33,8 +33,8 @@ handling several classes -- see `LEARNER_NOTES`):
                   one locally optimal rule per training example.
 - **Weka:JRip** -- Weka's RIPPER, via `pyrulearn.interfaces.weka.WekaJRip`
                   (needs Weka, `WEKA_JAR`/`WEKA_JAVA` below).
-- **JavaLord** -- the reference LORD implementation, via
-                  `pyrulearn.interfaces.lord.JavaLord`. Only included when
+- **JavaLORD** -- the reference LORD implementation, via
+                  `pyrulearn.interfaces.lord.JavaLORD`. Only included when
                   found (`LORD_CLASSPATH` below, or `$LORD_CLASSPATH`).
                   Limited to one thread in this demo only (LORD's own
                   default is half the machine's cores).
@@ -69,7 +69,7 @@ from pyrulearn.experiments.report import (
 )
 from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference_diagram, mean_rank, win_counts
-from pyrulearn.interfaces.lord import JavaLord
+from pyrulearn.interfaces.lord import JavaLORD
 from pyrulearn.interfaces.weka import WekaJRip
 from pyrulearn.heuristics import WRAcc
 from pyrulearn.learners.opus import Opus
@@ -174,8 +174,8 @@ def build_learners():
     ]
     if lord_available():
         # one thread, for this comparison only: the reference LORD uses half the machine's cores by
-        # default, every other learner here one (`JavaLord` itself keeps LORD's default)
-        learners.append(JavaLord(classpath=LORD_CLASSPATH, java=LORD_JAVA, thread_count=1))
+        # default, every other learner here one (`JavaLORD` itself keeps LORD's default)
+        learners.append(JavaLORD(classpath=LORD_CLASSPATH, java=LORD_JAVA, thread_count=1))
     return learners
 
 
@@ -248,7 +248,7 @@ LEARNER_NOTES = {
               "the best rule that covers it. Many overlapping rules.",
     "Weka:JRip": "Weka's RIPPER, run as a subprocess on the same binarized data. Fit time "
                  "includes the JVM start.",
-    "JavaLord": "The reference LORD implementation (Java), run as a subprocess on the same "
+    "JavaLORD": "The reference LORD implementation (Java), run as a subprocess on the same "
                 "binarized data, and, in this demo only, on a single thread: by default it uses half "
                 "the machine's cores, which no other learner here does.",
 }

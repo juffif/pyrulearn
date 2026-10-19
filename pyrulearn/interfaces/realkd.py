@@ -46,7 +46,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .base import ObjectRuleImporter, deprecated_aliases, register_importer
+from .base import ObjectRuleImporter, register_importer
 from ..data import DataRepresentation, DataSpec
 from ..learners import ExternalRuleLearner
 from ..models import LinearRuleModel
@@ -175,6 +175,3 @@ class RKDRuleBoosting(ExternalRuleLearner):
 # -- naming ------------------------------------------------------------------
 
 RKDRuleBoosting.TOOL = "RKD"
-
-#: the pre-0.2.0 names, deprecated
-__getattr__ = deprecated_aliases(globals(), {'RealkdRuleBoosting': 'RKDRuleBoosting'})

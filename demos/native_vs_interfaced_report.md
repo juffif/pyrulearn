@@ -9,7 +9,7 @@ they are modeled on, on 15 small/medium and
 1 large binary datasets from `pyrulearn.experiments.catalog`.
 Two more pairs are covered by their own demos instead: Slipper vs.
 IMod:Slipper (`ripper_comparison.py`'s own preliminary check), and PyLORD
-vs. the reference JavaLord (`demos/seco_learners_comparison.py`). A
+vs. the reference JavaLORD (`demos/seco_learners_comparison.py`). A
 fifth pair, ORB vs. RKD:RuleBoosting, is checked
 separately below instead of in the main comparison -- see "Why optimal
 rule boosting isn't in the main comparison". Across 2 small datasets (3-fold), ORB and RKD:RuleBoosting agreed closely on accuracy (mean 89.78% vs. 89.89%, 0.11 points apart; mean fit time 54.79s vs. 8.94s) -- but neither's exhaustive search scales to the main comparison's wider, one-hot-encoded feature counts within the 300s cap, a limit of the exhaustive-search approach itself rather than of either implementation, so the pair is checked here instead of in the main table below.

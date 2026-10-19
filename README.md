@@ -165,7 +165,7 @@ random forest — and returns its own, much smaller model.
 | **JRip** (Weka's RIPPER) | `weka.WekaJRip`, `JRipImporter` | Java, `weka.jar` (`$WEKA_JAR`) | Cohen 1995 |
 | **PART** | `weka.WekaPART`, `PARTImporter` | Java, `weka.jar` | Frank & Witten 1998 |
 | **J48** (Weka's C4.5) | `weka.WekaJ48`, `J48Importer` | Java, `weka.jar` | Quinlan 1993 |
-| **LORD** (reference implementation) | `lord.JavaLord`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
+| **LORD** (reference implementation) | `lord.JavaLORD`, `LORDImporter` | LORD's Java implementation ([vqphuynh/LORD](https://github.com/vqphuynh/LORD)) | Huynh, Fürnkranz & Beck 2023 |
 | **CBA** | `pyarc.PArcCBA`, `PyarcCBAImporter` | `pyarc` and Borgelt's `pyfim` | Liu et al. 1998 |
 | **BOOMER** (binary) | `boomer.MLRLBoomer`, `BoomerImporter` | `mlrl-boomer` | Rapp et al. 2020 |
 | **Optimal rule boosting** (reference) | `realkd.RKDRuleBoosting`, `RealkdImporter` | `realkd` | Boley et al. 2021 |
@@ -1531,7 +1531,7 @@ greedy m-estimate search (`BeamSearch(beam_width=1)`), then
 `ReducedErrorPruning` on the full training data. It keeps each rule that
 is the best one for at least one example, and predicts with the best
 covering rule. It is natively multi-class, and a simplified
-reimplementation -- the reference LORD is interfaced as `JavaLord` (see
+reimplementation -- the reference LORD is interfaced as `JavaLORD` (see
 *LORD: the Java reference implementation*).
 
 #### Weighted covering
@@ -1815,12 +1815,11 @@ the tool, so results tables show which implementation produced them: `SKL`
 `IModBayesianRuleSet`, `IModRuleFit`, `IModSlipper`), `Weka` (`WekaJRip`,
 `WekaPART`, `WekaJ48`), `PArc` (pyarc: `PArcCBA`), `MLRL` (mlrl-boomer:
 `MLRLBoomer`), `RKD` (realkd: `RKDRuleBoosting`); the reference LORD
-implementation is `JavaLord`. Native learners have plain names (`CN2`,
+implementation is `JavaLORD`. Native learners have plain names (`CN2`,
 `Slipper`, `Boomer`). Every learner's `display_name` gives the name for a
 table -- `"IMod:Slipper"`, `"CN2"`. The importers keep their names
 (`JRipImporter`, ...). The names before 0.2.0 (`JRip`, `DecisionTree`,
-`RIPPERk`, `LordJar`, ...) still work, with a `DeprecationWarning`, and will
-be removed in a later release.
+`RIPPERk`, `LordJar`, ...) were removed in 0.9.0.
 
 **`ExternalRuleLearner`** -- runs an external algorithm (e.g. a
 scikit-learn estimator) on `data`'s data, then hands the
@@ -1904,7 +1903,7 @@ for learner in learners:
 | wittgenstein | `WittIREP`, `WittRIPPER` | directly | `data.X` and the labels, in memory; binary only, so `pos_class` is required | the `DataSpec`'s own feature names |
 | imodels | `IModBayesianRuleList`, `IModBayesianRuleSet`, `IModRuleFit` | directly | `data.X` as a 0/1 integer matrix, in memory (a Boolean dtype breaks BRL; RuleFit gets floats); BRS and RuleFit refuse anything that isn't 0/1; binary only | the `DataSpec`'s own feature names |
 | Weka | `WekaJRip`, `WekaPART`, `WekaJ48` | by parsing text | an ARFF file in a temporary directory: every feature a `{False,True}` nominal attribute, plus a `class` column; run as `java -cp weka.jar <classifier> -t train.arff -no-cv` | placeholders `f0..fN` |
-| LORD | `JavaLord` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
+| LORD | `JavaLORD` | by parsing text | a CSV in a temporary directory (`data_train_01.csv`, plus the same rows as the test file LORD insists on): 0/1 columns with the class as the last column; run as `java -cp <classpath> run.LordRun` | placeholders `f0..fN` |
 | pyarc | `PArcCBA` | directly | transactions (via `TransactionDB.from_DataFrame`) holding only each row's True features plus the class; False cells are dropped, which matches this library's own item semantics | placeholders `f0..fN` |
 
 Rules are imported either directly from the fitted model object (an
@@ -2386,7 +2385,7 @@ header and its `` ---- `` divider before reading the tree body.
 
 `pyrulearn.interfaces.lord` runs the Java implementation of LORD (Huynh,
 Fürnkranz & Beck, 2023; [vqphuynh/LORD](https://github.com/vqphuynh/LORD)) as
-a subprocess. `JavaLord` is the `fit()` learner (`variant=` selects
+a subprocess. `JavaLORD` is the `fit()` learner (`variant=` selects
 `run.LordRun`, `LordStarRun` or `LordLoopRun`; `metric=`/`metric_arg=` are
 LORD's `-mt`/`-ma`), `LORDImporter` parses the `eg_output.txt` it writes, and
 `run_lord` is the function that drives the jar. `classpath=` (else

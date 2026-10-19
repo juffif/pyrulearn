@@ -199,7 +199,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .base import ObjectRuleImporter, deprecated_aliases, register_importer
+from .base import ObjectRuleImporter, register_importer
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import ExternalRuleLearner, RelabelingExternalLearner
 from ..models import ConceptModel, DecisionList, FlatRuleSet, LinearRuleModel
@@ -817,6 +817,3 @@ IModBayesianRuleList.TOOL = "IMod"
 IModBayesianRuleSet.TOOL = "IMod"
 IModRuleFit.TOOL = "IMod"
 IModSlipper.TOOL = "IMod"
-
-#: the pre-0.2.0 names, deprecated
-__getattr__ = deprecated_aliases(globals(), {'BayesianRuleList': 'IModBayesianRuleList', 'BayesianRuleSet': 'IModBayesianRuleSet', 'ImodelsRuleFit': 'IModRuleFit', 'ImodelsSlipper': 'IModSlipper'})

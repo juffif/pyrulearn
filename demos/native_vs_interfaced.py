@@ -73,7 +73,7 @@ repeated here, each already covered by its own demo:
 
 - **Slipper** vs. **IMod:Slipper** -- `ripper_comparison.py`'s own
   preliminary check (`run_preliminary_slipper_check`).
-- **PyLORD** vs. the reference **JavaLord** --
+- **PyLORD** vs. the reference **JavaLORD** --
   `demos/seco_learners_comparison.py`.
 
 Every pair's two learners differ in implementation details (not
@@ -377,7 +377,7 @@ they are modeled on, on {len(datasets) - len(large)} small/medium and
 {len(large)} large binary datasets from `pyrulearn.experiments.catalog`.
 Two more pairs are covered by their own demos instead: Slipper vs.
 IMod:Slipper (`ripper_comparison.py`'s own preliminary check), and PyLORD
-vs. the reference JavaLord (`demos/seco_learners_comparison.py`). A
+vs. the reference JavaLORD (`demos/seco_learners_comparison.py`). A
 fifth pair, ORB vs. RKD:RuleBoosting, is checked
 separately below instead of in the main comparison -- see "Why optimal
 rule boosting isn't in the main comparison". {prelim_verdict}

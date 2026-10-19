@@ -177,8 +177,3 @@ class MLRLBoomer(ExternalRuleLearner):
 # -- naming ------------------------------------------------------------------
 
 MLRLBoomer.TOOL = "MLRL"
-
-from .base import deprecated_aliases as _deprecated_aliases  # noqa: E402
-
-#: the 0.2.0 name, deprecated
-__getattr__ = _deprecated_aliases(globals(), {"MlrlBoomer": "MLRLBoomer"})

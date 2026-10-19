@@ -966,8 +966,3 @@ class WekaJ48(_WekaRuleLearner):
 # -- naming ------------------------------------------------------------------
 
 _WekaRuleLearner.TOOL = "Weka"
-
-from .base import deprecated_aliases  # noqa: E402
-
-#: the pre-0.2.0 names, deprecated
-__getattr__ = deprecated_aliases(globals(), {'JRip': 'WekaJRip', 'PART': 'WekaPART', 'J48': 'WekaJ48'})

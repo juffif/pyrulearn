@@ -115,9 +115,7 @@ if __name__ == "__main__":
     print("\nAll learner tests passed.")
 
 
-def test_external_learners_are_prefixed_and_old_names_still_work():
-    import warnings
-
+def test_external_learners_are_prefixed_and_old_names_are_gone():
     from pyrulearn.interfaces import imodels, lord, sklearn, weka, wittgenstein
     from pyrulearn.learners.boosting import Slipper
     from pyrulearn.learners.seco import CN2
@@ -126,25 +124,15 @@ def test_external_learners_are_prefixed_and_old_names_still_work():
     assert wittgenstein.WittRIPPER(pos_class="a").display_name == "Witt:RIPPER"
     assert imodels.IModSlipper().display_name == "IMod:Slipper"
     assert weka.WekaJ48().display_name == "Weka:J48"
-    assert lord.JavaLord().display_name == "JavaLord"
+    assert lord.JavaLORD().display_name == "JavaLORD"
     assert CN2().display_name == "CN2" and Slipper().display_name == "Slipper"
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert weka.JRip is weka.WekaJRip
-        assert wittgenstein.RIPPERk is wittgenstein.WittRIPPER
-        assert sklearn.DecisionTree is sklearn.SKLDecisionTree
-    assert len(caught) == 3 and all(issubclass(w.category, DeprecationWarning) for w in caught)
-    with pytest.raises(AttributeError):
-        weka.NoSuchLearner
+    for module, old_name in [(weka, "JRip"), (wittgenstein, "RIPPERk"), (sklearn, "DecisionTree"),
+                             (lord, "LordJar"), (lord, "JavaLord"), (imodels, "ImodelsRuleFit")]:
+        assert not hasattr(module, old_name)
 
 
-def test_mlrl_boomer_is_renamed_with_a_deprecated_alias():
-    import warnings
-
+def test_mlrl_boomer_is_prefixed():
     from pyrulearn.interfaces import boomer
 
     assert boomer.MLRLBoomer().display_name == "MLRL:Boomer"
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert boomer.MlrlBoomer is boomer.MLRLBoomer
-    assert caught and issubclass(caught[0].category, DeprecationWarning)
+    assert not hasattr(boomer, "MlrlBoomer")

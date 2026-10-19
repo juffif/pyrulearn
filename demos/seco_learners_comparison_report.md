@@ -25,7 +25,7 @@ many classes (left for the multi-class demo) are not included.
 - **Opus(WRAcc)** -- Opus: in every covering step the rule with the highest weighted relative accuracy among all conjunctions of up to 3 conditions, found by exhaustive branch-and-bound search (OPUS). Rules for every class.
 - **PyLORD** -- A simplified LORD: for every training example, the best rule covering it (greedy m-estimate search, then pruning); a test example is classified by the best rule that covers it. Many overlapping rules.
 - **Weka:JRip** -- Weka's RIPPER, run as a subprocess on the same binarized data. Fit time includes the JVM start.
-- **JavaLord** -- The reference LORD implementation (Java), run as a subprocess on the same binarized data, and, in this demo only, on a single thread: by default it uses half the machine's cores, which no other learner here does.
+- **JavaLORD** -- The reference LORD implementation (Java), run as a subprocess on the same binarized data, and, in this demo only, on a single thread: by default it uses half the machine's cores, which no other learner here does.
 
 AQR, the AQ baseline CN2 was designed to improve on, and Opus with the
 Laplace estimate were checked separately and left out -- see "Why AQR and
@@ -82,7 +82,7 @@ Without the two large datasets (adult, connect-4), where most learners hit the t
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
 | PFoil | 82.52% | 56.9 | 243.9 | 3.6 | 0.13 | 4.2 | 3.57 | 0 |
 | PyLORD | 82.70% | 133.7 | 695.0 | 4.0 | 1.92 | 2.2 | 3.87 | 0 |
-| JavaLord | 81.84% | 129.2 | 618.0 | 3.7 | 8.48 | 4.2 | 3.96 | 0 |
+| JavaLORD | 81.84% | 129.2 | 618.0 | 3.7 | 8.48 | 4.2 | 3.96 | 0 |
 | PFossil | 81.80% | 13.1 | 47.1 | 4.1 | 0.04 | 5.0 | 4.06 | 0 |
 | Pypper | 81.27% | 4.9 | 16.2 | 2.8 | 0.07 | 6.0 | 4.37 | 0 |
 | Weka:JRip | 81.02% | 5.6 | 18.7 | 2.8 | 0.82 | 2.5 | 4.43 | 0 |
@@ -99,7 +99,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
 | PFoil | 79.46% | 44.2 | 153.4 | 3.1 | 0.07 | 3.0 | 3.59 | 0 |
 | PyLORD | 79.68% | 92.5 | 400.0 | 3.5 | 0.54 | 1.0 | 3.88 | 0 |
-| JavaLord | 78.26% | 87.3 | 356.9 | 3.2 | 0.61 | 3.0 | 4.26 | 0 |
+| JavaLORD | 78.26% | 87.3 | 356.9 | 3.2 | 0.61 | 3.0 | 4.26 | 0 |
 | PFossil | 78.24% | 11.9 | 39.4 | 3.9 | 0.02 | 3.0 | 4.32 | 0 |
 | Weka:JRip | 77.33% | 3.7 | 8.7 | 2.4 | 0.48 | 1.5 | 4.50 | 0 |
 | Pypper | 77.44% | 3.1 | 7.5 | 2.4 | 0.04 | 3.0 | 4.71 | 0 |
@@ -112,7 +112,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 
 | learner | accuracy | n_rules | n_conditions | conds/rule | fit_time (s) | wins | mean rank | failures |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
-| JavaLord | 87.91% | 200.6 | 1061.8 | 4.5 | 21.86 | 1.2 | 3.45 | 0 |
+| JavaLORD | 87.91% | 200.6 | 1061.8 | 4.5 | 21.86 | 1.2 | 3.45 | 0 |
 | PFoil | 87.73% | 78.5 | 397.8 | 4.5 | 0.23 | 1.2 | 3.55 | 0 |
 | PFossil | 87.84% | 15.3 | 60.1 | 4.2 | 0.06 | 2.0 | 3.60 | 0 |
 | Pypper | 87.78% | 7.9 | 30.9 | 3.4 | 0.14 | 3.0 | 3.80 | 0 |
@@ -127,7 +127,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 |---|--:|--:|
 | PFoil | 83.97% | 80.06% |
 | PyLORD | 84.25% | 80.06% |
-| JavaLord | 83.29% | 79.37% |
+| JavaLORD | 83.29% | 79.37% |
 | PFossil | 82.71% | 80.24% |
 | Pypper | 83.00% | 78.33% |
 | Weka:JRip | 82.56% | 78.39% |
@@ -141,7 +141,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | dataset | learner | folds | accuracy | n_rules | n_conditions | fit_time (s) |
 |---|---|--:|--:|--:|--:|--:|
 | adult | CN2 | 5/5 | 79.10% | 398.2 | 1563.4 | 13.57 |
-| adult | JavaLord | 0/5 | -- | -- | -- | -- |
+| adult | JavaLORD | 0/5 | -- | -- | -- | -- |
 | adult | Opus(WRAcc) | 5/5 | 79.46% | 14.4 | 43.2 | 240.85 |
 | adult | PFoil | 5/5 | 85.88% | 1695.8 | 16910.0 | 47.51 |
 | adult | PFossil | 5/5 | 82.22% | 9.2 | 56.6 | 0.37 |
@@ -149,7 +149,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | adult | Pypper | 5/5 | 84.22% | 13.2 | 79.2 | 2.53 |
 | adult | Weka:JRip | 5/5 | 84.87% | 22.8 | 138.0 | 73.01 |
 | connect-4 | CN2 | 5/5 | 67.97% | 270.2 | 1251.0 | 10.41 |
-| connect-4 | JavaLord | 0/5 | -- | -- | -- | -- |
+| connect-4 | JavaLORD | 0/5 | -- | -- | -- | -- |
 | connect-4 | Opus(WRAcc) | 0/5 | -- | -- | -- | -- |
 | connect-4 | PFoil | 5/5 | 81.83% | 3531.2 | 34317.4 | 119.04 |
 | connect-4 | PFossil | 5/5 | 65.83% | 0.0 | 0.0 | 0.24 |
@@ -162,7 +162,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | dataset | learner | accuracy | n_rules | n_conditions | fit_time |
 |---|---|---|---|---|---|
 | SPECT | CN2 | 80.90% | 8.3 | 19.0 | 0.021 |
-| SPECT | JavaLord | 84.30% | 60.9 | 253.9 | 0.266 |
+| SPECT | JavaLORD | 84.30% | 60.9 | 253.9 | 0.266 |
 | SPECT | Opus(WRAcc) | 78.65% | 9.8 | 20.6 | 0.421 |
 | SPECT | PFoil | 82.05% | 25.8 | 82.1 | 0.031 |
 | SPECT | PFossil | 78.68% | 9.7 | 41.1 | 0.019 |
@@ -170,7 +170,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | SPECT | Pypper | 79.00% | 0.9 | 5.0 | 0.024 |
 | SPECT | Weka:JRip | 80.87% | 1.0 | 5.5 | 0.411 |
 | analcatdata_dmft | CN2 | 19.07% | 7.2 | 25.0 | 0.049 |
-| analcatdata_dmft | JavaLord | 19.08% | 470.8 | 2781.4 | 0.864 |
+| analcatdata_dmft | JavaLORD | 19.08% | 470.8 | 2781.4 | 0.864 |
 | analcatdata_dmft | Opus(WRAcc) | 21.69% | 24.6 | 71.1 | 1.715 |
 | analcatdata_dmft | PFoil | 19.07% | 253.7 | 973.8 | 0.373 |
 | analcatdata_dmft | PFossil | 19.95% | 0.3 | 3.3 | 0.016 |
@@ -178,7 +178,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | analcatdata_dmft | Pypper | 18.94% | 1.0 | 2.8 | 0.054 |
 | analcatdata_dmft | Weka:JRip | 19.45% | 1.0 | 3.5 | 0.462 |
 | anneal | CN2 | 98.78% | 27.9 | 61.2 | 0.116 |
-| anneal | JavaLord | 90.87% | 30.7 | 47.1 | 0.876 |
+| anneal | JavaLORD | 90.87% | 30.7 | 47.1 | 0.876 |
 | anneal | Opus(WRAcc) | 97.33% | 11.9 | 25.6 | 0.474 |
 | anneal | PFoil | 97.55% | 26.9 | 74.5 | 0.047 |
 | anneal | PFossil | 99.78% | 19.6 | 34.5 | 0.028 |
@@ -186,7 +186,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | anneal | Pypper | 94.10% | 9.9 | 23.5 | 0.075 |
 | anneal | Weka:JRip | 89.53% | 7.8 | 13.6 | 0.570 |
 | breast-cancer | CN2 | 70.30% | 1.6 | 3.6 | 0.006 |
-| breast-cancer | JavaLord | 71.37% | 92.7 | 417.9 | 0.363 |
+| breast-cancer | JavaLORD | 71.37% | 92.7 | 417.9 | 0.363 |
 | breast-cancer | Opus(WRAcc) | 71.34% | 7.9 | 22.9 | 1.931 |
 | breast-cancer | PFoil | 72.02% | 43.2 | 156.8 | 0.062 |
 | breast-cancer | PFossil | 69.26% | 7.4 | 30.0 | 0.017 |
@@ -194,7 +194,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | breast-cancer | Pypper | 74.84% | 1.0 | 2.0 | 0.016 |
 | breast-cancer | Weka:JRip | 71.37% | 1.3 | 2.5 | 0.412 |
 | car | CN2 | 93.98% | 64.8 | 343.8 | 0.320 |
-| car | JavaLord | 95.83% | 104.1 | 637.1 | 1.426 |
+| car | JavaLORD | 95.83% | 104.1 | 637.1 | 1.426 |
 | car | Opus(WRAcc) | 81.94% | 8.0 | 19.0 | 0.131 |
 | car | PFoil | 96.70% | 75.4 | 449.1 | 0.196 |
 | car | PFossil | 93.87% | 16.2 | 59.1 | 0.043 |
@@ -202,7 +202,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | car | Pypper | 93.63% | 17.1 | 86.4 | 0.216 |
 | car | Weka:JRip | 94.33% | 18.2 | 90.1 | 0.697 |
 | cmc | CN2 | 45.35% | 22.0 | 81.7 | 0.157 |
-| cmc | JavaLord | 52.76% | 651.9 | 4472.5 | 3.013 |
+| cmc | JavaLORD | 52.76% | 651.9 | 4472.5 | 3.013 |
 | cmc | Opus(WRAcc) | 48.13% | 16.5 | 47.9 | 4.032 |
 | cmc | PFoil | 51.40% | 211.0 | 1266.9 | 0.500 |
 | cmc | PFossil | 52.61% | 2.1 | 9.2 | 0.017 |
@@ -210,7 +210,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | cmc | Pypper | 54.79% | 4.1 | 12.6 | 0.122 |
 | cmc | Weka:JRip | 51.94% | 3.6 | 14.5 | 0.632 |
 | colic | CN2 | 75.26% | 16.2 | 41.0 | 0.048 |
-| colic | JavaLord | 78.26% | 74.5 | 205.9 | 0.627 |
+| colic | JavaLORD | 78.26% | 74.5 | 205.9 | 0.627 |
 | colic | Opus(WRAcc) | 86.70% | 9.5 | 22.8 | 2.698 |
 | colic | PFoil | 84.52% | 38.5 | 110.0 | 0.056 |
 | colic | PFossil | 82.89% | 19.8 | 50.7 | 0.029 |
@@ -218,7 +218,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | colic | Pypper | 85.08% | 1.8 | 4.0 | 0.029 |
 | colic | Weka:JRip | 84.50% | 3.4 | 8.4 | 0.489 |
 | credit-approval | CN2 | 78.70% | 19.8 | 59.8 | 0.075 |
-| credit-approval | JavaLord | 83.62% | 126.5 | 499.1 | 1.113 |
+| credit-approval | JavaLORD | 83.62% | 126.5 | 499.1 | 1.113 |
 | credit-approval | Opus(WRAcc) | 84.78% | 8.6 | 24.8 | 4.335 |
 | credit-approval | PFoil | 84.49% | 57.5 | 220.2 | 0.102 |
 | credit-approval | PFossil | 82.17% | 8.8 | 38.9 | 0.019 |
@@ -226,7 +226,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | credit-approval | Pypper | 83.91% | 3.8 | 11.0 | 0.043 |
 | credit-approval | Weka:JRip | 84.78% | 4.2 | 10.1 | 0.507 |
 | credit-g | CN2 | 71.60% | 22.8 | 63.4 | 0.079 |
-| credit-g | JavaLord | 75.20% | 258.0 | 985.1 | 2.020 |
+| credit-g | JavaLORD | 75.20% | 258.0 | 985.1 | 2.020 |
 | credit-g | Opus(WRAcc) | 72.50% | 10.7 | 31.7 | 25.191 |
 | credit-g | PFoil | 73.80% | 98.4 | 464.6 | 0.200 |
 | credit-g | PFossil | 73.50% | 3.6 | 31.1 | 0.021 |
@@ -234,7 +234,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | credit-g | Pypper | 72.00% | 2.5 | 8.9 | 0.048 |
 | credit-g | Weka:JRip | 71.80% | 3.9 | 15.9 | 0.619 |
 | cylinder-bands | CN2 | 69.44% | 25.1 | 35.2 | 0.068 |
-| cylinder-bands | JavaLord | 72.96% | 129.5 | 303.1 | 1.423 |
+| cylinder-bands | JavaLORD | 72.96% | 129.5 | 303.1 | 1.423 |
 | cylinder-bands | Opus(WRAcc) | 69.44% | 7.9 | 22.5 | 134.632 |
 | cylinder-bands | PFoil | 78.70% | 49.6 | 183.0 | 0.114 |
 | cylinder-bands | PFossil | 70.37% | 9.4 | 64.4 | 0.034 |
@@ -242,7 +242,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | cylinder-bands | Pypper | 65.00% | 4.3 | 13.6 | 0.066 |
 | cylinder-bands | Weka:JRip | 64.26% | 6.9 | 18.1 | 0.738 |
 | dna | CN2 | 84.78% | 105.9 | 506.9 | 1.116 |
-| dna | JavaLord | 91.78% | 323.0 | 1471.8 | 63.189 |
+| dna | JavaLORD | 91.78% | 323.0 | 1471.8 | 63.189 |
 | dna | Opus(WRAcc) | 67.73% | 11.2 | 28.6 | 45.256 |
 | dna | PFoil | 92.50% | 89.0 | 469.4 | 0.326 |
 | dna | PFossil | 93.69% | 27.8 | 137.4 | 0.113 |
@@ -250,7 +250,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | dna | Pypper | 92.22% | 13.2 | 68.2 | 0.262 |
 | dna | Weka:JRip | 91.96% | 17.3 | 97.4 | 3.352 |
 | dresses-sales | CN2 | 58.20% | 3.2 | 5.7 | 0.013 |
-| dresses-sales | JavaLord | 58.80% | 171.3 | 514.3 | 1.169 |
+| dresses-sales | JavaLORD | 58.80% | 171.3 | 514.3 | 1.169 |
 | dresses-sales | Opus(WRAcc) | 59.20% | 10.4 | 30.0 | 67.229 |
 | dresses-sales | PFoil | 58.20% | 67.1 | 243.2 | 0.147 |
 | dresses-sales | PFossil | 59.40% | 2.2 | 20.4 | 0.022 |
@@ -258,7 +258,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | dresses-sales | Pypper | 61.20% | 1.1 | 1.2 | 0.036 |
 | dresses-sales | Weka:JRip | 61.00% | 1.9 | 3.1 | 0.631 |
 | heart-c | CN2 | 71.61% | 9.1 | 22.9 | 0.030 |
-| heart-c | JavaLord | 81.24% | 62.3 | 219.1 | 0.429 |
+| heart-c | JavaLORD | 81.24% | 62.3 | 219.1 | 0.429 |
 | heart-c | Opus(WRAcc) | 77.23% | 8.3 | 23.2 | 1.638 |
 | heart-c | PFoil | 79.59% | 30.2 | 102.3 | 0.043 |
 | heart-c | PFossil | 77.26% | 17.4 | 65.8 | 0.034 |
@@ -266,7 +266,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | heart-c | Pypper | 81.55% | 3.0 | 7.6 | 0.034 |
 | heart-c | Weka:JRip | 79.24% | 3.6 | 8.6 | 0.478 |
 | heart-h | CN2 | 77.18% | 14.2 | 33.8 | 0.039 |
-| heart-h | JavaLord | 74.14% | 60.8 | 218.8 | 0.415 |
+| heart-h | JavaLORD | 74.14% | 60.8 | 218.8 | 0.415 |
 | heart-h | Opus(WRAcc) | 78.53% | 8.1 | 23.1 | 1.063 |
 | heart-h | PFoil | 79.25% | 34.6 | 108.7 | 0.048 |
 | heart-h | PFossil | 80.26% | 17.0 | 53.2 | 0.025 |
@@ -274,7 +274,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | heart-h | Pypper | 78.60% | 1.9 | 3.6 | 0.025 |
 | heart-h | Weka:JRip | 79.56% | 2.0 | 3.3 | 0.436 |
 | heart-statlog | CN2 | 73.33% | 9.4 | 24.2 | 0.027 |
-| heart-statlog | JavaLord | 79.26% | 54.1 | 185.4 | 0.377 |
+| heart-statlog | JavaLORD | 79.26% | 54.1 | 185.4 | 0.377 |
 | heart-statlog | Opus(WRAcc) | 79.26% | 8.2 | 23.5 | 1.445 |
 | heart-statlog | PFoil | 80.00% | 26.5 | 86.7 | 0.036 |
 | heart-statlog | PFossil | 80.74% | 17.8 | 60.9 | 0.028 |
@@ -282,7 +282,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | heart-statlog | Pypper | 78.52% | 2.4 | 6.1 | 0.028 |
 | heart-statlog | Weka:JRip | 78.89% | 4.3 | 10.4 | 0.450 |
 | hepatitis | CN2 | 83.25% | 8.5 | 16.8 | 0.020 |
-| hepatitis | JavaLord | 81.38% | 28.2 | 66.6 | 0.228 |
+| hepatitis | JavaLORD | 81.38% | 28.2 | 66.6 | 0.228 |
 | hepatitis | Opus(WRAcc) | 80.75% | 7.4 | 20.3 | 0.415 |
 | hepatitis | PFoil | 77.58% | 17.1 | 37.0 | 0.019 |
 | hepatitis | PFossil | 78.75% | 15.0 | 38.6 | 0.018 |
@@ -290,7 +290,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | hepatitis | Pypper | 79.42% | 1.7 | 3.4 | 0.025 |
 | hepatitis | Weka:JRip | 78.75% | 2.1 | 4.0 | 0.418 |
 | hypothyroid | CN2 | 98.83% | 29.3 | 93.3 | 0.236 |
-| hypothyroid | JavaLord | 98.33% | 38.0 | 137.4 | 5.237 |
+| hypothyroid | JavaLORD | 98.33% | 38.0 | 137.4 | 5.237 |
 | hypothyroid | Opus(WRAcc) | 95.63% | 10.1 | 24.6 | 1.556 |
 | hypothyroid | PFoil | 99.05% | 31.5 | 100.2 | 0.096 |
 | hypothyroid | PFossil | 98.89% | 21.5 | 55.8 | 0.067 |
@@ -298,7 +298,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | hypothyroid | Pypper | 99.28% | 3.3 | 8.9 | 0.078 |
 | hypothyroid | Weka:JRip | 99.20% | 3.4 | 8.9 | 0.847 |
 | kr-vs-kp | CN2 | 90.80% | 30.8 | 93.8 | 0.133 |
-| kr-vs-kp | JavaLord | 99.41% | 47.5 | 224.6 | 5.310 |
+| kr-vs-kp | JavaLORD | 99.41% | 47.5 | 224.6 | 5.310 |
 | kr-vs-kp | Opus(WRAcc) | 93.96% | 8.0 | 20.0 | 0.801 |
 | kr-vs-kp | PFoil | 99.34% | 40.8 | 178.8 | 0.122 |
 | kr-vs-kp | PFossil | 99.37% | 14.5 | 56.7 | 0.050 |
@@ -306,7 +306,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | kr-vs-kp | Pypper | 99.09% | 13.6 | 44.0 | 0.137 |
 | kr-vs-kp | Weka:JRip | 99.31% | 14.6 | 46.2 | 0.838 |
 | lymph | CN2 | 78.52% | 11.9 | 33.2 | 0.032 |
-| lymph | JavaLord | 83.10% | 28.9 | 79.4 | 0.217 |
+| lymph | JavaLORD | 83.10% | 28.9 | 79.4 | 0.217 |
 | lymph | Opus(WRAcc) | 76.38% | 8.2 | 20.3 | 0.727 |
 | lymph | PFoil | 81.86% | 16.0 | 39.6 | 0.017 |
 | lymph | PFossil | 80.38% | 16.3 | 45.2 | 0.018 |
@@ -314,7 +314,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | lymph | Pypper | 73.62% | 2.7 | 5.8 | 0.022 |
 | lymph | Weka:JRip | 82.48% | 4.1 | 8.2 | 0.377 |
 | molecular-biology_promoters | CN2 | 80.27% | 9.3 | 17.5 | 0.032 |
-| molecular-biology_promoters | JavaLord | 86.82% | 16.9 | 33.0 | 0.368 |
+| molecular-biology_promoters | JavaLORD | 86.82% | 16.9 | 33.0 | 0.368 |
 | molecular-biology_promoters | Opus(WRAcc) | 77.64% | 4.7 | 12.2 | 3.427 |
 | molecular-biology_promoters | PFoil | 86.09% | 9.0 | 18.6 | 0.013 |
 | molecular-biology_promoters | PFossil | 82.27% | 7.4 | 19.7 | 0.013 |
@@ -322,7 +322,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | molecular-biology_promoters | Pypper | 83.18% | 2.1 | 3.8 | 0.057 |
 | molecular-biology_promoters | Weka:JRip | 77.45% | 2.5 | 5.4 | 0.483 |
 | mushroom | CN2 | 100.00% | 23.0 | 30.0 | 0.150 |
-| mushroom | JavaLord | 100.00% | 23.0 | 38.7 | 42.251 |
+| mushroom | JavaLORD | 100.00% | 23.0 | 38.7 | 42.251 |
 | mushroom | Opus(WRAcc) | 98.58% | 4.3 | 12.6 | 0.706 |
 | mushroom | PFoil | 100.00% | 11.5 | 24.7 | 0.086 |
 | mushroom | PFossil | 99.95% | 12.3 | 23.0 | 0.102 |
@@ -330,7 +330,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | mushroom | Pypper | 99.96% | 5.2 | 10.6 | 0.102 |
 | mushroom | Weka:JRip | 99.98% | 6.0 | 10.1 | 1.879 |
 | sick | CN2 | 97.72% | 53.4 | 165.1 | 0.470 |
-| sick | JavaLord | 97.85% | 96.2 | 402.4 | 7.996 |
+| sick | JavaLORD | 97.85% | 96.2 | 402.4 | 7.996 |
 | sick | Opus(WRAcc) | 96.66% | 10.5 | 27.4 | 3.321 |
 | sick | PFoil | 97.99% | 63.5 | 241.2 | 0.236 |
 | sick | PFossil | 98.30% | 16.4 | 59.4 | 0.078 |
@@ -338,7 +338,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | sick | Pypper | 98.22% | 3.5 | 11.9 | 0.080 |
 | sick | Weka:JRip | 98.22% | 5.3 | 18.1 | 1.084 |
 | solar-flare | CN2 | 69.13% | 39.7 | 168.1 | 0.454 |
-| solar-flare | JavaLord | 73.26% | 209.1 | 1171.2 | 0.869 |
+| solar-flare | JavaLORD | 73.26% | 209.1 | 1171.2 | 0.869 |
 | solar-flare | Opus(WRAcc) | 74.77% | 11.2 | 27.4 | 0.758 |
 | solar-flare | PFoil | 73.73% | 85.2 | 403.4 | 0.173 |
 | solar-flare | PFossil | 74.02% | 14.5 | 62.5 | 0.041 |
@@ -346,7 +346,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | solar-flare | Pypper | 74.77% | 4.9 | 8.3 | 0.079 |
 | solar-flare | Weka:JRip | 71.21% | 6.5 | 16.9 | 0.568 |
 | splice | CN2 | 65.27% | 21.2 | 80.3 | 0.266 |
-| splice | JavaLord | 94.70% | 255.3 | 1077.6 | 87.299 |
+| splice | JavaLORD | 94.70% | 255.3 | 1077.6 | 87.299 |
 | splice | Opus(WRAcc) | 75.77% | 11.8 | 33.8 | 99.414 |
 | splice | PFoil | 92.76% | 78.2 | 379.4 | 0.344 |
 | splice | PFossil | 94.23% | 23.7 | 106.8 | 0.114 |
@@ -354,7 +354,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | splice | Pypper | 93.82% | 11.4 | 49.6 | 0.234 |
 | splice | Weka:JRip | 94.80% | 9.7 | 39.4 | 3.483 |
 | tic-tac-toe | CN2 | 98.33% | 11.6 | 35.0 | 0.041 |
-| tic-tac-toe | JavaLord | 98.44% | 32.6 | 119.6 | 1.137 |
+| tic-tac-toe | JavaLORD | 98.44% | 32.6 | 119.6 | 1.137 |
 | tic-tac-toe | Opus(WRAcc) | 77.04% | 10.9 | 28.9 | 1.021 |
 | tic-tac-toe | PFoil | 99.06% | 23.2 | 83.9 | 0.040 |
 | tic-tac-toe | PFossil | 97.71% | 14.7 | 52.5 | 0.028 |
@@ -362,7 +362,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | tic-tac-toe | Pypper | 96.25% | 7.5 | 23.1 | 0.055 |
 | tic-tac-toe | Weka:JRip | 98.12% | 8.4 | 26.6 | 0.534 |
 | vote | CN2 | 94.96% | 14.0 | 41.0 | 0.041 |
-| vote | JavaLord | 92.87% | 33.7 | 102.0 | 0.280 |
+| vote | JavaLORD | 92.87% | 33.7 | 102.0 | 0.280 |
 | vote | Opus(WRAcc) | 94.74% | 8.3 | 16.2 | 0.054 |
 | vote | PFoil | 94.71% | 23.3 | 67.8 | 0.029 |
 | vote | PFossil | 95.18% | 10.2 | 29.2 | 0.017 |
@@ -370,7 +370,7 @@ Sorted by mean rank. `wins` -- datasets where a learner's mean accuracy was (tie
 | vote | Pypper | 95.18% | 1.7 | 3.3 | 0.022 |
 | vote | Weka:JRip | 95.42% | 3.1 | 7.6 | 0.400 |
 | zoo | CN2 | 86.18% | 5.8 | 10.2 | 0.014 |
-| zoo | JavaLord | 94.00% | 9.1 | 20.3 | 0.140 |
+| zoo | JavaLORD | 94.00% | 9.1 | 20.3 | 0.140 |
 | zoo | Opus(WRAcc) | 95.00% | 7.0 | 14.0 | 0.031 |
 | zoo | PFoil | 96.00% | 9.5 | 20.3 | 0.010 |
 | zoo | PFossil | 95.00% | 8.9 | 21.0 | 0.010 |

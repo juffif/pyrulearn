@@ -59,7 +59,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .base import ObjectRuleImporter, deprecated_aliases, register_importer
+from .base import ObjectRuleImporter, register_importer
 from ..data import DataRepresentation, DataSpec
 from ..learners.base import ExternalRuleLearner
 from ..models import DecisionList
@@ -171,6 +171,3 @@ class PArcCBA(ExternalRuleLearner):
 # -- naming ------------------------------------------------------------------
 
 PArcCBA.TOOL = "PArc"
-
-#: the pre-0.2.0 names, deprecated
-__getattr__ = deprecated_aliases(globals(), {'PyarcCBA': 'PArcCBA'})

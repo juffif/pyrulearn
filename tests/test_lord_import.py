@@ -6,7 +6,7 @@ import pytest
 from pyrulearn import HorizontalBitmapRepresentation, Rule
 from pyrulearn.data import DataSpecBuilder
 from pyrulearn.heuristics import RuleStats
-from pyrulearn.interfaces.lord import JavaLord, LORDImporter, _parse_rules, run_lord
+from pyrulearn.interfaces.lord import JavaLORD, LORDImporter, _parse_rules, run_lord
 from pyrulearn.models import ConceptSet, FlatRuleSet
 
 from _negation_helpers import neg_spec, neg_X
@@ -147,29 +147,29 @@ def test_placeholder_features_requires_a_dataspec():
         LORDImporter(placeholder_features=True).parse(EG_OUTPUT)
 
 
-def test_lordjar_is_a_fit_learner():
-    caps = JavaLord().produces()
+def test_javalord_is_a_fit_learner():
+    caps = JavaLORD().produces()
     assert FlatRuleSet in caps and ConceptSet in caps
     with pytest.raises(ValueError, match="variant"):
-        JavaLord(variant="nope")
+        JavaLORD(variant="nope")
 
 
 @pytest.mark.skipif(
     not (os.environ.get("LORD_CLASSPATH") or os.environ.get("LORD_JAR")),
     reason="LORD_CLASSPATH not set",
 )
-def test_lordjar_fits_end_to_end():
+def test_javalord_fits_end_to_end():
     rng = np.random.default_rng(0)
     raw = rng.integers(0, 2, size=(200, 4)).astype(bool)
     y = np.where(raw[:, 0] & ~raw[:, 1], "pos", "neg")
     ds = neg_spec([f"x{i}" for i in range(4)])
     rep = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
-    model = JavaLord(timeout=120).fit(rep)
+    model = JavaLORD(timeout=120).fit(rep)
     assert type(model) is FlatRuleSet and model.default_prediction is not None
     acc = float(np.mean(np.asarray(model.predict(rep)) == y))
-    assert acc > 0.8, f"JavaLord train accuracy only {acc:.3f}"
-    assert type(JavaLord(timeout=120).fit(rep, model=ConceptSet)) is ConceptSet
+    assert acc > 0.8, f"JavaLORD train accuracy only {acc:.3f}"
+    assert type(JavaLORD(timeout=120).fit(rep, model=ConceptSet)) is ConceptSet
 
 
 @pytest.mark.skipif(

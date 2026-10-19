@@ -3,6 +3,21 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Removed (breaking)
+
+- The pre-0.2.0 learner names (`JRip`, `PART`, `J48`, `IREP`, `RIPPERk`,
+  `DecisionTree`, `RandomForest`, `BayesianRuleList`, `BayesianRuleSet`,
+  `ImodelsRuleFit`, `ImodelsSlipper`, `RealkdRuleBoosting`, `PyarcCBA`,
+  `LordJar`) and the 0.2.0 name `MlrlBoomer`, which were served with a
+  `DeprecationWarning`, together with `interfaces.base.deprecated_aliases`.
+
+### Changed (breaking)
+
+- `JavaLord` is renamed to `JavaLORD`, to spell LORD as everywhere else
+  (`PyLORD`, `LORDImporter`, `LORD_JAR`); no alias is kept.
+
 ## 0.3.4 (2026-10-19)
 
 A new default representation, the vertical bitmap: the bit matrix packed by feature
