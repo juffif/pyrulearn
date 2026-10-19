@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, ListCombiner, MicroVoteCombiner
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.data import DataSpec, DataSpecBuilder, merge_dataspecs
 from pyrulearn.rule import Rule, WeightedRule
 from pyrulearn.models import (
@@ -25,7 +25,7 @@ X = np.array([[1, 0, 0],   # 0
               [0, 0, 0]],  # 4
              dtype=bool)
 Y = np.array(["a", "b", "a", "b", "a"], dtype=object)
-DATA = BooleanDataRepresentation(DS, X, Y)
+DATA = HorizontalBitmapRepresentation(DS, X, Y)
 
 
 # --------------------------------------------------------------- WeightedRule ---
@@ -184,7 +184,7 @@ def test_evaluate_returns_a_model_stats_and_stores_nothing():
 
 
 def test_stats_confusion_is_none_without_labels():
-    rep_no_y = BooleanDataRepresentation(DS, X)  # no labels available to score a confusion matrix against
+    rep_no_y = HorizontalBitmapRepresentation(DS, X)  # no labels available to score a confusion matrix against
     rs = FlatRuleSet([Rule([0], target="a", dataspec=DS)], default_prediction="a")
     st = rs.evaluate(rep_no_y)
     assert st.confusion is None
@@ -507,7 +507,7 @@ def test_annotate_default_rule_is_a_noop_when_there_is_no_default_rule():
 def test_predict_default_prediction_bare_label_and_none():
     ds = DataSpec(["a", "b"])
     X3 = np.array([[1, 0], [0, 1], [0, 0]], dtype=bool)
-    rep = BooleanDataRepresentation(ds, X3)
+    rep = HorizontalBitmapRepresentation(ds, X3)
     r = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # covers row 0 only
 
     fs = FlatRuleSet([r])
@@ -552,7 +552,7 @@ def test_object_policy_gives_per_example_fallback():
     ds = DataSpec(["a"])
     r = Rule.from_pos_neg(pos=[0], target="matched", dataspec=ds)  # covers only a=True
     X4 = np.array([[1], [0], [0], [0]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X4)
+    data_rep = HorizontalBitmapRepresentation(ds, X4)
 
     fs = FlatRuleSet([r], default_prediction=_ParityDefault())
     assert list(fs.predict(data_rep)) == ["matched", "odd", "even", "odd"]
@@ -566,7 +566,7 @@ def test_majority_class_materializes_as_the_default_rules_target():
     ds = DataSpec(["a"])
     X5 = np.array([[1], [0], [0], [0]], dtype=bool)
     y5 = np.array(["a", "b", "b", "c"])
-    rep = BooleanDataRepresentation(ds, X5, y5)
+    rep = HorizontalBitmapRepresentation(ds, X5, y5)
     r = Rule.from_pos_neg(pos=[0], target="a", dataspec=ds)  # covers row 0
 
     fs = FlatRuleSet([r], default_prediction=MajorityClass(rep))
@@ -648,7 +648,7 @@ def test_remap_onto_merged_dataspec():
     X[0, shared.feature_index("age>=40")] = True
     X[1, shared.feature_index("color=blue")] = True
     X[2, shared.feature_index("color=green")] = True
-    shared_rep = BooleanDataRepresentation(shared, X)
+    shared_rep = HorizontalBitmapRepresentation(shared, X)
 
     assert list(remapped1.predict(shared_rep)) == ["pos", "neg", "neg"]
     assert list(remapped2.predict(shared_rep)) == ["pos", None, None]
@@ -661,7 +661,7 @@ def test_disjoint_rule_set_is_disjoint_and_exhaustive():
 
     X3 = np.array([[1, 0], [0, 1], [0, 0]], dtype=bool)
     ds = neg_spec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, neg_X(X3))
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X3))
     r_a = make_rule(ds, pos=["a"], target="a")  # row 0 only
     r_b = make_rule(ds, pos=["b"], target="b")  # row 1 only
 
@@ -682,7 +682,7 @@ def test_disjoint_rule_set_is_disjoint_and_exhaustive():
 def test_is_disjoint_usable_as_precondition_on_a_plain_ruleset():
     ds = DataSpec(["a", "b"])
     X3 = np.array([[1, 0], [0, 1], [0, 0]], dtype=bool)
-    rep = BooleanDataRepresentation(ds, X3)
+    rep = HorizontalBitmapRepresentation(ds, X3)
     r_a = Rule.from_pos_neg(pos=[0], target="a", dataspec=ds)
     r_b = Rule.from_pos_neg(pos=[1], target="b", dataspec=ds)
 
@@ -700,7 +700,7 @@ def test_coverage_space_and_coverage_path():
     ds = DataSpec(["a", "b", "c"])
     X4 = np.array([[1, 0, 1], [1, 1, 0], [0, 0, 1]], dtype=bool)
     y4 = np.array(["pos", "pos", "neg"])
-    rep = BooleanDataRepresentation(ds, X4, y4)
+    rep = HorizontalBitmapRepresentation(ds, X4, y4)
     r1 = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)   # rows 0,1
     r2 = Rule.from_pos_neg(pos=[2], target="neg", dataspec=ds)   # rows 0,2
 
@@ -721,7 +721,7 @@ def test_decision_list_predict_and_firing_coverage():
         [1, 1],   # both -- r1 should claim this one, not r2
     ], dtype=bool)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X)
+    rep = HorizontalBitmapRepresentation(ds, X)
     r1 = Rule.from_pos_neg(pos=[0], target="A", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="B", dataspec=ds)
     r3 = Rule.from_pos_neg(target="default", dataspec=ds)  # no conditions -> catch-all
@@ -804,7 +804,7 @@ def test_list_resolved_rule_set_prints_in_its_deciding_order():
     for fmt in ("logic", "prolog"):
         assert fs.to_string(fmt=fmt) == dl.to_string(fmt=fmt)
     assert "% class:" not in fs.to_string(fmt="prolog")
-    rep = BooleanDataRepresentation(ds, np.array([[1, 1], [0, 1], [0, 0]], dtype=bool))
+    rep = HorizontalBitmapRepresentation(ds, np.array([[1, 1], [0, 1], [0, 0]], dtype=bool))
     assert list(fs.predict(rep)) == list(dl.predict(rep)) == ["Z", "A", "C"]
     # other combiners, and a single-head set, still print grouped by label
     assert "% class:" in FlatRuleSet([r1, r2], default_prediction="C").to_string(fmt="prolog")
@@ -831,7 +831,7 @@ def test_conflict_resolution_line_only_where_rules_can_conflict():
 
 def test_repr_identifies_and_print_renders_every_model():
     ds = DataSpec(["f0", "f1"])
-    data = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+    data = HorizontalBitmapRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
                                      np.array(["pos", "neg", "neg"]))
     sr = annotate_rules([Rule([0, 1], target="pos", dataspec=ds)], data)[0]
     assert repr(sr) == "SingleRule(2 conditions)"
@@ -844,7 +844,7 @@ def test_repr_identifies_and_print_renders_every_model():
 
 def test_pretty_prolog_puts_a_rules_stats_after_its_head():
     ds = DataSpec(["f0", "f1"])
-    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+    data = HorizontalBitmapRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
                                      np.array(["pos", "neg", "neg"]))
     rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
     dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
@@ -865,7 +865,7 @@ def test_headless_formats_name_the_class_inside_models():
     # "conditions"/"pattern" render only a rule's body; inside a model the
     # class must still be visible
     ds = DataSpec(["f0", "f1"])
-    data = BooleanDataRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
+    data = HorizontalBitmapRepresentation(ds, np.array([[1, 1], [1, 0], [0, 1]], dtype=bool),
                                      np.array(["pos", "neg", "neg"]))
     rules = annotate_rules([Rule([0, 1], target="pos", dataspec=ds), Rule([1], target="neg", dataspec=ds)], data)
     dl = annotate_default_rule(DecisionList(rules, default_prediction="neg"), data)
@@ -906,7 +906,7 @@ def test_to_string_prints_only_the_rules_own_frozen_stats():
     with pytest.raises(TypeError):
         fs.to_string(fmt="prolog", data=None)
 
-    train = BooleanDataRepresentation(ds, np.array([[1, 1, 0], [0, 0, 1]], dtype=bool),
+    train = HorizontalBitmapRepresentation(ds, np.array([[1, 1, 0], [0, 0, 1]], dtype=bool),
                                       np.array(["high_risk", "low_risk"]))
     fs = FlatRuleSet(annotate_rules([r1, r2], train))
     before = fs.to_string(fmt="prolog")
@@ -915,7 +915,7 @@ def test_to_string_prints_only_the_rules_own_frozen_stats():
 
     # evaluating on other data stores nothing, so it never changes what's
     # printed (nor what's predicted)
-    test = BooleanDataRepresentation(ds, np.array([[1, 1, 1]] * 3, dtype=bool), np.array(["high_risk"] * 3))
+    test = HorizontalBitmapRepresentation(ds, np.array([[1, 1, 1]] * 3, dtype=bool), np.array(["high_risk"] * 3))
     fs.evaluate(test)
     for r in fs.rules:
         r.evaluate(test)
@@ -926,8 +926,8 @@ def test_to_string_prints_only_the_rules_own_frozen_stats():
 
 def test_training_stats_are_frozen_and_only_replaced_deliberately():
     ds = DataSpec(["a"])
-    train = BooleanDataRepresentation(ds, np.array([[1], [1], [0]], dtype=bool), np.array(["x", "y", "y"]))
-    other = BooleanDataRepresentation(ds, np.array([[1], [0]], dtype=bool), np.array(["x", "x"]))
+    train = HorizontalBitmapRepresentation(ds, np.array([[1], [1], [0]], dtype=bool), np.array(["x", "y", "y"]))
+    other = HorizontalBitmapRepresentation(ds, np.array([[1], [0]], dtype=bool), np.array(["x", "x"]))
     sr = annotate_rules([Rule([0], target="x", dataspec=ds)], train)[0]
     assert sr.to_string("prolog").endswith("% (1/1)")
 
@@ -949,7 +949,7 @@ def test_training_stats_are_frozen_and_only_replaced_deliberately():
 
 def test_remap_and_filter_keep_the_frozen_stats():
     ds = DataSpec(["a", "b"])
-    train = BooleanDataRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
+    train = HorizontalBitmapRepresentation(ds, np.array([[1, 0], [1, 1], [0, 1]], dtype=bool),
                                       np.array(["x", "y", "y"]))
     rules = annotate_rules([Rule([0], target="x", dataspec=ds), Rule([1], target="y", dataspec=ds)], train)
     fs = annotate_default_rule(FlatRuleSet(rules, default_prediction="y"), train)
@@ -974,7 +974,7 @@ def test_to_string_coverage_correctness_counts():
         [1, 1, 1],  # row2: all three -> covered by both
     ], dtype=bool)
     y = np.array(["high_risk", "low_risk", "high_risk"])
-    fs = FlatRuleSet(annotate_rules([r1, r2], BooleanDataRepresentation(ds, X, y)))
+    fs = FlatRuleSet(annotate_rules([r1, r2], HorizontalBitmapRepresentation(ds, X, y)))
 
     prolog = fs.to_string(fmt="prolog")
     # r1: covers rows 0,2, both high_risk (its own target) -> tp=2, fp=0
@@ -988,7 +988,7 @@ def _three_class_dog_rule():
     ds = DataSpec(["barks"])
     X = np.array([[1]] * 16 + [[0]] * 3, dtype=bool)
     y = np.array(["bird"] + ["cat"] + ["dog"] * 14 + ["bird", "cat", "dog"])
-    data = BooleanDataRepresentation(ds, X, y)
+    data = HorizontalBitmapRepresentation(ds, X, y)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
     return FlatRuleSet(annotate_rules([rule], data)), data
 
@@ -1019,7 +1019,7 @@ def test_to_string_skips_the_distribution_for_a_binary_problem_even_with_a_distr
     X = np.array([[1]] * 5 + [[0]] * 5, dtype=bool)
     y = np.array(["dog"] * 5 + ["cat"] * 5)
     rule = Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds)
-    fs = FlatRuleSet(annotate_rules([rule], BooleanDataRepresentation(ds, X, y)), combiner=MicroVoteCombiner())
+    fs = FlatRuleSet(annotate_rules([rule], HorizontalBitmapRepresentation(ds, X, y)), combiner=MicroVoteCombiner())
 
     text = fs.to_string(fmt="prolog")
     assert "% classes:" not in text
@@ -1060,7 +1060,7 @@ def test_to_string_show_distribution_forces_the_choice_either_way():
             == "% classes: [bird, cat, dog]\n\ndog(X) :- barks(X).  % [1, 1, 14]")
 
     ds2 = DataSpec(["barks"])
-    binary_data = BooleanDataRepresentation(
+    binary_data = HorizontalBitmapRepresentation(
         ds2, np.array([[1]] * 5 + [[0]] * 5, dtype=bool), np.array(["dog"] * 5 + ["cat"] * 5))
     binary_fs = FlatRuleSet(annotate_rules([Rule.from_pos_neg(pos=[0], target="dog", dataspec=ds2)],
                                            binary_data))  # default "max"
@@ -1092,7 +1092,7 @@ def _three_class_fixture_data():
     ds = DataSpec(["a", "b"])
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0], [1, 0], [0, 1]], dtype=bool)
     y = np.array(["cat", "cat", "dog", "dog", "bird", "bird"])
-    return BooleanDataRepresentation(ds, X, y)
+    return HorizontalBitmapRepresentation(ds, X, y)
 
 
 def _three_class_pairwise_fixture():
@@ -1167,10 +1167,10 @@ def test_pairwise_ties_use_training_frequencies_from_stats_when_no_priors_are_gi
     # a 2-class model whose only pair abstains-free vote is a tie: one
     # member per direction, each voting for its own positive class
     y = ["yes"] * 3 + ["no"]
-    train = BooleanDataRepresentation(ds, np.array([[1]] * 4, dtype=bool), np.array(y))
+    train = HorizontalBitmapRepresentation(ds, np.array([[1]] * 4, dtype=bool), np.array(y))
     yes = ConceptModel(annotate_rules([Rule([0], target="yes", dataspec=ds)], train), label="yes")
     no = ConceptModel(annotate_rules([Rule([0], target="no", dataspec=ds)], train), label="no")
-    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    row = HorizontalBitmapRepresentation(ds, np.array([[1]], dtype=bool))
     # no label_priors recorded: read from the rules' stats -> "yes" (3 of 4)
     for members in ([("yes", "no", yes), ("no", "yes", no)], [("no", "yes", no), ("yes", "no", yes)]):
         assert PairwiseModel(members).predict(row)[0] == "yes"
@@ -1212,12 +1212,12 @@ def test_ensemble_vote_ties_never_depend_on_member_order():
     ds = DataSpec(["a"])
 
     def members(y):
-        train = BooleanDataRepresentation(ds, np.array([[1]] * len(y), dtype=bool), np.array(y))
+        train = HorizontalBitmapRepresentation(ds, np.array([[1]] * len(y), dtype=bool), np.array(y))
         good = ConceptModel(annotate_rules([Rule([0], target="good", dataspec=ds)], train), label="good")
         bad = ConceptModel(annotate_rules([Rule([0], target="bad", dataspec=ds)], train), label="bad")
         return good, bad
 
-    row = BooleanDataRepresentation(ds, np.array([[1]], dtype=bool))
+    row = HorizontalBitmapRepresentation(ds, np.array([[1]], dtype=bool))
     for y, expected in ((["good"] * 3 + ["bad"], "good"),     # good more frequent
                         (["good"] + ["bad"] * 3, "bad"),       # bad more frequent
                         (["good", "bad"], "bad")):             # level -> the label sorting first
@@ -1247,7 +1247,7 @@ def _covered_by_fixture():
     ds = DataSpec(["p", "q", "r"])
     X = np.array([[1, 0, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1], [0, 0, 1], [0, 0, 0]], dtype=bool)
     y = np.array(["a", "a", "b", "b", "b", "a"])
-    data = BooleanDataRepresentation(ds, X, y)
+    data = HorizontalBitmapRepresentation(ds, X, y)
     rp = Rule([0], target="a", dataspec=ds)       # p -> a: covers rows 0,1,2 (2/3 correct)
     rpq = Rule([0, 1], target="a", dataspec=ds)   # p & q -> a: covers rows 1,2 (1/2 correct)
     rr = Rule([2], target="b", dataspec=ds)       # r -> b: covers rows 2,3,4 (all correct)
@@ -1287,7 +1287,7 @@ def test_covered_by_blocks_predicted_class_first_sorted_by_score():
 def test_covered_by_other_blocks_ordered_by_strongest_rule():
     ds = DataSpec(["p", "q", "s"])
     X = np.array([[1, 1, 1]], dtype=bool)
-    data = BooleanDataRepresentation(ds, X, np.array(["a"]))
+    data = HorizontalBitmapRepresentation(ds, X, np.array(["a"]))
     ra = Rule([0], target="a", dataspec=ds)
     rb = Rule([1], target="b", dataspec=ds)
     rc = Rule([2], target="c", dataspec=ds)
@@ -1307,7 +1307,7 @@ def test_covered_by_other_blocks_ordered_by_strongest_rule():
 def test_covered_by_on_a_decision_list_and_with_no_default():
     ds = DataSpec(["a", "b"])
     X = np.array([[1, 1], [0, 0]], dtype=bool)
-    data = BooleanDataRepresentation(ds, X, np.array(["B", "A"]))
+    data = HorizontalBitmapRepresentation(ds, X, np.array(["B", "A"]))
     dl = DecisionList([Rule([1], target="B", dataspec=ds), Rule([0], target="A", dataspec=ds)],
                      default_prediction=None)  # no constant default
     cb = dl.covered_by(data)  # singleton blocks -- no scoring needed, no stats required

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import ConceptModel, ConceptSet
 from pyrulearn.data.io import binarize, build_dataspec
 
@@ -28,7 +28,7 @@ def _binary_data(n=300, d=5, seed=0):
     # negation-enabled feature space: IREP/RIPPER emit negated Boolean
     # conditions, which now land on an explicit negation feature
     ds = neg_spec([f"f{i}" for i in range(d)])
-    return BooleanDataRepresentation(ds, neg_X(X), y)
+    return HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
 
 @pytest.mark.parametrize("learner_cls,importer_cls,wclass", [
@@ -76,7 +76,7 @@ def test_fit_raises_on_more_than_two_classes_even_with_neg_class():
     X = rng.integers(0, 2, size=(200, 4)).astype(bool)
     y = rng.choice(["a", "b", "c"], size=200)
     ds = DataSpec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     for learner in (WittRIPPER(pos_class="a", random_state=0), WittIREP(pos_class="a")):
         try:
@@ -97,7 +97,7 @@ def test_missing_labels_raises():
     rng = np.random.default_rng(2)
     X = rng.integers(0, 2, size=(50, 3)).astype(bool)
     ds = DataSpec([f"f{i}" for i in range(3)])
-    rep = BooleanDataRepresentation(ds, X, None)
+    rep = HorizontalBitmapRepresentation(ds, X, None)
 
     try:
         WittIREP(pos_class="pos").fit(rep)
@@ -126,7 +126,7 @@ def test_numeric_and_nominal_attributes_via_build_dataspec():
 
     ds = build_dataspec(df, target="label", arff_types={"num_feat": "numeric", "cat_feat": "nominal"}).build()
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+    rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
 
     rules = WittRIPPER(pos_class="pos", random_state=0).fit(rep)
     assert len(rules.rules) > 0
@@ -190,7 +190,7 @@ def test_infer_dataspec_parses_wittgensteins_own_bins_workflow_2(learner_cls, im
 
     rules = importer.import_model(model, ds, feature_names=names)
     Xb = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, Xb, y)
+    rep = HorizontalBitmapRepresentation(ds, Xb, y)
     preds = rules.predict(rep)
     wpreds = np.where(model.predict(df.to_numpy(), feature_names=names), "pos", "neg")
     assert np.array_equal(preds, wpreds)
@@ -225,7 +225,7 @@ def test_imported_rules_match_wittgenstein_exactly_at_bin_boundaries():
     boundary_values = sorted({float(v) for b in range_bins for v in b.split(" - ")})
     df = pd.DataFrame({"f0": boundary_values})
     Xb = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, Xb, np.array(["?"] * len(boundary_values)))
+    rep = HorizontalBitmapRepresentation(ds, Xb, np.array(["?"] * len(boundary_values)))
     preds = rules.predict(rep)
     wpreds = np.where(model.predict(df.to_numpy(), feature_names=names), "pos", "neg")
     assert np.array_equal(preds, wpreds), (

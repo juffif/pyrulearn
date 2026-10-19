@@ -11,7 +11,7 @@ import os
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.interfaces.weka import (
     WekaJ48,
     J48Importer,
@@ -126,7 +126,7 @@ def test_only_jrip_has_a_single_rule_producer():
 
 def test_weka_learner_without_a_jar_raises_a_clear_error(monkeypatch):
     monkeypatch.delenv("WEKA_JAR", raising=False)
-    rep = BooleanDataRepresentation(_DS, neg_X(np.zeros((4, 3), dtype=bool)),
+    rep = HorizontalBitmapRepresentation(_DS, neg_X(np.zeros((4, 3), dtype=bool)),
                                     np.array(["a", "b", "a", "b"]))
     with pytest.raises(RuntimeError, match="WEKA_JAR"):
         WekaJRip().fit(rep)
@@ -137,7 +137,7 @@ def _synth_rep(n=200, seed=0):
     raw = rng.integers(0, 2, size=(n, 4)).astype(bool)
     y = np.where((raw[:, 0] & ~raw[:, 1]) | raw[:, 2], "pos", "neg")
     ds = neg_spec([f"x{i}" for i in range(4)])
-    return BooleanDataRepresentation(ds, neg_X(raw), y), y
+    return HorizontalBitmapRepresentation(ds, neg_X(raw), y), y
 
 
 @pytest.mark.skipif(not _HAS_WEKA, reason="$WEKA_JAR not set")
@@ -168,7 +168,7 @@ def test_jrip_single_rule_is_the_first_rule_of_that_labels_own_segment():
     y = np.where(raw[:, 0] & ~raw[:, 1], "pos",
                 np.where(raw[:, 2] & raw[:, 3], "q", "neg"))
     ds = neg_spec([f"x{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(raw), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
     full = WekaJRip().fit(rep)
     for label in ("pos", "q", "neg"):

@@ -22,7 +22,7 @@ Two implementations of the same algorithm, learning the same models:
 - `DenseCPAR` is the same algorithm specialized for speed: it scores
   every feature of a search node in one matrix product over a dense
   float copy of `data.X`, without constraint propagation, so it needs a
-  `BooleanDataRepresentation`. Same parameters, same models, 2-4x
+  `HorizontalBitmapRepresentation`. Same parameters, same models, 2-4x
   faster than `CPAR`.
 
 The README (*Native learning algorithms*, "Components first, specialized
@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import numpy as np
 
 from ..combiners import RuleCombiner, TopKMeanCombiner
-from ..data import BooleanDataRepresentation
+from ..data import HorizontalBitmapRepresentation
 from ..heuristics import FoilGain, GainHeuristic, GeneralizedMEstimate, RuleStats
 from ..models import ConceptModel, ConceptSet, MajorityClass, annotate_default_rule, annotate_rules
 from ..rule import Rule
@@ -182,7 +182,7 @@ class CPAR(_CPARParameters, SeCo):
     `model=PairwiseModel`), and runs on every data representation.
 
     `DenseCPAR` is the same algorithm specialized for speed on a
-    `BooleanDataRepresentation`: same parameters, same models, 2-4x
+    `HorizontalBitmapRepresentation`: same parameters, same models, 2-4x
     faster. An implied condition never changes coverage, so its FOIL
     gain is 0, below `min_gain` -- `DenseCPAR` never picks one either,
     the search's constraint propagation only spares `CPAR` from scoring it.
@@ -220,10 +220,10 @@ class CPAR(_CPARParameters, SeCo):
 class DenseCPAR(_CPARParameters, NativeRuleLearner):
     """`CPAR`, specialized for speed: same algorithm, same parameters,
     same models (see `CPAR` for both), 2-4x faster -- at the price of
-    needing a `BooleanDataRepresentation` and its dense matrix, and of
+    needing a `HorizontalBitmapRepresentation` and its dense matrix, and of
     deciding multi-class one way only (one-vs-rest, a `ConceptSet`).
 
-    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
+    **Data representation.** `NATIVE_REPRESENTATIONS = (HorizontalBitmapRepresentation,)`
     -- `_fit_native` converts anything else via
     `NativeRuleLearner.ensure_representation`, same as `DenseENDER`. `_grow`
     scores every feature of a node at once, ``(wp * cov) @ Xf`` over a
@@ -238,7 +238,7 @@ class DenseCPAR(_CPARParameters, NativeRuleLearner):
     """
 
     #: see the "Data representation" paragraph above
-    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
+    NATIVE_REPRESENTATIONS = (HorizontalBitmapRepresentation,)
 
     def __init__(
         self,

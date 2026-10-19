@@ -24,7 +24,7 @@ O(1)-ish subset check:
 
 and whole-dataset coverage (`covers_data_packed`) is the same check
 vectorized over a `numpy.packbits`-packed copy of the data (see
-`pyrulearn.data.BooleanDataRepresentation`), instead of
+`pyrulearn.data.HorizontalBitmapRepresentation`), instead of
 per-feature Python loops.
 
 Beyond that bitmask core, `Rule` adds:
@@ -67,7 +67,7 @@ import numpy as np
 
 from .data.attributes import AttributeType, FeatureSpec, FeatureValues
 from .data import DataSpec
-from .data import BooleanDataRepresentation, DataRepresentation
+from .data import HorizontalBitmapRepresentation, DataRepresentation
 
 
 def _binary_inequality_target(spec: FeatureSpec, target: DataSpec) -> Optional[int]:
@@ -485,7 +485,7 @@ class Rule:
             new_conditions.append(Literal(new_idx))
         return self._rebuilt(new_conditions, dataspec=new_dataspec, ordered=self.ordered)
 
-    def order_by_precision(self, data: BooleanDataRepresentation, positive_class: Any = None) -> "Rule":
+    def order_by_precision(self, data: HorizontalBitmapRepresentation, positive_class: Any = None) -> "Rule":
         """Return a copy with conditions greedily reordered by incremental
         precision on `data`: at each step, among the
         not-yet-placed conditions, pick whichever one -- when added to
@@ -550,7 +550,7 @@ class Rule:
     def covers_data_packed(self, data: "DataRepresentation") -> np.ndarray:
         """Backwards-compatible alias for `covers_data`. Coverage now
         dispatches on the `DataRepresentation` subclass
-        (`BooleanDataRepresentation` uses its `numpy.packbits` cache), so
+        (`HorizontalBitmapRepresentation` uses its `numpy.packbits` cache), so
         there's a single code path regardless of which name the caller
         uses."""
         return data.coverage(self)

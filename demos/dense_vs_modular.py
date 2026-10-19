@@ -22,7 +22,7 @@ what the components cost -- or save -- and what they allow:
   without branching (PRM) and `ENDER` with the exponential loss (CS-Exp)
   and with the Newton criterion (MLRules) are further settings, run as
   pairs too.
-- **Boolean data**: the modular learners again on `BooleanDataRepresentation`,
+- **Boolean data**: the modular learners again on `HorizontalBitmapRepresentation`,
   to compare them with the N-lists they run on in the main comparison.
 
 Exhaustive `ORB` (branch and bound over all conjunctions) is checked
@@ -64,7 +64,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, NListRepresentation
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_setup_section
 from pyrulearn.experiments.runner import run_cv
@@ -227,7 +227,7 @@ def run_on_own_representation(learners, datasets, n_folds, **kwargs):
     ones on N-lists, the library's default. (Handing a dense learner an N-list
     would make it decode the matrix inside its fit and count that in its time.)"""
     parts = [run_cv(group, datasets, n_folds=n_folds, representation=representation, **kwargs)
-             for group, representation in (([l for l in learners if _is_dense(l)], BooleanDataRepresentation),
+             for group, representation in (([l for l in learners if _is_dense(l)], HorizontalBitmapRepresentation),
                                            ([l for l in learners if not _is_dense(l)], NListRepresentation))
              if group]
     return pd.concat(parts, ignore_index=True)
@@ -493,7 +493,7 @@ def write_report(results, boolean_results, datasets, report_path: str, plots: di
     if len(boolean_results):
         lines.append("## The modular learners on Boolean data\n\n")
         lines.append("The modular learners above run on `NListRepresentation`, the library's default. Here "
-                     "they are run again on `BooleanDataRepresentation`, the matrix the dense learners work "
+                     "they are run again on `HorizontalBitmapRepresentation`, the matrix the dense learners work "
                      "on, over the folds where both finished; a time ratio above 1 means the N-list is "
                      "faster:\n\n")
         lines += _boolean_table(results, boolean_results)
@@ -587,7 +587,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
         for group, folds in groups if group
     ], ignore_index=True)
     boolean_results = pd.concat([
-        run_cv(modular, group, n_folds=folds, representation=BooleanDataRepresentation, **common)
+        run_cv(modular, group, n_folds=folds, representation=HorizontalBitmapRepresentation, **common)
         for group, folds in groups if group
     ], ignore_index=True)
     boolean_results["learner"] = boolean_results["learner"] + " [Boolean]"

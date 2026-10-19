@@ -5,11 +5,11 @@ Quick tour
 ----------
 >>> import numpy as np
 >>> from pyrulearn import DataSpec, Rule
->>> from pyrulearn.data import BooleanDataRepresentation
+>>> from pyrulearn.data import HorizontalBitmapRepresentation
 >>> X = np.array([[1,0,1],[1,1,0],[0,0,1]], dtype=bool)
 >>> y = np.array(["pos","pos","neg"])
 >>> ds = DataSpec(["a","b","c"])
->>> rep = BooleanDataRepresentation(ds, X, y)
+>>> rep = HorizontalBitmapRepresentation(ds, X, y)
 >>> r = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
 >>> r.covers_data(rep)
 array([ True,  True, False])
@@ -17,7 +17,7 @@ array([ True,  True, False])
 See also: ``pyrulearn.data.attributes`` (typed nominal/numeric/set/hierarchical/
 relational attributes and the constraints they imply),
 ``pyrulearn.data`` (``DataRepresentation``/
-``BooleanDataRepresentation`` -- the actual data bound to a ``DataSpec``,
+``HorizontalBitmapRepresentation`` -- the actual data bound to a ``DataSpec``,
 which is pure schema),
 ``pyrulearn.models`` (the ``RuleModel`` hierarchy -- ``FlatRuleSet``/
 ``ConceptModel``/``DisjointRuleSet``/``ConceptSet`` (unordered),
@@ -36,7 +36,7 @@ combines several simultaneously-covering rules: ``ListCombiner``
 ``MicroMaxCombiner``/``MacroMaxCombiner`` (each rule's full per-class
 distribution -- ``MacroVoteCombiner`` is the one that matches sklearn's
 own soft-voting ensembles)),
-``pyrulearn.data.io`` (reading ARFF/CSV into a ``BooleanDataRepresentation``),
+``pyrulearn.data.io`` (reading ARFF/CSV into a ``HorizontalBitmapRepresentation``),
 ``pyrulearn.interfaces`` (``RuleImporter`` and its two shapes --
 ``ObjectRuleImporter`` for an already-fitted live model object, e.g.
 ``pyrulearn.interfaces.sklearn.SklearnTreeImporter``;
@@ -114,10 +114,10 @@ from .interfaces import (
 from .learners import ExternalRuleLearner, NativeRuleLearner, RuleLearner
 from .models import DefaultPrediction, DisjointRuleSet, MajorityClass
 from .data import (
-    BooleanDataRepresentation,
     DataRepresentation,
     DataSpec,
     DataSpecBuilder,
+    HorizontalBitmapRepresentation,
     NListRepresentation,
     PrePostNListRepresentation,
     SparseDataRepresentation,
@@ -129,7 +129,7 @@ from .interfaces.sklearn import RuleSetClassifier
 
 __all__ = [
     "DataSpec", "DataSpecBuilder", "Literal", "Rule",
-    "DataRepresentation", "BooleanDataRepresentation", "NListRepresentation",
+    "DataRepresentation", "HorizontalBitmapRepresentation", "NListRepresentation",
     "PrePostNListRepresentation", "SparseDataRepresentation", "VerticalBitmapRepresentation",
     "DisjointRuleSet", "merge_dataspecs",
     "RuleSetClassifier", "sort_rules",
@@ -150,3 +150,9 @@ __all__ = [
     "LEF",
 ]
 __version__ = "0.3.3"
+
+
+def __getattr__(name: str):
+    from .data.representation import _deprecated
+
+    return _deprecated(__name__, name)

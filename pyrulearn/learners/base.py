@@ -36,7 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Ty
 
 import numpy as np
 
-from ..data import BooleanDataRepresentation, DataRepresentation
+from ..data import HorizontalBitmapRepresentation, DataRepresentation
 from ..data import representation as _representation
 from ..data.representation import REPRESENTATION_PREFERENCE_ORDER  # noqa: F401 -- re-exported
 from ..interfaces.base import ObjectRuleImporter
@@ -255,7 +255,7 @@ class ExternalRuleLearner(RuleLearner):
     itself) to gain `ConceptSet` / `ConceptCascade` / `PairwiseModel`.
 
     Data in any representation: an external tool takes a matrix, so
-    `NATIVE_REPRESENTATIONS` is `BooleanDataRepresentation`, and `fit`
+    `NATIVE_REPRESENTATIONS` is `HorizontalBitmapRepresentation`, and `fit`
     converts anything else first (`ensure_representation`, unbounded --
     the tool needs the dense matrix either way). The learned rules apply
     to any representation again, so predicting needs no conversion.
@@ -264,7 +264,7 @@ class ExternalRuleLearner(RuleLearner):
     IMPORTER: Type[ObjectRuleImporter]
     #: the `pyrulearn.models` type a plain `fit(data)` produces
     NATIVE_MODEL: type
-    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
+    NATIVE_REPRESENTATIONS = (HorizontalBitmapRepresentation,)
 
     def fit(self, data: DataRepresentation, model: Optional[type] = None, **model_kwargs) -> RuleModel:
         data = self.ensure_representation(data, None, purpose="the external tool's input matrix",

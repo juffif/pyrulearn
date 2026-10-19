@@ -2,7 +2,7 @@ from pyrulearn.learners.ids import GreedySelection
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, NListRepresentation
 from pyrulearn.learners.associative import CARMiner, sort_by_measured_precedence
 from pyrulearn.learners.associative import CBA, CMAR
 from pyrulearn.learners.ids import IDS
@@ -15,7 +15,7 @@ def _data(n=220, seed=0):
     rng = np.random.default_rng(seed)
     raw = rng.integers(0, 2, size=(n, 5)).astype(bool)
     y = np.where(raw[:, 0] & ~raw[:, 1], "x", np.where(raw[:, 2] & raw[:, 3], "y", "z"))
-    return NListRepresentation.from_boolean(BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y))
+    return NListRepresentation.from_boolean(HorizontalBitmapRepresentation(neg_spec(list("abcde")), neg_X(raw), y))
 
 
 def _pool(data):

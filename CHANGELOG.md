@@ -3,6 +3,27 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- `VerticalBitmapRepresentation`: the bit matrix packed by feature -- one
+  bit-vector over the examples per feature, in 64-bit words. Covering a
+  rule ANDs its features' bit-vectors, counting is a popcount against a
+  class's bit-vector, and a search's batch counting ANDs the cover into
+  the open features' words, over just the words it still touches. Same
+  memory as the row-packed matrix (one bit per cell); identical rules.
+  In `demos/representations.py` as `VBitmap`.
+
+### Changed
+
+- `BooleanDataRepresentation` is renamed to
+  `HorizontalBitmapRepresentation`, so that the two bitmaps' names say
+  what distinguishes them: the matrix packed by example (horizontal) or by
+  feature (vertical). The old name still works, with a
+  `DeprecationWarning`, and will be removed in 0.9.0. In
+  `demos/representations.py` it is `HBitmap` (was `Boolean`).
+
 ## 0.3.3 (2026-10-15)
 
 Faster N-lists for the cases the demos showed to be slow, and a `run_cv` that gives up
@@ -134,7 +155,7 @@ learner learns the same rules as before.
 - `PrePostNListRepresentation` shares that storage and only keeps the
   nodes' pre/post codes for its search.
 - `SparseDataRepresentation` and the N-lists are built from the packed
-  bits (`BooleanDataRepresentation.to_csr()`, new), no longer leaving the
+  bits (`HorizontalBitmapRepresentation.to_csr()`, new), no longer leaving the
   unpacked matrix cached on the Boolean source: `Sparse` 10.2 -> 5.9 MiB
   held, peak while building no higher than what it holds.
 - `select_rows`, `relabel` and `without_negations` on N-lists decode to a
@@ -142,7 +163,7 @@ learner learns the same rules as before.
 
 ### Added
 
-- `BooleanDataRepresentation.to_csr()`: the matrix as an `int32` CSR,
+- `HorizontalBitmapRepresentation.to_csr()`: the matrix as an `int32` CSR,
   unpacked a block of rows at a time.
 - `demos/representations.py`: memory held by each representation and its
   peak while building, the memory a fit costs in total, and a width sweep
@@ -186,7 +207,7 @@ under `Dense*` names, for speed. API changes are listed under *Changed*.
   (`default_representation()`, `REPRESENTATION_PREFERENCE_ORDER`, N-list
   first). External learners convert to Boolean themselves.
 - Faster counting: numeric thresholds in one pass on
-  `BooleanDataRepresentation`, batched counting on N-lists and sparse
+  `HorizontalBitmapRepresentation`, batched counting on N-lists and sparse
   data, one `batch_score` call per node, constraint closures passed down.
 - Demos: `dense_vs_modular` (every `Dense*` learner against its modular
   twin, ORB and LRI with beam widths 5 and 10, exhaustive ORB on tiny

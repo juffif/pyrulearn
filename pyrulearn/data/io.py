@@ -30,8 +30,8 @@ this package's Boolean-representation speedups). `binarize` is `encode`'s
 older, simpler sibling: a `DataSpec` + a dataframe of raw values -> a
 dense Boolean matrix, kept as the low-level helper for callers that
 want that dense matrix directly or explicitly want
-`BooleanDataRepresentation` without going through `encode` -- pass
-`representation=BooleanDataRepresentation` to `read_arff`/`read_csv`/
+`HorizontalBitmapRepresentation` without going through `encode` -- pass
+`representation=HorizontalBitmapRepresentation` to `read_arff`/`read_csv`/
 `encode` for that, or call `binarize` yourself and wrap the result.
 
 Numeric columns without pre-given thresholds are discretized via a
@@ -72,7 +72,7 @@ import pandas as pd
 
 from .attributes import AttributeType, MissingStrategy, evaluate_feature
 from .spec import DataSpec, DataSpecBuilder
-from .representation import BooleanDataRepresentation, DataRepresentation, default_representation
+from .representation import HorizontalBitmapRepresentation, DataRepresentation, default_representation
 
 # Default cap on the number of buckets a numeric column is discretized
 # into (`max_intervals` below) -- a ceiling passed to `tree_thresholds`,
@@ -237,7 +237,7 @@ def binarize(
     """Evaluate every entry of `dataspec.feature_specs` against `df`'s
     raw values (via `pyrulearn.data.attributes.evaluate_feature`), in
     `feature_names` order, producing the Boolean matrix ready for
-    `pyrulearn.data.BooleanDataRepresentation`.
+    `pyrulearn.data.HorizontalBitmapRepresentation`.
 
     `missing_strategy` resolves (explicit argument > `dataspec`'s own
     `missing_strategy` > `DataSpec.DEFAULT_MISSING_STRATEGY`) to one of
@@ -348,13 +348,13 @@ def encode(
     *true row indices* instead of writing into a dense column, then
     builds one `scipy.sparse.csc_matrix` from all of them at once --
     memory proportional to the number of true entries, never to
-    `n_samples * n_features`. `BooleanDataRepresentation.__init__` and
+    `n_samples * n_features`. `HorizontalBitmapRepresentation.__init__` and
     `SparseDataRepresentation.__init__` already accept a `scipy.sparse`
     matrix directly; `NListRepresentation.__init__` now does too,
     reading rows from its CSR structure instead of `np.flatnonzero` on a
     dense row -- so whichever `representation` is requested, this
     sparse intermediate is the only matrix ever built. Choosing
-    `BooleanDataRepresentation` still ends up with a dense array
+    `HorizontalBitmapRepresentation` still ends up with a dense array
     eventually (that's its own storage), just built by its constructor
     from this sparse intermediate's `.toarray()`, not filled in here.
 
@@ -454,7 +454,7 @@ def read_arff(
     """Read an ARFF file (path or file-like object) into a
     `DataRepresentation` -- `representation` (default
     `default_representation()`, `NListRepresentation`, via `encode`; pass
-    `BooleanDataRepresentation` for the dense matrix instead).
+    `HorizontalBitmapRepresentation` for the dense matrix instead).
 
     If `dataspec` is given, the file's header is validated against it
     (see `validate_dataspec`) before encoding -- `strict=True`
@@ -520,7 +520,7 @@ def read_csv(
     """Read a CSV file (path or file-like object) into a
     `DataRepresentation` -- `representation` (default
     `default_representation()`, `NListRepresentation`, via `encode`; pass
-    `BooleanDataRepresentation` for the dense matrix instead). CSV carries no declared column types,
+    `HorizontalBitmapRepresentation` for the dense matrix instead). CSV carries no declared column types,
     so when `dataspec` is omitted, types are guessed heuristically
     (`_infer_csv_column_type`); pass an explicit `dataspec` whenever that
     guess isn't good enough. `missing_strategy`/`random_state` are

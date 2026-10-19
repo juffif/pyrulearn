@@ -93,7 +93,7 @@ import numpy as np
 
 from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, DecomposingLearner, NativeRuleLearner, produces
 from ..combiners import HeuristicVoteCombiner, _rule_stats
-from ..data import BooleanDataRepresentation, DataRepresentation, NListRepresentation
+from ..data import HorizontalBitmapRepresentation, DataRepresentation, NListRepresentation
 from ..heuristics import ChiSquare
 from ..models import (
     ConceptModel, DecisionList, FlatRuleSet, MajorityClass, PooledRuleSet, RuleView, SingleRule,

@@ -78,7 +78,7 @@ heuristic comparable across classes), not rework anything here.
 restrict which examples are in scope (a grow/prune split, "which
 examples are still uncovered") does so via a boolean `example_mask` over
 `data`'s rows, not by constructing a smaller
-`BooleanDataRepresentation`. This is already how `RuleStats.from_rule`
+`HorizontalBitmapRepresentation`. This is already how `RuleStats.from_rule`
 and `Rule.specialize` work; the pieces built here just thread that mask
 through rather than reintroducing a splitting approach.
 
@@ -115,7 +115,7 @@ from ..heuristics import (
 from .base import DecomposingLearner, NativeRuleLearner, produces
 from ..combiners import ListCombiner, MicroVoteCombiner
 from ..pruning import AnyOf, EncodingLengthRestriction, PrePruningCriterion, ThresholdPrePruning
-from ..data import BooleanDataRepresentation
+from ..data import HorizontalBitmapRepresentation
 from ..data.attributes import NumericGroup, ThresholdChain
 from ..rule import Literal, Rule
 
@@ -149,7 +149,7 @@ class RuleSearch(ABC):
     @abstractmethod
     def search(
         self,
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         heuristic: RuleHeuristic,
         initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
@@ -161,7 +161,7 @@ class RuleSearch(ABC):
 
     def search_all(
         self,
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         heuristic: RuleHeuristic,
         initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
@@ -261,7 +261,7 @@ def score_children(
     `refine_cover`+`cover_counts`.
 
     `chain_cover_counts` only exists on representations that define it
-    (currently `BooleanDataRepresentation`); on any other representation
+    (currently `HorizontalBitmapRepresentation`); on any other representation
     `getattr` finds nothing and every child falls back, so this is a
     pure opt-in fast path, not a new required primitive.
 
@@ -941,7 +941,7 @@ class BeamSearch(RuleSearch):
 
     def search(
         self,
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         heuristic: RuleHeuristic,
         initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
@@ -1280,7 +1280,7 @@ class HillClimbing(RuleSearch):
 
     def search(
         self,
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         heuristic: RuleHeuristic,
         initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
@@ -1383,7 +1383,7 @@ class HillClimbing(RuleSearch):
 
     def search_all(
         self,
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         heuristic: RuleHeuristic,
         initial_candidates: Sequence[Tuple[Rule, FrozenSet[int]]],
@@ -1797,7 +1797,7 @@ class SearchSpaceInit(ABC):
 
     @abstractmethod
     def initial_candidates(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Sequence[Tuple[Rule, FrozenSet[int]]]:
         raise NotImplementedError
@@ -1807,7 +1807,7 @@ class EmptyRuleAllFeatures(SearchSpaceInit):
     """Default: start from the empty (universal) rule, every feature open."""
 
     def initial_candidates(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Sequence[Tuple[Rule, FrozenSet[int]]]:
         ds = data.spec
@@ -1825,7 +1825,7 @@ class FeatureSubset(SearchSpaceInit):
         self.allowed_features = tuple(allowed_features)
 
     def initial_candidates(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Sequence[Tuple[Rule, FrozenSet[int]]]:
         ds = data.spec
@@ -1882,7 +1882,7 @@ class SeedExample(SearchSpaceInit):
         self.index = index
 
     def pick_seed(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> int:
         """The row this strategy seeds on: `index`, or the first / a
@@ -1903,7 +1903,7 @@ class SeedExample(SearchSpaceInit):
         return int(rng.choice(candidates))
 
     def initial_candidates(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Sequence[Tuple[Rule, FrozenSet[int]]]:
         ds = data.spec
@@ -1925,7 +1925,7 @@ class SingleRulePreparation(ABC):
 
     @abstractmethod
     def prepare(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Tuple[Optional[np.ndarray], Any]:
         raise NotImplementedError
@@ -1935,7 +1935,7 @@ class NoSplit(SingleRulePreparation):
     """Default: search on every in-scope example, no held-out set."""
 
     def prepare(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Tuple[Optional[np.ndarray], Any]:
         return example_mask, None
@@ -1966,7 +1966,7 @@ class GrowPruneSplit(SingleRulePreparation):
         self.random_state = random_state
 
     def prepare(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
     ) -> Tuple[Optional[np.ndarray], Any]:
         from sklearn.model_selection import train_test_split
@@ -2007,7 +2007,7 @@ class SingleRulePostProcessing(ABC):
 
     @abstractmethod
     def postprocess(
-        self, rule: Rule, data: BooleanDataRepresentation, target_class: Any, context: Any,
+        self, rule: Rule, data: HorizontalBitmapRepresentation, target_class: Any, context: Any,
     ) -> Rule:
         raise NotImplementedError
 
@@ -2016,7 +2016,7 @@ class NoPostProcessing(SingleRulePostProcessing):
     """Default: accept the rule as found, unchanged."""
 
     def postprocess(
-        self, rule: Rule, data: BooleanDataRepresentation, target_class: Any, context: Any,
+        self, rule: Rule, data: HorizontalBitmapRepresentation, target_class: Any, context: Any,
     ) -> Rule:
         return rule
 
@@ -2053,7 +2053,7 @@ class ReducedErrorPruning(SingleRulePostProcessing):
         self.heuristic = heuristic
 
     def postprocess(
-        self, rule: Rule, data: BooleanDataRepresentation, target_class: Any, context: Any,
+        self, rule: Rule, data: HorizontalBitmapRepresentation, target_class: Any, context: Any,
     ) -> Rule:
         if context is None:
             return rule
@@ -2114,7 +2114,7 @@ class SingleRuleLearner:
         self.stopping = stopping
 
     def learn_one_rule(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
         space_init: Optional[SearchSpaceInit] = None,
     ) -> Optional[Rule]:
@@ -2138,7 +2138,7 @@ class SingleRuleLearner:
         return self.postprocessing.postprocess(rule, data, target_class, context)
 
     def learn_rules(
-        self, data: BooleanDataRepresentation, target_class: Any,
+        self, data: HorizontalBitmapRepresentation, target_class: Any,
         example_mask: Optional[np.ndarray] = None,
         space_init: Optional[SearchSpaceInit] = None,
     ) -> List[Rule]:
@@ -2174,7 +2174,7 @@ class RuleSetOptimizer(ABC):
     def optimize(
         self,
         rules: List[Rule],
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         single_rule_learner: "SingleRuleLearner",
         example_mask: Optional[np.ndarray] = None,
@@ -2216,7 +2216,7 @@ def _exception_bits(n_covered: int, n_fp: int, n_uncovered: int, n_fn: int) -> f
     return subset(n_covered, n_fp) + subset(n_uncovered, n_fn)
 
 
-def _combined_cover(rules: Sequence[Rule], data: BooleanDataRepresentation) -> np.ndarray:
+def _combined_cover(rules: Sequence[Rule], data: HorizontalBitmapRepresentation) -> np.ndarray:
     covered = np.zeros(data.n_samples, dtype=bool)
     for r in rules:
         covered |= r.covers_data(data)
@@ -2225,7 +2225,7 @@ def _combined_cover(rules: Sequence[Rule], data: BooleanDataRepresentation) -> n
 
 def rule_set_description_length(
     rules: Sequence[Rule],
-    data: BooleanDataRepresentation,
+    data: HorizontalBitmapRepresentation,
     target_class: Any,
     example_mask: Optional[np.ndarray] = None,
 ) -> float:
@@ -2279,7 +2279,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
     def optimize(
         self,
         rules: List[Rule],
-        data: BooleanDataRepresentation,
+        data: HorizontalBitmapRepresentation,
         target_class: Any,
         single_rule_learner: "SingleRuleLearner",
         example_mask: Optional[np.ndarray] = None,
@@ -2311,7 +2311,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
         return rules
 
     def _grow_and_prune(
-        self, start: Optional[Rule], context: List[Rule], data: BooleanDataRepresentation,
+        self, start: Optional[Rule], context: List[Rule], data: HorizontalBitmapRepresentation,
         target_class: Any, srl: "SingleRuleLearner",
         grow_mask: Optional[np.ndarray], prune_mask: Optional[np.ndarray],
     ) -> Optional[Rule]:
@@ -2348,7 +2348,7 @@ class ReplaceReviseOptimization(RuleSetOptimizer):
         return best
 
     def _dl_prune(
-        self, rules: List[Rule], data: BooleanDataRepresentation, target_class: Any,
+        self, rules: List[Rule], data: HorizontalBitmapRepresentation, target_class: Any,
         scope: Optional[np.ndarray],
     ) -> List[Rule]:
         kept = list(rules)
@@ -2774,20 +2774,20 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         self.random_state = random_state
         self.covering = covering
 
-    def _default_model(self, data: BooleanDataRepresentation) -> type:
+    def _default_model(self, data: HorizontalBitmapRepresentation) -> type:
         """`fit(data)` with no `model=`: one concept (`target_class` set)
         or the family's multi-class default (`ConceptSet`; `DecisionList`
         for `AQR`)."""
         return ConceptModel if self.target_class is not None else self._MULTICLASS_DEFAULT
 
-    def _fit_binary(self, data: BooleanDataRepresentation, positive: Any,
+    def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         """The decomposition primitive: a `ConceptModel` for `positive`,
         with `negative` (a pair sub-problem) or `MajorityClass` (one-vs-
         rest) as the fallback."""
         return self._fit_covering(data, label=positive, fallback=negative)
 
-    def _seed_covering_fit(self, data: BooleanDataRepresentation) -> DecisionList:
+    def _seed_covering_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
         """`model=DecisionList`: one separate-and-conquer loop over *all*
         classes at once. Repeatedly pick a uniformly random still-uncovered
         example, take its own label as the rule head, learn the best rule
@@ -2832,7 +2832,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         model = DecisionList(rules, default_prediction=MajorityClass(data))
         return annotate_default_rule(model, data)
 
-    def _covering_loop(self, data: BooleanDataRepresentation, target: Any) -> List[Rule]:
+    def _covering_loop(self, data: HorizontalBitmapRepresentation, target: Any) -> List[Rule]:
         """The separate-and-conquer covering loop for one class `target`
         vs. the rest, plus `optimization` if set. Shared by the binary
         `_fit_default` path and `_fit_covering`.
@@ -2910,7 +2910,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
             )
         return rules
 
-    def _learn_rules(self, data: BooleanDataRepresentation, target: Any, remaining: np.ndarray,
+    def _learn_rules(self, data: HorizontalBitmapRepresentation, target: Any, remaining: np.ndarray,
                      space_init: Optional[SearchSpaceInit] = None) -> List[Rule]:
         """`single_rule_learner.learn_rules` -- or, for a single-rule
         learner of one's own with only `learn_one_rule`, its rule."""
@@ -2922,7 +2922,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         return [] if rule is None else [rule]
 
     @produces(ConceptModel)
-    def _fit_covering(self, data: BooleanDataRepresentation, *,
+    def _fit_covering(self, data: HorizontalBitmapRepresentation, *,
                       label: Any = None, fallback: Any = None) -> ConceptModel:
         """`fit(data, model=ConceptModel, label="a")`: the definition of
         one concept -- the binary covering loop for `label` (or
@@ -2938,7 +2938,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         return annotate_default_rule(ConceptModel(rules, label=target, default_prediction=default), data)
 
     @produces(SingleRule)
-    def _fit_one_rule(self, data: BooleanDataRepresentation, *, label: Any = None) -> SingleRule:
+    def _fit_one_rule(self, data: HorizontalBitmapRepresentation, *, label: Any = None) -> SingleRule:
         """`fit(data, model=SingleRule, label="a")`: just the single best
         rule the search finds for `label` -- one `learn_one_rule` call, no
         covering loop, no optimization."""
@@ -2956,14 +2956,14 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         return sr
 
     @produces(DecisionList)
-    def _fit_seed_covering(self, data: BooleanDataRepresentation, **kw) -> DecisionList:
+    def _fit_seed_covering(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
         """`fit(data, model=DecisionList)`: one AQ-style covering loop over
         all classes at once (`_seed_covering_fit`), rules in learn order,
         first match wins."""
         return self._seed_covering_fit(data)
 
     @produces(FlatRuleSet)
-    def _fit_seed_covering_set(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
+    def _fit_seed_covering_set(self, data: HorizontalBitmapRepresentation, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)`: the same rules as
         `model=DecisionList`, as a rule set resolved by learn order
         (`ListCombiner()`, so it predicts identically) -- e.g. to compare
@@ -3098,7 +3098,7 @@ class CN2(_ClassCountLaplace, SeCo):
         )
 
     @produces(ConceptSet)
-    def _fit_one_vs_rest(self, data: BooleanDataRepresentation, **kw) -> ConceptSet:
+    def _fit_one_vs_rest(self, data: HorizontalBitmapRepresentation, **kw) -> ConceptSet:
         """Clark & Boswell (1991)'s own unordered CN2 resolves a clash
         between rules of different classes covering the same row not by
         picking the single best-scoring rule (the family's generic
@@ -3511,11 +3511,11 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
             optimization=ReplaceReviseOptimization(self.k, self.prune_fraction, self.random_state),
         )
 
-    def _default_model(self, data: BooleanDataRepresentation) -> type:
+    def _default_model(self, data: HorizontalBitmapRepresentation) -> type:
         return ConceptModel if self.target_class is not None else ConceptCascade
 
     @produces(ConceptModel)
-    def _fit_concept(self, data: BooleanDataRepresentation, *,
+    def _fit_concept(self, data: HorizontalBitmapRepresentation, *,
                      label: Any = None, fallback: Any = None) -> ConceptModel:
         """`fit(data, model=ConceptModel, label="a")` -- binary Pypper
         for one class: the configured IREP* + optimization covering loop,
@@ -3524,13 +3524,13 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         return self._stage_learner()._fit_covering(data, label=target, fallback=fallback)
 
     @produces(SingleRule)
-    def _fit_one_rule(self, data: BooleanDataRepresentation, *, label: Any = None) -> SingleRule:
+    def _fit_one_rule(self, data: HorizontalBitmapRepresentation, *, label: Any = None) -> SingleRule:
         """`fit(data, model=SingleRule, label="a")` -- one grown-and-pruned
         rule for `label`, no covering loop and no optimization phase."""
         target = label if label is not None else self.target_class
         return self._stage_learner()._fit_one_rule(data, label=target)
 
-    def _fit_binary(self, data: BooleanDataRepresentation, positive: Any,
+    def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
 

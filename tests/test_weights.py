@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.data import (
-    BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+    HorizontalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
     VerticalBitmapRepresentation,
 )
 from pyrulearn.evaluation import RuleStats
@@ -20,7 +20,7 @@ from pyrulearn.rule import Rule
 
 from _negation_helpers import neg_spec, neg_X
 
-REPRESENTATIONS = [BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation,
+REPRESENTATIONS = [HorizontalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation,
                    SparseDataRepresentation, VerticalBitmapRepresentation]
 
 
@@ -88,7 +88,7 @@ def test_with_weights_shares_storage_and_weights_survive_row_operations():
     assert weighted._perm is nlist._perm and nlist.weights is None
     np.testing.assert_array_equal(weighted.weights, w)
     assert weighted.with_weights(None).weights is None
-    boolean = BooleanDataRepresentation(spec, X, y, weights=w)
+    boolean = HorizontalBitmapRepresentation(spec, X, y, weights=w)
     rows = np.arange(len(y)) < 100
     np.testing.assert_array_equal(boolean.select_rows(rows).weights, w[rows])
     np.testing.assert_array_equal(boolean.relabel(np.where(y == "pos", "a", "b")).weights, w)
@@ -100,9 +100,9 @@ def test_with_weights_shares_storage_and_weights_survive_row_operations():
 def test_invalid_weights_are_rejected():
     spec, X, y = _data()
     with pytest.raises(ValueError, match="shape"):
-        BooleanDataRepresentation(spec, X, y, weights=np.ones(3))
+        HorizontalBitmapRepresentation(spec, X, y, weights=np.ones(3))
     with pytest.raises(ValueError, match="non-negative"):
-        BooleanDataRepresentation(spec, X, y, weights=-np.ones(len(y)))
+        HorizontalBitmapRepresentation(spec, X, y, weights=-np.ones(len(y)))
 
 
 # ------------------------------------------------------------ stats
@@ -110,10 +110,10 @@ def test_invalid_weights_are_rejected():
 def test_rule_stats_and_printed_stats_are_weighted():
     spec, X, y = _data()
     w = np.full(len(y), 0.5)
-    data = BooleanDataRepresentation(spec, X, y, weights=w)
+    data = HorizontalBitmapRepresentation(spec, X, y, weights=w)
     rule = Rule([0, 2], target="pos", dataspec=spec)
     st = RuleStats.from_rule(rule, data)
-    plain = RuleStats.from_rule(rule, BooleanDataRepresentation(spec, X, y))
+    plain = RuleStats.from_rule(rule, HorizontalBitmapRepresentation(spec, X, y))
     assert (st.tp, st.fp, st.fn, st.tn) == pytest.approx((plain.tp / 2, plain.fp / 2, plain.fn / 2, plain.tn / 2))
     model = CN2(target_class="pos").fit(data)
     stats = model.rules[0].stats().confusion.rule_stats("pos")
@@ -128,8 +128,8 @@ def test_rule_stats_and_printed_stats_are_weighted():
 def test_cn2_on_integer_weights_learns_the_rules_of_duplicated_rows():
     spec, X, y = _data()
     w = np.random.default_rng(3).integers(1, 4, len(y))
-    a = CN2(target_class="pos").fit(BooleanDataRepresentation(spec, X, y, weights=w))
-    b = CN2(target_class="pos").fit(BooleanDataRepresentation(spec, np.repeat(X, w, axis=0), np.repeat(y, w)))
+    a = CN2(target_class="pos").fit(HorizontalBitmapRepresentation(spec, X, y, weights=w))
+    b = CN2(target_class="pos").fit(HorizontalBitmapRepresentation(spec, np.repeat(X, w, axis=0), np.repeat(y, w)))
     assert _rules_text(a) == _rules_text(b)
 
 
@@ -137,8 +137,8 @@ def test_description_length_with_integer_weights_equals_duplicated_rows():
     spec, X, y = _data()
     w = np.random.default_rng(4).integers(1, 4, len(y))
     rules = [Rule([0, 2], target="pos", dataspec=spec), Rule([4, 6], target="pos", dataspec=spec)]
-    a = rule_set_description_length(rules, BooleanDataRepresentation(spec, X, y, weights=w), "pos")
-    b = rule_set_description_length(rules, BooleanDataRepresentation(spec, np.repeat(X, w, axis=0),
+    a = rule_set_description_length(rules, HorizontalBitmapRepresentation(spec, X, y, weights=w), "pos")
+    b = rule_set_description_length(rules, HorizontalBitmapRepresentation(spec, np.repeat(X, w, axis=0),
                                                                      np.repeat(y, w)), "pos")
     assert a == pytest.approx(b)
 
@@ -219,12 +219,12 @@ def test_seco_refuses_a_reweighting_that_fits_rule_weights():
     spec, X, y = _data()
     with pytest.raises(ValueError, match="rule weights"):
         CN2(target_class="pos", covering=WeightedCovering(AdaBoostReweighting(), Rounds(3))).fit(
-            BooleanDataRepresentation(spec, X, y))
+            HorizontalBitmapRepresentation(spec, X, y))
 
 
 def test_a_rule_found_again_counts_as_a_round_but_appears_once():
     spec, X, y = _data()
-    data = BooleanDataRepresentation(spec, X, y)
+    data = HorizontalBitmapRepresentation(spec, X, y)
     # a gentle decay keeps the strongest rule best for several rounds
     model = CN2(target_class="pos", heuristic=WRAcc(),
                 covering=WeightedCovering(MultiplicativeReweighting(0.9), Rounds(8))).fit(data)
@@ -236,7 +236,7 @@ def test_a_rule_found_again_counts_as_a_round_but_appears_once():
 def test_weighted_covering_is_the_same_on_every_representation(cls):
     spec, X, y = _data()
     w = np.random.default_rng(5).random(len(y)) + 0.5
-    ref = CN2(target_class="pos", covering=WeightedCovering()).fit(BooleanDataRepresentation(spec, X, y, weights=w))
+    ref = CN2(target_class="pos", covering=WeightedCovering()).fit(HorizontalBitmapRepresentation(spec, X, y, weights=w))
     got = CN2(target_class="pos", covering=WeightedCovering()).fit(cls(spec, X, y, weights=w))
     assert _rules_text(got) == _rules_text(ref)
 
@@ -245,14 +245,14 @@ def test_cn2_sd_recovers_the_target_concept():
     # WRAcc + weighted covering (CN2-SD): the two conjunctions of the target
     spec, X, y = _data()
     model = CN2(target_class="pos", heuristic=WRAcc(), covering=WeightedCovering()).fit(
-        BooleanDataRepresentation(spec, X, y))
+        HorizontalBitmapRepresentation(spec, X, y))
     bodies = {tuple(sorted(l.feature for l in r.conditions)) for r in model.rules}
     assert bodies == {(0, 2), (4, 6)}                             # f0 & f1, f2 & f3 (negations interleave)
 
 
 def test_weighted_covering_lets_rules_overlap_and_never_repeats_one():
     spec, X, y = _data()
-    data = BooleanDataRepresentation(spec, X, y)
+    data = HorizontalBitmapRepresentation(spec, X, y)
     removal = CN2(target_class="pos").fit(data)
     weighted = CN2(target_class="pos", covering=WeightedCovering()).fit(data)
     assert len(set(_rules_text(weighted))) == len(weighted.rules)
@@ -265,4 +265,4 @@ def test_weighted_covering_lets_rules_overlap_and_never_repeats_one():
 def test_seed_covering_decision_list_refuses_weighted_covering():
     spec, X, y = _data()
     with pytest.raises(ValueError, match="RemovalCovering"):
-        AQR(covering=WeightedCovering()).fit(BooleanDataRepresentation(spec, X, y), model=DecisionList)
+        AQR(covering=WeightedCovering()).fit(HorizontalBitmapRepresentation(spec, X, y), model=DecisionList)

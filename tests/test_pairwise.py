@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.models import AccuracyWeightedVote, WeightedVote
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.data import DataSpec
 from pyrulearn.models import (
     AccuracyWeightedVote, CompositeModel, FlatRuleSet, MajorityVote, PairwiseCombiner,
@@ -67,7 +67,7 @@ def test_resolve_combiner_takes_objects_only():
 def _toy():
     ds = DataSpec(["p", "q"])
     X = np.array([[1, 0], [0, 1], [1, 1], [0, 0]], dtype=bool)
-    data = BooleanDataRepresentation(ds, X, np.array(["a", "b", "c", "a"], dtype=object))
+    data = HorizontalBitmapRepresentation(ds, X, np.array(["a", "b", "c", "a"], dtype=object))
     ab = FlatRuleSet([Rule([0], target="a", dataspec=ds)], default_prediction="b")
     ac = FlatRuleSet([Rule([0], target="a", dataspec=ds)], default_prediction="c")
     bc = FlatRuleSet([Rule([1], target="b", dataspec=ds)], default_prediction="c")
@@ -97,7 +97,7 @@ def test_predict_is_a_pairwise_vote():
 def test_weighted_vote_reads_the_deciding_rules_weight():
     ds = DataSpec(["p", "q"])
     X = np.array([[1, 0], [0, 1], [1, 1], [0, 0]], dtype=bool)
-    data = BooleanDataRepresentation(ds, X, np.array(["a", "b", "c", "a"], dtype=object))
+    data = HorizontalBitmapRepresentation(ds, X, np.array(["a", "b", "c", "a"], dtype=object))
     ab = FlatRuleSet([WeightedRule([0], target="a", dataspec=ds, weight=0.95)], default_prediction="b")
     ac = FlatRuleSet([WeightedRule([0], target="a", dataspec=ds, weight=0.55)], default_prediction="c")
     bc = FlatRuleSet([WeightedRule([1], target="b", dataspec=ds, weight=0.90)], default_prediction="c")
@@ -136,7 +136,7 @@ def test_filter_and_remap_recurse_into_members():
     remapped = m.remap(ds2)
     assert type(remapped) is PairwiseModel
     assert np.array_equal(np.asarray(remapped.predict(
-        BooleanDataRepresentation(ds2, np.array([[1, 0, 0], [0, 1, 1]], dtype=bool), None))),
+        HorizontalBitmapRepresentation(ds2, np.array([[1, 0, 0], [0, 1, 1]], dtype=bool), None))),
         np.array(["a", "b"], dtype=object))
 
 

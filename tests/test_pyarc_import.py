@@ -8,7 +8,7 @@ pytest.importorskip("pyarc")
 from pyarc import CBA as PyarcRawCBA
 from pyarc.data_structures import TransactionDB
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpec
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.interfaces.pyarc import PArcCBA, PyarcCBAImporter
 from pyrulearn.learners.associative import CBA
 from pyrulearn.models import DecisionList
@@ -18,7 +18,7 @@ from _negation_helpers import neg_spec, neg_X
 
 def _rep(X, y):
     X = np.asarray(X, dtype=bool)
-    return BooleanDataRepresentation(DataSpec([f"f{i}" for i in range(X.shape[1])]), X, np.asarray(y))
+    return HorizontalBitmapRepresentation(DataSpec([f"f{i}" for i in range(X.shape[1])]), X, np.asarray(y))
 
 
 def _hand_worked():
@@ -73,7 +73,7 @@ def test_pyarc_cba_agrees_with_the_native_cba_on_a_multiclass_problem_with_negat
     rng = np.random.default_rng(1)
     raw = rng.integers(0, 2, size=(240, 5)).astype(bool)
     y = np.where(raw[:, 0] & ~raw[:, 1], "x", np.where(raw[:, 2] & raw[:, 3], "y", "z"))
-    data = BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
 
     external = PArcCBA(min_support=0.05, min_confidence=0.5, max_len=3).fit(data)
     native = CBA(min_support=0.05, min_confidence=0.5, max_len=3).fit(data)
@@ -88,7 +88,7 @@ def test_max_len_means_the_rule_body_length_not_pyarcs_class_inclusive_maxlen():
     rng = np.random.default_rng(2)
     raw = rng.integers(0, 2, size=(240, 5)).astype(bool)
     y = np.where(raw[:, 0] & ~raw[:, 1], "x", np.where(raw[:, 2] & raw[:, 3], "y", "z"))
-    data = BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec(list("abcde")), neg_X(raw), y)
     for L in (1, 2):
         model = PArcCBA(min_support=0.02, max_len=L).fit(data)
         assert max(len(r.conditions) for r in model.rules) <= L

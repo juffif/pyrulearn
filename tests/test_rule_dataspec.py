@@ -1,6 +1,6 @@
 import numpy as np
 from pyrulearn.data import DataSpec, DataSpecBuilder
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.rule import Rule, Literal
 
 
@@ -16,7 +16,7 @@ def test_coverage_matches_brute_force():
     n, d = 500, 10
     X = rng.integers(0, 2, size=(n, d)).astype(bool)
     ds = DataSpec([f"f{i}" for i in range(d)])
-    rep = BooleanDataRepresentation(ds, X)
+    rep = HorizontalBitmapRepresentation(ds, X)
     for _ in range(20):
         k = int(rng.integers(0, 4))
         feats = [int(i) for i in rng.choice(d, size=k, replace=False)]
@@ -168,13 +168,13 @@ def test_default_fmt_configuration():
 def test_boolean_representation_and_dedup():
     ds = DataSpec(["a", "b", "c"])
     X = np.array([[1, 0, 1], [0, 0, 1], [1, 1, 0]], dtype=bool)
-    rep = BooleanDataRepresentation(ds, X, y=np.array(["x", "y", "x"]))
+    rep = HorizontalBitmapRepresentation(ds, X, y=np.array(["x", "y", "x"]))
     assert rep.spec is ds and rep.n_samples == 3
 
     # duplicate condition on the same feature collapses silently, first position kept
     r = Rule([Literal(0), Literal(1), Literal(0)], dataspec=ds)
     assert r.conditions == (Literal(0), Literal(1))
-    print("BooleanDataRepresentation + dedup: OK")
+    print("HorizontalBitmapRepresentation + dedup: OK")
 
 
 def test_rule_remap_by_feature_name():

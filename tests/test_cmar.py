@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.combiners import HeuristicVoteCombiner
-from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec, NListRepresentation
 from pyrulearn.heuristics import ChiSquare
 from pyrulearn.learners.associative import CMAR
 from pyrulearn.models import ConceptCascade, ConceptSet, ConceptModel, FlatRuleSet, PairwiseModel
@@ -13,7 +13,7 @@ from _negation_helpers import neg_spec, neg_X
 def _rep(X, y, names=None):
     X = np.asarray(X, dtype=bool)
     ds = DataSpec(names or [f"f{i}" for i in range(X.shape[1])])
-    return BooleanDataRepresentation(ds, X, np.asarray(y))
+    return HorizontalBitmapRepresentation(ds, X, np.asarray(y))
 
 
 def test_cmar_drops_an_insignificant_car_that_would_pass_cbas_confidence_bar():
@@ -69,7 +69,7 @@ def _separable_multiclass(n=200, seed=0):
     y = np.where(raw[:, 0] & ~raw[:, 1], "x",
          np.where(raw[:, 2] & raw[:, 3], "y", "z"))
     ds = neg_spec(list("abcde"))
-    return BooleanDataRepresentation(ds, neg_X(raw), y), raw, y
+    return HorizontalBitmapRepresentation(ds, neg_X(raw), y), raw, y
 
 
 def test_cmar_fit_uses_a_heuristic_vote_combiner_weighted_by_chi_square():
@@ -104,7 +104,7 @@ def test_cmar_auto_converts_a_boolean_representation_transparently():
     assert not isinstance(rep, NListRepresentation)
     model = CMAR(min_support=0.05, min_confidence=0.5, max_len=2).fit(rep)
     assert isinstance(model, FlatRuleSet)
-    print("CMAR.fit auto-converts a plain BooleanDataRepresentation without the caller doing it: OK")
+    print("CMAR.fit auto-converts a plain HorizontalBitmapRepresentation without the caller doing it: OK")
 
 
 def test_cmar_raises_a_clear_error_past_the_auto_convert_threshold():
@@ -157,7 +157,7 @@ def test_cmar_random_forest_rules_round_trip():
 
     rep, raw, y = _separable_multiclass(n=200)
     ds = neg_spec(list("abcde"))
-    data = BooleanDataRepresentation(ds, neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
     rf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(neg_X(raw), y)
     forest_rules = from_random_forest(rf, dataspec=ds)

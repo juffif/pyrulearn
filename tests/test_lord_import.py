@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pytest
 
-from pyrulearn import BooleanDataRepresentation, Rule
+from pyrulearn import HorizontalBitmapRepresentation, Rule
 from pyrulearn.data import DataSpecBuilder
 from pyrulearn.heuristics import RuleStats
 from pyrulearn.interfaces.lord import JavaLord, LORDImporter, _parse_rules, run_lord
@@ -121,7 +121,7 @@ def test_end_to_end_predict_is_best_rule_wins():
     X[:, 0::2] = raw
     X[:, 1::2] = ~raw
     y = np.array(["pos", "pos", "pos", "neg", "pos"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     rules = LORDImporter(dataspec=ds).parse(EG_OUTPUT, data=rep)  # data= -> real measured stats
     rules.default_prediction = "pos"  # majority, set by caller
@@ -163,7 +163,7 @@ def test_lordjar_fits_end_to_end():
     raw = rng.integers(0, 2, size=(200, 4)).astype(bool)
     y = np.where(raw[:, 0] & ~raw[:, 1], "pos", "neg")
     ds = neg_spec([f"x{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(raw), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
     model = JavaLord(timeout=120).fit(rep)
     assert type(model) is FlatRuleSet and model.default_prediction is not None
@@ -184,7 +184,7 @@ def test_run_lord_end_to_end():
     rows = [list(raw[i]) + [y[i]] for i in range(200)]
 
     text = run_lord(rows, header, metric="mestimate", metric_arg=0.1, timeout=120)
-    rep = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw.astype(bool)), y)
+    rep = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw.astype(bool)), y)
     rules = LORDImporter(dataspec=neg_spec([f"f{i}" for i in range(4)])).parse(text, data=rep)
     assert len(rules.rules) > 0
     rules.default_prediction = "neg"

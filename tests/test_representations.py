@@ -1,6 +1,6 @@
 """`NListRepresentation`, `PrePostNListRepresentation` and
 `SparseDataRepresentation` must all be drop-ins for
-`BooleanDataRepresentation`: identical `coverage`, identical seed
+`HorizontalBitmapRepresentation`: identical `coverage`, identical seed
 features, identical rules from every `pyrulearn.learners.seco` learner -- plus
 the `with_negations` / `without_negations` toggle on all four."""
 
@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from pyrulearn import (
-    BooleanDataRepresentation,
+    HorizontalBitmapRepresentation,
     DataSpec,
     NListRepresentation,
     PrePostNListRepresentation,
@@ -28,7 +28,7 @@ from _negation_helpers import neg_spec, neg_X
 
 ALT_REPS = [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
             VerticalBitmapRepresentation]
-ALL_REPS = [BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+ALL_REPS = [HorizontalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
             VerticalBitmapRepresentation]
 
 
@@ -46,9 +46,9 @@ def _dataset(n=400, k=14, seed=0, negation=False):
     y = np.where(concept ^ (rng.random(n) < 0.05), "pos", "neg")
     if negation:
         ds = neg_spec([f"a{i}" for i in range(k)])
-        return BooleanDataRepresentation(ds, neg_X(base), y), ds
+        return HorizontalBitmapRepresentation(ds, neg_X(base), y), ds
     ds = DataSpec([f"f{i}" for i in range(k)])
-    return BooleanDataRepresentation(ds, base, y), ds
+    return HorizontalBitmapRepresentation(ds, base, y), ds
 
 
 def _random_rules(ds, rng, n_rules=300, max_len=5):
@@ -162,7 +162,7 @@ def test_seco_learners_identical_on_wide_data():
     concept = (X[:, 0] & ~X[:, 1]) | (X[:, 2] & X[:, 3])
     y = np.where(concept ^ (rng.random(n) < 0.05), "pos", "neg")
     ds = DataSpec([f"f{i}" for i in range(k)])
-    brep = BooleanDataRepresentation(ds, X, y)
+    brep = HorizontalBitmapRepresentation(ds, X, y)
     nrep = NListRepresentation.from_boolean(brep)
     pprep = PrePostNListRepresentation.from_boolean(brep)
     for make in (
@@ -213,7 +213,7 @@ def test_ruleclassifier_coverage_methods_match_boolean(rep_cls):
 @pytest.mark.parametrize("rep_cls", ALL_REPS)
 def test_select_rows_subsets_and_stays_the_same_type(rep_cls):
     brep, ds = _dataset(n=300, k=12, seed=13)
-    rep = rep_cls.from_boolean(brep) if rep_cls is not BooleanDataRepresentation else brep
+    rep = rep_cls.from_boolean(brep) if rep_cls is not HorizontalBitmapRepresentation else brep
     mask = brep.y == "pos"
 
     sub = rep.select_rows(mask)
@@ -354,7 +354,7 @@ def test_incremental_cover_matches_rulestats(rep_cls, use_mask):
     BeamSearch/HillClimbing fast path -- must agree with the ordinary
     RuleStats.from_rule/coverage path exactly, feature-by-feature."""
     brep, ds = _dataset(n=400, k=12, seed=13)
-    rep = brep if rep_cls is BooleanDataRepresentation else rep_cls.from_boolean(brep)
+    rep = brep if rep_cls is HorizontalBitmapRepresentation else rep_cls.from_boolean(brep)
     rng = np.random.default_rng(5)
     mask = (rng.random(400) < 0.6) if use_mask else None
     for rule in _random_rules(ds, rng, n_rules=200, max_len=5):
@@ -384,7 +384,7 @@ def test_nlist_incremental_cover_on_wide_varied_frequency_data(rep_cls):
     X = rng.random((n, k)) < rng.uniform(0.02, 0.5, size=k)  # wide range of frequencies
     y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
     ds = DataSpec([f"f{i}" for i in range(k)])
-    brep = BooleanDataRepresentation(ds, X, y)
+    brep = HorizontalBitmapRepresentation(ds, X, y)
     rep = rep_cls.from_boolean(brep)
 
     branch_counts = {"bitmask": 0, "interval": 0}
@@ -451,8 +451,8 @@ def test_without_then_with_negations_round_trips(rep_cls):
     rng = np.random.default_rng(3)
     base = rng.random((300, 5)) < 0.4
     y = np.where(base[:, 0] & ~base[:, 1], "pos", "neg")
-    bneg = BooleanDataRepresentation(neg_spec(names), neg_X(base), y)
-    rep = bneg if rep_cls is BooleanDataRepresentation else rep_cls.from_boolean(bneg)
+    bneg = HorizontalBitmapRepresentation(neg_spec(names), neg_X(base), y)
+    rep = bneg if rep_cls is HorizontalBitmapRepresentation else rep_cls.from_boolean(bneg)
 
     pos = rep.without_negations()
     assert type(pos) is rep_cls
@@ -486,8 +486,8 @@ def test_negation_toggle_gives_every_learner_the_same_rules_as_a_native_build():
     base = rng.random((360, 6)) < 0.4
     y = np.where(base[:, 0] & ~base[:, 1] | base[:, 2], "pos", "neg")
 
-    native_pos = BooleanDataRepresentation(_pos_spec(names), base, y)
-    toggled_pos = BooleanDataRepresentation(neg_spec(names), neg_X(base), y).without_negations()
+    native_pos = HorizontalBitmapRepresentation(_pos_spec(names), base, y)
+    toggled_pos = HorizontalBitmapRepresentation(neg_spec(names), neg_X(base), y).without_negations()
 
     for make in (lambda: CN2(target_class="pos"), lambda: PFoil(target_class="pos")):
         a = {(r.pos, r.target) for r in make().fit(native_pos).rules}
@@ -504,7 +504,7 @@ def test_preference_order_and_default_representation(monkeypatch):
     from pyrulearn.learners import base
 
     assert representation.REPRESENTATION_PREFERENCE_ORDER == (
-        NListRepresentation, PrePostNListRepresentation, BooleanDataRepresentation, SparseDataRepresentation)
+        NListRepresentation, PrePostNListRepresentation, HorizontalBitmapRepresentation, SparseDataRepresentation)
     assert representation.default_representation() is NListRepresentation
     assert base.REPRESENTATION_PREFERENCE_ORDER is representation.REPRESENTATION_PREFERENCE_ORDER
     ds = DataSpec(["f0", "f1"])
@@ -512,9 +512,9 @@ def test_preference_order_and_default_representation(monkeypatch):
     assert isinstance(encode(ds, df), NListRepresentation)
     # read when called: reordering the module attribute changes the library-wide default
     monkeypatch.setattr(representation, "REPRESENTATION_PREFERENCE_ORDER",
-                        (BooleanDataRepresentation, NListRepresentation))
-    assert representation.default_representation() is BooleanDataRepresentation
-    assert type(encode(ds, df)) is BooleanDataRepresentation
+                        (HorizontalBitmapRepresentation, NListRepresentation))
+    assert representation.default_representation() is HorizontalBitmapRepresentation
+    assert type(encode(ds, df)) is HorizontalBitmapRepresentation
 
 
 @pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
@@ -524,7 +524,7 @@ def test_external_learner_converts_any_representation(rep_cls):
     brep, _ = _dataset(n=300, k=10, seed=3, negation=True)
     other = rep_cls.from_boolean(brep)
     learner = SKLDecisionTree(max_depth=3, random_state=0)
-    assert learner.ensure_representation(other, None, announce=False).__class__ is BooleanDataRepresentation
+    assert learner.ensure_representation(other, None, announce=False).__class__ is HorizontalBitmapRepresentation
     mb, mo = SKLDecisionTree(max_depth=3, random_state=0).fit(brep), learner.fit(other)
     assert str(mb) == str(mo)
     assert np.array_equal(np.asarray(mb.predict(brep)), np.asarray(mo.predict(other)))
@@ -538,7 +538,7 @@ def test_to_csr_is_the_matrix_without_caching_it(n, chunk_cells):
     # N-list representations relies on
     rng = np.random.default_rng(n)
     X = rng.random((n, 19)) < 0.3
-    brep = BooleanDataRepresentation(DataSpec([f"f{i}" for i in range(19)]), X, np.array(["a"] * n))
+    brep = HorizontalBitmapRepresentation(DataSpec([f"f{i}" for i in range(19)]), X, np.array(["a"] * n))
     csr = brep.to_csr(chunk_cells=chunk_cells)
     assert csr.shape == (n, 19) and csr.dtype == bool
     assert csr.indices.dtype == np.int32 and csr.indptr.dtype == np.int32
@@ -547,3 +547,16 @@ def test_to_csr_is_the_matrix_without_caching_it(n, chunk_cells):
     for rep_cls in ALT_REPS:
         rep_cls.from_boolean(brep)
         assert "X" not in vars(brep)
+
+
+def test_boolean_data_representation_is_a_deprecated_alias():
+    import importlib
+    import warnings
+
+    for module in ("pyrulearn", "pyrulearn.data", "pyrulearn.data.representation"):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            assert importlib.import_module(module).BooleanDataRepresentation is HorizontalBitmapRepresentation
+        assert len(caught) == 1 and issubclass(caught[0].category, DeprecationWarning)
+    with pytest.raises(AttributeError):
+        importlib.import_module("pyrulearn.data").NoSuchRepresentation

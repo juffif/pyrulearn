@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data.io import binarize
 from pyrulearn.interfaces.weka import JRipImporter
@@ -119,7 +119,7 @@ def test_end_to_end_predict_matches_weka_exactly():
     # add_numeric(le_thresholds=...) feature, binarized straight from the
     # raw "income" column like any other numeric threshold
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+    rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
     preds = np.asarray(rules.predict(rep))
 
     expected = np.where(
@@ -179,7 +179,7 @@ def test_numeric_operators_all_four_forms_and_multiclass():
 
     df = pd.DataFrame({"age": [20, 40, 20, 40], "score": [8.0, 2.0, 2.0, 8.0]})
     X = binarize(ds, df)  # both families derive directly from raw age/score columns
-    rep = BooleanDataRepresentation(ds, X, np.array(["?"] * 4))
+    rep = HorizontalBitmapRepresentation(ds, X, np.array(["?"] * 4))
     preds = list(rules.predict(rep))
     assert preds == ["young", "old", "mid", "mid"]
     print("All four numeric operator forms and multi-class targets work correctly: OK")
@@ -244,7 +244,7 @@ def test_inequality_on_a_value_list_seen_only_in_the_rules_still_covers_unseen_v
     importer = JRipImporter()
     model = importer.parse(JRIP_INEQUALITY_RULES)
     ds = importer.dataspec
-    rep = BooleanDataRepresentation(ds, binarize(ds, pd.DataFrame({"color": ["red", "green"]})),
+    rep = HorizontalBitmapRepresentation(ds, binarize(ds, pd.DataFrame({"color": ["red", "green"]})),
                                     np.array(["pos", "neg"]))
     assert list(model.predict(rep)) == ["pos", "neg"]
 

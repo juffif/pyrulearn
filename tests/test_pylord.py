@@ -2,7 +2,7 @@ from pyrulearn.combiners import HeuristicMaxCombiner
 import numpy as np
 import pytest
 
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import FlatRuleSet as RuleSet, SingleRule
 from pyrulearn.heuristics import Laplace, MEstimate, RuleStats
 from pyrulearn.learners.pylord import PyLORD
@@ -20,7 +20,7 @@ def _noisy_multiclass(n=240, seed=0):
     noise = rng.random(n) < 0.05
     y = np.where(noise, rng.permutation(clean), clean)
     ds = neg_spec(list("abcde"))
-    return BooleanDataRepresentation(ds, neg_X(raw), y), ds, y
+    return HorizontalBitmapRepresentation(ds, neg_X(raw), y), ds, y
 
 
 def test_pylord_has_no_single_rule_producer():
@@ -141,7 +141,7 @@ def test_coverage_filter_drops_a_dominated_rule():
     ], dtype=bool)
     y = np.array(["p", "p", "p", "n", "n", "n"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     rules = PyLORD(m=0.5, prune=False, random_state=0).fit(rep)
     got = {(frozenset(l.feature for l in r.conditions), r.target) for r in rules.rules}
     assert (frozenset({0, 1}), "p") in got          # "a & b -> p", pure, covers 3 p-rows
@@ -169,7 +169,7 @@ def test_all_zero_row_is_skipped_not_crashed():
     X = np.array([[0, 0], [1, 1], [1, 0], [0, 1]], dtype=bool)  # row 0 all-zero
     y = np.array(["p", "p", "n", "n"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     rules = PyLORD(m=0.5, prune=False, random_state=0).fit(rep)  # must not raise
     assert isinstance(rules, RuleSet)
     print("PyLORD skips an all-zero feature row (nothing to seed on) without crashing: OK")

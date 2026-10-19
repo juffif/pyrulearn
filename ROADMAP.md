@@ -7,7 +7,7 @@ plan in [`examples/REVISION_PLAN.md`](examples/REVISION_PLAN.md).
 
 ## Count a numeric attribute's thresholds together
 
-**Done for `BooleanDataRepresentation` (2026-10-07); still open for the
+**Done for `HorizontalBitmapRepresentation` (2026-10-07); still open for the
 other representations.** The rule searches (`BeamSearch`, `HillClimbing`,
 and `GainAscentHillClimbing`, which shares `HillClimbing`'s loop) used to
 score a candidate condition by counting the covered positives and
@@ -16,7 +16,7 @@ negatives separately for every candidate -- one `refine_cover` +
 
 A numeric attribute's thresholds form a chain: `x >= t_k` covers exactly
 the examples in intervals `k` and above, `x < t_k` those below (reversed,
-the same shape). `BooleanDataRepresentation.chain_cover_counts` (approach
+the same shape). `HorizontalBitmapRepresentation.chain_cover_counts` (approach
 2 of the two once sketched here) counts a whole open run of one
 attribute's chain in a single pass -- per-row count of satisfied
 thresholds, histogrammed by class and summed from the top down -- instead
@@ -82,7 +82,7 @@ needle: it sped up the 2%.
 
 Now `count_open_children` gives `(tp, fp, fn, tn)` for every open
 feature without building anything (one `batch_cover_counts` matmul on
-`BooleanDataRepresentation`, one `refine_cover` + `cover_counts` per
+`HorizontalBitmapRepresentation`, one `refine_cover` + `cover_counts` per
 feature on any other representation), the search scores and sorts from
 those counts, and `materialize_child` builds -- closure, mask, handle --
 only the child(ren) it actually follows, skipping one that turns out
@@ -185,7 +185,7 @@ the gain follows the number of open features per node. AQR unchanged
 **Done (2026-10-09).** `ENDER` (and `Boomer`) grow a rule the way the
 lazy searches do: walk a cover handle, sum every open condition's
 impurity terms with one `DataRepresentation.batch_cover_sums` call per
-step (generic: one refinement per condition; `BooleanDataRepresentation`:
+step (generic: one refinement per condition; `HorizontalBitmapRepresentation`:
 one matrix product over the covered rows with a nonzero term), and build
 only the condition added, with constraint propagation. The impurity
 criterion is a component (`ImpurityCriterion`: `ConstantStep`,
@@ -501,11 +501,11 @@ purpose=...)` to convert anything else, bounded by
 rebuild). Ties, when a learner's native set names more than one
 representation and the data given matches none of them, break toward
 `REPRESENTATION_PREFERENCE_ORDER` (`NListRepresentation` first, then
-`BooleanDataRepresentation`, then `SparseDataRepresentation`) -- so
+`HorizontalBitmapRepresentation`, then `SparseDataRepresentation`) -- so
 absent a more specific reason, N-list is this library's default
 conversion target, the same preference item 1 below gives data
 *preparation*. `ENDER`/`Boomer` (`NATIVE_REPRESENTATIONS =
-(BooleanDataRepresentation,)`) and `pyrulearn.learners.associative.CARMiner`
+(HorizontalBitmapRepresentation,)`) and `pyrulearn.learners.associative.CARMiner`
 (`(NListRepresentation,)`, converting in the *opposite* direction, for
 mining's speed rather than `_grow`'s correctness) are the two current
 users; `CARMiner`'s own `ensure_nlist` (which used to accept any other
@@ -530,7 +530,7 @@ the work below is worth doing for them too):
    n_features)` array `binarize` always does, even transiently;
    `NListRepresentation.__init__` now also accepts a `scipy.sparse`
    matrix directly (reading rows from its CSR structure instead of
-   `np.flatnonzero` on a dense row -- `BooleanDataRepresentation`/
+   `np.flatnonzero` on a dense row -- `HorizontalBitmapRepresentation`/
    `SparseDataRepresentation` already did). **Done (2026-10-10)**:
    `REPRESENTATION_PREFERENCE_ORDER` moved to `pyrulearn.data.representation`
    (re-exported from `learners.base`), now with `PrePostNListRepresentation`
@@ -546,7 +546,7 @@ the work below is worth doing for them too):
    `NATIVE_REPRESENTATIONS`/`ensure_representation` moved up from
    `NativeRuleLearner` to `RuleLearner`, `max_auto_convert_cells=None`
    meaning unbounded; `ExternalRuleLearner` declares
-   `(BooleanDataRepresentation,)` and converts in `fit`, unbounded and
+   `(HorizontalBitmapRepresentation,)` and converts in `fit`, unbounded and
    silent (the tool needs the dense matrix either way) -- so every
    learner, external ones included, accepts every representation, and
    the demos need no `representation=` of their own. Checked with the
@@ -554,7 +554,7 @@ the work below is worth doing for them too):
    `OptimalRuleBoosting` read `data.X` directly, which every
    representation provides -- built on demand for N-lists and sparse data
    -- so they ran on any representation too; they are `DenseLRI` and
-   `DenseORB` now, next to the representation-generic `LRI` and `ORB`.) The tutorial notebook asks for `BooleanDataRepresentation`
+   `DenseORB` now, next to the representation-generic `LRI` and `ORB`.) The tutorial notebook asks for `HorizontalBitmapRepresentation`
    explicitly (it shows `data.X`), with a note that N-lists are the
    default.
 2. *The learners*: **done (2026-10-10)** -- `CPAR`, `ENDER`, `ORB`,
@@ -674,7 +674,7 @@ the unpacked matrix.* `Sparse`/`NList`/`PrePostNList.from_boolean(b)` read
 `b.X`, a cached property, so the Boolean source kept the unpacked `n x k`
 matrix (8x its packed size) for as long as it lived -- and the demo's
 `tracemalloc` counted it against the new representation. They now build
-from `BooleanDataRepresentation.to_csr()`, which unpacks a block of rows
+from `HorizontalBitmapRepresentation.to_csr()`, which unpacks a block of rows
 at a time (2^16 cells: lower peak than larger blocks, and no slower) into
 an `int32` CSR and caches nothing. `adult`, n=32,000
 (held / peak while building, MiB):
@@ -735,7 +735,7 @@ the coverage-heavy learners (Pypper's pruning, PyLORD) feel.
 `NListRepresentation` stays the default, for speed (the
 separate-and-conquer learners are fastest on it on real data, and a fit
 costs 1.3-1.7x Boolean's memory with negation features, about half
-without); `BooleanDataRepresentation` for dense and normal data when
+without); `HorizontalBitmapRepresentation` for dense and normal data when
 memory matters; `SparseDataRepresentation` for sparse data (without
 negation features). `PrePostNListRepresentation` stays an opt-in: equal
 to N-lists in most of the report, faster on the largest dense data (CN2,
@@ -903,9 +903,9 @@ they aren't reopened by accident.
   negation isn't always the exact complement anyway: with missing values
   (`MissingStrategy.NEVER_COVERS`) a row can satisfy neither `>=t` nor
   `<t`.
-- **ENDER-style matrix-multiply counting, tried for `BooleanDataRepresentation`
+- **ENDER-style matrix-multiply counting, tried for `HorizontalBitmapRepresentation`
   and parked, not adopted (2026-10-07).** Following up on the numeric-
-  threshold-counting item above, `BooleanDataRepresentation.batch_cover_counts`
+  threshold-counting item above, `HorizontalBitmapRepresentation.batch_cover_counts`
   and an experimental `pyrulearn.learners.seco._score_children_matmul`
   score *every* open feature of a round in one matrix multiply (`pos_w
   @ X[:, features]`), the way `ENDER`'s `_grow` does -- more general than
@@ -991,7 +991,7 @@ they aren't reopened by accident.
     regime, where one condition can remove a dozen+ features at once.
     Same trick, opposite verdict, because the two callers' open sets
     behave completely differently -- not a property of the trick itself.
-  - **Decision**: keep `chain_cover_counts` as `BooleanDataRepresentation`'s
+  - **Decision**: keep `chain_cover_counts` as `HorizontalBitmapRepresentation`'s
     shipped default (safe across beam widths); keep `batch_cover_counts`/
     `_score_children_matmul` in the codebase as a validated-but-not-wired-in
     alternative, not deleted -- revisit if a beam-width/feature-count-aware
@@ -1043,7 +1043,7 @@ they aren't reopened by accident.
   regression: `segment` 0.73x, `diabetes` 0.62x, `ionosphere` 0.80x,
   `banknote-authentication` 0.68x, `sonar` 1.07x (even), `kr-vs-kp`
   1.60x (the one clear win, nominal-heavy -- same pattern as
-  `BooleanDataRepresentation`'s matmul vs. chain finding above). Likely
+  `HorizontalBitmapRepresentation`'s matmul vs. chain finding above). Likely
   cause: `np.isin(candidate_rows, row_idx[f])` for each of the `m - 1`
   remaining thresholds costs more than expected -- its cost scales with
   both array sizes, re-sorting `row_idx[f]` fresh on every call, which

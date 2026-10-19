@@ -1,6 +1,6 @@
 import numpy as np
 from pyrulearn.combiners import CountVoteCombiner
-from pyrulearn import BooleanDataRepresentation, DataSpec, DataSpecBuilder, Rule
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec, DataSpecBuilder, Rule
 
 from _negation_helpers import neg_spec, neg_X
 
@@ -38,7 +38,7 @@ def test_from_sklearn_tree_returns_disjoint_ruleset():
     X = rng.integers(0, 2, size=(100, 4)).astype(bool)
     y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
     ds = neg_spec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(X, y)
     rules = from_sklearn_tree(clf, dataspec=ds)
@@ -130,7 +130,7 @@ def test_sklearn_tree_infer_dataspec_matches_tree_exactly_on_raw_data():
 
     rules = importer.import_model(clf, ds, feature_names=names)
     Xb = binarize(ds, pd.DataFrame(X, columns=names))
-    rep = BooleanDataRepresentation(ds, Xb, y)
+    rep = HorizontalBitmapRepresentation(ds, Xb, y)
 
     tree_preds = clf.predict(X)
     rule_preds = rules.predict(rep)
@@ -171,7 +171,7 @@ def test_random_forest_importer_returns_single_ruleset():
     X = rng.integers(0, 2, size=(200, 4)).astype(bool)
     y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
     ds = neg_spec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     rf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(X, y)
     rules = RandomForestImporter().import_model(rf, ds)
@@ -223,7 +223,7 @@ def test_random_forest_import_model_with_data_gives_every_leaf_measured_stats():
     y_clean = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
     y = np.where(noise, np.where(y_clean == "pos", "neg", "pos"), y_clean)
     ds = neg_spec([f"f{i}" for i in range(6)])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     rf = RandomForestClassifier(n_estimators=10, max_depth=5, random_state=1).fit(X, y)
     bare_rules = RandomForestImporter().import_model(rf, ds)  # no data= -- no stats
@@ -252,7 +252,7 @@ def test_tree_learners_on_the_fit_switcher():
     X = rng.integers(0, 2, size=(200, 5)).astype(bool)
     y = np.where(X[:, 0] & ~X[:, 1], "a", np.where(X[:, 2], "b", "c"))
     ds = neg_spec([f"f{i}" for i in range(5)])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     dt = SKLDecisionTree(max_depth=4, random_state=0)
     assert dt.produces() >= {DisjointRuleSet, ConceptSet}
@@ -289,7 +289,7 @@ def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
     X = rng.integers(0, 2, size=(150, 4)).astype(bool)
     y = np.where(X[:, 0] & ~X[:, 1], "pos", "neg")
     ds = neg_spec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     clf = DecisionTreeClassifier(max_depth=3, random_state=0).fit(rep.X, y)
     bare = SklearnTreeImporter().import_model(clf, ds)  # no data= -- standalone call

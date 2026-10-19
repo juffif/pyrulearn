@@ -34,7 +34,7 @@ fit`'s own source rather than assumed:
   `pyrulearn.data.io.build_dataspec`/`binarize` already produce for a
   NOMINAL attribute (one ``color=red``/``color=green``/... feature
   each, via `DataSpecBuilder.add_nominal`). A
-  `pyrulearn.data.BooleanDataRepresentation` is therefore
+  `pyrulearn.data.HorizontalBitmapRepresentation` is therefore
   already in exactly the right shape.
 
   Unlike `pyrulearn.interfaces.wittgenstein`, there is

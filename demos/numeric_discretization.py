@@ -96,7 +96,7 @@ import warnings
 
 import numpy as np
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpecBuilder
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpecBuilder
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import (
@@ -289,7 +289,7 @@ def _fit_weka_raw(weka_class: str, importer_cls, train_df, target: str, timeout:
 
 def _evaluate(model, dataspec, test_df, target: str):
     test_y = test_df[target].to_numpy()
-    rep = BooleanDataRepresentation(dataspec, binarize(dataspec, test_df), test_y)
+    rep = HorizontalBitmapRepresentation(dataspec, binarize(dataspec, test_df), test_y)
     stats = model.evaluate(rep)
     return {
         "accuracy": stats.confusion.accuracy if stats.confusion is not None else np.nan,
@@ -373,8 +373,8 @@ def run(datasets, n_folds: int, verbose: bool = True):
                 specs[f"tree@{n}"] = build_dataspec(train_df, target=target, max_intervals=n,
                                                     skip_unusable=True).build()
                 specs[f"kbins@{n}"] = build_kbins_dataspec(train_df, target=target, n_bins=n).build()
-            reps = {prep: (BooleanDataRepresentation(spec, binarize(spec, train_df), train_df[target].to_numpy()),
-                          BooleanDataRepresentation(spec, binarize(spec, test_df), test_df[target].to_numpy()))
+            reps = {prep: (HorizontalBitmapRepresentation(spec, binarize(spec, train_df), train_df[target].to_numpy()),
+                          HorizontalBitmapRepresentation(spec, binarize(spec, test_df), test_df[target].to_numpy()))
                    for prep, spec in specs.items()}
 
             for algorithm, (learner_cls, importer_cls, weka_class) in ALGORITHMS.items():

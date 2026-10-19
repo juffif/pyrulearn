@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpec
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.learners.rulefit import RuleFit
 from pyrulearn.models import FlatRuleSet, LinearRuleModel, WeightedSum, annotate_rules
 from pyrulearn.rule import Rule, WeightedRule
@@ -12,7 +12,7 @@ from _negation_helpers import neg_spec, neg_X
 def _rep(X, y=None, names=None):
     X = np.asarray(X, dtype=bool)
     ds = DataSpec(names or [f"f{i}" for i in range(X.shape[1])])
-    return BooleanDataRepresentation(ds, X, None if y is None else np.asarray(y))
+    return HorizontalBitmapRepresentation(ds, X, None if y is None else np.asarray(y))
 
 
 def _linear(ds):
@@ -92,7 +92,7 @@ def _conjunction_data(n=400, seed=0, noise=0.0):
     y = np.where(raw[:, 0] & raw[:, 1], "good", "bad")
     flip = rng.random(n) < noise
     y[flip] = np.where(y[flip] == "good", "bad", "good")
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(5)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(5)]), neg_X(raw), y)
 
 
 def _design(rf, data):
@@ -124,7 +124,7 @@ def test_rulefit_multiclass_is_multinomial_with_one_intercept_per_class():
     rng = np.random.default_rng(1)
     raw = rng.random((300, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
     rf = RuleFit(max_len=2, C=1.0, random_state=0)
     m = rf.fit(data)
     assert m.labels == ["a", "b", "c"]

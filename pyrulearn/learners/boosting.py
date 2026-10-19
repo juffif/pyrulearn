@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from ..data import BooleanDataRepresentation
+from ..data import HorizontalBitmapRepresentation
 from ..heuristics import SlipperZ
 from ..models import LinearRuleModel, annotate_rules
 from ..rule import Rule, WeightedRule
@@ -701,7 +701,7 @@ class ENDER(_ENDERBase):
     propagating constraints so that what a condition implies is never
     scored again. `DenseENDER` is the same algorithm specialized for speed
     on a dense matrix: same parameters, same models, 1-8x faster on
-    `BooleanDataRepresentation` (most with Newton steps on all rows; see
+    `HorizontalBitmapRepresentation` (most with Newton steps on all rows; see
     `ROADMAP.md`). A condition that drops no row with a nonzero impurity
     term changes nothing; both count those rows exactly and never take
     such a condition for an improvement, which rounding could otherwise
@@ -763,7 +763,7 @@ class DenseENDER(_ENDERBase):
     same models (see `ENDER` for both) -- at the price of a dense float
     copy of the data.
 
-    **Data representation.** `NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)`
+    **Data representation.** `NATIVE_REPRESENTATIONS = (HorizontalBitmapRepresentation,)`
     -- `_fit_native` converts anything else via
     `NativeRuleLearner.ensure_representation` (`max_auto_convert_cells=`).
     Each step scores every class and condition at once, ``(t * c).T @
@@ -774,7 +774,7 @@ class DenseENDER(_ENDERBase):
     """
 
     #: see the "Data representation" paragraph above
-    NATIVE_REPRESENTATIONS = (BooleanDataRepresentation,)
+    NATIVE_REPRESENTATIONS = (HorizontalBitmapRepresentation,)
 
     def __init__(
         self,
@@ -859,7 +859,7 @@ class Boomer(ENDER):
     `pyrulearn.interfaces.boomer.MLRLBoomer` (binary classification),
     whose rule induction differs in details (e.g. its feature sampling),
     so the two don't produce identical models. `DenseBoomer` is the same
-    on `DenseENDER`: same models, faster on a `BooleanDataRepresentation`.
+    on `DenseENDER`: same models, faster on a `HorizontalBitmapRepresentation`.
     """
 
     def __init__(
@@ -881,7 +881,7 @@ class Boomer(ENDER):
 
 class DenseBoomer(DenseENDER):
     """`Boomer` on `DenseENDER`: same parameters, same models, faster on a
-    `BooleanDataRepresentation` (Newton steps on all rows are where
+    `HorizontalBitmapRepresentation` (Newton steps on all rows are where
     `ENDER`'s modular search costs most) -- see `Boomer` and `DenseENDER`."""
 
     def __init__(

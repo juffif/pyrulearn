@@ -60,7 +60,7 @@ from sklearn.manifold import TSNE
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.evaluation import CoverageSpace, rule_refinement_path
 from pyrulearn.heuristics import Correlation, RuleStats
@@ -98,7 +98,7 @@ def load_titanic():
     negation_overrides = {c: False for c in NOMINAL_FEATURES}
     ds = build_dataspec(train_df, target=TARGET_COL, arff_types=arff_types, max_intervals=MAX_INTERVALS,
                         negation_overrides=negation_overrides).build()
-    train_rep = BooleanDataRepresentation(ds, binarize(ds, train_df), train_df[TARGET_COL].to_numpy())
+    train_rep = HorizontalBitmapRepresentation(ds, binarize(ds, train_df), train_df[TARGET_COL].to_numpy())
     return train_df, train_rep
 
 

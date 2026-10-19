@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.data import DataSpec
 from pyrulearn.learners.seco import CN2
 from pyrulearn.models import (
@@ -17,7 +17,7 @@ _lbl = _rng.integers(0, 3, size=180)
 _X = np.zeros((180, 3), dtype=bool)
 _X[np.arange(180), _lbl] = True
 _y = np.array(["a", "b", "c"], dtype=object)[_lbl]
-DATA = BooleanDataRepresentation(_ds, _X, _y)
+DATA = HorizontalBitmapRepresentation(_ds, _X, _y)
 
 
 def test_fit_model_switch_produces_the_requested_type():
@@ -98,7 +98,7 @@ def test_fit_stamps_provenance_through_a_converter():
 def test_external_learner_provenance_carries_the_source_library():
     from _negation_helpers import neg_spec, neg_X
     ds = neg_spec(["f0", "f1", "f2"])
-    rep = BooleanDataRepresentation(ds, neg_X(_X), _y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(_X), _y)
 
     dt = SKLDecisionTree(max_depth=2, random_state=0)
     m = dt.fit(rep)

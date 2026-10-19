@@ -8,7 +8,7 @@ names/order, typed attributes, constraints, missing-value policy) -- no
 data; a `DataRepresentation` is where the actual values live, always
 pointing back at the `DataSpec` it was built against.
 
-`BooleanDataRepresentation` is the canonical one: a `numpy.packbits`-
+`HorizontalBitmapRepresentation` is the canonical one: a `numpy.packbits`-
 packed Boolean matrix (plus labels). `NListRepresentation` is the same
 data as a PPC-tree / N-list vertical index (the one Huynh,
 Fürnkranz & Beck's LORD builds); `SparseDataRepresentation` is a `scipy`
@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple
 
@@ -206,7 +207,7 @@ class DataRepresentation(ABC):
         counting a boosting learner's search needs. This default refines
         and sums once per feature, so it works on every representation;
         a representation can override it with a batched version
-        (`BooleanDataRepresentation` does, as one matrix product)."""
+        (`HorizontalBitmapRepresentation` does, as one matrix product)."""
         values = np.asarray(values, dtype=float)
         out = np.zeros((values.shape[1], len(feature_indices)))
         for j, f in enumerate(feature_indices):
@@ -280,7 +281,7 @@ class DataRepresentation(ABC):
         return type(self)(self.spec, self.X, np.asarray(new_y), weights=self.weights)
 
 
-class BooleanDataRepresentation(DataRepresentation):
+class HorizontalBitmapRepresentation(DataRepresentation):
     """The canonical Boolean bit-matrix encoding: a `numpy.packbits`-packed
     feature matrix (shape ``(n_samples, ceil(spec.n_features / 8))``) plus
     optional labels `y`. `coverage`/`Rule.covers_data_packed` run against
@@ -516,7 +517,7 @@ class BooleanDataRepresentation(DataRepresentation):
     @classmethod
     def from_dataframe(
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None
-    ) -> "BooleanDataRepresentation":
+    ) -> "HorizontalBitmapRepresentation":
         """Build from a pandas DataFrame of 0/1 (or bool) feature columns.
         `spec` binds against an existing `DataSpec` (e.g. a training
         split's, when building a test representation); if omitted, one
@@ -532,7 +533,7 @@ class BooleanDataRepresentation(DataRepresentation):
         return cls(spec, feat_df.to_numpy(dtype=bool), y)
 
     @classmethod
-    def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "BooleanDataRepresentation":
+    def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "HorizontalBitmapRepresentation":
         """Build from a `scipy.sparse` matrix already matching `spec`'s
         feature order -- densified into the packed bit-matrix. (For a
         genuinely sparse dataset, `SparseDataRepresentation.from_scipy`
@@ -548,7 +549,7 @@ class BooleanDataRepresentation(DataRepresentation):
         threshold: Optional[float] = None,
         spec: Optional[DataSpec] = None,
         name: Optional[str] = None,
-    ) -> "BooleanDataRepresentation":
+    ) -> "HorizontalBitmapRepresentation":
         """Build from an array-like ``X`` (plain numpy, not necessarily
         already Boolean) -- the ordinary ``X, y`` convention shared by
         scikit-learn and most other array-based ML tooling.
@@ -568,7 +569,7 @@ class BooleanDataRepresentation(DataRepresentation):
         return cls(spec, Xb, y)
 
     def __repr__(self) -> str:
-        return f"BooleanDataRepresentation(spec={self.spec!r}, n_samples={self.n_samples})"
+        return f"HorizontalBitmapRepresentation(spec={self.spec!r}, n_samples={self.n_samples})"
 
 
 def _weighted_counts(w: np.ndarray, cov: np.ndarray, pos_mask: np.ndarray) -> Tuple[float, float, float, float]:
@@ -646,7 +647,7 @@ class NListRepresentation(DataRepresentation):
     """A PPC-tree / N-list encoding of a Boolean dataset -- the vertical
     index Huynh, Fürnkranz & Beck's LORD builds before learning -- exposed
     behind the same `DataRepresentation` interface as
-    `BooleanDataRepresentation`, so every learner runs on it unchanged.
+    `HorizontalBitmapRepresentation`, so every learner runs on it unchanged.
     The tree *is* the data: it is stored instead of the Boolean table, not
     next to it.
 
@@ -694,9 +695,9 @@ class NListRepresentation(DataRepresentation):
     underlying data. `without_negations()` before building (or on an
     already-negated representation) is the fix.
 
-    Build it from an existing `BooleanDataRepresentation` with
+    Build it from an existing `HorizontalBitmapRepresentation` with
     `from_boolean`, or from raw arrays via the constructor / `from_xy` /
-    `from_dataframe`, mirroring `BooleanDataRepresentation`.
+    `from_dataframe`, mirroring `HorizontalBitmapRepresentation`.
     """
 
     #: keep each node's pre-order number and subtree end after the build
@@ -1051,7 +1052,7 @@ class NListRepresentation(DataRepresentation):
         return np.asarray(matrix[hit].T @ per_pattern)
 
     def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
-        """`BooleanDataRepresentation.batch_cover_counts` for N-lists: tp,
+        """`HorizontalBitmapRepresentation.batch_cover_counts` for N-lists: tp,
         fp and ``keeps_all`` of every feature in `feature_indices`, from
         one pass over the covered rows' distinct patterns."""
         if self.y is None:
@@ -1071,7 +1072,7 @@ class NListRepresentation(DataRepresentation):
         sums = self._pattern_sums(rows, values[rows])
         return sums[np.asarray(feature_indices, dtype=np.intp)].T
 
-    # -- parity with BooleanDataRepresentation ------------------------
+    # -- parity with HorizontalBitmapRepresentation ------------------------
 
     @property
     def n_samples(self) -> int:
@@ -1169,9 +1170,9 @@ class NListRepresentation(DataRepresentation):
         return type(self)(new_spec, self._csr()[:, np.asarray(source)], self.y, weights=self.weights)
 
     @classmethod
-    def from_boolean(cls, data: "BooleanDataRepresentation") -> "NListRepresentation":
+    def from_boolean(cls, data: "HorizontalBitmapRepresentation") -> "NListRepresentation":
         """Build the N-list index for an existing
-        `BooleanDataRepresentation`, reusing its `DataSpec`, labels and
+        `HorizontalBitmapRepresentation`, reusing its `DataSpec`, labels and
         row weights."""
         return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
@@ -1187,7 +1188,7 @@ class NListRepresentation(DataRepresentation):
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None
     ) -> "NListRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
+            HorizontalBitmapRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
         )
 
     @classmethod
@@ -1201,7 +1202,7 @@ class NListRepresentation(DataRepresentation):
         name: Optional[str] = None,
     ) -> "NListRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_xy(
+            HorizontalBitmapRepresentation.from_xy(
                 X, y, feature_names=feature_names, threshold=threshold, spec=spec, name=name
             )
         )
@@ -1284,7 +1285,7 @@ class SparseDataRepresentation(DataRepresentation):
     """A `scipy.sparse` encoding: the feature matrix as CSR (row slices
     for `features_of`) and CSC (column index-sets for `coverage`), plus
     optional labels `y`. Same `DataRepresentation` interface as
-    `BooleanDataRepresentation` / `NListRepresentation`, so every
+    `HorizontalBitmapRepresentation` / `NListRepresentation`, so every
     `pyrulearn.learners.seco` learner runs on it unchanged and produces identical
     rules.
 
@@ -1420,7 +1421,7 @@ class SparseDataRepresentation(DataRepresentation):
         return np.asarray(self._csr[rows].T @ values)
 
     def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
-        """`BooleanDataRepresentation.batch_cover_counts` for sparse data:
+        """`HorizontalBitmapRepresentation.batch_cover_counts` for sparse data:
         tp, fp and ``keeps_all`` of every feature in `feature_indices`, from
         one product over the covered rows (with a nonzero weight)."""
         if self.y is None:
@@ -1463,7 +1464,7 @@ class SparseDataRepresentation(DataRepresentation):
         return cls(spec, matrix, y)
 
     @classmethod
-    def from_boolean(cls, data: "BooleanDataRepresentation") -> "SparseDataRepresentation":
+    def from_boolean(cls, data: "HorizontalBitmapRepresentation") -> "SparseDataRepresentation":
         return cls(data.spec, data.to_csr(), data.y, weights=data.weights)
 
     @classmethod
@@ -1471,7 +1472,7 @@ class SparseDataRepresentation(DataRepresentation):
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None
     ) -> "SparseDataRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
+            HorizontalBitmapRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
         )
 
     @classmethod
@@ -1485,7 +1486,7 @@ class SparseDataRepresentation(DataRepresentation):
         name: Optional[str] = None,
     ) -> "SparseDataRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_xy(
+            HorizontalBitmapRepresentation.from_xy(
                 X, y, feature_names=feature_names, threshold=threshold, spec=spec, name=name
             )
         )
@@ -1517,11 +1518,11 @@ def _popcount(words: np.ndarray) -> np.ndarray:
 
 
 class VerticalBitmapRepresentation(DataRepresentation):
-    """The bit matrix of `BooleanDataRepresentation`, packed the other way:
+    """The bit matrix of `HorizontalBitmapRepresentation`, packed the other way:
     one bit-vector per *feature*, over the examples (a ``(n_features,
     ceil(n_samples / 64))`` array of 64-bit words) -- the vertical bitmap
     layout of the MAFIA/SPAM frequent-pattern miners, where
-    `BooleanDataRepresentation` packs each example's features (horizontal)
+    `HorizontalBitmapRepresentation` packs each example's features (horizontal)
     and `SparseDataRepresentation`/`NListRepresentation` keep per-feature
     lists of example indices (vertical, as lists).
 
@@ -1651,7 +1652,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
     # A handle is (cov, scope, w): `cov` the bit-vector of the rows the
     # current rule covers within the scope, `scope` the bit-vector of the
     # rows in scope (or `None`: all), `w` the effective row weights (or
-    # `None`), as for `BooleanDataRepresentation`.
+    # `None`), as for `HorizontalBitmapRepresentation`.
 
     def initial_cover(self, example_mask: Optional[np.ndarray] = None):
         support, w = self.scope(example_mask)
@@ -1688,7 +1689,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
     BATCH_BLOCK_WORDS = 1 << 20
 
     def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
-        """`BooleanDataRepresentation.batch_cover_counts` on bit-vectors:
+        """`HorizontalBitmapRepresentation.batch_cover_counts` on bit-vectors:
         the cover's positive and negative rows ANDed into each open
         feature's words and popcounted, over just the words the cover
         still has a row in. With weights, a product over the covered rows'
@@ -1757,7 +1758,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
         return self._from_words(new_spec, words, self._n_samples, self.y, self.weights)
 
     @classmethod
-    def from_boolean(cls, data: "BooleanDataRepresentation", chunk_cells: int = 1 << 22) -> "VerticalBitmapRepresentation":
+    def from_boolean(cls, data: "HorizontalBitmapRepresentation", chunk_cells: int = 1 << 22) -> "VerticalBitmapRepresentation":
         """Transpose `data`'s row-packed matrix a block of rows at a time,
         so nothing of the full unpacked size is formed."""
         n, k = data.n_samples, data.spec.n_features
@@ -1778,7 +1779,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
         cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None
     ) -> "VerticalBitmapRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
+            HorizontalBitmapRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
         )
 
     @classmethod
@@ -1792,7 +1793,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
         name: Optional[str] = None,
     ) -> "VerticalBitmapRepresentation":
         return cls.from_boolean(
-            BooleanDataRepresentation.from_xy(
+            HorizontalBitmapRepresentation.from_xy(
                 X, y, feature_names=feature_names, threshold=threshold, spec=spec, name=name
             )
         )
@@ -1808,7 +1809,7 @@ class VerticalBitmapRepresentation(DataRepresentation):
 #: `RuleLearner.ensure_representation` breaks ties when a learner's
 #: `NATIVE_REPRESENTATIONS` names more than one type and the data matches
 #: none of them. `NListRepresentation` first: every native learner
-#: measured is faster on it than on `BooleanDataRepresentation`, also
+#: measured is faster on it than on `HorizontalBitmapRepresentation`, also
 #: after this package's own Boolean speedups (`demos/representations.py`).
 #: `PrePostNListRepresentation` right after it -- the same index plus
 #: pre/post codes, measured about break-even with plain N-lists but
@@ -1816,8 +1817,28 @@ class VerticalBitmapRepresentation(DataRepresentation):
 #: attribute changes the library-wide default.
 REPRESENTATION_PREFERENCE_ORDER: Tuple[type, ...] = (
     NListRepresentation, PrePostNListRepresentation,
-    BooleanDataRepresentation, SparseDataRepresentation,
+    HorizontalBitmapRepresentation, SparseDataRepresentation,
 )
+
+
+#: renamed names, served with a `DeprecationWarning` by this module's,
+#: `pyrulearn.data`'s and `pyrulearn`'s `__getattr__` until 0.9.0
+_DEPRECATED_NAMES = {"BooleanDataRepresentation": "HorizontalBitmapRepresentation"}
+
+
+def _deprecated(module: str, name: str) -> Any:
+    """What a renamed name of `module` now is, with a `DeprecationWarning`
+    -- the body of a module-level `__getattr__` (PEP 562)."""
+    new = _DEPRECATED_NAMES.get(name)
+    if new is None:
+        raise AttributeError(f"module {module!r} has no attribute {name!r}")
+    warnings.warn(f"{name} was renamed to {new} in pyrulearn 0.3.4; the old name will be removed in 0.9.0",
+                  DeprecationWarning, stacklevel=3)
+    return globals()[new]
+
+
+def __getattr__(name: str) -> Any:
+    return _deprecated(__name__, name)
 
 
 def default_representation() -> type:

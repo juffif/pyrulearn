@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import RuleList, RuleSet
 
 imodels = pytest.importorskip("imodels")
@@ -40,7 +40,7 @@ def _binary_data(n=300, d=5, seed=0):
     # explicit negation feature (matches build_dataspec's default, i.e.
     # the real workflow-1 path these learners take)
     ds = neg_spec([f"f{i}" for i in range(d)])
-    return BooleanDataRepresentation(ds, neg_X(X), y)
+    return HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
 
 def test_imports_as_rulelist_and_matches_model_predictions():
@@ -144,7 +144,7 @@ def test_nominal_attributes_via_build_dataspec_one_hot():
 
     ds = build_dataspec(df, target="label", arff_types={"cat": "nominal"}).build()
     assert {"cat=red", "cat=green", "cat=blue"} <= set(ds.feature_names)
-    rep = BooleanDataRepresentation(ds, binarize(ds, df), y)
+    rep = HorizontalBitmapRepresentation(ds, binarize(ds, df), y)
 
     rules = IModBayesianRuleList(random_state=0).fit(rep)
     assert isinstance(rules, RuleList)
@@ -163,7 +163,7 @@ def test_multiclass_target_raises():
     X = rng.integers(0, 2, size=(200, 4)).astype(bool)
     y = rng.choice(["a", "b", "c"], size=200)
     ds = DataSpec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     try:
         IModBayesianRuleList(random_state=0).fit(rep)
@@ -300,7 +300,7 @@ def test_brs_nominal_attributes_via_build_dataspec_one_hot():
 
     ds = build_dataspec(df, target="label", arff_types={"cat": "nominal"}).build()
     assert {"cat=red", "cat=green", "cat=blue"} <= set(ds.feature_names)
-    rep = BooleanDataRepresentation(ds, binarize(ds, df), y)
+    rep = HorizontalBitmapRepresentation(ds, binarize(ds, df), y)
 
     # imodels' own simulated-annealing "clean" move has a real bug (see the
     # module docstring) that can raise "list.remove(x): x not in list".
@@ -361,7 +361,7 @@ def _rulefit_data():
     rng = np.random.default_rng(0)
     raw = rng.random((600, 6)) < 0.5
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & (rng.random(600) < 0.5), "good", "bad")
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
 
 
 @pytest.mark.parametrize("imodels_threshold", [True, False])

@@ -184,7 +184,7 @@ details.
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `BooleanDataRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, stored instead of the table; the fastest for the separate-and-conquer learners, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `HorizontalBitmapRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, stored instead of the table; the fastest for the separate-and-conquer learners, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
 | `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
@@ -205,7 +205,7 @@ representations**, all implementing the same `coverage(rule)` /
 `pyrulearn.learners.pylord.PyLORD`, ...) runs on any of them unchanged and
 produces byte-identical rules:
 
-- `BooleanDataRepresentation` -- a `numpy.packbits`-packed copy of the
+- `HorizontalBitmapRepresentation` -- a `numpy.packbits`-packed copy of the
   feature matrix; every example is checked with vectorized bitwise NumPy
   ops instead of per-feature Python loops. The simplest to construct by
   hand, and `rep.X` is its own storage (the others build `X` on demand)
@@ -246,7 +246,7 @@ features):
   Boolean's: 1.3-1.7 times as much with negation features, about half
   without.
 - *For dense and normal data, when memory matters:*
-  `BooleanDataRepresentation`, one bit per cell -- by far the smallest to
+  `HorizontalBitmapRepresentation`, one bit per cell -- by far the smallest to
   hold (`adult`, 32,000 rows: 0.55 MiB without negation features, 1.1 MiB
   with, against 4-44 MiB for the others), at the cost of speed on larger
   data.
@@ -264,7 +264,7 @@ features):
 
 `pyrulearn.data.REPRESENTATION_PREFERENCE_ORDER` ranks them --
 `NListRepresentation`, `PrePostNListRepresentation`,
-`BooleanDataRepresentation`, `SparseDataRepresentation` -- and its first
+`HorizontalBitmapRepresentation`, `SparseDataRepresentation` -- and its first
 entry (`default_representation()`) is what `read_arff`/`read_csv`/`encode`
 and `run_cv` build when no `representation=` is given; reassigning
 `pyrulearn.data.representation.REPRESENTATION_PREFERENCE_ORDER` changes
@@ -299,7 +299,7 @@ rules still apply to the full data) -- rebuilt from scratch, used by
 
 Every representation can carry non-negative row weights: how much each
 row counts, e.g. how often it was observed. Pass them to the constructor
-(`BooleanDataRepresentation(spec, X, y, weights=w)`) or use
+(`HorizontalBitmapRepresentation(spec, X, y, weights=w)`) or use
 `rep.with_weights(w)`, a cheap copy that shares the storage (so an
 N-list isn't rebuilt). `select_rows`, `relabel`, the negation toggles and
 `from_boolean` keep them.
@@ -342,7 +342,7 @@ ds = b.build()
 Nominal/numeric/set/hierarchical attributes each generate one derived
 Boolean feature per value/threshold/node; relational attributes register
 a single feature derived from several source attributes (the value
-itself is still supplied externally, via a `BooleanDataRepresentation`).
+itself is still supplied externally, via a `HorizontalBitmapRepresentation`).
 The
 constraints implied among derived features (mutual exclusion, threshold
 chains, hierarchy sibling-exclusion + upward implication) are tracked
@@ -431,12 +431,12 @@ then binarize the real dataset **once** against that shared `DataSpec`
 and score/compare/combine all the remapped models against it --
 
 ```python
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 
 shared = merge_dataspecs(model1.rules[0].dataspec, model2.rules[0].dataspec).build()
 model1 = model1.remap(shared)
 model2 = model2.remap(shared)
-shared_rep = BooleanDataRepresentation(shared, binarize(shared, df))
+shared_rep = HorizontalBitmapRepresentation(shared, binarize(shared, df))
 ```
 
 Only `shared` ever needs a full Boolean data matrix built for it; the
@@ -459,12 +459,12 @@ rep = read_arff("weather.arff", target="play")
 rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
 # rep.spec is the inferred DataSpec; rep is an NListRepresentation
 # (representation=, default default_representation() -- pass
-# BooleanDataRepresentation for the dense matrix instead)
+# HorizontalBitmapRepresentation for the dense matrix instead)
 
 # or encode against a DataSpec you already have (thresholds and all)
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 rep = read_csv("data.csv", dataspec=my_dataspec, target="label",
-               representation=BooleanDataRepresentation)
+               representation=HorizontalBitmapRepresentation)
 # rep.spec is my_dataspec; rep.X / rep.y hold the dense data
 ```
 
@@ -1335,7 +1335,7 @@ of parts -- and the branching search is now a part any SeCo learner can
 use. `DenseCPAR` scores
 every feature of a search node in one matrix product over a dense copy
 of the data, with no propagation. Both learn the same models (tested);
-`DenseCPAR` is 2-4x faster, but needs a `BooleanDataRepresentation`
+`DenseCPAR` is 2-4x faster, but needs a `HorizontalBitmapRepresentation`
 and only does one-vs-rest. Exchanging a component works the same for
 both:
 
@@ -1742,7 +1742,7 @@ which pyrulearn doesn't.
 `batch_cover_sums` call per step, with constraint propagation), so it
 runs on every representation. `DenseENDER` is the same algorithm on a
 dense float matrix: same parameters, same models, 1-8x faster on a
-`BooleanDataRepresentation` -- most with Newton steps on all rows (see
+`HorizontalBitmapRepresentation` -- most with Newton steps on all rows (see
 *Native learning algorithms* for this pairing).
 
 ```python
@@ -2016,10 +2016,10 @@ own `classes_` through explicitly to get real targets back.)
 
 ```python
 from pyrulearn.interfaces.sklearn import RandomForestImporter, from_random_forest
-from pyrulearn import BooleanDataRepresentation, MacroVoteCombiner
+from pyrulearn import HorizontalBitmapRepresentation, MacroVoteCombiner
 
 rules = RandomForestImporter().import_model(fitted_forest, my_dataspec)
-my_rep = BooleanDataRepresentation(my_dataspec, X, y)
+my_rep = HorizontalBitmapRepresentation(my_dataspec, X, y)
 preds = rules.predict(my_rep, combiner=MacroVoteCombiner())  # soft voting, ~matches sklearn
 ```
 
@@ -2081,11 +2081,11 @@ still get a correct conversion, the same two as for
 
   ```python
   from pyrulearn.data.io import build_dataspec, binarize
-  from pyrulearn.data import BooleanDataRepresentation
+  from pyrulearn.data import HorizontalBitmapRepresentation
 
   ds = build_dataspec(df, target="label", arff_types={...}).build()
   X = binarize(ds, df)
-  rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+  rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
   rules = WittRIPPER(pos_class="pos").fit(rep)
   ```
 
@@ -2129,7 +2129,7 @@ semantics and the trailing `ELSE` becomes the list's `default_prediction`.
 No discretization wrinkle here, unlike wittgenstein: `imodels`' own
 `fit` *requires* strictly 0/1 input (it raises `"All numeric features
 must be discretized prior to fitting!"` otherwise) — exactly what a
-`BooleanDataRepresentation` already holds — so `infer_dataspec` is
+`HorizontalBitmapRepresentation` already holds — so `infer_dataspec` is
 inherited unchanged and both approaches collapse to the same thing.
 Confirmed directly (not just from the error message): a categorical
 column has to go through `build_dataspec`/`binarize`'s **one-hot**
@@ -2707,7 +2707,7 @@ Other demos: `demos/heuristic_isometrics.py` (heuristic isometrics),
 comparisons, each writing a `*_report.md`), and
 `demos/representations.py` (fit time of the four data representations
 over growing training sets and falling density, checking at every point
-that all of them give the same rules as `BooleanDataRepresentation`).
+that all of them give the same rules as `HorizontalBitmapRepresentation`).
 
 ## Not yet implemented (left as clear extension points)
 

@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from pyrulearn.combiners import TopKMeanCombiner
-from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.heuristics import CoveredPositives, DeltaGain, GeneralizedMEstimate, Laplace
 from pyrulearn.learners.cpar import CPAR, DenseCPAR
@@ -22,7 +22,7 @@ def _data(n=600, seed=0, noise=0.1):
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & raw[:, 3], "pos", "neg")
     flip = rng.random(n) < noise
     y = np.where(flip, np.where(y == "pos", "neg", "pos"), y)
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
 
 
 # ------------------------------------------------------------ TopKMeanCombiner
@@ -34,10 +34,10 @@ def _topk_fixture():
     for j, rows in enumerate([range(0, 4), [4], [5], range(6, 9), range(9, 12)]):
         X[list(rows), j] = True
     y = np.array(["a"] * 6 + ["b"] * 6)
-    train = BooleanDataRepresentation(spec, X, y)
+    train = HorizontalBitmapRepresentation(spec, X, y)
     rules = annotate_rules([Rule([j], target=t, dataspec=spec)
                             for j, t in enumerate(["a", "a", "a", "b", "b"])], train)
-    everything = BooleanDataRepresentation(spec, np.ones((1, 5), dtype=bool))
+    everything = HorizontalBitmapRepresentation(spec, np.ones((1, 5), dtype=bool))
     return rules, everything
 
 
@@ -78,7 +78,7 @@ def test_one_search_copies_the_rule_at_equally_good_conditions():
     rng = np.random.default_rng(0)
     raw = rng.random((400, 3)) < 0.5
     y = np.where(raw[:, 0] | raw[:, 1], "pos", "neg")
-    data = BooleanDataRepresentation(neg_spec(["f0", "f1", "f2"]), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec(["f0", "f1", "f2"]), neg_X(raw), y)
     X = data.X
     pos = y == "pos"
     w = np.ones(len(y))
@@ -104,7 +104,7 @@ def test_cpar_multiclass_and_data_weights():
     rng = np.random.default_rng(2)
     raw = rng.random((300, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
     model = CPAR().fit(data)
     assert [c.label for c in model.concepts] == ["a", "b", "c"]
     assert model.combiner.heuristic.m == 3
@@ -121,7 +121,7 @@ def test_cpar_rejects_bad_arguments(cls):
         cls(heuristic=Laplace())                       # not a gain: wrap it in DeltaGain
     with pytest.raises(ValueError, match="rule weights"):
         cls(covering=WeightedCovering(AdaBoostReweighting()))
-    one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
+    one = HorizontalBitmapRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
         cls().fit(one)
 
@@ -135,14 +135,14 @@ def _numeric_data(n=300, seed=3):
     y = np.where((df["x"] > 0.3) & (df["c"] != "q") | (df["z"] < -0.8), "pos", "neg")
     df["y"] = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
     spec = build_dataspec(df, target="y", max_intervals=6).build()
-    return BooleanDataRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
+    return HorizontalBitmapRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
 
 
 def _multiclass_data():
     rng = np.random.default_rng(2)
     raw = rng.random((300, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
 
 
 @pytest.mark.parametrize("make", [

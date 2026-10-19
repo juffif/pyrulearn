@@ -5,7 +5,7 @@ pyrulearn.data.spec
 `DataSpec` is a pure feature-space specification (names, count, typed
 attributes, constraints, missing-value policy) -- no data. See
 `pyrulearn.data.representation` for `DataRepresentation`/
-`BooleanDataRepresentation`, which hold the actual values (a
+`HorizontalBitmapRepresentation`, which hold the actual values (a
 `DataRepresentation` always points back at the `DataSpec` it was built
 against). Because a `DataSpec` carries no data, the same instance can be
 shared verbatim across multiple representations built from it (e.g. a
@@ -62,7 +62,7 @@ _NEGATION_OPS = ("not", "!=", "<", ">")
 
 class DataSpec:
     """Pure feature-space specification -- no data. See
-    `pyrulearn.data.BooleanDataRepresentation` for binding
+    `pyrulearn.data.HorizontalBitmapRepresentation` for binding
     actual values to a DataSpec.
 
     Parameters

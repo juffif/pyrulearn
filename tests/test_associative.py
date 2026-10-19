@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.data import (
-    BooleanDataRepresentation,
+    HorizontalBitmapRepresentation,
     DataSpec,
     NListRepresentation,
     SparseDataRepresentation,
@@ -21,7 +21,7 @@ from pyrulearn.rule import Rule
 def _rep(X, y, names=None):
     X = np.asarray(X, dtype=bool)
     ds = DataSpec(names or [f"f{i}" for i in range(X.shape[1])])
-    return BooleanDataRepresentation(ds, X, np.asarray(y))
+    return HorizontalBitmapRepresentation(ds, X, np.asarray(y))
 
 
 # -- CARMiner.ensure_representation: the shared representation gate --------
@@ -41,7 +41,7 @@ def test_ensure_representation_auto_converts_a_small_boolean_representation():
     out = miner.ensure_representation(rep, miner.max_auto_convert_cells)
     assert isinstance(out, NListRepresentation)
     assert out.n_samples == rep.n_samples
-    print("ensure_representation: auto-converts a BooleanDataRepresentation below the threshold: OK")
+    print("ensure_representation: auto-converts a HorizontalBitmapRepresentation below the threshold: OK")
 
 
 def test_ensure_representation_raises_past_the_size_threshold():
@@ -216,7 +216,7 @@ def test_set_stats_from_counts_equals_annotate_including_abstain_edge_cases():
 def test_the_miners_count_based_stats_equal_a_fresh_annotate_for_every_rule():
     from _negation_helpers import neg_spec, neg_X
     _rep0, raw, y = _separable_multiclass()
-    nl = NListRepresentation.from_boolean(BooleanDataRepresentation(neg_spec(list("abcde")), neg_X(raw), y))
+    nl = NListRepresentation.from_boolean(HorizontalBitmapRepresentation(neg_spec(list("abcde")), neg_X(raw), y))
     model = CARMiner(min_support=0.02, min_confidence=0.5, max_len=3).fit(nl)
     assert len(model.rules) > 50
     for r in model.rules:

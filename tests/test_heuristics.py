@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 from pyrulearn.data import DataSpec
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.rule import Rule
 from pyrulearn.heuristics import (
     Accuracy,
@@ -383,7 +383,7 @@ def test_rule_stats_from_rule_and_score_rule():
     ], dtype=bool)
     y = np.array(["pos"] * 6 + ["neg"] * 4)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     rule_a = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # a=True: rows 0,1,2 -> all pos
     stats = RuleStats.from_rule(rule_a, rep)
@@ -403,7 +403,7 @@ def test_rule_stats_from_rule_with_parent():
     ], dtype=bool)
     y = np.array(["pos"] * 6 + ["neg"] * 4)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     parent_rule = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)  # b=True
     child_rule = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # a=True AND b=True
@@ -420,7 +420,7 @@ def test_rule_stats_from_rule_with_parent():
 
 def test_from_rule_raises_without_labels_or_target():
     ds_no_y = DataSpec(["a", "b"])
-    rep_no_y = BooleanDataRepresentation(ds_no_y, np.array([[1, 0], [0, 1]], dtype=bool))  # no y
+    rep_no_y = HorizontalBitmapRepresentation(ds_no_y, np.array([[1, 0], [0, 1]], dtype=bool))  # no y
     r = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds_no_y)
     try:
         RuleStats.from_rule(r, rep_no_y)
@@ -431,7 +431,7 @@ def test_from_rule_raises_without_labels_or_target():
     X = np.array([[1, 0], [0, 1]], dtype=bool)
     y = np.array(["pos", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r_no_target = Rule.from_pos_neg(pos=[0], dataspec=ds)  # no target
     try:
         RuleStats.from_rule(r_no_target, rep)
@@ -448,7 +448,7 @@ def test_rule_stats_from_rule_with_example_mask():
     ], dtype=bool)
     y = np.array(["pos"] * 6 + ["neg"] * 4)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     rule_a = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # a=True: rows 0,1,2
     full_stats = RuleStats.from_rule(rule_a, rep)
@@ -511,7 +511,7 @@ def test_lef_works_with_beam_search():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg", "neg", "neg", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     empty_rule = Rule([], target="pos", dataspec=ds)
     initial = [(empty_rule, frozenset({0, 1}))]
 
@@ -546,7 +546,7 @@ def test_gain_heuristic_score_rule_needs_parent_rule():
     ], dtype=bool)
     y = np.array(["pos"] * 6 + ["neg"] * 4)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     parent_rule = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)  # b=True
     child_rule = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # a=True AND b=True

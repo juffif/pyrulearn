@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data.io import binarize
 from pyrulearn.interfaces.weka import PARTImporter
@@ -143,7 +143,7 @@ def test_end_to_end_predict_matches_weka_exactly():
     # literals -- binarize derives them straight from the raw columns,
     # no precomputed helper column needed (same as JRip's <= family)
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+    rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
     preds = np.asarray(rules.predict(rep))
 
     expected = np.where(

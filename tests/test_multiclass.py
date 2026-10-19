@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.models import MajorityVote, WeightedVote
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.data import DataSpec
 from pyrulearn.models import (
     AccuracyWeightedVote, ConceptCascade, ConceptSet, MajorityClass, MajorityVote,
@@ -23,7 +23,7 @@ def _three_class(n=400, seed=0):
     y = np.where(raw[:, 0], "x", np.where(raw[:, 1], "y", "z"))
     y = np.where(rng.random(n) < 0.04, rng.permutation(y), y)
     ds = neg_spec([f"f{i}" for i in range(6)])
-    return BooleanDataRepresentation(ds, neg_X(raw), y), ds, y
+    return HorizontalBitmapRepresentation(ds, neg_X(raw), y), ds, y
 
 
 def _cn2():

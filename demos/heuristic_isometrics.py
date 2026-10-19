@@ -45,7 +45,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pyrulearn import BooleanDataRepresentation, DataSpec, DataSpecBuilder, Rule
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec, DataSpecBuilder, Rule
 from pyrulearn.evaluation import CoverageSpace
 from pyrulearn.heuristics import (
     Accuracy,
@@ -174,7 +174,7 @@ def build_example_rule():
     X_full = np.empty((n, 2 * d), dtype=bool)
     X_full[:, 0::2] = X
     X_full[:, 1::2] = ~X
-    rep = BooleanDataRepresentation(ds, X_full, y)
+    rep = HorizontalBitmapRepresentation(ds, X_full, y)
     rule = Rule.from_pos_neg(
         pos=[ds.feature_index("f0"), ds.feature_index("f2")],
         neg=[ds.feature_index("f1")], target="pos", dataspec=ds,

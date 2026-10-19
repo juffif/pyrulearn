@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
 from pyrulearn.heuristics import Accuracy, FoilGain, Laplace, Precision, RuleStats, WRAcc
 from pyrulearn.learners.opus import Opus, OpusTopK
 from pyrulearn.learners.seco import BranchAndBoundSearch, CN2, EmptyRuleAllFeatures, SeCo
@@ -18,7 +18,7 @@ def _data(n=200, seed=0, noise=0.1):
     raw = rng.random((n, 5)) < 0.5
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & ~raw[:, 3], "pos", "neg")
     y = np.where(rng.random(n) < noise, np.where(y == "pos", "neg", "pos"), y)
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(5)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(5)]), neg_X(raw), y)
 
 
 def _brute_force(data, target, heuristic, max_len, k):
@@ -205,7 +205,7 @@ def test_dominance_pruning_keeps_the_optimum(heuristic, seed):
 def test_opus_laplace_counts_the_classes_of_the_data():
     data = _data()
     y = np.where(np.arange(data.n_samples) % 5 == 0, "other", np.asarray(data.y))
-    three = BooleanDataRepresentation(data.spec, data.X, y)
+    three = HorizontalBitmapRepresentation(data.spec, data.X, y)
     opus = Opus(max_conditions=2)
     opus.fit(three)
     assert opus.single_rule_learner.heuristic.n_classes == 3

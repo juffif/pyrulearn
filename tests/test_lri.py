@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpec
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.data import NListRepresentation, SparseDataRepresentation
 from pyrulearn.learners.lri import LRI, DenseLRI, LRIError
 from pyrulearn.learners.seco import (
@@ -18,7 +18,7 @@ def _data(n=600, seed=0, noise=0.1):
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & raw[:, 3], "pos", "neg")
     flip = rng.random(n) < noise
     y = np.where(flip, np.where(y == "pos", "neg", "pos"), y)
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
 
 
 def _make(cls, max_length=None, **kw):
@@ -97,7 +97,7 @@ def test_lri_multiclass_and_data_weights(cls):
     rng = np.random.default_rng(2)
     raw = rng.random((300, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
     model = _make(cls, n_rules=5, max_terms=2).fit(data)
     assert sorted({m.label for m in model.members}) == ["a", "b", "c"] and len(model.members) == 15
     assert np.mean(np.asarray(model.predict(data)) == y) > 0.95
@@ -122,7 +122,7 @@ def test_lri_reweighting_halves_the_error_counts_past_the_cap():
 def test_lri_rejects_bad_arguments(cls):
     with pytest.raises(ValueError):
         cls(n_rules=0)
-    one = BooleanDataRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
+    one = HorizontalBitmapRepresentation(DataSpec(["a"]), np.ones((3, 1), bool), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
         cls().fit(one)
 
@@ -138,7 +138,7 @@ def _plain(n=300, k=12, seed=0, weights=False, classes=2):
         y = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
     else:
         y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(DataSpec([f"f{i}" for i in range(k)]), raw, y)
+    data = HorizontalBitmapRepresentation(DataSpec([f"f{i}" for i in range(k)]), raw, y)
     return data.with_weights(rng.integers(1, 4, n).astype(float)) if weights else data
 
 
@@ -187,7 +187,7 @@ def test_lri_error_is_the_weighted_error_with_the_papers_adaptive_k():
     # positive and no negative, c two negatives and no positive (dead)
     X = np.array([[1, 1, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1], [0, 0, 1]], dtype=bool)
     y = np.array(["p", "p", "n", "n", "n"])
-    data = BooleanDataRepresentation(DataSpec(["a", "b", "c"]), X, y)
+    data = HorizontalBitmapRepresentation(DataSpec(["a", "b", "c"]), X, y)
     obj = LRIError()
     from pyrulearn.learners.seco import handle_for
     rule = EmptyRuleAllFeatures().initial_candidates(data, "p")[0][0]

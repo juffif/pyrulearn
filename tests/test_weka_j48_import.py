@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from pyrulearn import BooleanDataRepresentation, DataSpec
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec
 from pyrulearn.models import DecisionList, DisjointRuleSet
 from pyrulearn.data.io import binarize
 from pyrulearn.interfaces.weka import J48Importer
@@ -189,7 +189,7 @@ def test_end_to_end_predict_matches_weka_exactly_and_is_disjoint_exhaustive():
 
     df = _real_arff_dataframe()
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+    rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
     preds = np.asarray(rules.predict(rep))
 
     expected = np.where(
@@ -228,7 +228,7 @@ def test_deep_tree_with_multilevel_backtracking():
 
     ds = importer.dataspec
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+    rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
     preds = np.asarray(rules.predict(rep))
     accuracy = (preds == df["label"].to_numpy()).mean()
     # Weka's own real run on this exact tree reported 75.7% training accuracy

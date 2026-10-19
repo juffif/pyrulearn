@@ -3,7 +3,7 @@ import pytest
 
 pytest.importorskip("mlrl.boosting")
 
-from pyrulearn.data import BooleanDataRepresentation  # noqa: E402
+from pyrulearn.data import HorizontalBitmapRepresentation  # noqa: E402
 from pyrulearn.interfaces.boomer import MLRLBoomer  # noqa: E402
 from pyrulearn.models import LinearRuleModel  # noqa: E402
 
@@ -15,7 +15,7 @@ def _data(n=400, seed=0):
     raw = rng.random((n, 6)) < 0.5
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & raw[:, 3], "pos", "neg")
     y = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw), y)
 
 
 @pytest.mark.parametrize("params", [dict(max_rules=10), dict(max_rules=40, l2_regularization_weight=1.0)])
@@ -35,7 +35,7 @@ def test_boomer_import_reproduces_its_decision_function(params):
 def test_boomer_is_binary_only_here():
     rng = np.random.default_rng(1)
     raw = rng.random((60, 3)) < 0.5
-    three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
+    three = HorizontalBitmapRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
         MLRLBoomer(max_rules=5).fit(three)
 

@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, NListRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, NListRepresentation
 from pyrulearn.evaluation import RuleStats
 from pyrulearn.heuristics import SlipperZ
 from pyrulearn.learners.boosting import Slipper
@@ -18,7 +18,7 @@ def _data(n=600, seed=0, noise=0.1, n_features=6):
     y = np.where(raw[:, 0] & raw[:, 1] | raw[:, 2] & raw[:, 3], "pos", "neg")
     flip = rng.random(n) < noise
     y = np.where(flip, np.where(y == "pos", "neg", "pos"), y)
-    return BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(n_features)]), neg_X(raw), y)
+    return HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(n_features)]), neg_X(raw), y)
 
 
 def _bodies(model):
@@ -68,7 +68,7 @@ def test_slipper_target_class_and_multiclass():
     rng = np.random.default_rng(2)
     raw = rng.random((400, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    multi = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    multi = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
     model = Slipper(n_rounds=5, random_state=0).fit(multi)
     assert model.labels == ["a", "b", "c"]
     assert {r.target for r in model.rules} == {"a", "b", "c"}
@@ -87,7 +87,7 @@ def test_slipper_uses_the_data_weights_as_initial_boosting_weights():
 def test_slipper_rejects_bad_arguments():
     with pytest.raises(ValueError):
         Slipper(n_rounds=0)
-    one_class = BooleanDataRepresentation(neg_spec(["a"]), neg_X(np.ones((3, 1), bool)), np.array(["x"] * 3))
+    one_class = HorizontalBitmapRepresentation(neg_spec(["a"]), neg_X(np.ones((3, 1), bool)), np.array(["x"] * 3))
     with pytest.raises(ValueError, match="two classes"):
         Slipper().fit(one_class)
 
@@ -150,7 +150,7 @@ def test_ender_multiclass_and_loss_restrictions():
     rng = np.random.default_rng(2)
     raw = rng.random((400, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
-    data = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(4)]), neg_X(raw), y)
     model = ENDER(n_rules=60, random_state=0).fit(data)
     assert model.labels == ["a", "b", "c"]
     assert np.mean(np.asarray(model.predict(data)) == y) > 0.95
@@ -163,7 +163,7 @@ def test_ender_multiclass_and_loss_restrictions():
 def test_ender_early_stopping_ends_on_noise():
     rng = np.random.default_rng(3)
     raw = rng.random((400, 6)) < 0.5
-    noise = BooleanDataRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw),
+    noise = HorizontalBitmapRepresentation(neg_spec([f"f{i}" for i in range(6)]), neg_X(raw),
                                       rng.choice(["x", "y"], 400))
     full = ENDER(n_rules=200, random_state=0).fit(noise)
     stopped = ENDER(n_rules=200, early_stopping=True, random_state=0).fit(noise)
@@ -271,7 +271,7 @@ def test_optimal_rule_boosting_model():
 def test_optimal_rule_boosting_rejects_bad_input():
     rng = np.random.default_rng(2)
     raw = rng.random((60, 3)) < 0.5
-    three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
+    three = HorizontalBitmapRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
         DenseORB().fit(three)
     with pytest.raises(ValueError):
@@ -340,7 +340,7 @@ def test_orb_rejects_bad_input():
     from pyrulearn.learners.seco import BeamSearch
     rng = np.random.default_rng(2)
     raw = rng.random((60, 3)) < 0.5
-    three = BooleanDataRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
+    three = HorizontalBitmapRepresentation(neg_spec(["a", "b", "c"]), neg_X(raw), rng.choice(["x", "y", "z"], 60))
     with pytest.raises(ValueError, match="binary"):
         ORB().fit(three)
     with pytest.raises(ValueError):
@@ -374,7 +374,7 @@ def _numeric_data(n=300, seed=3):
     y = np.where((df["x"] > 0.3) & (df["c"] != "q") | (df["z"] < -0.8), "pos", "neg")
     df["y"] = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
     spec = build_dataspec(df, target="y", max_intervals=6).build()
-    return BooleanDataRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
+    return HorizontalBitmapRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
 
 
 ENDER_CONFIGS = [
@@ -413,5 +413,5 @@ def test_impurity_criteria_are_components():
 def test_boomer_and_dense_boomer_learn_the_same_model():
     data = _numeric_data()
     assert str(Boomer(n_rules=40).fit(data)) == str(DenseBoomer(n_rules=40).fit(data))
-    assert DenseBoomer().NATIVE_REPRESENTATIONS == (BooleanDataRepresentation,)
+    assert DenseBoomer().NATIVE_REPRESENTATIONS == (HorizontalBitmapRepresentation,)
     assert Boomer().NATIVE_REPRESENTATIONS is None

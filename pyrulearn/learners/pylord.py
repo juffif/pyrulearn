@@ -59,7 +59,7 @@ discussion):
   intersection of the *parent* rule's N-list with the added item's,
   instead of an O(n_rows) recount.
   `pyrulearn.data.NListRepresentation` builds that index --
-  passing one to `PyLORD.fit` instead of a `BooleanDataRepresentation`
+  passing one to `PyLORD.fit` instead of a `HorizontalBitmapRepresentation`
   runs the whole every-example search on it, with identical rules (see
   `demos/representations.py`). `pyrulearn.learners.seco.BeamSearch`/
   `HillClimbing` now thread that N-list incrementally too
@@ -89,7 +89,7 @@ from ..combiners import HeuristicMaxCombiner
 from ..models import (
     ConceptModel, FlatRuleSet, MajorityClass, SingleRule, annotate_default_rule, annotate_rules,
 )
-from ..data import BooleanDataRepresentation
+from ..data import HorizontalBitmapRepresentation
 from ..rule import Rule
 from .seco import (
     BeamSearch, GrowPruneSplit, NoPostProcessing, NoSplit, ReducedErrorPruning,
@@ -184,7 +184,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
 
     # -- the three stages ------------------------------------------------
 
-    def _search_pool(self, rep: BooleanDataRepresentation) -> List[Rule]:
+    def _search_pool(self, rep: HorizontalBitmapRepresentation) -> List[Rule]:
         search = self.search if self.search is not None else BeamSearch(
             beam_width=self.beam_width, max_conditions=self.max_conditions,
         )
@@ -239,7 +239,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
 
         return list(pool.values())
 
-    def _weights_and_pos(self, pool: List[Rule], rep: BooleanDataRepresentation):
+    def _weights_and_pos(self, pool: List[Rule], rep: HorizontalBitmapRepresentation):
         """Returns `(weights, pos)`, plain arrays aligned with `pool` --
         purely internal to `_coverage_filter`'s per-row best-rule choice,
         not stored on any rule (no declarative weight is kept; a kept
@@ -254,7 +254,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
         return weights, pos
 
     def _coverage_filter(
-        self, pool: List[Rule], rep: BooleanDataRepresentation, weights: np.ndarray, pos: np.ndarray,
+        self, pool: List[Rule], rep: HorizontalBitmapRepresentation, weights: np.ndarray, pos: np.ndarray,
     ) -> List[Rule]:
         """LORD's `RuleManager` filter: keep a rule only if it's the best
         covering rule (metric, then positives) of its class for at least
@@ -274,17 +274,17 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
 
     # -- fit ----------------------------------------------------------------
 
-    def _induce(self, data: BooleanDataRepresentation) -> List[SingleRule]:
+    def _induce(self, data: HorizontalBitmapRepresentation) -> List[SingleRule]:
         pool = self._search_pool(data)
         weights, pos = self._weights_and_pos(pool, data)
         kept = self._coverage_filter(pool, data, weights, pos)
         return annotate_rules(kept, data)
 
-    def _default_model(self, data: BooleanDataRepresentation) -> type:
+    def _default_model(self, data: HorizontalBitmapRepresentation) -> type:
         return ConceptModel if self.target_class is not None else FlatRuleSet
 
     @produces(FlatRuleSet)
-    def _fit_native(self, data: BooleanDataRepresentation, **kw) -> FlatRuleSet:
+    def _fit_native(self, data: HorizontalBitmapRepresentation, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)` -- native LORD: seed every row
         (or every `target_class` row), a `FlatRuleSet` with
         `HeuristicMaxCombiner` (scored from measured stats -- LORD's own
@@ -305,7 +305,7 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
     # pick among already-computed candidates.
 
     @produces(ConceptModel)
-    def _fit_concept(self, data: BooleanDataRepresentation, *,
+    def _fit_concept(self, data: HorizontalBitmapRepresentation, *,
                      label: Any = None, fallback: Any = None) -> ConceptModel:
         """`fit(data, model=ConceptModel, label="a")` -- LORD seeding
         restricted to one class."""
@@ -320,13 +320,13 @@ class PyLORD(DecomposingLearner, NativeRuleLearner):
         model = ConceptModel(lc._induce(data), label=target, default_prediction=default)
         return annotate_default_rule(model, data)
 
-    def _fit_binary(self, data: BooleanDataRepresentation, positive: Any,
+    def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
 
 
 def pylord_candidates(
-    data: BooleanDataRepresentation,
+    data: HorizontalBitmapRepresentation,
     m: float = 0.1,
     beam_width: int = 1,
     prune: bool = True,

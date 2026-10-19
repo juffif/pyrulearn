@@ -232,7 +232,7 @@ def test_ge_and_le_at_same_value_behaves_as_equality():
     # value satisfy both literals
     import pandas as pd
     from pyrulearn.data.io import binarize
-    from pyrulearn.data import BooleanDataRepresentation
+    from pyrulearn.data import HorizontalBitmapRepresentation
     from pyrulearn.rule import Rule, Literal
 
     b = DataSpecBuilder()
@@ -244,7 +244,7 @@ def test_ge_and_le_at_same_value_behaves_as_equality():
 
     df = pd.DataFrame({"age": [28, 29, 30, 31, 32]})
     X = binarize(ds, df)
-    rep = BooleanDataRepresentation(ds, X, np.array(["?"] * 5))
+    rep = HorizontalBitmapRepresentation(ds, X, np.array(["?"] * 5))
     covered = r.covers_data(rep)
     assert list(covered) == [False, False, True, False, False]
     print("age>=30 and age<=30 together behave as age==30, both structurally and at coverage: OK")

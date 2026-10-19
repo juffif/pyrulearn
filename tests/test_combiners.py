@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, ListCombiner, MacroMaxCombiner, MacroVoteCombiner, MicroMaxCombiner, MicroVoteCombiner
 from pyrulearn import (
-    BooleanDataRepresentation,
+    HorizontalBitmapRepresentation,
     DataSpec,
     DistributionCombiner,
     HeuristicCombiner,
@@ -24,14 +24,14 @@ def test_combiner_instances_are_what_predict_takes():
     ds = DataSpec(["a", "b"])
     train_X = np.array([[1, 0], [1, 0], [1, 0], [0, 1], [0, 1]], dtype=bool)
     train_y = np.array(["first", "first", "first", "heaviest", "second"])  # a: 3/3 -> pure; b: 1/2
-    train_rep = BooleanDataRepresentation(ds, train_X, train_y)
+    train_rep = HorizontalBitmapRepresentation(ds, train_X, train_y)
 
     r_first = Rule.from_pos_neg(pos=[0], target="first", dataspec=ds)
     r_heaviest = Rule.from_pos_neg(pos=[1], target="heaviest", dataspec=ds)
     r_first, r_heaviest = annotate_rules([r_first, r_heaviest], train_rep)
     rs = FlatRuleSet([r_first, r_heaviest])
     X = np.array([[1, 1]], dtype=bool)  # both fire
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     assert list(rs.predict(data_rep, combiner=ListCombiner())) == ["first"]
     assert list(rs.predict(data_rep, combiner=ListCombiner())) == ["first"]
@@ -54,14 +54,14 @@ def test_heuristic_max_combiner_scores_from_measured_stats():
         [0, 1], [0, 1], [1, 0],           # b fires 3x: pos, pos, (a also fires on the 3rd)
     ], dtype=bool)
     y = np.array(["pos", "pos", "pos", "pos", "pos", "neg", "pos"])
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    data_rep = HorizontalBitmapRepresentation(ds, X, y)
 
     r_a = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r_b = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     r_a, r_b = annotate_rules([r_a, r_b], data_rep)  # r_a's real precision (1.0) beats r_b's (0.5)
     rs = FlatRuleSet([r_a, r_b])
 
-    test_rep = BooleanDataRepresentation(ds, np.array([[1, 1]], dtype=bool))  # both fire
+    test_rep = HorizontalBitmapRepresentation(ds, np.array([[1, 1]], dtype=bool))  # both fire
     assert list(rs.predict(test_rep, combiner=HeuristicMaxCombiner(Laplace()))) == ["pos"]  # via r_a, not r_b
     # a non-Laplace heuristic (Precision) agrees here too, just to show it's pluggable
     assert list(rs.predict(test_rep, combiner=HeuristicMaxCombiner(Precision()))) == ["pos"]
@@ -88,7 +88,7 @@ def test_heuristic_vote_combiner_forest_like_scenario():
         [[1, 1, 0]],        # tree1_yes/tree2_yes wrong; tree3_no correct
         dtype=bool)
     train_y = np.where(train_raw[:, 2], "yes", "no")
-    train_rep = BooleanDataRepresentation(ds, neg_X(train_raw), train_y)
+    train_rep = HorizontalBitmapRepresentation(ds, neg_X(train_raw), train_y)
     rules = annotate_rules(
         [tree1_yes, tree1_no, tree2_yes, tree2_no, tree3_yes, tree3_no], train_rep,
     )
@@ -98,7 +98,7 @@ def test_heuristic_vote_combiner_forest_like_scenario():
         [1, 1, 0],  # trees vote yes, yes, no -> majority "yes" unweighted
         [0, 0, 1],  # trees vote no, no, yes -> majority "no" unweighted
     ])
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     preds = forest.predict(data_rep, combiner=CountVoteCombiner())
     assert list(preds) == ["yes", "no"]
@@ -122,14 +122,14 @@ def test_distribution_combiners_micro_vs_macro_genuinely_diverge():
         dtype=bool,
     )
     y = np.array(["yes"] * 80 + ["no"] * 20 + ["yes"] * 1 + ["no"] * 9)
-    data_rep = BooleanDataRepresentation(ds, X, y)
+    data_rep = HorizontalBitmapRepresentation(ds, X, y)
 
     r_big_leaf = Rule.from_pos_neg(pos=[0], target="yes", dataspec=ds)
     r_small_leaf = Rule.from_pos_neg(pos=[1], target="no", dataspec=ds)
     r_big_leaf, r_small_leaf = annotate_rules([r_big_leaf, r_small_leaf], data_rep)
     rs = FlatRuleSet([r_big_leaf, r_small_leaf])
 
-    test_rep = BooleanDataRepresentation(ds, np.array([[1, 1]], dtype=bool))  # both fire
+    test_rep = HorizontalBitmapRepresentation(ds, np.array([[1, 1]], dtype=bool))  # both fire
 
     # micro: pooled raw counts -- yes=81, no=29 -> the big leaf dominates
     assert list(rs.predict(test_rep, combiner=MicroVoteCombiner())) == ["yes"]
@@ -150,7 +150,7 @@ def test_heuristic_combiner_raises_without_stats_on_a_genuine_disagreement():
     r_neg = Rule.from_pos_neg(pos=[1], target="neg", dataspec=ds)
     rs = FlatRuleSet([r_pos, r_neg])
     X = np.array([[1, 1]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     try:
         rs.predict(data_rep, combiner=HeuristicMaxCombiner())
@@ -171,7 +171,7 @@ def test_distribution_combiner_raises_without_stats_on_a_genuine_disagreement():
     r_neg = Rule.from_pos_neg(pos=[1], target="neg", dataspec=ds)
     rs = FlatRuleSet([r_pos, r_neg])
     X = np.array([[1, 1]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     try:
         rs.predict(data_rep, combiner=MacroVoteCombiner())
@@ -189,7 +189,7 @@ def test_a_trivial_single_target_never_needs_stats():
     r2 = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     rs = FlatRuleSet([r1, r2])
     X = np.array([[1, 1]], dtype=bool)
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     assert list(rs.predict(data_rep, combiner=HeuristicMaxCombiner())) == ["pos"]
     assert list(rs.predict(data_rep, combiner=HeuristicVoteCombiner())) == ["pos"]
@@ -214,7 +214,7 @@ def test_count_vote_combiner_is_the_vote_shortcut():
     r3 = Rule.from_pos_neg(pos=[0], target="y", dataspec=ds)
     rs = FlatRuleSet([r1, r2, r3])
     X = np.array([[1, 1]], dtype=bool)  # all three fire: x, x, y -> x wins 2-1
-    data_rep = BooleanDataRepresentation(ds, X)
+    data_rep = HorizontalBitmapRepresentation(ds, X)
 
     assert list(rs.predict(data_rep, combiner=CountVoteCombiner())) == ["x"]
     assert list(rs.predict(data_rep, combiner=CountVoteCombiner())) == ["x"]
@@ -231,7 +231,7 @@ def test_heuristic_vote_combiner_flips_a_noisy_majority():
     ], dtype=bool)
     y = np.array(["pos", "pos", "pos", "pos", "neg", "pos", "pos", "neg"])
     ds = DataSpec(["a", "b", "c"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     r_pure = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r_noisy1 = Rule.from_pos_neg(pos=[1], target="neg", dataspec=ds)
@@ -239,7 +239,7 @@ def test_heuristic_vote_combiner_flips_a_noisy_majority():
     rules = annotate_rules([r_pure, r_noisy1, r_noisy2], rep)  # real measured stats against rep
     rs = FlatRuleSet(rules)
 
-    test_rep = BooleanDataRepresentation(DataSpec(["a", "b", "c"]), np.array([[1, 1, 1]], dtype=bool))
+    test_rep = HorizontalBitmapRepresentation(DataSpec(["a", "b", "c"]), np.array([[1, 1, 1]], dtype=bool))
 
     # unweighted: 2 "neg" votes (r_noisy1, r_noisy2) beat 1 "pos" vote (r_pure)
     assert list(rs.predict(test_rep, combiner=CountVoteCombiner())) == ["neg"]
@@ -262,7 +262,7 @@ def _tie_rules(specs, totals):
     ds = DataSpec(["a", "b", "c", "d", "e"])
     rules = [SingleRule(Rule([i], target=t, dataspec=ds)).set_stats_from_counts(covered, totals)
              for i, (t, covered) in enumerate(specs)]
-    row = BooleanDataRepresentation(ds, np.ones((1, 5), dtype=bool))
+    row = HorizontalBitmapRepresentation(ds, np.ones((1, 5), dtype=bool))
     return rules, row
 
 

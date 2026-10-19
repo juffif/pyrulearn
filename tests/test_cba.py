@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pyrulearn.data import BooleanDataRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation, DataSpec, NListRepresentation, SparseDataRepresentation
 from pyrulearn.learners.associative import generate_cars, sort_by_measured_precedence
 from pyrulearn.learners.associative import CBA
 from pyrulearn.models import (
@@ -13,7 +13,7 @@ from pyrulearn.rule import Rule
 def _rep(X, y, names=None):
     X = np.asarray(X, dtype=bool)
     ds = DataSpec(names or [f"f{i}" for i in range(X.shape[1])])
-    return BooleanDataRepresentation(ds, X, np.asarray(y))
+    return HorizontalBitmapRepresentation(ds, X, np.asarray(y))
 
 
 # -- CBA-RG / CBA-CB, hand-verified -----------------------------------------
@@ -97,7 +97,7 @@ def test_cba_auto_converts_a_boolean_representation_transparently():
     assert not isinstance(rep, NListRepresentation)
     model = CBA(min_support=0.05, min_confidence=0.5, max_len=2).fit(rep)
     assert isinstance(model, DecisionList)
-    print("CBA.fit auto-converts a plain BooleanDataRepresentation without the caller doing it: OK")
+    print("CBA.fit auto-converts a plain HorizontalBitmapRepresentation without the caller doing it: OK")
 
 
 def test_cba_raises_a_clear_error_past_the_auto_convert_threshold():
@@ -130,7 +130,7 @@ def test_cba_distills_correctly_on_a_sparse_representation_not_just_boolean_or_n
     # coverage_select/CBA._select only ever call the universal
     # data.coverage(rule)/.n_samples/.y -- confirm they actually work
     # (not just "don't crash") on a representation that's neither
-    # NListRepresentation nor BooleanDataRepresentation.
+    # NListRepresentation nor HorizontalBitmapRepresentation.
     X = [[1, 1]] * 3 + [[1, 0]] * 2 + [[0, 1]] * 2 + [[0, 0]] * 1
     y = ["a"] * 3 + ["a"] * 2 + ["b"] * 2 + ["b"] * 1
     boolean = _rep(X, y)
@@ -153,7 +153,7 @@ def test_cba_random_forest_rules_round_trip():
 
     rep, raw, y = _separable_multiclass(n=200)
     ds = neg_spec(list("abcde"))
-    data = BooleanDataRepresentation(ds, neg_X(raw), y)
+    data = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
     rf = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(neg_X(raw), y)
     forest_rules = from_random_forest(rf, dataspec=ds)

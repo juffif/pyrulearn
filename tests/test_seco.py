@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 from pyrulearn.data import DataSpec
-from pyrulearn.data import BooleanDataRepresentation
+from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.models import (
     ConceptCascade, ConceptModel, ConceptSet, DecisionList, DisjointRuleSet, FlatRuleSet, PairwiseModel,
     annotate_rules,
@@ -58,7 +58,7 @@ def _conjunction_dataset():
     ], dtype=bool)
     y = np.array(["pos", "pos"] + ["neg"] * 6)
     ds = DataSpec(["a", "b", "c"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     return rep, ds
 
 
@@ -120,7 +120,7 @@ def test_hill_climbers_stop_at_the_start_when_no_move_improves():
     X = np.array([[1], [0], [1], [0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     initial = [(Rule([], target="pos", dataspec=ds), frozenset({0}))]
 
     assert GainAscentHillClimbing().search(rep, "pos", FoilGain(), initial).length() == 0
@@ -135,7 +135,7 @@ def test_hill_climbing_returns_none_when_the_walk_cant_start_and_a_gate_is_set()
     X = np.array([[1], [0], [1], [0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     initial = [(Rule([], target="pos", dataspec=ds), frozenset({0}))]
 
     gate = ThresholdPrePruning(Accuracy(), threshold=0.6, operator="<")  # empty rule's accuracy 0.5 fails it
@@ -186,7 +186,7 @@ def test_beam_search_deduplicates_rules_reached_by_different_orders():
     flip = rng.random(n) < 0.15
     y = np.where(flip, np.where(y == "pos", "neg", "pos"), y)
     ds = DataSpec(["a", "b", "c", "d", "e"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     empty_rule = Rule([], target="pos", dataspec=ds)
     initial = [(empty_rule, frozenset(range(5)))]
@@ -321,7 +321,7 @@ def test_grow_prune_split_falls_back_when_stratification_is_impossible():
     X = np.zeros((11, 2), dtype=bool)
     y = np.array(["pos"] + ["neg"] * 10)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     grow_mask, prune_mask = GrowPruneSplit(prune_fraction=0.3, random_state=0).prepare(rep, "pos")
     assert not np.any(grow_mask & prune_mask)
@@ -333,7 +333,7 @@ def test_grow_prune_split_falls_back_to_no_split_when_too_few_examples():
     X = np.zeros((1, 2), dtype=bool)
     y = np.array(["pos"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     mask, context = GrowPruneSplit(prune_fraction=0.3, random_state=0).prepare(rep, "pos")
     assert mask is None  # matches NoSplit's behavior: no example_mask given in, none constructed
@@ -353,7 +353,7 @@ def _grow_prune_overfit_dataset():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg", "pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     grow_mask = np.array([True] * 4 + [False] * 4)
     prune_mask = np.array([False] * 4 + [True] * 4)
     return rep, ds, grow_mask, prune_mask
@@ -390,7 +390,7 @@ def test_reduced_error_pruning_never_truncates_to_the_empty_rule():
     X = np.array([[1, 1], [1, 0], [0, 1]], dtype=bool)
     y = np.array(["pos", "pos", "pos"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     grown_rule = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # "a AND b"
     prune_mask = np.ones(3, dtype=bool)
 
@@ -405,7 +405,7 @@ def test_reduced_error_pruning_leaves_an_already_empty_rule_alone():
     ds = DataSpec(["a", "b"])
     X = np.array([[1, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "neg"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     empty_rule = Rule([], target="pos", dataspec=ds)
     prune_mask = np.ones(2, dtype=bool)
 
@@ -445,7 +445,7 @@ def test_beam_search_tp_zero_floor_stops_specializing():
         [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [0, 0, 0],  # negatives
     ])
     y = np.array(["pos", "pos"] + ["neg"] * 6)
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     useless_rule = make_rule(ds, pos=["b"], neg=["a"], target="pos")  # b=True AND a=False
     stats = RuleStats.from_rule(useless_rule, rep, "pos")
     assert stats.tp == 0 and stats.fp > 0  # covers negatives only -- useless for "pos"
@@ -469,7 +469,7 @@ def _laplace_trap_dataset():
     ], dtype=bool)
     y = np.array(["pos", "pos"] + ["neg"] * 6)
     ds = DataSpec(["a", "b", "e"])
-    return BooleanDataRepresentation(ds, X, y), ds
+    return HorizontalBitmapRepresentation(ds, X, y), ds
 
 
 @pytest.mark.parametrize("search", [BeamSearch(beam_width=1), HillClimbing()])
@@ -519,7 +519,7 @@ def test_beam_search_optimistic_pruning_halts_the_whole_search_early():
     flip = rng.random(n) < 0.10
     y = np.where(flip, np.where(y == "pos", "neg", "pos"), y)
     ds = DataSpec(["a", "b", "c", "d", "e"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     initial = [(Rule([], target="pos", dataspec=ds), frozenset(range(5)))]
 
     with _counting_expansions() as on:
@@ -603,7 +603,7 @@ def test_hill_climbers_grow_to_consistency_when_the_local_optimum_stop_is_off():
     y = np.where(rng.random(n) < 0.12, ~y_clean, y_clean)
     y = np.where(y, "pos", "neg")
     ds = DataSpec([f"a{i}" for i in range(6)])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     init = lambda: [(Rule([], target="pos", dataspec=ds), frozenset(range(6)))]
 
     for search_cls, heuristic in [(HillClimbing, Accuracy()), (GainAscentHillClimbing, FoilGain())]:
@@ -870,7 +870,7 @@ def _disjunctive_dataset():
     ], dtype=bool)
     y = np.array(["pos", "pos", "pos"] + ["neg"] * 7)
     ds = DataSpec(["a", "b", "c", "d"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     return rep, ds, y
 
 
@@ -915,7 +915,7 @@ def test_seco_binary_is_a_concept_model_with_a_majority_fallback():
     X[:3, 0] = True  # only the "a" rows carry feature 0
     y = np.array(["a", "a", "a", "b", "b", "b", "b", "c", "c", "c"])
     ds = DataSpec(["f0", "f1"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     learner = SingleRuleLearner(heuristic=Accuracy(), search=BeamSearch(beam_width=3))
     concept = SeCo(single_rule_learner=learner, target_class="a").fit(rep)
@@ -986,7 +986,7 @@ def test_seco_no_target_class_dispatches_the_model_type():
     raw = rng.random((240, 4)) < 0.5
     y = np.where(raw[:, 0], "a", np.where(raw[:, 1], "b", "c"))
     ds = neg_spec([f"f{i}" for i in range(4)])
-    rep = BooleanDataRepresentation(ds, neg_X(raw), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
     learner = SingleRuleLearner(heuristic=Accuracy(), search=BeamSearch(beam_width=3))
 
     ovr = SeCo(single_rule_learner=learner).fit(rep)                 # default: ConceptSet
@@ -1013,7 +1013,7 @@ def test_seco_seed_covering_is_one_loop_over_all_classes():
     y = np.where(raw[:, 0], "x", np.where(raw[:, 1], "y", "z"))
     y = np.where(rng.random(300) < 0.03, rng.permutation(y), y)
     ds = neg_spec([f"f{i}" for i in range(5)])
-    rep = BooleanDataRepresentation(ds, neg_X(raw), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(raw), y)
 
     m = AQR(random_state=0).fit(rep)                       # AQR default is model=DecisionList
     assert type(m) is DecisionList
@@ -1052,7 +1052,7 @@ def test_seco_covering_removes_both_classes_not_just_positives():
     X = np.array([[1, 1], [1, 0], [1, 1], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     rule = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # a=True
 
     # replicates exactly the one-line update SeCo.fit uses
@@ -1137,7 +1137,7 @@ def test_seco_stop_covering_via_uncovered_positives():
 
 def test_seco_raises_without_labels():
     ds = DataSpec(["a", "b"])
-    rep_no_y = BooleanDataRepresentation(ds, np.array([[1, 0], [0, 1]], dtype=bool))
+    rep_no_y = HorizontalBitmapRepresentation(ds, np.array([[1, 0], [0, 1]], dtype=bool))
     learner = SingleRuleLearner(heuristic=Accuracy())
     seco = SeCo(single_rule_learner=learner, target_class="pos")
     try:
@@ -1260,7 +1260,7 @@ def test_cn2_conceptset_uses_microvotecombiner_not_the_family_max_default():
     ds = DataSpec(["a", "b", "c"])
     X = np.array([[1, 0, 0]] * 5 + [[0, 1, 0]] * 5 + [[0, 0, 1]] * 5, dtype=bool)
     y = np.array(["x"] * 5 + ["y"] * 5 + ["z"] * 5)
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     model = CN2(random_state=0).fit(rep)
     assert isinstance(model, ConceptSet)
     assert isinstance(model.combiner, MicroVoteCombiner)
@@ -1285,7 +1285,7 @@ def test_cn2_microvotecombiner_matches_clark_and_boswell_1991s_summed_distributi
         dtype=bool,
     )
     y = np.array(["elephant"] * 5 + ["bird"] * 4 + ["bird"] * 4)
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     rule_a = Rule.from_pos_neg(pos=[0], target="elephant", dataspec=ds)
     rule_b = Rule.from_pos_neg(pos=[1], target="bird", dataspec=ds)
@@ -1297,7 +1297,7 @@ def test_cn2_microvotecombiner_matches_clark_and_boswell_1991s_summed_distributi
     assert Laplace().score(rule_a.stats().confusion.rule_stats("elephant")) > \
            Laplace().score(rule_b.stats().confusion.rule_stats("bird"))
 
-    fired_by_all = BooleanDataRepresentation(ds, np.array([[1, 1, 1]], dtype=bool))
+    fired_by_all = HorizontalBitmapRepresentation(ds, np.array([[1, 1, 1]], dtype=bool))
     rs = FlatRuleSet([rule_a, rule_b, rule_c])
     assert list(rs.predict(fired_by_all, combiner=HeuristicMaxCombiner(Laplace()))) == ["elephant"]
     # MicroVoteCombiner sums raw covered counts instead: elephant=5, bird=4+4=8 -> bird wins
@@ -1427,7 +1427,7 @@ def test_aqr_uses_negation_features_for_negated_conditions():
     ds = neg_spec(["a", "b"])
     X = neg_X([[1, 0], [1, 0], [1, 1], [0, 0], [0, 1]])
     y = np.array(["pos", "pos", "neg", "neg", "neg"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     ruleset = AQR(target_class="pos").fit(rep)
     assert len(ruleset.rules) == 1
@@ -1445,7 +1445,7 @@ def test_aqr_stops_when_no_consistent_rule_can_be_found():
     X = np.array([[1, 0], [1, 0], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "neg", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     ruleset = AQR(target_class="pos").fit(rep)
     assert len(ruleset.rules) == 0
@@ -1460,7 +1460,7 @@ def test_aqr_sets_a_bad_seed_aside_and_keeps_covering():
     # (a) from the other positives -- not stop with an empty rule set
     X = np.array([[0, 0], [0, 0], [1, 0], [1, 1], [0, 1], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "neg", "pos", "pos", "neg", "neg", "neg"])
-    rep = BooleanDataRepresentation(DataSpec(["a", "b"]), X, y)
+    rep = HorizontalBitmapRepresentation(DataSpec(["a", "b"]), X, y)
 
     for strategy in ("first", "random"):
         ruleset = AQR(target_class="pos", space_init=SeedExample(strategy, 0)).fit(rep)
@@ -1475,7 +1475,7 @@ def test_aqr_require_consistency_false_lets_an_inconsistent_rule_through():
     X = np.array([[1, 0], [1, 0], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "neg", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     ruleset = AQR(target_class="pos", heuristic=CoveredPositives(), require_consistency=False).fit(rep)
     assert len(ruleset.rules) == 1
@@ -1495,7 +1495,7 @@ def test_encoding_length_restriction_arithmetic_matches_quinlan_1990_p251():
     # whole-search level)
     import math
     ds_wide = DataSpec([f"a{i}" for i in range(100)])
-    rep_wide = BooleanDataRepresentation(ds_wide, np.zeros((1, 100), dtype=bool))
+    rep_wide = HorizontalBitmapRepresentation(ds_wide, np.zeros((1, 100), dtype=bool))
     criterion = EncodingLengthRestriction()
 
     # l=2, p=40, N=300: nowhere near "too expensive" yet
@@ -1518,7 +1518,7 @@ def test_encoding_length_restriction_arithmetic_matches_quinlan_1990_p251():
 
 def test_encoding_length_restriction_never_fires_on_the_empty_rule():
     ds6 = DataSpec(["a", "b", "c", "d", "e", "f"])
-    rep6 = BooleanDataRepresentation(ds6, np.zeros((1, 6), dtype=bool))
+    rep6 = HorizontalBitmapRepresentation(ds6, np.zeros((1, 6), dtype=bool))
     empty = Rule([], target="pos", dataspec=ds6)
     criterion = EncodingLengthRestriction()
     assert criterion.evaluate(empty, RuleStats(tp=150, fp=150, fn=0, tn=0), rep6, "pos") is False
@@ -1540,7 +1540,7 @@ def _wide_noisy_disjunction_dataset(n=300, d=60, seed=1, noise_rate=0.05):
     noise = rng.random(n) < noise_rate
     y = np.where(noise, ~y_clean, y_clean)
     y = np.where(y, "pos", "neg")
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     return rep, y
 
 
@@ -1648,7 +1648,7 @@ def _noisy_3class(n=500, seed=0):
          np.where(raw[:, 2] & raw[:, 3], "b", "c"))
     y = np.where(rng.random(n) < 0.05, rng.permutation(y), y)
     ds = neg_spec([f"f{i}" for i in range(6)])
-    return BooleanDataRepresentation(ds, neg_X(raw), y), ds, y
+    return HorizontalBitmapRepresentation(ds, neg_X(raw), y), ds, y
 
 
 def test_ripper_returns_a_least_frequent_first_concept_cascade():
@@ -1697,7 +1697,7 @@ def test_irep_covering_stop_prevents_a_coin_flip_rule_from_being_kept():
     p = np.where(X[:, 0], 0.55, 0.2)
     y = np.where(rng.random(n) < p, "a", "b")
     ds = DataSpec([f"f{i}" for i in range(5)])
-    data = BooleanDataRepresentation(ds, X, y)
+    data = HorizontalBitmapRepresentation(ds, X, y)
 
     floor = ThresholdPrePruning(Precision(), 0.5, operator="<")
     grow = SingleRuleLearner(heuristic=FoilGain(), search=GainAscentHillClimbing(stop_at_local_optimum=False),
@@ -1746,7 +1746,7 @@ def test_rule_set_description_length_grows_with_redundancy():
 def test_ripper_on_binary_data():
     data, ds, y = _noisy_3class()
     yb = np.where(y == "a", "a", "rest")
-    db = BooleanDataRepresentation(ds, np.asarray(data.X), yb)
+    db = HorizontalBitmapRepresentation(ds, np.asarray(data.X), yb)
     model = Pypper(random_state=0).fit(db)
     assert type(model) is ConceptCascade and model.default_prediction == "rest"
     assert np.mean(np.asarray(model.predict(db)) == yb) > 0.9
@@ -1784,7 +1784,7 @@ def _either_dataset(n=400, seed=0):
     rng = np.random.default_rng(seed)
     raw = rng.random((n, 3)) < 0.5
     y = np.where(raw[:, 0] | raw[:, 1], "pos", "neg")
-    return BooleanDataRepresentation(DataSpec(["a", "b", "c"]), raw, y)
+    return HorizontalBitmapRepresentation(DataSpec(["a", "b", "c"]), raw, y)
 
 
 def test_search_all_is_search_without_branching():
@@ -1921,11 +1921,11 @@ def test_cn2_laplace_counts_the_classes_of_the_data():
     rng = np.random.default_rng(0)
     raw = rng.random((90, 4)) < 0.5
     spec = neg_spec([f"f{i}" for i in range(4)])
-    three = BooleanDataRepresentation(spec, neg_X(raw), np.array(["a", "b", "c"] * 30))
+    three = HorizontalBitmapRepresentation(spec, neg_X(raw), np.array(["a", "b", "c"] * 30))
     cn2 = CN2()
     cn2.fit(three)
     assert cn2.single_rule_learner.heuristic.n_classes == 3
-    cn2.fit(BooleanDataRepresentation(spec, neg_X(raw), np.array(["a", "b"] * 45)))
+    cn2.fit(HorizontalBitmapRepresentation(spec, neg_X(raw), np.array(["a", "b"] * 45)))
     assert cn2.single_rule_learner.heuristic.n_classes == 2
     fixed = CN2(heuristic=Laplace())
     fixed.fit(three)

@@ -2,11 +2,13 @@
 demos/representations.py
 ========================
 
-Four encodings of the same Boolean data, all behind one
+Five encodings of the same Boolean data, all behind one
 `DataRepresentation` interface:
 
-- `BooleanDataRepresentation` -- a `numpy.packbits` bit matrix (the
-  baseline).
+- `HorizontalBitmapRepresentation` -- a `numpy.packbits` bit matrix,
+  packed by example (the baseline).
+- `VerticalBitmapRepresentation` -- the same bit matrix packed by
+  feature: one bit-vector over the examples per feature.
 - `NListRepresentation` -- LORD's PPC-tree / N-list vertical index:
   per-feature row lists, bucketed by shared row prefix.
 - `PrePostNListRepresentation` -- `NListRepresentation` plus pre/post
@@ -16,7 +18,7 @@ Four encodings of the same Boolean data, all behind one
   without the prefix tree.
 
 A learner asks its data only two things -- `coverage(rule)` and
-`features_of(row)` -- so the four are interchangeable and must give the
+`features_of(row)` -- so the five are interchangeable and must give the
 same rules; only the time differs. This demo measures that time and checks
 the equality at every point:
 
@@ -67,10 +69,11 @@ import numpy as np
 
 from pyrulearn import DataSpec, Rule
 from pyrulearn.data import (
-    BooleanDataRepresentation,
+    HorizontalBitmapRepresentation,
     NListRepresentation,
     PrePostNListRepresentation,
     SparseDataRepresentation,
+    VerticalBitmapRepresentation,
 )
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.experiments.catalog import Catalog
@@ -82,8 +85,8 @@ from pyrulearn.learners.seco import CN2, PFossil, Pypper
 RANDOM_STATE = 0
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
-REPRESENTATIONS = ("Boolean", "NList", "PrePostNList", "Sparse")
-_VERTICAL = {"NList": NListRepresentation, "PrePostNList": PrePostNListRepresentation,
+REPRESENTATIONS = ("HBitmap", "VBitmap", "NList", "PrePostNList", "Sparse")
+_VERTICAL = {"VBitmap": VerticalBitmapRepresentation, "NList": NListRepresentation, "PrePostNList": PrePostNListRepresentation,
              "Sparse": SparseDataRepresentation}
 LEARNERS = ("CN2", "PFossil", "Pypper", "PyLORD", "ENDER")
 
@@ -109,7 +112,7 @@ NAME = "representations"
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_representations_cache")
 
-STYLE = {"Boolean": ("o", "tab:blue"), "NList": ("s", "tab:orange"),
+STYLE = {"HBitmap": ("o", "tab:blue"), "VBitmap": ("v", "tab:purple"), "NList": ("s", "tab:orange"),
          "PrePostNList": ("^", "tab:green"), "Sparse": ("d", "tab:red")}
 
 
@@ -147,9 +150,9 @@ def _digest(text: str) -> str:
 
 def _build(kind: str, spec, X, y):
     """The representation of kind `kind`, and the seconds spent building
-    its index from the shared Boolean matrix (0 for Boolean itself)."""
-    boolean = BooleanDataRepresentation(spec, X, y)
-    if kind == "Boolean":
+    its index from the shared HBitmap matrix (0 for HBitmap itself)."""
+    boolean = HorizontalBitmapRepresentation(spec, X, y)
+    if kind == "HBitmap":
         return boolean, 0.0
     t = time.perf_counter()
     rep = _VERTICAL[kind].from_boolean(boolean)
@@ -159,13 +162,13 @@ def _build(kind: str, spec, X, y):
 def _measure_memory(kind: str, spec, X, y) -> dict:
     """Bytes the representation of kind `kind` holds once built, and the peak
     while building it (`tracemalloc`; the inputs `X` and `y` are allocated
-    before tracing starts, so neither counts, nor does the Boolean matrix a
+    before tracing starts, so neither counts, nor does the HBitmap matrix a
     vertical index is built from). A separate pass from `_build`, which is
     timed: tracing slows allocation down."""
-    boolean = None if kind == "Boolean" else BooleanDataRepresentation(spec, X, y)
+    boolean = None if kind == "HBitmap" else HorizontalBitmapRepresentation(spec, X, y)
     tracemalloc.start()
     try:
-        rep = BooleanDataRepresentation(spec, X, y) if kind == "Boolean" else _VERTICAL[kind].from_boolean(boolean)
+        rep = HorizontalBitmapRepresentation(spec, X, y) if kind == "HBitmap" else _VERTICAL[kind].from_boolean(boolean)
         held, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -200,7 +203,7 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
                skip: set, label: str = "") -> List[dict]:
     """Fits `learner` on every representation in `reps` (unless its curve
     already timed out, see `skip`), checking rules and test predictions
-    against Boolean."""
+    against HBitmap."""
     rows = []
     for kind in REPRESENTATIONS:
         key = json.dumps({**key_base, "learner": learner, "rep": kind}, sort_keys=True)
@@ -460,10 +463,10 @@ def write_plots(size_rows, density_rows, width_rows, quick: bool) -> Dict[str, s
             paths[f"size_{learner}{suffix}"] = _save(fig, f"size_{learner.lower()}{suffix}", quick)
 
     fig, ax = plt.subplots(figsize=(6.5, 4.8))
-    builds = [r for r in size_rows if r["learner"] is None and r["rep"] != "Boolean"]
+    builds = [r for r in size_rows if r["learner"] is None and r["rep"] != "HBitmap"]
     size_lines(ax, builds, "build_time", REPRESENTATIONS[1:])
     size_axes(ax, REPRESENTATIONS[1:], True, "index build time (s)",
-              "building the index from the Boolean matrix")
+              "building the index from the HBitmap matrix")
     paths["size_build"] = _save(fig, "size_index_build", quick)
 
     dfits = [r for r in density_rows if r["learner"] and r["error"] is None]
@@ -554,7 +557,7 @@ def write_plots(size_rows, density_rows, width_rows, quick: bool) -> Dict[str, s
             ax.plot(*zip(*pts), "-", marker=marker, color=color, markersize=4, label=kind)
         if value == "mem_bytes":
             pts = sorted((r["k"], r["x_bytes"] * scale) for r in width_rows
-                         if r["learner"] is None and r["rep"] == "Boolean")
+                         if r["learner"] is None and r["rep"] == "HBitmap")
             ax.plot(*zip(*pts), ":", color="gray", label="unpacked X")
         _plain_log_y(ax)
         width_x(ax)
@@ -585,7 +588,7 @@ def write_plots(size_rows, density_rows, width_rows, quick: bool) -> Dict[str, s
 # -- report ----------------------------------------------------------------------------------
 
 def _agreement(rows) -> tuple:
-    """(points compared, points where every representation matched Boolean,
+    """(points compared, points where every representation matched HBitmap,
     list of mismatches)."""
     groups: Dict[str, Dict[str, dict]] = {}
     for r in rows:
@@ -595,10 +598,10 @@ def _agreement(rows) -> tuple:
             groups.setdefault(k, {})[r["rep"]] = r
     compared, agreed, bad = 0, 0, []
     for k, by_rep in groups.items():
-        if "Boolean" not in by_rep or len(by_rep) < 2:
+        if "HBitmap" not in by_rep or len(by_rep) < 2:
             continue
         compared += 1
-        ref = by_rep["Boolean"]
+        ref = by_rep["HBitmap"]
         diff = [kind for kind, r in by_rep.items() if (r["rules"], r["preds"]) != (ref["rules"], ref["preds"])]
         if diff:
             bad.append((json.loads(k), diff))
@@ -609,9 +612,9 @@ def _agreement(rows) -> tuple:
 
 def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
     """One row per (learner, representation), fit time at each `x_field`
-    value. Every non-Boolean cell also carries, in parentheses, its ratio
-    to Boolean's fit time at the same point (``19.41 (37%)``) -- below
-    100% is faster than Boolean -- so a gain or a loss sits right next to
+    value. Every non-HBitmap cell also carries, in parentheses, its ratio
+    to HBitmap's fit time at the same point (``19.41 (37%)``) -- below
+    100% is faster than HBitmap -- so a gain or a loss sits right next to
     the number it's relative to, rather than in a separate, unweighted
     summary that a few cheap points can dominate."""
     fits = [r for r in rows if r["learner"] and (negation is None or r["negation"] == negation)]
@@ -630,7 +633,7 @@ def _fit_table(rows, x_field: str, x_label: str, negation=None) -> str:
                     cells.append("time-out")
                 elif r["error"]:
                     cells.append("error")
-                elif kind == "Boolean":
+                elif kind == "HBitmap":
                     boolean_at[x] = r["fit_time"]
                     cells.append(f"{r['fit_time']:.2f}")
                 else:
@@ -677,7 +680,7 @@ def _bytes(n: float) -> str:
 
 def _memory_table(rows, x_field: str, x_label: str, field: str = "mem_bytes", negation=None) -> str:
     """One row per representation, the memory at each `x_field` value, each
-    non-Boolean cell with its ratio to Boolean in parentheses; the last row is
+    non-HBitmap cell with its ratio to HBitmap in parentheses; the last row is
     the unpacked bool matrix `X` a learner gets from `data.X`, for scale."""
     rows = [r for r in rows if r["learner"] is None and (negation is None or r["negation"] == negation)]
     xs = sorted({r[x_field] for r in rows}, reverse=(x_field == "noise_density"))
@@ -687,24 +690,24 @@ def _memory_table(rows, x_field: str, x_label: str, field: str = "mem_bytes", ne
     for kind in REPRESENTATIONS:
         cells = []
         for x in xs:
-            r, ref = at(kind, x), at("Boolean", x)
+            r, ref = at(kind, x), at("HBitmap", x)
             if r is None:
                 cells.append("")
-            elif kind == "Boolean" or ref is None:
+            elif kind == "HBitmap" or ref is None:
                 cells.append(_bytes(r[field]))
             else:
                 cells.append(f"{_bytes(r[field])} ({100 * r[field] / ref[field]:.0f}%)")
         lines.append(f"| {kind} | " + " | ".join(cells) + " |\n")
     lines.append("| unpacked `X` | " + " | ".join(
-        _bytes(at("Boolean", x)["x_bytes"]) if at("Boolean", x) else "" for x in xs) + " |\n")
+        _bytes(at("HBitmap", x)["x_bytes"]) if at("HBitmap", x) else "" for x in xs) + " |\n")
     return "".join(lines)
 
 
 def _fit_memory_table(rows, x_field: str, x_label: str, negation=None) -> str:
     """One row per (learner, representation): the memory a fit costs in
     total at each `x_field` value -- what the representation holds plus the
-    peak the fit allocates on top of it -- each non-Boolean cell with its
-    ratio to Boolean in parentheses."""
+    peak the fit allocates on top of it -- each non-HBitmap cell with its
+    ratio to HBitmap in parentheses."""
     rows = [r for r in rows if negation is None or r.get("negation") == negation]
     held = {(r["rep"], r[x_field]): r["mem_bytes"] for r in rows if r["learner"] is None}
     fits = [r for r in rows if r["learner"] and r["error"] is None and r.get("fit_peak") is not None]
@@ -721,7 +724,7 @@ def _fit_memory_table(rows, x_field: str, x_label: str, negation=None) -> str:
                     cells.append("")
                     continue
                 total = held[(kind, x)] + r["fit_peak"]
-                if kind == "Boolean":
+                if kind == "HBitmap":
                     boolean_at[x] = total
                     cells.append(_bytes(total))
                 else:
@@ -735,7 +738,7 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
                  parallel: bool = False) -> None:
     plots = os.path.basename(PLOTS_DIR)
     img = lambda key, alt: f"![{alt}]({plots}/{os.path.basename(paths[key])})\n\n"  # noqa: E731
-    size_info = {(r["negation"], r["n"]): r for r in size_rows if r["learner"] is None and r["rep"] == "Boolean"}
+    size_info = {(r["negation"], r["n"]): r for r in size_rows if r["learner"] is None and r["rep"] == "HBitmap"}
     compared, agreed, bad = _agreement(size_rows + density_rows + width_rows)
     L = ["# Data representations: same rules, different speed\n\n"]
     L.append(
@@ -746,9 +749,13 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         + "pyrulearn's learners never look at the data directly. They ask it two things -- which "
         "examples a rule covers (`coverage(rule)`) and which features an example has "
         "(`features_of(row)`) -- so the data can be stored in any structure that answers these "
-        "questions. Four such representations are implemented:\n\n"
-        "- **Boolean** -- a packed bit matrix, one bit per example and feature. Covering a rule "
-        "is a bitwise AND over the rows, whatever the density.\n"
+        "questions. Five such representations are implemented:\n\n"
+        "- **HBitmap** (horizontal bitmap) -- a bit matrix packed by example, one bit per example "
+        "and feature. Covering a rule checks every example's row against the rule's features, "
+        "whatever the density.\n"
+        "- **VBitmap** (vertical bitmap) -- the same bit matrix packed by feature: one bit-vector "
+        "over the examples per feature. Covering a rule ANDs its features' bit-vectors, and "
+        "counting is a popcount; same memory as HBitmap.\n"
         "- **NList** -- LORD's vertical index (Huynh, Fürnkranz & Beck, 2023): examples are "
         "inserted into a prefix tree of their true features, and each feature keeps the list of "
         "tree nodes it occurs in (its N-list). Covering a rule intersects these lists; the work "
@@ -757,17 +764,17 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "way to find which nodes are compatible with the rule so far.\n"
         "- **Sparse** -- `scipy` sparse matrices: per-feature example lists without the prefix "
         "tree.\n\n"
-        "All four must lead to exactly the same rules, so the only thing that differs is time. "
+        "All five must lead to exactly the same rules, so the only thing that differs is time. "
         "This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and "
         "ENDER, each with its default settings -- and checks the rules and the test-set predictions "
-        "against the Boolean version at every point. Each fit runs in a separate process and is "
+        "against HBitmap at every point. Each fit runs in a separate process and is "
         f"capped at {FIT_TIMEOUT:.0f}s; after a time-out, the larger points of that curve are "
         "skipped. "
         + ("The learners ran side by side, one worker process each, every learner's fits one after "
            "another; building the representations, timing `coverage()` and measuring memory came "
            "first, with nothing else running.\n\n" if parallel else
            "Everything ran one at a time.\n\n")
-        + f"**Equality check:** at {compared} points where Boolean and at least one other "
+        + f"**Equality check:** at {compared} points where HBitmap and at least one other "
         f"representation finished, {agreed} gave identical rules and predictions for every "
         f"representation" + (".\n\n" if not bad else
                               f"; mismatches: {bad}.\n\n"))
@@ -780,8 +787,8 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         f"training set (`max_intervals={MAX_INTERVALS}`). Two encodings: **with negation** "
         "(pyrulearn's default -- every test comes with its negation, so exactly half the "
         "features are true in every example) and **without negation** (positive tests only, "
-        "far sparser). The first is the Boolean matrix's best case and the vertical "
-        "representations' worst; the second is where they should gain.\n\n")
+        "far sparser). The first is the bitmaps' best case and the list-based "
+        "representations' worst; the second is where those should gain.\n\n")
     largest = {neg: size_info[(neg, max(n for (ng, n) in size_info if ng == neg))]
                for neg in (True, False) if any(ng == neg for (ng, _) in size_info)}
     if largest:
@@ -809,8 +816,8 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
     L.append(img("size_build", "index build time vs. training-set size"))
     L.append(
         "**Memory.** What each representation holds once built, measured with `tracemalloc` (the "
-        "input matrix and the Boolean matrix a vertical index is built from don't count), and in "
-        "parentheses its share of the Boolean representation's memory; the last row is the "
+        "input matrix and the HBitmap matrix the others are built from don't count), and in "
+        "parentheses its share of HBitmap's memory; the last row is the "
         "unpacked `n x k` bool matrix that `data.X` builds on demand, which any learner or "
         "external library working on a plain array pays on top.\n\n")
     L.append(img("size_memory", "memory vs. training-set size"))
@@ -838,7 +845,7 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "conditions, without any search around it:\n\n")
     L.append(img("density_coverage", "coverage() time vs. density"))
     L.append("Fit time in seconds:\n\n" + _fit_table(density_rows, "noise_density", "p") + "\n")
-    L.append("Memory held by each representation (share of Boolean in parentheses; the last row is the "
+    L.append("Memory held by each representation (share of HBitmap in parentheses; the last row is the "
              "unpacked bool matrix):\n\n")
     L.append(img("density_memory", "memory vs. density"))
     L.append(_memory_table(density_rows, "noise_density", "p") + "\n")
@@ -853,14 +860,14 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         f"{DENSITY_N_SIGNAL} signal features -- but now the number of *true* features per example stays "
         f"fixed (on average {WIDTH_NOISE_PER_ROW} noise features, plus the signal ones) while the number "
         "of features grows. That is how sparse data usually looks: one-hot encodings of attributes with "
-        "many values, or words in a text. The packed Boolean matrix grows with the number of features "
+        "many values, or words in a text. The bitmaps grow with the number of features "
         "(one bit per cell); a sparse representation with the number of true cells, which stays the same. "
         "`Sparse` keeps two copies of a 4-byte index plus a 1-byte value per true cell, about 10 bytes "
-        "against 1/8 byte per cell for Boolean, so it should take less memory below a density of about "
+        "against 1/8 byte per cell for the bitmaps, so it should take less memory below a density of about "
         f"1/80 -- here from about {80 * (WIDTH_NOISE_PER_ROW + DENSITY_N_SIGNAL * DENSITY_SIGNAL_P):,.0f} "
         "features on.\n\n")
     L.append(img("width_memory", "memory vs. width"))
-    L.append("Memory held by each representation (share of Boolean in parentheses; the last row is the "
+    L.append("Memory held by each representation (share of HBitmap in parentheses; the last row is the "
              "unpacked bool matrix):\n\n" + _memory_table(width_rows, "k", "k") + "\n")
     L.append(f"{COVERAGE_TRIALS} `coverage()` calls for random rules of 1-4 conditions:\n\n")
     L.append(img("width_coverage", "coverage() time vs. width"))

@@ -52,11 +52,11 @@ docstring):
 
   ```python
   from pyrulearn.data.io import build_dataspec, binarize
-  from pyrulearn.data import BooleanDataRepresentation
+  from pyrulearn.data import HorizontalBitmapRepresentation
 
   ds = build_dataspec(df, target="label", arff_types={...}).build()
   X = binarize(ds, df)
-  rep = BooleanDataRepresentation(ds, X, df["label"].to_numpy())
+  rep = HorizontalBitmapRepresentation(ds, X, df["label"].to_numpy())
   rules = WittRIPPER(pos_class="pos").fit(rep)
   ```
 

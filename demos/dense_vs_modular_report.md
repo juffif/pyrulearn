@@ -189,7 +189,7 @@ The dense `ORB` and `LRI` come with their own greedy (and, for `ORB`, exhaustive
 
 ## The modular learners on Boolean data
 
-The modular learners above run on `NListRepresentation`, the library's default. Here they are run again on `BooleanDataRepresentation`, the matrix the dense learners work on, over the folds where both finished; a time ratio above 1 means the N-list is faster:
+The modular learners above run on `NListRepresentation`, the library's default. Here they are run again on `HorizontalBitmapRepresentation`, the matrix the dense learners work on, over the folds where both finished; a time ratio above 1 means the N-list is faster:
 
 | learner | accuracy, N-list | accuracy, Boolean | time Boolean / N-list (geometric mean over datasets) |
 |---|--:|--:|--:|

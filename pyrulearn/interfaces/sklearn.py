@@ -61,7 +61,7 @@ a mix, whatever sklearn itself can be fit on -- and this discovers a
 requiring them fixed in advance by a separate, weaker discretizer --
 see `_rules_from_tree`'s docstring for exactly how. This is
 `pyrulearn.learners`'s "workflow 2": since `data.X` (the only
-existing `DataRepresentation`, `BooleanDataRepresentation`, casts to
+existing `DataRepresentation`, `HorizontalBitmapRepresentation`, casts to
 bool in its own constructor) can't hold raw data, workflow 2 doesn't go
 through `fit`/`prepare` (workflow-1-only) at all -- call
 `SKLDecisionTree(**params).fit_external(raw_X, y, feature_names=names)`
@@ -78,7 +78,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 
 from .base import ObjectRuleImporter, deprecated_aliases, register_importer
 from ..combiners import HeuristicMaxCombiner, RuleCombiner
-from ..data import BooleanDataRepresentation, DataRepresentation
+from ..data import HorizontalBitmapRepresentation, DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
 from ..learners import ExternalRuleLearner, RelabelingExternalLearner
 from .. import models
@@ -102,7 +102,7 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
 
     `fit`/`predict` accept a pre-built `DataRepresentation` of any
     concrete type; a raw array/DataFrame is wrapped in a
-    `BooleanDataRepresentation`.
+    `HorizontalBitmapRepresentation`.
 
     Parameters
     ----------
@@ -139,7 +139,7 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
     # don't redefine them here.
 
     def fit(self, X, y=None):
-        rep = X if isinstance(X, DataRepresentation) else BooleanDataRepresentation.from_xy(X, y)
+        rep = X if isinstance(X, DataRepresentation) else HorizontalBitmapRepresentation.from_xy(X, y)
         if self.learner is not None:
             self.rule_set_ = self.learner(rep)
         else:
@@ -153,7 +153,7 @@ class RuleSetClassifier(BaseEstimator, ClassifierMixin):
     def predict(self, X) -> np.ndarray:
         if self.rule_set_ is None:
             raise RuntimeError("Call fit() before predict()")
-        rep = X if isinstance(X, DataRepresentation) else BooleanDataRepresentation.from_xy(X)
+        rep = X if isinstance(X, DataRepresentation) else HorizontalBitmapRepresentation.from_xy(X)
         return self.rule_set_.predict(
             rep, combiner=self.combiner if self.combiner is not None else HeuristicMaxCombiner())
 

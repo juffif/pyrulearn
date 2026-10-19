@@ -2,7 +2,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import numpy as np
-from pyrulearn import BooleanDataRepresentation, DataSpec, Rule
+from pyrulearn import HorizontalBitmapRepresentation, DataSpec, Rule
 from pyrulearn.models import DecisionList, FlatRuleSet, annotate_rules
 from pyrulearn.evaluation import (
     ABSTAIN, ConfusionMatrix, ModelStats,
@@ -59,7 +59,7 @@ def test_coverage_space_plot_ruleset_uses_raw_counts():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     rs = FlatRuleSet([r1, r2])
@@ -81,7 +81,7 @@ def test_coverage_space_plot_rulelist_cumulative_path():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "pos"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="A", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="B", dataspec=ds)
     r3 = Rule.from_pos_neg(target="default", dataspec=ds)
@@ -118,7 +118,7 @@ def test_coverage_space_plot_show_convex_hull():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     rs = FlatRuleSet([r1, r2])
@@ -145,7 +145,7 @@ def test_convex_hull_restricted_to_same_target():
     ], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r_pos = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # covers rows 0,1: 2 pos, 0 neg
     r_neg = Rule.from_pos_neg(pos=[1], target="neg", dataspec=ds)  # covers rows 1,2: 1 pos, 1 neg
     rs = FlatRuleSet([r_pos, r_neg])
@@ -169,7 +169,7 @@ def test_coverage_space_auc_no_matching_rules_is_random_baseline():
     X = np.array([[1, 0], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r = Rule.from_pos_neg(pos=[0], target="other", dataspec=ds)
     rs = FlatRuleSet([r])
 
@@ -186,7 +186,7 @@ def test_ruleset_to_rulelist():
     # r3 (c): 2/2 correct -> Laplace (2+1)/(2+0+2)=0.75
     X = np.array([[1, 0, 0], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1]], dtype=bool)
     y = np.array(["a", "b", "b", "b", "c", "c"])
-    data = BooleanDataRepresentation(ds, X, y)
+    data = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="a", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="b", dataspec=ds)
     r3 = Rule.from_pos_neg(pos=[2], target="c", dataspec=ds)
@@ -202,7 +202,7 @@ def _covering_fixture():
     ds = DataSpec(["p", "q", "r"])
     X = np.array([[1, 0, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1], [0, 0, 1], [0, 0, 0]], dtype=bool)
     y = np.array(["a", "a", "b", "b", "b", "a"])
-    data = BooleanDataRepresentation(ds, X, y)
+    data = HorizontalBitmapRepresentation(ds, X, y)
     rp = Rule([0], target="a", dataspec=ds)       # p -> a: tp=2,fp=1 -> Laplace 0.6
     rpq = Rule([0, 1], target="a", dataspec=ds)   # p & q -> a: tp=1,fp=1 -> Laplace 0.5
     rr = Rule([2], target="b", dataspec=ds)       # r -> b: tp=3,fp=0 -> Laplace 0.8
@@ -248,7 +248,7 @@ def test_rule_refinement_path_monotonic_and_endpoints():
     ], dtype=bool)
     y = np.array(["pos", "pos", "pos", "neg", "neg", "neg"])
     ds = DataSpec(["a", "b", "c"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     r = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # unordered
     path = rule_refinement_path(r, rep, positive_class="pos")
@@ -276,7 +276,7 @@ def test_rule_refinement_defaults_positive_class_to_rule_target():
     ], dtype=bool)
     y = np.array(["pos", "pos", "pos", "neg", "neg", "neg"])
     ds = neg_spec(["a", "b", "c"])
-    rep = BooleanDataRepresentation(ds, neg_X(X), y)
+    rep = HorizontalBitmapRepresentation(ds, neg_X(X), y)
 
     # a rule whose head is "neg" -- omitting positive_class must use "neg",
     # not silently default to whichever class the caller happens to be
@@ -391,7 +391,7 @@ def test_plot_isometrics_skips_clabel_when_show_labels_false():
 def test_coverage_space_from_data_matches_data():
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
-    rep = BooleanDataRepresentation(DataSpec(["a", "b"]), X, y)
+    rep = HorizontalBitmapRepresentation(DataSpec(["a", "b"]), X, y)
     space = CoverageSpace.from_data(rep, "pos")
     assert space.n_pos == 2 and space.n_neg == 2
     print("CoverageSpace.from_data sizes to real data: OK")
@@ -415,7 +415,7 @@ def test_coverage_space_plot_ruleset_delegates_and_matches_standalone():
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     rs = FlatRuleSet([r1, r2])
@@ -445,7 +445,7 @@ def test_plot_isometrics_sized_to_representation_and_layerable():
     X = np.array([[1, 0], [1, 1], [0, 1], [0, 0]], dtype=bool)
     y = np.array(["pos", "pos", "neg", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     r1 = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)
     r2 = Rule.from_pos_neg(pos=[1], target="pos", dataspec=ds)
     rs = FlatRuleSet([r1, r2])
@@ -525,7 +525,7 @@ def test_plot_isometric_through_rule_uses_rule_coverage_and_real_dims():
     ], dtype=bool)
     y = np.array(["pos"] * 6 + ["neg"] * 4)
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
     rule = Rule.from_pos_neg(pos=[0], target="pos", dataspec=ds)  # a=True: rows 0,1,2 -> tp=3, fp=0
 
     space = Precision().plot_isometric_through_rule(rule, rep)
@@ -540,7 +540,7 @@ def test_plot_isometric_through_rule_raises_without_positive_class():
     r_no_target = Rule.from_pos_neg(pos=[0], n_features=2)  # no target
     X = np.array([[1, 0], [0, 1]], dtype=bool)
     y = np.array(["pos", "neg"])
-    rep = BooleanDataRepresentation(DataSpec(["a", "b"]), X, y)
+    rep = HorizontalBitmapRepresentation(DataSpec(["a", "b"]), X, y)
     try:
         Precision().plot_isometric_through_rule(r_no_target, rep)
         assert False, "expected ValueError"
@@ -561,7 +561,7 @@ def test_order_by_precision():
     ], dtype=bool)
     y = np.array(["neg", "neg", "pos", "pos", "pos", "neg"])
     ds = DataSpec(["a", "b"])
-    rep = BooleanDataRepresentation(ds, X, y)
+    rep = HorizontalBitmapRepresentation(ds, X, y)
 
     r = Rule.from_pos_neg(pos=[0, 1], target="pos", dataspec=ds)  # unordered, canonical: a then b
     ordered = r.order_by_precision(rep)
