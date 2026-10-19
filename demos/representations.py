@@ -2,7 +2,7 @@
 demos/representations.py
 ========================
 
-Five encodings of the same Boolean data, all behind one
+Four encodings of the same Boolean data, all behind one
 `DataRepresentation` interface:
 
 - `HorizontalBitmapRepresentation` -- a `numpy.packbits` bit matrix,
@@ -11,14 +11,11 @@ Five encodings of the same Boolean data, all behind one
   feature: one bit-vector over the examples per feature.
 - `NListRepresentation` -- LORD's PPC-tree / N-list vertical index:
   per-feature row lists, bucketed by shared row prefix.
-- `PrePostNListRepresentation` -- `NListRepresentation` plus pre/post
-  visit codes, a second way for the search to find the tree nodes
-  compatible with the rule so far.
 - `SparseDataRepresentation` -- `scipy` CSR/CSC: per-feature row lists
   without the prefix tree.
 
 A learner asks its data only two things -- `coverage(rule)` and
-`features_of(row)` -- so the five are interchangeable and must give the
+`features_of(row)` -- so the four are interchangeable and must give the
 same rules; only the time differs. This demo measures that time and checks
 the equality at every point:
 
@@ -71,7 +68,6 @@ from pyrulearn import DataSpec, Rule
 from pyrulearn.data import (
     HorizontalBitmapRepresentation,
     NListRepresentation,
-    PrePostNListRepresentation,
     SparseDataRepresentation,
     VerticalBitmapRepresentation,
 )
@@ -85,8 +81,8 @@ from pyrulearn.learners.seco import CN2, PFossil, Pypper
 RANDOM_STATE = 0
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
-REPRESENTATIONS = ("HBitmap", "VBitmap", "NList", "PrePostNList", "Sparse")
-_VERTICAL = {"VBitmap": VerticalBitmapRepresentation, "NList": NListRepresentation, "PrePostNList": PrePostNListRepresentation,
+REPRESENTATIONS = ("HBitmap", "VBitmap", "NList", "Sparse")
+_VERTICAL = {"VBitmap": VerticalBitmapRepresentation, "NList": NListRepresentation,
              "Sparse": SparseDataRepresentation}
 LEARNERS = ("CN2", "PFossil", "Pypper", "PyLORD", "ENDER")
 
@@ -113,7 +109,7 @@ PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 CACHE_DIR = os.path.join(HERE, "_representations_cache")
 
 STYLE = {"HBitmap": ("o", "tab:blue"), "VBitmap": ("v", "tab:purple"), "NList": ("s", "tab:orange"),
-         "PrePostNList": ("^", "tab:green"), "Sparse": ("d", "tab:red")}
+         "Sparse": ("d", "tab:red")}
 
 
 def make_learner(name: str):
@@ -749,7 +745,7 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         + "pyrulearn's learners never look at the data directly. They ask it two things -- which "
         "examples a rule covers (`coverage(rule)`) and which features an example has "
         "(`features_of(row)`) -- so the data can be stored in any structure that answers these "
-        "questions. Five such representations are implemented:\n\n"
+        "questions. Four such representations are implemented:\n\n"
         "- **HBitmap** (horizontal bitmap) -- a bit matrix packed by example, one bit per example "
         "and feature. Covering a rule checks every example's row against the rule's features, "
         "whatever the density.\n"
@@ -760,11 +756,9 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "inserted into a prefix tree of their true features, and each feature keeps the list of "
         "tree nodes it occurs in (its N-list). Covering a rule intersects these lists; the work "
         "grows with how often the features are true, not with the number of examples.\n"
-        "- **PrePostNList** -- the N-list plus pre/post-order codes of the tree nodes, a second "
-        "way to find which nodes are compatible with the rule so far.\n"
         "- **Sparse** -- `scipy` sparse matrices: per-feature example lists without the prefix "
         "tree.\n\n"
-        "All five must lead to exactly the same rules, so the only thing that differs is time. "
+        "All four must lead to exactly the same rules, so the only thing that differs is time. "
         "This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and "
         "ENDER, each with its default settings -- and checks the rules and the test-set predictions "
         "against HBitmap at every point. Each fit runs in a separate process and is "
@@ -772,8 +766,11 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "skipped. "
         + ("The learners ran side by side, one worker process each, every learner's fits one after "
            "another; building the representations, timing `coverage()` and measuring memory came "
-           "first, with nothing else running.\n\n" if parallel else
-           "Everything ran one at a time.\n\n")
+           "first, with nothing else running." if parallel else
+           "Everything ran one at a time.")
+        + (" The numerical libraries were limited to one thread (`OMP_NUM_THREADS=1` and its "
+           "relatives), so each fit used one core.\n\n"
+           if os.environ.get("OMP_NUM_THREADS") == "1" else "\n\n")
         + f"**Equality check:** at {compared} points where HBitmap and at least one other "
         f"representation finished, {agreed} gave identical rules and predictions for every "
         f"representation" + (".\n\n" if not bad else
