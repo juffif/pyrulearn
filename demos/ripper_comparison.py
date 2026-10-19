@@ -130,6 +130,11 @@ QUICK_CD_PLOT_PATH = os.path.join(PLOTS_DIR, "ripper_comparison_quick_cd.png")
 CACHE_DIR = os.path.join(HERE, "_ripper_comparison_cache")
 
 
+def _time_cd_path(cd_plot_path: str) -> str:
+    """The fit-time critical-difference diagram, next to the accuracy one."""
+    return cd_plot_path.replace("_cd.png", "_cd_fit_time.png")
+
+
 # fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
 # set by --n-jobs
 N_JOBS = "1"
@@ -284,6 +289,8 @@ def write_report(results, datasets, n_folds: int, prelim_results, prelim_verdict
     lines.append(f"![accuracy vs. rule-set complexity]({plots_dir}/{os.path.basename(accuracy_plot_path)})\n\n")
     lines.append(f"![fit time per dataset]({plots_dir}/{os.path.basename(fit_time_plot_path)})\n\n")
     lines.append(f"![critical-difference diagram (accuracy)]({plots_dir}/{os.path.basename(cd_plot_path)})\n\n")
+    lines.append("The same for fit time, rank 1 the fastest:\n\n")
+    lines.append(f"![critical-difference diagram (fit time)]({plots_dir}/{os.path.basename(_time_cd_path(cd_plot_path))})\n\n")
 
     lines.append("## Why IMod:Slipper isn't in the main comparison\n\n")
     lines.append(f"{prelim_verdict}\n\n")
@@ -381,14 +388,16 @@ def write_plots(results, accuracy_plot_path: str, fit_time_plot_path: str, cd_pl
     plt.close(fig2)
     print(f"Plot   -> {fit_time_plot_path}")
 
-    try:
-        ax = critical_difference_diagram(results, "accuracy")
-        ax.figure.tight_layout()
-        ax.figure.savefig(cd_plot_path, dpi=110)
-        plt.close(ax.figure)
-        print(f"Plot   -> {cd_plot_path}")
-    except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the rest of the report
-        print(f"Critical-difference diagram skipped: {type(e).__name__}: {e}")
+    for measure, higher_is_better, path in (("accuracy", True, cd_plot_path),
+                                            ("fit_time", False, _time_cd_path(cd_plot_path))):
+        try:
+            ax = critical_difference_diagram(results, measure, higher_is_better=higher_is_better)
+            ax.figure.tight_layout()
+            ax.figure.savefig(path, dpi=110)
+            plt.close(ax.figure)
+            print(f"Plot   -> {path}")
+        except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the rest of the report
+            print(f"Critical-difference diagram ({measure}) skipped: {type(e).__name__}: {e}")
 
 
 def main(datasets_spec: Optional[str] = None) -> None:
