@@ -184,9 +184,9 @@ details.
 | Module (in `pyrulearn`) | What it's for |
 |---|---|
 | `combiners` | `RuleCombiner`: how a `RuleSet` resolves an example covered by several rules. List order, plain majority vote, heuristic-scored max or vote, and per-class-distribution combiners (`MacroVoteCombiner` reproduces scikit-learn's soft voting). |
-| `data` | Everything about data. **Three base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `HorizontalBitmapRepresentation` (a bit-packed Boolean matrix, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, stored instead of the table; the fastest for the separate-and-conquer learners, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default; `PrePostNListRepresentation` is an opt-in variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the three representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
+| `data` | Everything about data. **Four base representations**, all behind the same `coverage(rule)` / `features_of(row)` interface, so every rule learner runs on any of them and finds identical rules: `VerticalBitmapRepresentation` (one bit-vector per feature over the examples; the fastest for most native learners and as small as a bit matrix gets, so first in `REPRESENTATION_PREFERENCE_ORDER`, which decides what `data.io`'s loaders and `run_cv` build by default), `HorizontalBitmapRepresentation` (the same bits packed per example, the simplest to inspect directly), `SparseDataRepresentation` (scipy CSR/CSC, Eclat-style tid-lists) and `NListRepresentation` (the PPC-tree / N-list index of LORD, stored instead of the table; `PrePostNListRepresentation` is a variant). Submodules: `data.attributes` (typed attributes -- boolean, binary, nominal, numeric, set, hierarchical, relational -- and the derived Boolean features they generate, `color=red`, `age>=30`, ...; also the **constraints** among those features, `ExactlyOne`, `ThresholdChain`, `MutuallyExclusive`, `Implies`, which record what is impossible or already implied: rule search uses them to skip contradictory refinements and to drop features an added condition already determines, which **reduces the search space**, and they let a rule check its own consistency; plus `evaluate_feature` and `MissingStrategy`), `data.spec` (`DataSpec`, `DataSpecBuilder`, `merge_dataspecs`: the feature space, no data), `data.representation` (the representations above) `data.io` (ARFF/CSV reading and writing, `encode`/`binarize`, `build_dataspec`; needs `pandas`). |
 | `evaluation` | Measured statistics (`RuleStats`, `ConfusionMatrix`, `ModelStats`), `sort_rules`, `summarize`, and coverage-space plotting (`CoverageSpace`, `coverage_space_plot`, `coverage_space_auc`, `rule_refinement_plot`, `build_refinement_graph`). |
-| `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `NListRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
+| `experiments` | Shared infrastructure for demos and other cross-validation-style experiments: `experiments.catalog` (the catalog of benchmark datasets, see *Benchmark datasets*), `experiments.runner` (`run_cv`: per-fold encoding into `representation=` (default: the preference order's first entry, `VerticalBitmapRepresentation`), a per-fit timeout via `TimeoutRunner`, uniform measurement, fold caching), `experiments.stats` (optional `mean_rank`, `friedman_test`, `critical_difference_diagram`, never run automatically) and `experiments.report` (small Markdown-writing building blocks). Needs `pandas`/`scipy`/`matplotlib` (the `experiments` extra). |
 | `heuristics` | `RuleHeuristic`: pluggable rule-evaluation heuristics (`Precision`, `Laplace`, `MEstimate`, `WRAcc`, `FoilGain`, `Correlation`, `Entropy`, `LikelihoodRatio`, ...), the composable `LEF`, and `plot_isometrics` for drawing a heuristic into a `CoverageSpace`. |
 | `interfaces` | Bringing external rule models in. `interfaces.base` has the shared `RuleImporter` machinery (`ObjectRuleImporter`, `StringRuleImporter`, the importer registry, `PatternStringImporter`); each external tool then has its own submodule, pairing an importer with a learner wrapper: `interfaces.sklearn` (decision trees, random forests, and `RuleSetClassifier`, which wraps any `RuleModel` as a scikit-learn estimator), `interfaces.wittgenstein` (IREP, RIPPER), `interfaces.imodels` (Bayesian rule lists and sets, RuleFit, Slipper), `interfaces.weka` (JRip, PART, J48), `interfaces.lord` (the reference LORD implementation), `interfaces.pyarc` (CBA), `interfaces.boomer` (BOOMER) and `interfaces.realkd` (optimal rule boosting). |
 | `learners` | Turning data into rules through one `fit(data, model=None) -> RuleModel`. `learners.base` has the shared `RuleLearner` classes, including the `DecomposingLearner` multiclass switcher. Native algorithms: `learners.seco` (the `SeCo` framework and `CN2`, `AQR`, `PFoil`, `PFossil`, `Pypper`), `learners.pylord` (`PyLORD`), `learners.associative` (`CARMiner`, the `RuleDistiller` mixin, and the `CBA` and `CMAR` classifiers built on it), `learners.ids` (`IDS`), `learners.rulefit` (`RuleFit`), `learners.boosting` (`Slipper`, `ENDER`, `DenseENDER`, `Boomer`, `DenseBoomer`, `ORB`, `DenseORB`), `learners.lri` (`LRI`, `DenseLRI`), `learners.cpar` (`CPAR`, `DenseCPAR`), `learners.opus` (`Opus`, `OpusTopK`), and `learners.multiclass` (`OneVsRest`, `OrderedOneVsRest`, `Pairwise`). |
@@ -198,25 +198,33 @@ details.
 
 A `DataSpec` (pure schema: feature names, typed attributes, constraints,
 missing-value policy) defines the Boolean feature space; a
-`DataRepresentation` binds actual data to one. There are **three base
+`DataRepresentation` binds actual data to one. There are **four base
 representations**, all implementing the same `coverage(rule)` /
 `features_of(row)` interface, so every native rule learner
 (`pyrulearn.learners.seco`'s `CN2`, `PFoil`, `PFossil`, `AQR` and `Pypper`,
 `pyrulearn.learners.pylord.PyLORD`, ...) runs on any of them unchanged and
-produces byte-identical rules:
+produces byte-identical rules. Two are bitmaps, one bit per example and
+feature, packed in either direction; two keep, per feature, the list of
+examples where it is true:
 
-- `HorizontalBitmapRepresentation` -- a `numpy.packbits`-packed copy of the
-  feature matrix; every example is checked with vectorized bitwise NumPy
-  ops instead of per-feature Python loops. The simplest to construct by
-  hand, and `rep.X` is its own storage (the others build `X` on demand)
-  -- but not what `data.io`'s loaders or `run_cv` build unless asked:
-  see the preference order below.
+- `VerticalBitmapRepresentation` -- the default representation (first in
+  the preference order below): one bit-vector per *feature*, over the
+  examples, in 64-bit words (the vertical bitmap layout of the MAFIA and
+  SPAM frequent-pattern miners). Covering a rule ANDs its features'
+  bit-vectors, counting is a popcount against a class's bit-vector, and a
+  search's batch counting ANDs the rule's cover into every open feature's
+  words at once, over just the words the cover still touches.
+- `HorizontalBitmapRepresentation` -- the same bit matrix packed per
+  *example* (`numpy.packbits` over each row): a rule's coverage checks
+  every example's row against the rule's features. The simplest to
+  construct by hand, and `rep.X` is its own storage (the others build `X`
+  on demand). Until 0.3.4 it was called `BooleanDataRepresentation`; the
+  old name still works, with a `DeprecationWarning`, until 0.9.0.
 - `SparseDataRepresentation` -- `scipy` CSR/CSC; a rule's coverage is
   the intersection of its features' column index-sets (Eclat's vertical
   tid-lists), rarest feature first. This is the N-list *without* the
   prefix tree.
-- `NListRepresentation` -- the default representation (first in the
-  preference order below): the FP-tree / N-list vertical index Huynh,
+- `NListRepresentation` -- the FP-tree / N-list vertical index Huynh,
   Fürnkranz & Beck's LORD builds. Each row's true-feature set is inserted
   (most-frequent-first) into a prefix trie with shared prefixes, and the
   tree is stored *instead of* the table: per node, the bitmask of the
@@ -227,45 +235,43 @@ produces byte-identical rules:
   ranges; `features_of` and `X` are decoded from the tree.
   `PrePostNListRepresentation` also keeps the nodes' pre/post visit codes,
   giving its search a second way to narrow a feature's nodes down to the
-  current search branch. An opt-in: about equal to plain N-lists in most
-  of `demos/representations_report.md`, faster on the largest dense data,
-  where a feature's N-list gets long (`adult` with negation features: CN2
-  on 32,000 rows 22 s against 31 s, PyLORD on 8,000 rows 91 s against
-  101 s), at about 15% more memory.
+  current search branch; it measured about break-even with plain N-lists,
+  at about 15% more memory.
 
 **Which one to use.** Every learner learns the same rules on all of
 them; only time and memory differ (`demos/representations_report.md`,
 which measures both on real data, over density, and over the number of
 features):
 
-- *For speed -- the default:* `NListRepresentation`. The
-  separate-and-conquer learners fit fastest on it on real data (`adult`,
-  32,000 rows, with negation features: Pypper 4.4 s against 32.2 s on
-  Boolean, CN2 31 s against 59 s), and what a fit costs in memory in total
-  (the representation plus what the fit allocates) is in the range of
-  Boolean's: 1.3-1.7 times as much with negation features, about half
-  without.
-- *For dense and normal data, when memory matters:*
-  `HorizontalBitmapRepresentation`, one bit per cell -- by far the smallest to
-  hold (`adult`, 32,000 rows: 0.55 MiB without negation features, 1.1 MiB
-  with, against 4-44 MiB for the others), at the cost of speed on larger
-  data.
+- *The default:* `VerticalBitmapRepresentation`. On real data the
+  separate-and-conquer learners and PyLORD fit fastest on it (`adult`,
+  32,000 rows, with negation features: Pypper 2.3 s against 6.1 s on
+  N-lists, 14.8 s on Sparse and 34.0 s on the horizontal bitmap; CN2
+  16.4 s against 25.1, 34.1 and 59.9 s; PyLORD finishes 16,000 rows in
+  178 s, where every other representation times out at 300 s), and ENDER
+  is close to the fastest (25.9 s against 23.4 s on N-lists). It holds one
+  bit per cell, like the horizontal bitmap (1.1 MiB for `adult`, against
+  38-42 MiB for N-lists and Sparse), and a fit allocates little on top: a
+  CN2 fit needs 4.5 MiB in total, against 72-98 MiB on the others.
 - *For sparse data* -- many features, few of them true per example
   (one-hot encodings of many-valued attributes, text), built without
   negation features: `SparseDataRepresentation`. About 10 bytes per true
-  cell against 1/8 byte per cell for Boolean, so it is the smaller one
-  below a density of about 1/80, and fast there (1,000 examples, 20,000
-  features, about 18 true per example: 257 KiB against 2.4 MiB for
-  Boolean and 38.7 MiB for N-lists; CN2 1.8 s against 24 s on Boolean).
-  N-lists are as fast on such data but large, since their path bitmasks
-  grow with the number of features.
+  cell against 1/8 byte per cell for the bitmaps, so it is the smaller one
+  below a density of about 1/80 (1,000 examples, 20,000 features, about
+  18 true per example: 257 KiB against 2.4 MiB for the bitmaps and
+  38.7 MiB for N-lists). The separate-and-conquer learners are about as
+  fast on it as on the vertical bitmap there (CN2 2.3 s against 2.8 s, and
+  22.2 s on the horizontal bitmap); ENDER is faster on the list-based
+  representations on such data (2.4 s on Sparse, 2.0 s on N-lists, 9.2 s
+  on the vertical bitmap).
 - Negation features make any data dense (every test or its negation
-  holds), so with them, N-lists or Boolean.
+  holds), so with them, the vertical bitmap.
 
 `pyrulearn.data.REPRESENTATION_PREFERENCE_ORDER` ranks them --
-`NListRepresentation`, `PrePostNListRepresentation`,
-`HorizontalBitmapRepresentation`, `SparseDataRepresentation` -- and its first
-entry (`default_representation()`) is what `read_arff`/`read_csv`/`encode`
+`VerticalBitmapRepresentation`, `NListRepresentation`,
+`PrePostNListRepresentation`, `HorizontalBitmapRepresentation`,
+`SparseDataRepresentation` -- and its first entry
+(`default_representation()`) is what `read_arff`/`read_csv`/`encode`
 and `run_cv` build when no `representation=` is given; reassigning
 `pyrulearn.data.representation.REPRESENTATION_PREFERENCE_ORDER` changes
 that library-wide. A learner that needs one representation's own storage
@@ -281,7 +287,7 @@ Coverage dispatches on the `DataRepresentation` subclass:
 `data.coverage(rule)`, so a `Rule` needs to know nothing about how the data
 is stored.
 
-Build any of the three with `.from_boolean(bool_rep)` (or `from_xy` /
+Build any of the others from a horizontal bitmap with `.from_boolean(bitmap)` (or `from_xy` /
 `from_dataframe`); see `demos/representations.py`, which also runs
 both feature encodings (paired negation features vs. positive tests
 only). Any `DataRepresentation` can switch between
@@ -457,7 +463,7 @@ from pyrulearn.data.io import read_arff, read_csv
 # capped at DEFAULT_MAX_INTERVALS = 8 by default -- a full 3-level binary tree)
 rep = read_arff("weather.arff", target="play")
 rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
-# rep.spec is the inferred DataSpec; rep is an NListRepresentation
+# rep.spec is the inferred DataSpec; rep is a VerticalBitmapRepresentation
 # (representation=, default default_representation() -- pass
 # HorizontalBitmapRepresentation for the dense matrix instead)
 
@@ -1638,7 +1644,7 @@ search on a dense matrix. On features without constraints among them
 (no negations, no thresholds) both learn identical models; with them,
 `LRI` never adds a condition the term already implies, where `DenseLRI`
 can. Unlike `CPAR` and `ENDER`, the modular learner is the faster one on
-larger data -- 7s (Boolean) or 2.5s (N-lists) against 47s for 10 rules
+larger data -- 7s (horizontal bitmap) or 2.5s (N-lists) against 47s for 10 rules
 per class on 32,000 rows of `adult` -- since it only counts the rows a
 term still covers; on a few hundred rows `DenseLRI` is about twice as
 fast.
@@ -2679,7 +2685,7 @@ report and plots are checked in next to the script:
 - `dense_vs_modular` -- every `Dense*` learner against its modular twin
   (CPAR, CPAR PRM, ENDER, ENDER CS-Exp, ENDER MLRules, Boomer, ORB, LRI):
   accuracy, fit time and whether the models are identical; the modular
-  ones again on N-lists, and ORB and LRI with beam searches of width 5
+  ones again on the horizontal bitmap, and ORB and LRI with beam searches of width 5
   and 10. Exhaustive ORB is checked separately on a few tiny datasets,
   since it doesn't scale to the rest.
 
@@ -2794,7 +2800,7 @@ If you use pyrulearn, please cite it via [`CITATION.cff`](CITATION.cff)
   author  = {F{\"u}rnkranz, Johannes},
   title   = {pyrulearn},
   year    = {2026},
-  version = {0.3.3},
+  version = {0.3.4},
   url     = {https://github.com/juffif/pyrulearn}
 }
 ```

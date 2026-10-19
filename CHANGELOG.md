@@ -3,7 +3,14 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.3.4 (2026-10-19)
+
+A new default representation, the vertical bitmap: the bit matrix packed by feature
+instead of by example. The separate-and-conquer learners and PyLORD fit fastest on it,
+ENDER close to the fastest, at the memory of a bit matrix. The row-packed matrix is
+renamed `HorizontalBitmapRepresentation` to match. Weka's learners lose most of the
+time our interface spent writing their training file. All timed demos re-run. No
+change to what any learner learns.
 
 ### Added
 
@@ -14,6 +21,8 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   the open features' words, over just the words it still touches. Same
   memory as the row-packed matrix (one bit per cell); identical rules.
   In `demos/representations.py` as `VBitmap`.
+- `demos/ripper_comparison.py`: a critical-difference diagram of the
+  learners' fit times, next to the one for accuracy.
 
 ### Changed
 
@@ -34,6 +43,18 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   feature (vertical). The old name still works, with a
   `DeprecationWarning`, and will be removed in 0.9.0. In
   `demos/representations.py` it is `HBitmap` (was `Boolean`).
+- The Weka learners (`WekaJRip`, `WekaPART`, `WekaJ48`) write their
+  training file as byte arrays instead of through the general
+  `write_arff`, which converted and quoted every cell on its own: 0.3 s
+  instead of 17.8 s for `adult` (32,000 x 278), time that counted in every
+  Weka fit. The file is byte for byte the same -- JRip seeds its random
+  grow/prune splits from instance text, so even ``0``/``1`` for
+  ``False``/``True`` would change its rules -- and so are the models.
+- `demos/representations.py` no longer measures `PrePostNListRepresentation`
+  (within a few percent of `NListRepresentation` everywhere in 0.3.3), and
+  records in its report that the numerical libraries ran on one thread.
+- All timed demos re-run on the new default (`--full --n-jobs 10`, numerical
+  libraries on one thread).
 
 ## 0.3.3 (2026-10-15)
 

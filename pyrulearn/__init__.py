@@ -149,7 +149,7 @@ __all__ = [
     "LinearCost", "LinearCostRates", "LengthPenalized", "MinimalLength", "FoilGain", "DeltaGain", "Correlation", "Entropy", "LikelihoodRatio", "ChiSquare",
     "LEF",
 ]
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 
 def __getattr__(name: str):
