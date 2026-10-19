@@ -15,6 +15,7 @@ from pyrulearn import (
     PrePostNListRepresentation,
     Rule,
     SparseDataRepresentation,
+    VerticalBitmapRepresentation,
 )
 from pyrulearn.models import DecisionList, FlatRuleSet
 from pyrulearn.data import DataSpecBuilder
@@ -25,8 +26,10 @@ from pyrulearn.learners.seco import AQR, CN2, PFoil, PFossil
 
 from _negation_helpers import neg_spec, neg_X
 
-ALT_REPS = [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation]
-ALL_REPS = [BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation]
+ALT_REPS = [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+            VerticalBitmapRepresentation]
+ALL_REPS = [BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+            VerticalBitmapRepresentation]
 
 
 def _pos_spec(names):
@@ -514,7 +517,8 @@ def test_preference_order_and_default_representation(monkeypatch):
     assert type(encode(ds, df)) is BooleanDataRepresentation
 
 
-@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation])
+@pytest.mark.parametrize("rep_cls", [NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+                                     VerticalBitmapRepresentation])
 def test_external_learner_converts_any_representation(rep_cls):
     from pyrulearn.interfaces.sklearn import SKLDecisionTree
     brep, _ = _dataset(n=300, k=10, seed=3, negation=True)

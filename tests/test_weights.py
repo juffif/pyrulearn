@@ -6,6 +6,7 @@ import pytest
 
 from pyrulearn.data import (
     BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation, SparseDataRepresentation,
+    VerticalBitmapRepresentation,
 )
 from pyrulearn.evaluation import RuleStats
 from pyrulearn.heuristics import WRAcc
@@ -20,7 +21,7 @@ from pyrulearn.rule import Rule
 from _negation_helpers import neg_spec, neg_X
 
 REPRESENTATIONS = [BooleanDataRepresentation, NListRepresentation, PrePostNListRepresentation,
-                   SparseDataRepresentation]
+                   SparseDataRepresentation, VerticalBitmapRepresentation]
 
 
 def _data(n=300, seed=0, noise=0.05):

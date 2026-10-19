@@ -121,6 +121,7 @@ from .data import (
     NListRepresentation,
     PrePostNListRepresentation,
     SparseDataRepresentation,
+    VerticalBitmapRepresentation,
     merge_dataspecs,
 )
 from .rule import Literal, Rule
@@ -129,7 +130,7 @@ from .interfaces.sklearn import RuleSetClassifier
 __all__ = [
     "DataSpec", "DataSpecBuilder", "Literal", "Rule",
     "DataRepresentation", "BooleanDataRepresentation", "NListRepresentation",
-    "PrePostNListRepresentation", "SparseDataRepresentation",
+    "PrePostNListRepresentation", "SparseDataRepresentation", "VerticalBitmapRepresentation",
     "DisjointRuleSet", "merge_dataspecs",
     "RuleSetClassifier", "sort_rules",
     "RuleImporter", "ObjectRuleImporter", "StringRuleImporter", "PatternStringImporter",

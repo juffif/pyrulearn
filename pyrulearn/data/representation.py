@@ -1500,6 +1500,307 @@ class SparseDataRepresentation(DataRepresentation):
         )
 
 
+#: one word of a feature's bit-vector: 64 rows, row ``i`` at bit ``i % 64``
+#: of word ``i // 64`` (little-endian, so the words' bytes are exactly
+#: `numpy.packbits(..., bitorder="little")`'s)
+_WORD = np.dtype("<u8")
+_POPCOUNT_8 = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
+
+def _popcount(words: np.ndarray) -> np.ndarray:
+    """The number of set bits of `words` (`_WORD`s), summed over the last
+    axis -- `numpy.bitwise_count` (a hardware popcount) where numpy has it
+    (2.0 on), a byte lookup table otherwise."""
+    if hasattr(np, "bitwise_count"):
+        return np.bitwise_count(words).sum(axis=-1, dtype=np.int64)
+    return _POPCOUNT_8[np.ascontiguousarray(words).view(np.uint8)].sum(axis=-1, dtype=np.int64)
+
+
+class VerticalBitmapRepresentation(DataRepresentation):
+    """The bit matrix of `BooleanDataRepresentation`, packed the other way:
+    one bit-vector per *feature*, over the examples (a ``(n_features,
+    ceil(n_samples / 64))`` array of 64-bit words) -- the vertical bitmap
+    layout of the MAFIA/SPAM frequent-pattern miners, where
+    `BooleanDataRepresentation` packs each example's features (horizontal)
+    and `SparseDataRepresentation`/`NListRepresentation` keep per-feature
+    lists of example indices (vertical, as lists).
+
+    Covering a rule ANDs its features' bit-vectors -- ``n_samples / 64``
+    words each, whatever the number of features; refining a rule by a
+    feature is one more AND; counting is a popcount of the cover ANDed
+    with a class's bit-vector. A search's batch counting
+    (`batch_cover_counts`) ANDs the cover into the open features' words
+    and popcounts them, over just the words the cover still touches. The
+    memory is Boolean's -- one bit per cell, independent of the density --
+    and nothing is unpacked for a search: `X` is built only for callers
+    that want a plain matrix (external learners, row subsets).
+    """
+
+    def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
+                 weights: Optional[np.ndarray] = None):
+        super().__init__(spec)
+        try:
+            from scipy.sparse import issparse
+        except ImportError:  # pragma: no cover
+            issparse = lambda _o: False  # noqa: E731
+        X = X.toarray() if issparse(X) else np.asarray(X)
+        if X.dtype != bool:
+            X = X.astype(bool)
+        if X.ndim != 2 or X.shape[1] != spec.n_features:
+            raise ValueError(
+                f"X has {X.shape[1] if X.ndim == 2 else '?'} columns but this DataSpec has "
+                f"{spec.n_features} features"
+            )
+        n = X.shape[0]
+        words = np.zeros((spec.n_features, (n + 63) // 64 * 8), dtype=np.uint8)
+        packed = np.packbits(X.T, axis=1, bitorder="little")
+        words[:, :packed.shape[1]] = packed
+        self._init_storage(words.view(_WORD), n, y, weights)
+
+    def _init_storage(self, words: np.ndarray, n_samples: int, y, weights) -> None:
+        self._words: np.ndarray = words
+        self._n_samples: int = n_samples
+        self.y: Optional[np.ndarray] = None if y is None else np.asarray(y)
+        self._all: np.ndarray = self._pack(np.ones(n_samples, dtype=bool))
+        self._class_words: dict = {}
+        self._class_words_y: Optional[np.ndarray] = None
+        self._set_weights(weights)
+
+    @classmethod
+    def _from_words(cls, spec: DataSpec, words: np.ndarray, n_samples: int, y, weights) -> "VerticalBitmapRepresentation":
+        new = cls.__new__(cls)
+        DataRepresentation.__init__(new, spec)
+        new._init_storage(words, n_samples, y, weights)
+        return new
+
+    # -- packing ------------------------------------------------------------
+
+    def _pack(self, rows: np.ndarray) -> np.ndarray:
+        """A boolean row vector as a bit-vector of this data's words."""
+        out = np.zeros((self._n_samples + 63) // 64 * 8, dtype=np.uint8)
+        packed = np.packbits(rows, bitorder="little")
+        out[:packed.size] = packed
+        return out.view(_WORD)
+
+    def _unpack(self, bits: np.ndarray) -> np.ndarray:
+        """A bit-vector as a boolean row vector."""
+        return np.unpackbits(bits.view(np.uint8), bitorder="little", count=self._n_samples).astype(bool)
+
+    #: the most cells (features x rows) `_feature_sums` unpacks at once
+    SUMS_BLOCK_CELLS = 1 << 22
+
+    def _feature_sums(self, features: np.ndarray, rows: np.ndarray, values: np.ndarray) -> np.ndarray:
+        """``values`` (one row per entry of `rows`, ascending) summed per
+        feature in `features` over the rows where it holds: ``(len(features),
+        m)``. When the rows are a large share of the data, a block of
+        features is unpacked whole and multiplied; a few rows are gathered
+        bit by bit instead."""
+        out = np.zeros((len(features), values.shape[1]))
+        if len(rows) == 0 or len(features) == 0:
+            return out
+        if len(rows) * 16 < self._n_samples:
+            shift = (rows & 63).astype(np.uint64)
+            bits = (self._words[np.ix_(features, rows >> 6)] >> shift) & np.uint64(1)
+            return bits.astype(float) @ values
+        every_row = len(rows) == self._n_samples
+        step = max(1, self.SUMS_BLOCK_CELLS // self._n_samples)
+        for start in range(0, len(features), step):
+            bits = np.unpackbits(self._words[features[start:start + step]].view(np.uint8), axis=1,
+                                 bitorder="little", count=self._n_samples)
+            if not every_row:
+                bits = bits[:, rows]
+            out[start:start + step] = bits.astype(float) @ values
+        return out
+
+    def _class_bits(self, positive_class: Any) -> np.ndarray:
+        """The bit-vector of the rows labelled `positive_class`, cached per
+        class (and rebuilt if `y` is replaced)."""
+        if self._class_words_y is not self.y:
+            self._class_words = {}
+            self._class_words_y = self.y
+        bits = self._class_words.get(positive_class)
+        if bits is None:
+            bits = self._class_words[positive_class] = self._pack(self.y == positive_class)
+        return bits
+
+    # -- the primitives ---------------------------------------------------
+
+    @property
+    def n_samples(self) -> int:
+        return self._n_samples
+
+    def coverage(self, rule: "Rule") -> np.ndarray:
+        cov = self._all.copy()
+        for lit in rule.conditions:
+            cov &= self._words[lit.feature]
+        return self._unpack(cov)
+
+    def features_of(self, row: int) -> np.ndarray:
+        bits = (self._words[:, row >> 6] >> np.uint64(row & 63)) & np.uint64(1)
+        return np.flatnonzero(bits).astype(np.int64)
+
+    @functools.cached_property
+    def X(self) -> np.ndarray:
+        """The unpacked ``(n_samples, n_features)`` bool matrix, built on
+        first access; no search needs it."""
+        bits = np.unpackbits(self._words.view(np.uint8), axis=1, bitorder="little", count=self._n_samples)
+        return np.ascontiguousarray(bits.T, dtype=bool)
+
+    # -- incremental coverage (search fast path) -----------------------
+    #
+    # A handle is (cov, scope, w): `cov` the bit-vector of the rows the
+    # current rule covers within the scope, `scope` the bit-vector of the
+    # rows in scope (or `None`: all), `w` the effective row weights (or
+    # `None`), as for `BooleanDataRepresentation`.
+
+    def initial_cover(self, example_mask: Optional[np.ndarray] = None):
+        support, w = self.scope(example_mask)
+        if support is None:
+            return self._all.copy(), None, None
+        scope = self._pack(support)
+        return scope.copy(), scope, w
+
+    def refine_cover(self, handle, feature: int):
+        cov, scope, w = handle
+        return cov & self._words[feature], scope, w
+
+    def cover_counts(self, handle, positive_class: Any) -> Tuple[int, int, int, int]:
+        if self.y is None:
+            raise ValueError("cover_counts needs labels (self.y)")
+        cov, scope, w = handle
+        if w is not None:
+            return _weighted_counts(w, self._unpack(cov), self.y == positive_class)
+        pos = self._class_bits(positive_class)
+        in_scope = self._all if scope is None else scope
+        tp = int(_popcount(cov & pos))
+        fp = int(_popcount(cov)) - tp
+        n_pos = int(_popcount(in_scope & pos))
+        n_neg = int(_popcount(in_scope)) - n_pos
+        return tp, fp, n_pos - tp, n_neg - fp
+
+    def cover_rows(self, handle) -> np.ndarray:
+        return self._unpack(handle[0])
+
+    # -- batched counting ---------------------------------------------------
+
+    #: the most words `batch_cover_counts` ANDs in one block (features x
+    #: covered words), so its temporaries stay small on wide, long data
+    BATCH_BLOCK_WORDS = 1 << 20
+
+    def batch_cover_counts(self, handle, positive_class: Any, feature_indices: Sequence[int]):
+        """`BooleanDataRepresentation.batch_cover_counts` on bit-vectors:
+        the cover's positive and negative rows ANDed into each open
+        feature's words and popcounted, over just the words the cover
+        still has a row in. With weights, a product over the covered rows'
+        bits instead."""
+        if self.y is None:
+            raise ValueError("batch_cover_counts needs labels (self.y)")
+        cov, scope, w = handle
+        feats = np.asarray(feature_indices, dtype=np.intp)
+        if w is not None:
+            rows = np.flatnonzero(self._unpack(cov) & (w != 0))
+            sums = self._feature_sums(feats, rows, _class_value_columns(self.y[rows], positive_class, w[rows]))
+            return sums[:, 0], sums[:, 1], sums[:, 2] == len(rows)
+        live = np.flatnonzero(cov)
+        c = cov[live]
+        p = c & self._class_bits(positive_class)[live]
+        q = c ^ p
+        tp = np.empty(len(feats), dtype=np.int64)
+        fp = np.empty(len(feats), dtype=np.int64)
+        step = max(1, self.BATCH_BLOCK_WORDS // max(len(live), 1))
+        for start in range(0, len(feats), step):
+            block = self._words[np.ix_(feats[start:start + step], live)]
+            tp[start:start + step] = _popcount(block & p)
+            fp[start:start + step] = _popcount(block & q)
+        return tp, fp, tp + fp == int(_popcount(c))
+
+    def batch_cover_sums(self, handle, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
+        """`DataRepresentation.batch_cover_sums` as one product over the
+        covered rows with a nonzero value."""
+        values = np.asarray(values, dtype=float)
+        rows = np.flatnonzero(self._unpack(handle[0]) & (values != 0).any(axis=1))
+        return self._feature_sums(np.asarray(feature_indices, dtype=np.intp), rows, values[rows]).T
+
+    # -- derived representations -------------------------------------------
+
+    def select_rows(self, mask: np.ndarray) -> "VerticalBitmapRepresentation":
+        """The rows `mask` selects, re-packed a block of features at a time
+        (never the whole unpacked matrix at once)."""
+        rows = np.flatnonzero(mask) if np.asarray(mask).dtype == bool else np.asarray(mask, dtype=np.intp)
+        n = len(rows)
+        words = np.zeros((self.spec.n_features, (n + 63) // 64 * 8), dtype=np.uint8)
+        step = max(1, (1 << 24) // max(self._n_samples, 1))
+        for start in range(0, self.spec.n_features, step):
+            bits = np.unpackbits(self._words[start:start + step].view(np.uint8), axis=1, bitorder="little",
+                                 count=self._n_samples)[:, rows]
+            packed = np.packbits(bits, axis=1, bitorder="little")
+            words[start:start + step, :packed.shape[1]] = packed
+        y = None if self.y is None else self.y[rows]
+        w = None if self.weights is None else self.weights[rows]
+        return self._from_words(self.spec, words.view(_WORD), n, y, w)
+
+    def relabel(self, new_y: Any) -> "VerticalBitmapRepresentation":
+        """The same bit-vectors (shared, not copied) with labels `new_y`."""
+        new_y = np.asarray(new_y)
+        if new_y.shape != (self._n_samples,):
+            raise ValueError(f"new_y must have shape ({self._n_samples},), got {new_y.shape}")
+        new = copy.copy(self)
+        new.y = new_y
+        new._class_words = {}
+        new._class_words_y = new_y
+        return new
+
+    def _reindexed(self, new_spec, source, is_complement):
+        words = self._words[np.asarray(source, dtype=np.intp)]
+        if is_complement is not None and np.any(is_complement):
+            words[is_complement] = ~words[is_complement] & self._all
+        return self._from_words(new_spec, words, self._n_samples, self.y, self.weights)
+
+    @classmethod
+    def from_boolean(cls, data: "BooleanDataRepresentation", chunk_cells: int = 1 << 22) -> "VerticalBitmapRepresentation":
+        """Transpose `data`'s row-packed matrix a block of rows at a time,
+        so nothing of the full unpacked size is formed."""
+        n, k = data.n_samples, data.spec.n_features
+        words = np.zeros((k, (n + 63) // 64 * 8), dtype=np.uint8)
+        step = max(64, chunk_cells // max(k, 1) // 64 * 64)
+        for start in range(0, n, step):
+            block = np.unpackbits(data.packed_rows()[start:start + step], axis=1, count=k)
+            packed = np.packbits(block.T, axis=1, bitorder="little")
+            words[:, start // 8:start // 8 + packed.shape[1]] = packed
+        return cls._from_words(data.spec, words.view(_WORD), n, data.y, data.weights)
+
+    @classmethod
+    def from_scipy(cls, matrix, spec: DataSpec, y: Optional[np.ndarray] = None) -> "VerticalBitmapRepresentation":
+        return cls(spec, matrix, y)
+
+    @classmethod
+    def from_dataframe(
+        cls, df, label_col: Optional[str] = None, spec: Optional[DataSpec] = None, name: Optional[str] = None
+    ) -> "VerticalBitmapRepresentation":
+        return cls.from_boolean(
+            BooleanDataRepresentation.from_dataframe(df, label_col=label_col, spec=spec, name=name)
+        )
+
+    @classmethod
+    def from_xy(
+        cls,
+        X,
+        y: Optional[np.ndarray] = None,
+        feature_names: Optional[Sequence[str]] = None,
+        threshold: Optional[float] = None,
+        spec: Optional[DataSpec] = None,
+        name: Optional[str] = None,
+    ) -> "VerticalBitmapRepresentation":
+        return cls.from_boolean(
+            BooleanDataRepresentation.from_xy(
+                X, y, feature_names=feature_names, threshold=threshold, spec=spec, name=name
+            )
+        )
+
+    def __repr__(self) -> str:
+        return f"VerticalBitmapRepresentation(spec={self.spec!r}, n_samples={self.n_samples})"
+
+
 #: Representation types, most to least generally preferred: what
 #: `pyrulearn.data.io`'s loaders/`encode` and
 #: `pyrulearn.experiments.runner.run_cv` build when no `representation=`

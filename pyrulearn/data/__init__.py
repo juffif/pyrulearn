@@ -38,12 +38,13 @@ from .representation import (
     PrePostNListRepresentation,
     REPRESENTATION_PREFERENCE_ORDER,
     SparseDataRepresentation,
+    VerticalBitmapRepresentation,
     default_representation,
 )
 
 __all__ = [
     "DataSpec", "DataSpecBuilder", "merge_dataspecs",
     "DataRepresentation", "BooleanDataRepresentation",
-    "NListRepresentation", "PrePostNListRepresentation", "SparseDataRepresentation",
+    "NListRepresentation", "PrePostNListRepresentation", "SparseDataRepresentation", "VerticalBitmapRepresentation",
     "REPRESENTATION_PREFERENCE_ORDER", "default_representation",
 ]

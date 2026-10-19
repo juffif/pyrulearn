@@ -9,13 +9,15 @@ import pytest
 from pyrulearn.data.attributes import FeatureSpec, MissingStrategy, evaluate_feature
 from pyrulearn.data import (
     BooleanDataRepresentation, DataSpec, DataSpecBuilder, NListRepresentation, SparseDataRepresentation,
+    VerticalBitmapRepresentation,
 )
 from pyrulearn.data.io import (
     binarize, build_dataspec, encode, read_arff, read_csv, validate_dataspec, write_arff, write_csv,
 )
 from pyrulearn.rule import Rule
 
-_ENCODE_REPS = [BooleanDataRepresentation, NListRepresentation, SparseDataRepresentation]
+_ENCODE_REPS = [BooleanDataRepresentation, NListRepresentation, SparseDataRepresentation,
+                VerticalBitmapRepresentation]
 
 
 CSV_TEXT = """color,age,label
