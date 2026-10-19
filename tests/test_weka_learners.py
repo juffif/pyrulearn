@@ -183,3 +183,26 @@ def test_jrip_single_rule_is_the_first_rule_of_that_labels_own_segment():
 
     with pytest.raises(ValueError, match="label"):
         WekaJRip().fit(rep, model=SingleRule)
+
+
+def test_boolean_arff_writer_matches_write_arff_byte_for_byte(tmp_path):
+    """`run_weka`'s fast writer must produce exactly `write_arff`'s file: JRip
+    seeds its random splits from instance text, so any difference in how a
+    value is spelled would change its rules."""
+    import pandas as pd
+
+    from pyrulearn.data.io import write_arff
+    from pyrulearn.interfaces.weka import _write_boolean_arff
+
+    rng = np.random.default_rng(0)
+    for trial in range(50):
+        n, k = int(rng.integers(1, 120)), int(rng.integers(1, 20))
+        X = rng.random((n, k)) < rng.random()
+        X[:, rng.integers(k)] = rng.random() < 0.5          # a constant column
+        y = rng.choice(["pos", "neg", "no checking", "a,b", "x'y"], n)
+        names = [f"f{i}" for i in range(k)]
+        df = pd.DataFrame(X, columns=names)
+        df["class"] = y
+        write_arff(df, "class", tmp_path / "old.arff", arff_types={c: "nominal" for c in names})
+        _write_boolean_arff(X, y, tmp_path / "new.arff", block_cells=int(rng.integers(1, 300)))
+        assert (tmp_path / "old.arff").read_bytes() == (tmp_path / "new.arff").read_bytes(), trial

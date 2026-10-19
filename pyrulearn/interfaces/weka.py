@@ -772,6 +772,56 @@ def _weka_cli_options(options: Optional[Dict[str, Any]]) -> List[str]:
     return out
 
 
+def _write_boolean_arff(X: Any, y: Any, path: str, block_cells: int = 1 << 22) -> None:
+    """Write the Boolean matrix `X` (``n x k``) and labels `y` as an ARFF
+    file for Weka -- byte for byte what `pyrulearn.data.io.write_arff`
+    writes for the same data (features ``f0..f{k-1}`` as nominal
+    attributes with the values ``False``/``True`` that occur in the
+    column, then ``class`` with `y`'s distinct values, sorted), but built
+    as byte arrays a block of rows at a time: the general writer converts
+    and quotes every cell on its own, which on 32,000 x 278 cells took
+    17 s, longer than many of the fits it was writing for.
+
+    The value names stay ``False``/``True`` on purpose: JRip seeds its
+    random grow/prune splits partly from the text of an instance
+    (`weka.core.Instances.getRandomNumberGenerator`), so ``0``/``1``
+    would make it learn different rules from the same data."""
+    import numpy as np
+
+    from ..data.io import _arff_quote
+
+    X = np.asarray(X, dtype=bool)
+    n, k = X.shape
+    labels, codes = np.unique(np.asarray(y).astype(str), return_inverse=True)
+    quoted = [_arff_quote(str(c)).encode("utf-8") for c in labels]
+    any_true, all_true = X.any(axis=0), X.all(axis=0)
+    domains = ["{" + ",".join((["False"] if not t_all else []) + (["True"] if t_any else [])) + "}"
+               for t_any, t_all in zip(any_true, all_true)]
+    header = (["@relation pyrulearn", ""]
+              + [f"@attribute f{i} {d}" for i, d in enumerate(domains)]
+              + [f"@attribute class {{{','.join(q.decode('utf-8') for q in quoted)}}}", "", "@data", ""])
+    tokens = ((False, b"False,"), (True, b"True,"))
+    with open(path, "wb") as f:
+        f.write("\n".join(header).encode("utf-8"))
+        step = max(1, block_cells // max(k, 1))
+        for start in range(0, n, step):
+            block = X[start:start + step]
+            widths = np.where(block, 5, 6).ravel()          # len("True,"), len("False,")
+            ends = np.cumsum(widths)
+            starts = ends - widths
+            flat = np.empty(int(ends[-1]) if len(ends) else 0, dtype=np.uint8)
+            cells = block.ravel()
+            for value, token in tokens:
+                at = starts[cells == value]
+                for j, ch in enumerate(token):
+                    flat[at + j] = ch
+            text = flat.tobytes()
+            row_ends = ends[k - 1::k] if k else np.zeros(len(block), dtype=np.int64)
+            row_starts = np.concatenate(([0], row_ends[:-1]))
+            f.write(b"".join(text[a:b] + quoted[c] + b"\n"
+                             for a, b, c in zip(row_starts, row_ends, codes[start:start + step])))
+
+
 def run_weka(
     weka_class: str,
     X: Any,
@@ -788,29 +838,19 @@ def run_weka(
     importers parse.
 
     `X`'s columns are written as ``{False,True}`` nominal ARFF attributes
-    with safe placeholder names ``f0..fN`` (a `DataSpec`'s own
-    ``age>=30``-style names would collide with the parsers' operator
-    regexes -- see `write_arff`'s docstring), so the caller pairs this
-    with ``Importer(dataspec=<real spec>, placeholder_features=True)`` to
-    bind the rules back by position. ``-no-cv`` skips Weka's own
+    with safe placeholder names ``f0..fN`` (a `DataSpec`'s own ``age>=30``-style
+    names would collide with the parsers' operator regexes -- see
+    `write_arff`'s docstring) by `_write_boolean_arff`, so the caller pairs
+    this with ``Importer(dataspec=<real spec>, placeholder_features=True)``
+    to bind the rules back by position. ``-no-cv`` skips Weka's own
     cross-validation; `options` passes classifier flags (see
     `_weka_cli_options`). Raises `RuntimeError` (stderr included) if Weka
     exits non-zero or prints no model.
     """
-    import numpy as np
-    import pandas as pd
-
-    from ..data.io import write_arff
-
     jar, java = _resolve_weka(jar, java)
-    X = np.asarray(X, dtype=bool)
-    names = [f"f{i}" for i in range(X.shape[1])]
-    df = pd.DataFrame(X, columns=names)
-    df["class"] = np.asarray(y)
-
     with tempfile.TemporaryDirectory(prefix="weka_") as d:
         arff = os.path.join(d, "train.arff")
-        write_arff(df, "class", arff, arff_types={n: "nominal" for n in names})
+        _write_boolean_arff(X, y, arff)
         cmd = [java, "-Duser.language=en", "-Duser.country=US", "-cp", jar, weka_class,
                "-t", arff, "-no-cv", *_weka_cli_options(options)]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
