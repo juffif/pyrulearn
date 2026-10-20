@@ -12,6 +12,10 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   `ImodelsRuleFit`, `ImodelsSlipper`, `RealkdRuleBoosting`, `PyarcCBA`,
   `LordJar`) and the 0.2.0 name `MlrlBoomer`, which were served with a
   `DeprecationWarning`, together with `interfaces.base.deprecated_aliases`.
+- `BooleanDataRepresentation`, the name `HorizontalBitmapRepresentation`
+  had until 0.3.4, and with it the deprecation hooks (module-level
+  `__getattr__`) of `pyrulearn`, `pyrulearn.data` and
+  `pyrulearn.data.representation`.
 
 ### Changed (breaking)
 

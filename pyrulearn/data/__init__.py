@@ -39,7 +39,6 @@ from .representation import (
     REPRESENTATION_PREFERENCE_ORDER,
     SparseDataRepresentation,
     VerticalBitmapRepresentation,
-    _deprecated,
     default_representation,
 )
 
@@ -50,6 +49,3 @@ __all__ = [
     "REPRESENTATION_PREFERENCE_ORDER", "default_representation",
 ]
 
-
-def __getattr__(name: str):
-    return _deprecated(__name__, name)

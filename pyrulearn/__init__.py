@@ -151,8 +151,3 @@ __all__ = [
 ]
 __version__ = "0.3.4"
 
-
-def __getattr__(name: str):
-    from .data.representation import _deprecated
-
-    return _deprecated(__name__, name)

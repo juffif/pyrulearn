@@ -218,8 +218,7 @@ examples where it is true:
   *example* (`numpy.packbits` over each row): a rule's coverage checks
   every example's row against the rule's features. The simplest to
   construct by hand, and `rep.X` is its own storage (the others build `X`
-  on demand). Until 0.3.4 it was called `BooleanDataRepresentation`; the
-  old name still works, with a `DeprecationWarning`, until 0.9.0.
+  on demand). Until 0.3.4 it was called `BooleanDataRepresentation`.
 - `SparseDataRepresentation` -- `scipy` CSR/CSC; a rule's coverage is
   the intersection of its features' column index-sets (Eclat's vertical
   tid-lists), rarest feature first. This is the N-list *without* the

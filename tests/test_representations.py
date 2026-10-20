@@ -550,14 +550,8 @@ def test_to_csr_is_the_matrix_without_caching_it(n, chunk_cells):
         assert "X" not in vars(brep)
 
 
-def test_boolean_data_representation_is_a_deprecated_alias():
+def test_boolean_data_representation_is_removed():
     import importlib
-    import warnings
 
     for module in ("pyrulearn", "pyrulearn.data", "pyrulearn.data.representation"):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            assert importlib.import_module(module).BooleanDataRepresentation is HorizontalBitmapRepresentation
-        assert len(caught) == 1 and issubclass(caught[0].category, DeprecationWarning)
-    with pytest.raises(AttributeError):
-        importlib.import_module("pyrulearn.data").NoSuchRepresentation
+        assert not hasattr(importlib.import_module(module), "BooleanDataRepresentation")

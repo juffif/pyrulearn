@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import copy
 import functools
-import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Tuple
 
@@ -1828,26 +1827,6 @@ REPRESENTATION_PREFERENCE_ORDER: Tuple[type, ...] = (
     VerticalBitmapRepresentation, NListRepresentation, PrePostNListRepresentation,
     HorizontalBitmapRepresentation, SparseDataRepresentation,
 )
-
-
-#: renamed names, served with a `DeprecationWarning` by this module's,
-#: `pyrulearn.data`'s and `pyrulearn`'s `__getattr__` until 0.9.0
-_DEPRECATED_NAMES = {"BooleanDataRepresentation": "HorizontalBitmapRepresentation"}
-
-
-def _deprecated(module: str, name: str) -> Any:
-    """What a renamed name of `module` now is, with a `DeprecationWarning`
-    -- the body of a module-level `__getattr__` (PEP 562)."""
-    new = _DEPRECATED_NAMES.get(name)
-    if new is None:
-        raise AttributeError(f"module {module!r} has no attribute {name!r}")
-    warnings.warn(f"{name} was renamed to {new} in pyrulearn 0.3.4; the old name will be removed in 0.9.0",
-                  DeprecationWarning, stacklevel=3)
-    return globals()[new]
-
-
-def __getattr__(name: str) -> Any:
-    return _deprecated(__name__, name)
 
 
 def default_representation() -> type:
