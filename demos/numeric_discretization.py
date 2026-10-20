@@ -367,11 +367,16 @@ def run(datasets, n_folds: int, verbose: bool = True):
             train_df = df.iloc[train_idx].reset_index(drop=True)
             test_df = df.iloc[test_idx].reset_index(drop=True)
 
-            # one DataSpec per (level, discretizer) this fold -- shared by both algorithms
+            # one DataSpec per (level, discretizer) this fold -- shared by both algorithms.
+            # Every column is declared numeric, so the tree discretizer discretizes all of
+            # them, as the quantile binning does: without it, a column with at most
+            # `max_ordinal_values` distinct values would be inferred ordinal (nominal
+            # until 0.3.4) and not discretized at all.
+            numeric = {c: "numeric" for c in train_df.columns if c != target}
             specs = {}
             for n in LEVELS:
-                specs[f"tree@{n}"] = build_dataspec(train_df, target=target, max_intervals=n,
-                                                    skip_unusable=True).build()
+                specs[f"tree@{n}"] = build_dataspec(train_df, target=target, arff_types=numeric,
+                                                    max_intervals=n, skip_unusable=True).build()
                 specs[f"kbins@{n}"] = build_kbins_dataspec(train_df, target=target, n_bins=n).build()
             reps = {prep: (HorizontalBitmapRepresentation(spec, binarize(spec, train_df), train_df[target].to_numpy()),
                           HorizontalBitmapRepresentation(spec, binarize(spec, test_df), test_df[target].to_numpy()))
