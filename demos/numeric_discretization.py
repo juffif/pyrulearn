@@ -6,18 +6,18 @@ RIPPER-family comparison (e): does discretizing numeric attributes
 ourselves cost accuracy against a learner's own intrinsic handling, and
 how much does the discretization level matter? Weka's JRip and J48 --
 both capable of thresholding numeric attributes internally during
-learning -- run in seven data preparations per dataset:
+learning -- run in nine data preparations per dataset:
 
 - **raw** -- the original numeric columns, unmodified; Weka does its
   own thresholding, same as it would standalone.
-- **tree@3 / tree@5 / tree@8** -- our own discretization
+- **tree@3 / tree@5 / tree@8 / tree@12** -- our own discretization
   (`pyrulearn.data.io.build_dataspec`'s supervised, decision-tree-based
   binning, `pyrulearn.interfaces.sklearn.tree_thresholds`) at
-  `max_intervals` 3, 5, 8, then binarized (`binarize`) before fitting --
+  `max_intervals` 3, 5, 8, 12, then binarized (`binarize`) before fitting --
   the same pipeline every other comparison demo uses.
-- **kbins@3 / kbins@5 / kbins@8** -- `sklearn.preprocessing.
+- **kbins@3 / kbins@5 / kbins@8 / kbins@12** -- `sklearn.preprocessing.
   KBinsDiscretizer` (`strategy="quantile"`, unsupervised -- no target
-  used, unlike `tree_thresholds`) at `n_bins` 3, 5, 8, then binarized
+  used, unlike `tree_thresholds`) at `n_bins` 3, 5, 8, 12, then binarized
   the same way (`build_kbins_dataspec` below turns its `bin_edges_`
   into a `DataSpec` the rest of the pipeline treats identically to a
   tree-discretized one).
@@ -111,7 +111,7 @@ WEKA_JAVA = os.environ.get("WEKA_JAVA") or (_WIN_JAVA if os.path.exists(_WIN_JAV
 WEKA_JAR = os.environ.get("WEKA_JAR") or r"C:\Program Files\Weka-3-8-7\weka.jar"
 
 RANDOM_STATE = 0
-LEVELS = (3, 5, 8)
+LEVELS = (3, 5, 8, 12)
 KBINS_STRATEGY = "quantile"
 FIT_TIMEOUT = 120.0  # seconds, per (dataset, fold, algorithm, prep) -- a Weka subprocess call
 
@@ -191,7 +191,7 @@ def _build_description(datasets, n_folds: int, quick: bool) -> str:
         f"running it).\n\n"
     )
     return f"""\
-{mode_note}Weka's JRip and J48 compared across seven data preparations per dataset: `raw`
+{mode_note}Weka's JRip and J48 compared across {len(PREPS)} data preparations per dataset: `raw`
 (Weka's own intrinsic numeric thresholding), our own decision-tree-based
 discretization (`build_dataspec`/`tree_thresholds`) and `sklearn.preprocessing.
 KBinsDiscretizer` (`strategy={KBINS_STRATEGY!r}`, unsupervised), each of the
