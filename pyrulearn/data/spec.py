@@ -52,12 +52,18 @@ from .attributes import (
     MutuallyExclusive,
     NominalGroup,
     NumericGroup,
+    OrdinalGroup,
     ThresholdChain,
+    is_numeric_domain,
 )
 
-#: FeatureSpec.op values that mark a "positive" feature vs. its negation.
-_POSITIVE_OPS = (None, "==", ">=", "<=")
-_NEGATION_OPS = ("not", "!=", "<", ">")
+#: FeatureSpec.op values of negation features -- what `without_negations`
+#: drops. ``<`` and ``>`` are not among them: a numeric attribute always
+#: tests both directions, an ordinal one always both ``<=`` and ``>``.
+_NEGATION_OPS = ("not", "!=")
+#: the op on the complement side of each pair `negation_of` links
+#: (``x>=t``/``x<t``, ``x<=t``/``x>t`` as well as the negations proper).
+_COMPLEMENT_OPS = ("not", "!=", "<", ">")
 
 
 class DataSpec:
@@ -142,7 +148,8 @@ class DataSpec:
     def _build_negation_map(self) -> Dict[int, int]:
         """Pair each feature with its exact-negation feature, if one
         exists (``color=red`` <-> ``color!=red``, ``age>=30`` <->
-        ``age<30``, ``smoker`` <-> ``not smoker``). Both directions.
+        ``age<30``, ``size<=2`` <-> ``size>2``, ``smoker`` <->
+        ``not smoker``). Both directions.
 
         A BINARY attribute's two ``==`` features are paired with each
         other (``sex=male`` <-> ``sex=female``): its value list is
@@ -164,7 +171,7 @@ class DataSpec:
             k = key(spec)
             if k is None:
                 continue
-            (neg if spec.op in _NEGATION_OPS else pos)[k] = spec.index
+            (neg if spec.op in _COMPLEMENT_OPS else pos)[k] = spec.index
         out: Dict[int, int] = {}
         for k, pi in pos.items():
             ni = neg.get(k)
@@ -185,10 +192,10 @@ class DataSpec:
 
     def negation_of(self, name_or_idx: Union[str, int]) -> Optional[int]:
         """The feature index of `name_or_idx`'s exact negation
-        (``color=red`` -> ``color!=red``, and back), or `None` if the
-        attribute was declared without negation (or the feature has no
-        negation, e.g. a plain attribute-less one, a ``<=`` feature, a
-        hierarchy node)."""
+        (``color=red`` -> ``color!=red``, ``age>=30`` -> ``age<30``, and
+        back), or `None` if there is none: an ``x=v``/``not f`` partner
+        exists only with negation on; a plain attribute-less feature or a
+        hierarchy node has none at all."""
         return self._negation_map.get(self.feature_index(name_or_idx))
 
     # -- negation-feature toggling -------------------------------------
@@ -196,7 +203,8 @@ class DataSpec:
     @property
     def has_negation_features(self) -> bool:
         """True if any feature is an explicit negation (``not f``,
-        ``x != v``, ``x < t``, ``x > t``)."""
+        ``x != v``) -- not ``x < t``/``x > t``, which a numeric or ordinal
+        attribute always has."""
         return any(fs.op in _NEGATION_OPS for fs in self.feature_specs)
 
     def without_negations(self) -> Tuple["DataSpec", np.ndarray]:
@@ -204,9 +212,11 @@ class DataSpec:
         an int array `keep` mapping each surviving feature to the old
         index it came from (matched by name), so a `DataRepresentation`
         can do ``new_X = old_X[:, keep]``. Constraints are regenerated for the
-        reduced feature set (``NominalGroup`` -> ``ExactlyOne``,
-        ``NumericGroup`` -> ``ThresholdChain``, the ``not``-pair
-        ``MutuallyExclusive`` constraints simply drop out). Returns
+        reduced feature set (``NominalGroup`` -> ``ExactlyOne``, an
+        ``OrdinalGroup`` without its ``!=`` features, the ``not``-pair
+        ``MutuallyExclusive`` constraints simply drop out); numeric
+        attributes are unchanged, as their ``<`` features are not
+        negations. Returns
         ``(self, arange(n_features))`` unchanged if there are no negation
         features to remove.
         """
@@ -216,7 +226,7 @@ class DataSpec:
             new_spec = _rebuilt_with_negation(self, negation=False)
             keep = np.array([self.feature_index(n) for n in new_spec.feature_names], dtype=int)
             return new_spec, keep
-        keep = [fs.index for fs in self.feature_specs if fs.op in _POSITIVE_OPS]
+        keep = [fs.index for fs in self.feature_specs if fs.op not in _NEGATION_OPS]
         new_spec = DataSpec([self.feature_names[i] for i in keep], name=self.name)
         return new_spec, np.asarray(keep, dtype=int)
 
@@ -382,6 +392,20 @@ class NumericGeIndices(_WithNegation):
     le: Optional[Dict[float, int]] = None
 
 
+class OrdinalFeatureIndices(_WithNegation):
+    """`add_ordinal`'s return: ``{value: '=' feature index}`` plus `.le`
+    and `.gt` (``{value: index}`` of the ``<=``/``>`` features, every
+    value but the largest), `.negative` (``{value: '!=' index}`` or
+    `None`) and `.all`."""
+
+    def __init__(self, eq: Dict[Any, int], le: Dict[Any, int], gt: Dict[Any, int],
+                 ne: Optional[Dict[Any, int]] = None):
+        super().__init__(eq, ne)
+        self.le: Dict[Any, int] = le
+        self.gt: Dict[Any, int] = gt
+        self.all = sorted(set(self.all) | set(le.values()) | set(gt.values()))
+
+
 class BoolFeatureIndex(int):
     """`add_boolean`'s return: the positive feature index (behaves as a
     plain `int` everywhere) with `.negative` (the ``not name`` feature
@@ -403,14 +427,15 @@ class DataSpecBuilder:
     nominal value / numeric threshold / set value / hierarchy node) and
     the constraints among them.
 
-    By default (``negation=True``) every attribute also gets explicit
-    negation features -- ``not smoker``, ``color!=red``, ``age<20`` --
-    each paired with its positive counterpart by a `MutuallyExclusive` /
-    `NominalGroup` / `NumericGroup` constraint, so a rule condition
-    meaning "feature absent" is a positive literal on the negation
-    feature rather than a negative literal. Pass ``negation=False`` (or
-    per-attribute ``negation=False``) for the positive-only feature
-    space.
+    By default (``negation=True``) Boolean, nominal and ordinal
+    attributes also get explicit negation features -- ``not smoker``,
+    ``color!=red`` -- each paired with its positive counterpart by a
+    `MutuallyExclusive` / `NominalGroup` / `OrdinalGroup` constraint, so
+    a rule condition meaning "feature absent" is a positive literal on
+    the negation feature rather than a negative literal. Pass
+    ``negation=False`` (or per-attribute ``negation=False``) for the
+    feature space without them. Numeric attributes are not affected:
+    they always get both ``age>=t`` and ``age<t``.
 
     Example
     -------
@@ -418,10 +443,10 @@ class DataSpecBuilder:
     >>> b.add_boolean("smoker")
     0
     >>> color_idx = b.add_nominal("color", ["red", "green", "blue"])
-    >>> age_idx = b.add_numeric("age", [20, 30, 40])
+    >>> age_idx = b.add_numeric("age", [20, 30])
     >>> dv = b.build()
     >>> dv.feature_names
-    ['smoker', 'color=red', 'color=green', 'color=blue', 'age>=20', 'age>=30', 'age>=40']
+    ['smoker', 'color=red', 'color=green', 'color=blue', 'age>=20', 'age>=30', 'age<20', 'age<30']
     """
 
     def __init__(self, negation: bool = True):
@@ -568,34 +593,26 @@ class DataSpecBuilder:
         le_thresholds: Sequence[float] = (),
         missing_name: Optional[Any] = None,
         missing_values: Sequence[Any] = (),
-        negation: Optional[bool] = None,
     ) -> Union["NumericGeIndices", "NumericFeatureIndices"]:
         """Add a numeric attribute binarized at the given cut points.
-        `ge_thresholds` generates one ``>=`` threshold-test feature per
-        cut point (named ``"{attribute}>={threshold}"``, sorted
-        ascending), with a `ThresholdChain` constraint over them if
-        there's more than one -- as before (just renamed from the
-        original bare `thresholds`, for symmetry with `le_thresholds`
-        now that there are two).
+        `ge_thresholds` generates, per cut point ``t`` (sorted
+        ascending), the threshold test ``"{attribute}>={t}"`` and its
+        exact complement ``"{attribute}<{t}"`` -- both, whatever the
+        builder's negation setting: one direction alone would let a rule
+        bound the attribute from one side only. A `NumericGroup` owns the
+        ``>=`` chain and the complement links.
 
-        `le_thresholds` (default: none, a complete no-op -- existing
-        callers see no change at all) *separately* generates ``<=``
-        features (``"{attribute}<={threshold}"``) with their own
-        `ThresholdChain`. It's a genuinely different family, not the
-        complement of the ``>=`` one: ``x<=t`` is the exact logical
-        complement of ``x>t``, not of ``x>=t`` (``x<=t`` and
-        ``NOT(x>=t)`` disagree exactly at ``x==t``), so folding it into
-        the same chain would get that boundary wrong. Internally this
-        still reuses `ThresholdChain` completely unchanged for the
-        ``<=`` family too -- its propagation logic only assumes "index 0
-        is easiest to satisfy, later indices are monotonically harder,"
-        which is generic enough for either direction; feeding it the
-        ``<=`` feature indices in *descending* threshold order (rather
-        than the ``>=`` family's ascending order) is what makes that
-        already-correct for ``<=``'s mirrored monotonicity, with no
-        changes to the class itself. The two families are built the same
-        way internally, each just walked in the order that's "easiest to
-        satisfy first" for its own direction.
+        `le_thresholds` (default: none) *separately* generates
+        ``"{attribute}<={t}"`` and its complement ``"{attribute}>{t}"``,
+        with a `NumericGroup` of their own. It's a genuinely different
+        family, not the complement of the ``>=`` one: ``x<=t`` is the
+        exact logical complement of ``x>t``, not of ``x>=t`` (``x<=t``
+        and ``NOT(x>=t)`` disagree exactly at ``x==t``), so folding it
+        into the same chain would get that boundary wrong. The ``<=``
+        features are fed to their group in *descending* threshold order,
+        which makes the plain "index 0 is easiest to satisfy" chain logic
+        right for their mirrored monotonicity. Importers use this family
+        for learners that write ``<=`` conditions (Weka, wittgenstein).
 
         The two families are independent and not cross-checked against
         each other -- nothing stops a rule from stating both
@@ -604,102 +621,162 @@ class DataSpecBuilder:
         example, which for rules read in from an external source, as
         opposed to hand-built, is the normal and sufficient outcome).
         Giving the *same* value to both `ge_thresholds` and
-        `le_thresholds` is exactly how to represent ``attribute==value``
-        as a conjunction of the two resulting literals.
-
-        With negation on, each ``>=`` cut point also gets its exact
-        complement ``"{attribute}<{threshold}"``, and a `NumericGroup`
-        (rather than `ThresholdChain`) owns the ``>=`` family plus the
-        ``>=``/``<`` complement links. The ``<=`` (`le_thresholds`)
-        family is unaffected by `negation`.
+        `le_thresholds` is one way to represent ``attribute==value`` as a
+        conjunction of the two resulting literals; for an attribute with
+        few values, `add_ordinal` has equality features of its own.
 
         Returns a `NumericGeIndices` -- a ``{threshold: '>=' index}``
-        dict (unchanged for existing callers) carrying `.negative` (the
-        ``{threshold: '<' index}`` dict, or `None`), `.all`, and `.le`
-        (the ``<=`` dict, or `None`). Once `le_thresholds` is given,
-        returns a `NumericFeatureIndices` ``(ge, le)`` named pair
-        instead (``ge`` still a `NumericGeIndices`), unpackable
-        positionally (``ge_idx, le_idx = add_numeric(...)``).
+        dict carrying `.negative` (the ``{threshold: '<' index}`` dict),
+        `.all`, and `.le` (the ``<=`` dict, or `None`). Once
+        `le_thresholds` is given, returns a `NumericFeatureIndices`
+        ``(ge, le)`` named pair instead (``ge`` still a
+        `NumericGeIndices`, ``le`` with the ``>`` features as
+        `.negative`), unpackable positionally (``ge_idx, le_idx =
+        add_numeric(...)``).
 
         `missing_name`, if given, adds one more feature (named
         ``"{attribute}={missing_name}"``) for `MissingStrategy.SEPARATE`
-        to route into -- deliberately *outside* either `ThresholdChain`
-        (and with no constraint linking it to either), since a numeric
-        value being "missing" is independent of whether it would pass
-        any `>=`/`<=` test. `missing_values` are raw values (besides
+        to route into -- deliberately *outside* either group (and with
+        no constraint linking it to either), since a numeric value being
+        "missing" is independent of whether it would pass any
+        threshold test. `missing_values` are raw values (besides
         `None`/NaN) to also treat as missing when reading data for this
         attribute.
         """
-        neg_on = self._neg(negation)
         ge_sorted = sorted(set(ge_thresholds))
         le_sorted = sorted(set(le_thresholds), reverse=True)
-        ge_indices: Dict[float, int] = {}
-        lt_indices: Dict[float, int] = {}
-        le_indices: Dict[float, int] = {}
-        ge_feature_idxs: List[int] = []
-        lt_feature_idxs: List[int] = []
-        le_feature_idxs: List[int] = []
-
-        for t in ge_sorted:
-            idx = len(self._names)
-            name = f"{attribute}>={t}"
-            self._names.append(name)
-            self._specs.append(FeatureSpec(idx, name, attribute=attribute, op=">=", value=t))
-            ge_indices[t] = idx
-            ge_feature_idxs.append(idx)
-        if neg_on:
-            for t in ge_sorted:  # ascending, parallel to the >= family
-                idx = len(self._names)
-                name = f"{attribute}<{t}"
-                self._names.append(name)
-                self._specs.append(FeatureSpec(idx, name, attribute=attribute, op="<", value=t))
-                lt_indices[t] = idx
-                lt_feature_idxs.append(idx)
-        gt_indices: Dict[float, int] = {}
-        gt_feature_idxs: List[int] = []
-        for t in le_sorted:
-            idx = len(self._names)
-            name = f"{attribute}<={t}"
-            self._names.append(name)
-            self._specs.append(FeatureSpec(idx, name, attribute=attribute, op="<=", value=t))
-            le_indices[t] = idx
-            le_feature_idxs.append(idx)
-        if neg_on:
-            for t in le_sorted:  # descending, parallel to the <= family
-                idx = len(self._names)
-                name = f"{attribute}>{t}"
-                self._names.append(name)
-                self._specs.append(FeatureSpec(idx, name, attribute=attribute, op=">", value=t))
-                gt_indices[t] = idx
-                gt_feature_idxs.append(idx)
+        ge_indices = self._add_features(attribute, ">=", ">=", ge_sorted)
+        lt_indices = self._add_features(attribute, "<", "<", ge_sorted)  # parallel to the >= family
+        le_indices = self._add_features(attribute, "<=", "<=", le_sorted)
+        gt_indices = self._add_features(attribute, ">", ">", le_sorted)  # parallel to the <= family
 
         if missing_name is not None:
-            idx = len(self._names)
-            name = f"{attribute}={missing_name}"
-            self._names.append(name)
-            self._specs.append(FeatureSpec(idx, name, attribute=attribute, op="==", value=missing_name))
-            ge_indices[missing_name] = idx
+            ge_indices.update(self._add_features(attribute, "=", "==", [missing_name]))
 
         self._attributes[attribute] = Attribute(
             attribute, AttributeType.NUMERIC, tuple(ge_sorted) if ge_sorted else None,
             le_domain=tuple(sorted(le_sorted)) if le_sorted else None,
-            missing_name=missing_name, missing_values=tuple(missing_values), negation=neg_on,
+            missing_name=missing_name, missing_values=tuple(missing_values),
         )
-        if neg_on and lt_feature_idxs:
-            self._constraints.append(NumericGroup(ge_feature_idxs, lt_feature_idxs))
-        elif len(ge_feature_idxs) > 1:
-            self._constraints.append(ThresholdChain(ge_feature_idxs))
-        if neg_on and gt_feature_idxs:
-            self._constraints.append(NumericGroup(le_feature_idxs, gt_feature_idxs))
-        elif len(le_feature_idxs) > 1:
-            self._constraints.append(ThresholdChain(le_feature_idxs))
+        if ge_sorted:
+            self._constraints.append(NumericGroup([ge_indices[t] for t in ge_sorted],
+                                                  [lt_indices[t] for t in ge_sorted]))
+        if le_sorted:
+            self._constraints.append(NumericGroup([le_indices[t] for t in le_sorted],
+                                                  [gt_indices[t] for t in le_sorted]))
 
-        ge_ret = NumericGeIndices(ge_indices, lt_indices if neg_on else None)
+        ge_ret = NumericGeIndices(ge_indices, lt_indices)
         ge_ret.le = le_indices if le_thresholds else None
         if not le_thresholds:
             return ge_ret
-        le_ret = _WithNegation(le_indices, gt_indices if neg_on else None)
-        return NumericFeatureIndices(ge_ret, le_ret)
+        return NumericFeatureIndices(ge_ret, _WithNegation(le_indices, gt_indices))
+
+    def _add_features(self, attribute: str, sign: str, op: str, values: Sequence[Any]) -> Dict[Any, int]:
+        """One ``"{attribute}{sign}{value}"`` feature with `op` per value,
+        in order; returns ``{value: index}``."""
+        indices: Dict[Any, int] = {}
+        for v in values:
+            idx = len(self._names)
+            name = f"{attribute}{sign}{v}"
+            self._names.append(name)
+            self._specs.append(FeatureSpec(idx, name, attribute=attribute, op=op, value=v))
+            indices[v] = idx
+        return indices
+
+    def add_ordinal(
+        self,
+        attribute: str,
+        values: Sequence[Any],
+        *,
+        missing_name: Optional[Any] = None,
+        missing_values: Sequence[Any] = (),
+        negation: Optional[bool] = None,
+    ) -> "OrdinalFeatureIndices":
+        """Add an ordinal attribute: a few ordered values, given in
+        ascending order (``["low", "medium", "high"]``), or a small set of
+        numbers (a count, a rating; sorted here). Generates
+        ``"{attribute}={v}"`` for every value, ``"{attribute}<={v}"`` and
+        its complement ``"{attribute}>{v}"`` for every value but the
+        largest (where ``<=`` would always hold), and, with negation on,
+        ``"{attribute}!={v}"`` for every value -- the equality and
+        inequality tests a NUMERIC attribute's thresholds can't express
+        (``x!=v`` would be the disjunction ``x<v or x>v``). One
+        `OrdinalGroup` constrains them all.
+
+        Values compare by their position in `values`: reading data,
+        `pyrulearn.data.io.binarize` maps each raw value to its position,
+        and a value outside `values` counts as missing. If every value is
+        a number, raw values compare numerically instead, so an unseen
+        value still satisfies the right ``<=``/``>`` tests (and no
+        ``=``).
+
+        `missing_name`, if given, adds a ``"{attribute}={missing_name}"``
+        feature for `MissingStrategy.SEPARATE` -- one more position of
+        the group, outside the order, where no ``<=``/``>`` test holds.
+        `missing_values` are raw values (besides `None`/NaN) to also
+        treat as missing when reading data.
+
+        Returns an `OrdinalFeatureIndices`: ``{value: '=' index}`` with
+        `.le`/`.gt` (``{value: index}`` for the ``<=``/``>`` features),
+        `.negative` (the ``!=`` dict, or `None` without negation) and
+        `.all`.
+        """
+        values = list(values)
+        if not values:
+            raise ValueError(f"add_ordinal({attribute!r}) needs at least one value")
+        if len(set(values)) != len(values):
+            raise ValueError(f"add_ordinal({attribute!r}): values must be distinct, got {values!r}")
+        if is_numeric_domain(values):
+            values = sorted(values)
+        neg_on = self._neg(negation)
+        k = len(values)
+        positions = values + ([missing_name] if missing_name is not None else [])
+        eq = self._add_features(attribute, "=", "==", positions)
+        le = self._add_features(attribute, "<=", "<=", values[:-1])
+        gt = self._add_features(attribute, ">", ">", values[:-1])
+        ne = self._add_features(attribute, "!=", "!=", positions) if neg_on else None
+
+        # The positions the value can be at, each with a representative to
+        # evaluate the features on, exactly as `binarize` would: the values
+        # themselves (their ranks, for a non-numeric order), and the
+        # `missing_name` position, where only `x=<missing>` holds. Like a
+        # nominal attribute's, the group is exact for the values it knows
+        # -- those of the training data, when `build_dataspec` infers it.
+        # An unseen number in a test set still compares numerically when
+        # the data is read (it satisfies `x>1` and `x<=3` of 0, 1, 3, but
+        # no `x=v`); only what the group derives assumes a known value
+        # (`x>1` and `x<=3` imply `x=3`, as they do on the training data).
+        if is_numeric_domain(values):
+            points: List[Any] = list(values)
+            rank = {v: v for v in values}
+        else:
+            points = list(range(k))
+            rank = {v: r for r, v in enumerate(values)}
+        missing = len(points) if missing_name is not None else None
+        n_positions = len(points) + (missing is not None)
+
+        def mask(test) -> int:
+            return sum(1 << p for p, point in enumerate(points) if test(point))
+
+        masks: Dict[int, int] = {}
+        for v in values:
+            masks[eq[v]] = mask(lambda x, r=rank[v]: x == r)
+            if ne is not None:
+                masks[ne[v]] = mask(lambda x, r=rank[v]: x != r)
+        for v in values[:-1]:
+            masks[le[v]] = mask(lambda x, r=rank[v]: x <= r)
+            masks[gt[v]] = mask(lambda x, r=rank[v]: x > r)
+        if missing is not None:
+            masks[eq[missing_name]] = 1 << missing
+            if ne is not None:
+                masks[ne[missing_name]] = mask(lambda x: True)
+        self._attributes[attribute] = Attribute(
+            attribute, AttributeType.ORDINAL, tuple(values),
+            missing_name=missing_name, missing_values=tuple(missing_values), negation=neg_on,
+        )
+        if n_positions > 1:
+            self._constraints.append(OrdinalGroup(masks, n_positions))
+        return OrdinalFeatureIndices(eq, le, gt, ne)
 
     def add_set(self, attribute: str, domain: Sequence[Any], missing_values: Sequence[Any] = ()) -> Dict[Any, int]:
         """Add a set-valued attribute: an example's value is a subset of
@@ -859,8 +936,8 @@ def _rebuilt_with_negation(spec: DataSpec, negation: bool) -> DataSpec:
     with negation features forced on (`True`) or off (`False`).
     `spec.attributes` must be populated -- an attribute-less DataSpec has
     nothing to rebuild, and its callers handle that case separately.
-    SET / HIERARCHICAL / RELATIONAL attributes have no negation features
-    either way, so the flag is a no-op for them."""
+    BINARY / NUMERIC / SET / HIERARCHICAL / RELATIONAL attributes have no
+    negation features either way, so the flag is a no-op for them."""
     builder = DataSpecBuilder(negation=negation)
     for name, attr in spec.attributes.items():
         t = attr.type
@@ -875,6 +952,9 @@ def _rebuilt_with_negation(spec: DataSpec, negation: bool) -> DataSpec:
             builder.add_numeric(name, list(attr.domain) if attr.domain else (),
                                 le_thresholds=list(attr.le_domain) if attr.le_domain else (),
                                 missing_name=attr.missing_name, missing_values=attr.missing_values)
+        elif t == AttributeType.ORDINAL:
+            builder.add_ordinal(name, list(attr.domain), missing_name=attr.missing_name,
+                                missing_values=attr.missing_values)
         elif t == AttributeType.SET:
             builder.add_set(name, list(attr.domain), missing_values=attr.missing_values)
         elif t == AttributeType.HIERARCHICAL:
@@ -910,9 +990,12 @@ def _copy_attribute(builder: DataSpecBuilder, name: str, attr: Attribute, src: D
         builder.add_nominal(name, list(attr.domain), negation=attr.negation,
                              missing_name=attr.missing_name, missing_values=attr.missing_values)
     elif attr.type == AttributeType.NUMERIC:
-        builder.add_numeric(name, list(attr.domain) if attr.domain else (), negation=attr.negation,
+        builder.add_numeric(name, list(attr.domain) if attr.domain else (),
                              le_thresholds=list(attr.le_domain) if attr.le_domain else (),
                              missing_name=attr.missing_name, missing_values=attr.missing_values)
+    elif attr.type == AttributeType.ORDINAL:
+        builder.add_ordinal(name, list(attr.domain), negation=attr.negation,
+                            missing_name=attr.missing_name, missing_values=attr.missing_values)
     elif attr.type == AttributeType.SET:
         builder.add_set(name, list(attr.domain), missing_values=attr.missing_values)
     elif attr.type == AttributeType.HIERARCHICAL:
@@ -935,6 +1018,20 @@ def _merged_missing_name(name: str, attr_a: Attribute, attr_b: Attribute) -> Opt
             f"({attr_a.missing_name!r} vs {attr_b.missing_name!r}) -- reconcile by hand before merging."
         )
     return attr_a.missing_name if attr_a.missing_name is not None else attr_b.missing_name
+
+
+def _merged_order(name: str, a: Sequence[Any], b: Sequence[Any]) -> List[Any]:
+    """The union of two ORDINAL attributes' values: sorted, if all are
+    numbers; otherwise the two orders must be identical (where to insert
+    a value only one side knows is not guessed at), else `ValueError`."""
+    if is_numeric_domain(list(a) + list(b)):
+        return sorted(set(a) | set(b))
+    if list(a) != list(b):
+        raise ValueError(
+            f"Cannot merge ordinal attribute {name!r}: different value orders "
+            f"({list(a)!r} vs {list(b)!r}) -- reconcile by hand before merging."
+        )
+    return list(a)
 
 
 def _widens_to_nominal(attr_a: Attribute, attr_b: Attribute) -> bool:
@@ -982,9 +1079,13 @@ def _merge_attribute(
     elif t == AttributeType.NUMERIC:
         ge = list(attr_a.domain or ()) + list(attr_b.domain or ())
         le = list(attr_a.le_domain or ()) + list(attr_b.le_domain or ())
-        builder.add_numeric(name, ge, le_thresholds=le, negation=negation,
+        builder.add_numeric(name, ge, le_thresholds=le,
                              missing_name=_merged_missing_name(name, attr_a, attr_b),
                              missing_values=missing_values)
+    elif t == AttributeType.ORDINAL:
+        builder.add_ordinal(name, _merged_order(name, attr_a.domain, attr_b.domain), negation=negation,
+                            missing_name=_merged_missing_name(name, attr_a, attr_b),
+                            missing_values=missing_values)
     elif t == AttributeType.SET:
         builder.add_set(name, sorted(set(attr_a.domain) | set(attr_b.domain)), missing_values=missing_values)
     elif t == AttributeType.HIERARCHICAL:

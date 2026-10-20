@@ -317,8 +317,8 @@ class Rule:
         """`_display_conditions` -- with `pretty`, the conditions on one
         attribute compressed into one, at the place of the first:
 
-        - two or more ``x != v`` on a NOMINAL attribute become a
-          `_ValueSet`: ``x ∉ {excluded}``, or ``x ∈ {remaining}`` when
+        - two or more ``x != v`` on a NOMINAL or ORDINAL attribute
+          become a `_ValueSet`: ``x ∉ {excluded}``, or ``x ∈ {remaining}`` when
           fewer values remain than are excluded -- the shorter form; a
           tie keeps ``∉``. A single ``x != v`` stays as it is. The
           remaining values are the attribute's declared domain (and its
@@ -327,9 +327,10 @@ class Rule:
           ``x != v``, so the rule covers it although ``∈ {...}`` doesn't
           list it. Missing values (`MissingStrategy.NEVER_COVERS`)
           satisfy no condition on ``x`` either way.
-        - two or more thresholds on a NUMERIC attribute become an
-          `_Interval`: the tightest lower and the tightest upper bound,
-          ``20 <= age < 30``.
+        - two or more thresholds on a NUMERIC attribute, or ``<=``/``>``
+          tests on an ORDINAL one, become an `_Interval`: the tightest
+          lower and the tightest upper bound, ``20 <= age < 30``,
+          ``1 < kids <= 3``.
 
         Without `pretty`, every condition is shown as it is. Either way
         only the display changes: the rule keeps its conditions, and
@@ -361,18 +362,19 @@ class Rule:
         return items
 
     def _merge_key(self, lit: Literal) -> Optional[Tuple[str, str]]:
-        """``("set", attribute)`` for a ``!=`` on a NOMINAL attribute,
-        ``("interval", attribute)`` for a threshold on a NUMERIC one --
-        the conditions `_display_items` may merge -- else `None`."""
+        """``("set", attribute)`` for a ``!=`` on a NOMINAL or ORDINAL
+        attribute, ``("interval", attribute)`` for a threshold on a
+        NUMERIC one or an order test on an ORDINAL one -- the conditions
+        `_display_items` may merge -- else `None`."""
         spec = self._feature_spec(lit.feature)
         if spec is None or spec.attribute is None:
             return None
         attr = self.dataspec.attributes.get(spec.attribute)
         if attr is None:
             return None
-        if spec.op == "!=" and attr.type == AttributeType.NOMINAL and attr.domain is not None:
+        if spec.op == "!=" and attr.type in (AttributeType.NOMINAL, AttributeType.ORDINAL)                 and attr.domain is not None:
             return ("set", spec.attribute)
-        if spec.op in (">=", ">", "<", "<=") and attr.type == AttributeType.NUMERIC:
+        if spec.op in (">=", ">", "<", "<=") and attr.type in (AttributeType.NUMERIC, AttributeType.ORDINAL):
             return ("interval", spec.attribute)
         return None
 

@@ -3,7 +3,53 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.4.0 (2026-10-20)
+
+A change to the feature space: numeric attributes always test both directions, and a
+new attribute type, ORDINAL, for few ordered values and small sets of numbers, with
+equality and inequality tests. Few-valued numeric columns, which `read_csv` and `run_cv`
+so far made nominal, are now ordinal, so experiments on data with such columns learn
+from a different encoding than in 0.3.x. Together with the beta clean-up: the names
+deprecated in 0.2.0 and 0.3.4 are removed. The demos are not re-run in this release.
+
+### Added
+
+- `AttributeType.ORDINAL` and `DataSpecBuilder.add_ordinal(attribute, values)`: for
+  values `v1 < ... < vk`, the features `x=v` for every value, `x<=v` and its
+  complement `x>v` for every value but the largest, and with negation `x!=v`. One
+  `OrdinalGroup` constraint propagates all of them through the value positions
+  (`size=medium` implies `size<=medium` and `size>small`; `size<=medium` with
+  `size>small` implies `size=medium`; exact for the known values, like a nominal
+  attribute's group). Values compare by their position in the given
+  order, or numerically if they are all numbers, so an unseen number still satisfies
+  the right `<=`/`>` tests; a value outside a non-numeric order counts as missing.
+  Missing values: every feature false by default; `MAJORITY` imputes the lower median
+  value; `SEPARATE` adds a missing feature as one more position, outside the order.
+  `merge_dataspecs` unions numeric orders (sorted) and requires non-numeric ones to
+  agree; pretty rule display merges `<=`/`>` into an interval and `!=` into a value
+  set, as for numeric and nominal attributes.
+
+### Changed (breaking)
+
+- Numeric attributes always get both `x>=t` and `x<t` (and both `x<=t` and `x>t` for
+  `le_thresholds`), whatever the negation setting; until 0.3.4, `x<t` existed only
+  with negation on, so the encoding without negation could bound a numeric attribute
+  from below only. `DataSpecBuilder.add_numeric` loses its `negation=` parameter.
+  Negation features are now `not f` and `x!=v` only: `x<t`/`x>t` no longer count
+  (`DataSpec.has_negation_features`, `without_negations()`), though `negation_of`
+  still pairs them with their complements.
+- `build_dataspec` (and so `read_csv` and `run_cv`) infers a numeric column with few
+  distinct values -- what the cardinality heuristic so far made NOMINAL -- as
+  ORDINAL, from three values on; with two it stays BINARY. A column declared numeric
+  in an ARFF header stays NUMERIC. The bound is the new `max_ordinal_values=10`
+  (`build_dataspec`, `read_csv`, `read_arff`, `run_cv`; the heuristic's former
+  fixed 10), independent of `max_intervals`.
+- `run_cv`'s fold cache key includes the encoding: a version
+  (`experiments.runner.ENCODING_VERSION`), so fold results cached by 0.3.x are not
+  reused for the new encoding, and `max_intervals` and `max_ordinal_values`, which it
+  didn't detect before.
+- `JavaLord` is renamed to `JavaLORD`, to spell LORD as everywhere else
+  (`PyLORD`, `LORDImporter`, `LORD_JAR`); no alias is kept.
 
 ### Removed (breaking)
 
@@ -16,11 +62,6 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   had until 0.3.4, and with it the deprecation hooks (module-level
   `__getattr__`) of `pyrulearn`, `pyrulearn.data` and
   `pyrulearn.data.representation`.
-
-### Changed (breaking)
-
-- `JavaLord` is renamed to `JavaLORD`, to spell LORD as everywhere else
-  (`PyLORD`, `LORDImporter`, `LORD_JAR`); no alias is kept.
 
 ## 0.3.4 (2026-10-19)
 

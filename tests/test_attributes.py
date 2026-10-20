@@ -93,16 +93,18 @@ def test_builder_generates_features_and_constraints():
     age_idx = b.add_numeric("age", [20, 30, 40])
     ds = b.build()
 
+    # without negation, still both directions for a numeric attribute
     assert ds.feature_names == [
         "smoker", "color=red", "color=green", "color=blue",
-        "age>=20", "age>=30", "age>=40",
+        "age>=20", "age>=30", "age>=40", "age<20", "age<30", "age<40",
     ]
     assert smoker_idx == 0
     assert color_idx == {"red": 1, "green": 2, "blue": 3}
     assert age_idx == {20: 4, 30: 5, 40: 6}
-    assert len(ds.constraints) == 2  # one ExactlyOne, one ThresholdChain
+    assert age_idx.negative == {20: 7, 30: 8, 40: 9}
+    assert len(ds.constraints) == 2  # one ExactlyOne, one NumericGroup
     assert isinstance(ds.constraints[0], ExactlyOne)
-    assert isinstance(ds.constraints[1], ThresholdChain)
+    assert isinstance(ds.constraints[1], NumericGroup)
     print("builder generates features/constraints: OK")
 
 
@@ -154,15 +156,16 @@ def test_numeric_threshold_chain_propagation():
 
 
 def test_add_numeric_without_le_thresholds_is_unchanged():
-    # le_thresholds defaults to () -- a complete no-op, existing callers
-    # see identical behavior (same feature names, same plain-dict return)
+    # le_thresholds defaults to () -- a complete no-op: the same plain
+    # ``{threshold: '>=' index}`` dict, with the ``<`` complements
     b = DataSpecBuilder(negation=False)
     idx = b.add_numeric("age", [20, 30, 40])
     ds = b.build()
 
     assert isinstance(idx, dict)
     assert idx == {20: 0, 30: 1, 40: 2}
-    assert ds.feature_names == ["age>=20", "age>=30", "age>=40"]
+    assert idx.le is None
+    assert ds.feature_names == ["age>=20", "age>=30", "age>=40", "age<20", "age<30", "age<40"]
     assert len(ds.constraints) == 1
     print("add_numeric with no le_thresholds is unchanged: OK")
 
@@ -177,8 +180,10 @@ def test_add_numeric_le_thresholds_creates_separate_family():
     ge_idx, le_idx = result
     assert ge_idx == {30: 0, 40: 1}
     assert set(le_idx) == {10, 20}  # indices assigned in descending order internally, values don't matter here
-    assert set(ds.feature_names) == {"age>=30", "age>=40", "age<=10", "age<=20"}
-    # one ThresholdChain per family (each has >1 threshold)
+    assert set(ds.feature_names) == {"age>=30", "age>=40", "age<30", "age<40",
+                                     "age<=10", "age<=20", "age>10", "age>20"}
+    assert set(le_idx.negative) == {10, 20}  # the > complements
+    # one NumericGroup per family
     assert len(ds.constraints) == 2
     print("add_numeric(le_thresholds=...) creates a separate feature family: OK")
 
@@ -220,7 +225,9 @@ def test_ge_and_le_families_have_no_cross_reasoning():
     ds = b.build()
 
     closure = ds.propagate({ge_idx[30]: True, le_idx[25]: True})
-    assert closure == {ge_idx[30]: True, le_idx[25]: True}  # no extra forcing, no raise
+    # only each family's own complements are forced, nothing across, no raise
+    assert closure == {ge_idx[30]: True, le_idx[25]: True,
+                       ge_idx.negative[30]: False, le_idx.negative[25]: False}
     print(">= and <= families don't cross-reason (deliberate, documented): OK")
 
 

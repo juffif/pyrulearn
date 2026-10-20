@@ -2,14 +2,17 @@
 pyrulearn.data.attributes
 =========================
 
-Typed attributes (boolean / nominal / numeric / set / hierarchical /
-relational) and the machinery to:
+Typed attributes (boolean / nominal / numeric / ordinal / set /
+hierarchical / relational) and the machinery to:
 
 1. Generate the derived *Boolean* features a rule actually conditions on
    (e.g. nominal attribute ``color`` with domain ``{red, green, blue}``
    becomes three Boolean features ``color=red``, ``color=green``,
    ``color=blue``; numeric attribute ``age`` with cut points
-   ``{20, 30, 40}`` becomes ``age>=20``, ``age>=30``, ``age>=40``; set
+   ``{20, 30, 40}`` becomes ``age>=20``, ``age>=30``, ``age>=40`` and
+   their complements ``age<20``, ``age<30``, ``age<40``; ordinal
+   attribute ``size`` with values ``small < medium < large`` becomes
+   ``size=small``, ..., ``size<=small``, ``size>small``, ...; set
    attribute ``tags`` becomes one membership feature per possible tag;
    hierarchical attribute ``region`` becomes one equality feature per
    tree node). ``Rule``/``Literal`` never need to change for this -- they
@@ -26,10 +29,15 @@ relational) and the machinery to:
      ``NominalGroup`` per attribute. ``ExactlyOne`` is the degenerate
      no-negation case, kept for that and for merge compatibility.
    - a numeric attribute's ``attr>=t`` features form a monotonic chain
-     (``attr>=t_high`` implies ``attr>=t_low`` for ``t_low<=t_high``);
-     with negation, the parallel ``attr<t`` features are exact
-     complements. One ``NumericGroup`` per attribute owns both;
-     ``ThresholdChain`` is the no-negation / ``le_thresholds`` case.
+     (``attr>=t_high`` implies ``attr>=t_low`` for ``t_low<=t_high``),
+     and the parallel ``attr<t`` features are their exact complements.
+     One ``NumericGroup`` per attribute owns both (and one more for the
+     ``le_thresholds`` family, ``attr<=t``/``attr>t``);
+     ``ThresholdChain`` is the plain chain it is built on.
+   - an ordinal attribute's ``attr=v``/``attr<=v``/``attr>v`` (and,
+     with negation, ``attr!=v``) features all describe which position
+     of the ordered domain the value is at; one ``OrdinalGroup`` per
+     attribute propagates them through those positions.
    - hierarchy sibling nodes (children of the same parent) are mutually
      exclusive but *not* assumed exhaustive (``MutuallyExclusive``), and
      each node implies its parent (``Implies``, chained up the tree).
@@ -80,11 +88,25 @@ class AttributeType(Enum):
     - NOMINAL -- a possibly open list of values: ``x!=v`` columns (with
       negation on) are kept even for two values, since an unknown value
       must satisfy every ``x!=v``.
+
+    NUMERIC and ORDINAL are the two ordered types:
+
+    - NUMERIC -- a continuous quantity, tested at chosen thresholds:
+      ``x>=t`` and its complement ``x<t`` (and ``x<=t``/``x>t`` for
+      the separate ``le_thresholds`` family). Both directions always,
+      whatever the negation setting -- one direction alone would let a
+      rule bound the attribute from one side only.
+    - ORDINAL -- a few ordered values, ``low < medium < high`` or a small
+      set of numbers (a count, a rating): ``x=v`` for every value, and
+      ``x<=v``/``x>v`` for every value but the largest; with negation
+      also ``x!=v``. Values compare by their position in the declared
+      order (numerically, if every value is a number).
     """
     BOOLEAN = "boolean"
     BINARY = "binary"
     NOMINAL = "nominal"
     NUMERIC = "numeric"
+    ORDINAL = "ordinal"
     SET = "set"
     HIERARCHICAL = "hierarchical"
     RELATIONAL = "relational"
@@ -108,8 +130,9 @@ class MissingStrategy(Enum):
 
     MAJORITY = "majority"
     """Impute the missing raw value before evaluating: the column
-    median for a NUMERIC attribute, the most frequent value (mode)
-    otherwise."""
+    median for a NUMERIC attribute, the median value for an ORDINAL one
+    (the lower of the two middle values for an even count, so always one
+    of its values), the most frequent value (mode) otherwise."""
 
     RANDOM = "random"
     """Impute the missing raw value with another, uniformly randomly
@@ -119,8 +142,8 @@ class MissingStrategy(Enum):
     """Route the missing value into a dedicated feature, treating
     "missing" as its own value alongside the attribute's declared
     domain. Requires the attribute to have been built with
-    `missing_name=` (`DataSpecBuilder.add_nominal`/`add_numeric`) --
-    raises if no such feature was declared."""
+    `missing_name=` (`DataSpecBuilder.add_nominal`/`add_numeric`/
+    `add_ordinal`) -- raises if no such feature was declared."""
 
 
 @dataclass(frozen=True)
@@ -179,7 +202,8 @@ class Attribute:
     attributes, the two values of a BINARY attribute, the ascending tuple of ``>=`` threshold cut points
     actually used to binarize a NUMERIC attribute (not the attribute's
     full continuous range -- just the cuts you chose to test against),
-    or the set of possible values for a SET attribute. `le_domain` is a
+    the values of an ORDINAL attribute in ascending order, or the set of
+    possible values for a SET attribute. `le_domain` is a
     NUMERIC attribute's *separate* ascending tuple of ``<=`` cut points,
     if any were given via `add_numeric`'s `le_thresholds=` -- `None`
     (not just empty) when none were, same as every other unused
@@ -197,7 +221,8 @@ class Attribute:
     one more value); for NUMERIC it's a standalone feature outside the
     `ThresholdChain` -- a numeric value can be simultaneously "missing"
     and fail every `>=` test, so deliberately no constraint links the
-    two. `missing_values` are raw values (besides `None`/NaN) that
+    two; for ORDINAL it's one more position of the `OrdinalGroup`,
+    outside the order (no ``<=``/``>`` test holds there). `missing_values` are raw values (besides `None`/NaN) that
     should be treated as missing when reading data for this attribute,
     e.g. ``("?",)`` for the common ARFF/UCI convention.
     """
@@ -209,9 +234,10 @@ class Attribute:
     sources: Optional[Tuple[str, ...]] = None
     missing_name: Optional[Any] = None
     missing_values: Tuple[Any, ...] = ()
-    #: whether negation features (``not name`` / ``name!=v`` / ``name<t``)
-    #: were generated for this attribute -- BOOLEAN/NOMINAL/NUMERIC only
-    #: (a BINARY attribute's two values are each other's negation either way).
+    #: whether negation features (``not name`` / ``name!=v``) were
+    #: generated for this attribute -- BOOLEAN/NOMINAL/ORDINAL only (a
+    #: BINARY attribute's two values are each other's negation either
+    #: way, and a NUMERIC attribute always has both ``>=`` and ``<``).
     negation: bool = False
 
 
@@ -225,15 +251,17 @@ class FeatureSpec:
     original use case -- the feature *is* the literal, no attribute
     behind it), ``"not"`` for the negation of a Boolean attribute
     (renders as ``not name``), ``"=="``/``"!="`` for a nominal or
-    hierarchical-node value equality / inequality test, ``">="``/``"<"``
-    for a numeric threshold test and its exact complement,  ``"<="`` for
-    the separate ``le_thresholds`` family (see `DataSpecBuilder.
-    add_numeric` -- ``<=`` is *not* the complement of ``>=``, they
-    disagree at ``==t``), ``"has"`` for a set-valued membership test, or
-    ``"expr"`` for a relational feature derived from multiple attributes.
-    ``"not"``/``"!="``/``"<"`` features are generated only when the
-    attribute was declared with negation on (`DataSpecBuilder`'s
-    `negation=`). `attribute`/`value` are ``None`` in the plain-Boolean
+    hierarchical-node / ordinal value equality / inequality test,
+    ``">="``/``"<"`` for a numeric threshold test and its exact
+    complement, ``"<="``/``">"`` for the separate ``le_thresholds``
+    family and for an ordinal attribute's order tests (see
+    `DataSpecBuilder.add_numeric` -- ``<=`` is *not* the complement of
+    ``>=``, they disagree at ``==t``), ``"has"`` for a set-valued
+    membership test, or ``"expr"`` for a relational feature derived from
+    multiple attributes. Only ``"not"``/``"!="`` features are negation
+    features, generated only when the attribute was declared with
+    negation on (`DataSpecBuilder`'s `negation=`); ``"<"``/``">"`` are
+    always there. `attribute`/`value` are ``None`` in the plain-Boolean
     case; `attributes`/`expression` are only set for ``"expr"``.
     """
     index: int
@@ -572,4 +600,72 @@ class NumericGroup(Constraint):
                 forced[gi] = val
             if self.lt and self.lt[k] not in fixed:
                 forced[self.lt[k]] = not val
+        return forced
+
+
+def is_numeric_domain(domain: Optional[Sequence[Any]]) -> bool:
+    """Whether every value of an ORDINAL attribute's `domain` is a number
+    (not a bool) -- such an attribute compares raw values numerically,
+    so a value outside the domain still satisfies the right ``<=``/``>``
+    tests; any other domain compares by position in its declared order."""
+    import numbers
+    return bool(domain) and all(
+        isinstance(v, numbers.Number) and not isinstance(v, bool) for v in domain
+    )
+
+
+class OrdinalGroup(Constraint):
+    """An ordinal attribute's full derived-feature logic in one
+    constraint. The attribute's value is at exactly one of `n_positions`
+    positions -- its ``k`` values in order, plus, if declared, a
+    ``missing_name`` position outside the order -- and every feature is
+    true on a fixed set of positions: ``x=v_i`` on ``{i}``, ``x!=v_i``
+    on every value but ``i``, ``x<=v_i`` on ``{0..i}``, ``x>v_i`` on
+    ``{i+1..k-1}``. `masks` maps each feature index to that set, as a
+    bitmask.
+
+    `propagate` intersects the positions the fixed features leave
+    possible (a True feature its own set, a False one the complement)
+    and forces every other feature that is true on all of them, or on
+    none -- so ``x=v_2`` forces ``x<=v_3`` and ``x>v_1``, and ``x<=v_3``
+    with ``x>v_2`` forces ``x=v_3``. An empty intersection is a
+    contradiction. Like `NominalGroup`, it assumes the value is at one
+    of the positions (exhaustive), which holds on the data the domain
+    was taken from (the training data, when `build_dataspec` infers
+    it). A missing value without a ``missing_name`` position falsifies
+    every feature; so does a value outside a non-numeric order. An
+    unseen number satisfies the ``<=``/``>`` tests it passes and no
+    ``=``, so what the group derives (``x>1`` and ``x<=3`` of 0, 1, 3
+    imply ``x=3``) need not hold for it -- it only matters for implied
+    conditions and their display, never for which examples a rule
+    covers, which the data decides.
+    """
+
+    def __init__(self, masks: Dict[int, int], n_positions: int):
+        super().__init__(sorted(masks))
+        self.masks: Dict[int, int] = dict(masks)
+        self.n_positions = n_positions
+        self._full = (1 << n_positions) - 1
+
+    def propagate(self, fixed: FeatureValues) -> FeatureValues:
+        possible = self._full
+        for i, m in self.masks.items():
+            v = fixed.get(i)
+            if v is True:
+                possible &= m
+            elif v is False:
+                possible &= ~m & self._full
+        if not possible:
+            raise ValueError(
+                f"Contradiction in ordinal group {self.feature_indices}: "
+                "no value satisfies the fixed features"
+            )
+        forced: FeatureValues = {}
+        for i, m in self.masks.items():
+            if i in fixed:
+                continue
+            if not possible & ~m:
+                forced[i] = True
+            elif not possible & m:
+                forced[i] = False
         return forced

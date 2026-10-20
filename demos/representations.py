@@ -783,8 +783,9 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         f"same {SIZE_TEST_FRACTION:.0%} test set. Numeric attributes are discretized per "
         f"training set (`max_intervals={MAX_INTERVALS}`). Two encodings: **with negation** "
         "(pyrulearn's default -- every test comes with its negation, so exactly half the "
-        "features are true in every example) and **without negation** (positive tests only, "
-        "far sparser). The first is the bitmaps' best case and the list-based "
+        "features are true in every example) and **without negation** (no `x != v` features; "
+        "numeric attributes keep both `x >= t` and `x < t`, so it is sparser only in the "
+        "nominal attributes). The first is the bitmaps' best case and the list-based "
         "representations' worst; the second is where those should gain.\n\n")
     largest = {neg: size_info[(neg, max(n for (ng, n) in size_info if ng == neg))]
                for neg in (True, False) if any(ng == neg for (ng, _) in size_info)}

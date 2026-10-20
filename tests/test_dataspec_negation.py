@@ -4,7 +4,7 @@ side of the data-level negation toggle."""
 import numpy as np
 import pytest
 
-from pyrulearn.data.attributes import ExactlyOne, NominalGroup, ThresholdChain
+from pyrulearn.data.attributes import ExactlyOne, NominalGroup, NumericGroup
 from pyrulearn.data import DataSpec, DataSpecBuilder
 
 
@@ -19,7 +19,9 @@ def _spec(negation):
 def test_without_negations_drops_exactly_the_negation_features():
     neg = _spec(True)
     pos, keep = neg.without_negations()
-    assert pos.feature_names == ["smoker", "color=red", "color=green", "color=blue", "age>=30", "age>=50"]
+    # a numeric attribute's `<` features are no negation features: kept
+    assert pos.feature_names == ["smoker", "color=red", "color=green", "color=blue",
+                                 "age>=30", "age>=50", "age<30", "age<50"]
     assert not pos.has_negation_features
     assert [neg.feature_names[i] for i in keep] == pos.feature_names
     print("without_negations() keeps the positive features (names + order) and maps columns: OK")
@@ -30,8 +32,8 @@ def test_without_negations_regenerates_constraints():
     kinds = {type(c) for c in pos.constraints}
     assert NominalGroup not in kinds          # -> ExactlyOne
     assert ExactlyOne in kinds
-    assert ThresholdChain in kinds            # NumericGroup -> ThresholdChain
-    print("without_negations() rebuilds NominalGroup->ExactlyOne, NumericGroup->ThresholdChain: OK")
+    assert NumericGroup in kinds              # numeric attributes unchanged
+    print("without_negations() rebuilds NominalGroup->ExactlyOne, keeps NumericGroup: OK")
 
 
 def test_without_negations_is_identity_when_there_is_nothing_to_drop():

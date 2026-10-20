@@ -5,6 +5,62 @@ releases, and why. The list of missing features for users is in the
 README (*Not yet implemented*); the overhaul of the demos has its own
 plan in [`examples/REVISION_PLAN.md`](examples/REVISION_PLAN.md).
 
+## 0.4.0: numeric features in both directions; ordinal attributes
+
+**In progress (decided 2026-10-20).** Two changes to the feature space,
+released as 0.4.0 together with the beta clean-up (removed deprecated
+names). The demos are re-run separately, on a faster machine.
+
+*Numeric attributes always test both directions.* A threshold `t` gives
+`x>=t` and `x<t`, whatever the negation setting: one direction alone
+makes no sense, since a rule could then only bound an attribute from one
+side. Until 0.3.4, `x<t` existed only with negation on, so the "without
+negation" encoding (`include_negations=False`, `without_negations()`) had
+`>=` only. The same for the `le_thresholds` family: `x<=t` and `x>t`.
+Negation now means `x!=v` (nominal, ordinal) and `not f` (Boolean) only;
+`<`/`>` are complements of their partners but no longer negation
+features. `add_numeric` loses its `negation=` parameter.
+
+*A new attribute type, ORDINAL*, for ordered values (`low < medium <
+high`) and small sets of numbers (counts, ratings, integer codes). For
+values `v1 < ... < vk`: `x=vi` for every value, `x<=vi` and `x>vi` for
+every value but the last, and with negation `x!=vi`. Equality and
+inequality on such values are not expressible with thresholds alone
+(`x!=v` would be a disjunction). One `OrdinalGroup` constraint over all
+of them, on value positions: every feature is true on a set of positions,
+and propagation intersects them. Values compare by their position in the
+declared order, so non-numeric values work; an all-numeric domain
+compares numerically, so an unseen value still satisfies the right
+`<=`/`>` tests. The positions are the known values only, like a nominal
+attribute's (decided 2026-10-20): on the training data, `x>1` and
+`x<=3` of 0, 1, 3 are `x=3`, and a search need not try `x=3` after them.
+An unseen number in between (2, in a test set) is covered correctly,
+but what the group derives (`x=3`) does not hold for it; that only
+affects implied conditions and their display. Likewise for nominal
+attributes, where `x!=red` and `x!=green` show as `x=blue`.
+
+- Inference: a numeric column with few distinct values (the CSV
+  heuristic that so far made it NOMINAL) becomes ORDINAL, from three
+  values on; two values stay BINARY. Declared ARFF numeric columns stay
+  NUMERIC. The bound is `max_ordinal_values=10`, configurable and
+  deliberately independent of `max_intervals`: tying the two would make
+  the attribute type change with the discretization, e.g. in the
+  discretization demo, which varies `max_intervals`. This changes the
+  encoding of such columns in `run_cv` and so in every demo; 24 of the
+  small and medium catalog datasets have some (all 4 attributes of
+  `balance-scale`, all 9 of `breast-w`, 9 of 41 in `qsar-biodeg`, ...).
+- Missing values: every feature false by default, as for every type.
+  `MAJORITY` imputes the median value (the lower of the two middle
+  values, so an actual value); `SEPARATE` adds a missing feature as one
+  more position, outside the order.
+- Merging: numeric domains are unioned and sorted; non-numeric orders
+  must agree.
+- Display: `<=`/`>` merge into an interval, `!=` into a value set, as for
+  numeric and nominal attributes.
+- `run_cv`'s fold cache key gets the encoding (a version,
+  `max_intervals`, `max_ordinal_values`), so caches from 0.3.x are not
+  reused for the new encoding.
+
 ## Count a numeric attribute's thresholds together
 
 **Done for `HorizontalBitmapRepresentation` (2026-10-07); still open for the

@@ -32,19 +32,14 @@ MAX_INTERVALS = 6
 RANDOM_STATE = 0
 OUT_DIR = os.path.join(os.path.dirname(__file__), "_export_binary_cv_folds")
 
-# A numeric attribute always gets both "attr>=t" and "attr<t" below --
-# that pair isn't what this flag controls, and always comes out either
-# way (it needs build_dataspec's own include_negations=True to exist at
-# all; see the comment at the build_dataspec call).
-#
-# What this flag *does* control: a nominal attribute with more than two
-# values (e.g. a "job" column with a dozen categories) normally gets one
-# "attr=v" column per value; with include_negations on it *also* gets
-# one "attr!=v" column per value. Those "!=" columns are what gets
-# dropped below unless this is True. (A binary attribute -- exactly two
-# values -- never gets "!=" columns regardless, since "x!=a" already
-# means "x=b" there.)
-NOMINAL_NEGATIONS = False  # set True to keep "attr!=v" columns too
+# A numeric attribute always gets both "attr>=t" and "attr<t" -- that
+# pair isn't what this flag controls. What it does control: a nominal
+# (or ordinal) attribute with more than two values (e.g. a "job" column
+# with a dozen categories) gets one "attr=v" column per value, and with
+# negations *also* one "attr!=v" column per value. (A binary attribute
+# -- exactly two values -- never gets "!=" columns regardless, since
+# "x!=a" already means "x=b" there.)
+NOMINAL_NEGATIONS = False  # set True to also get "attr!=v" columns
 
 
 def export_dataset(entry) -> None:
@@ -59,26 +54,14 @@ def export_dataset(entry) -> None:
         train_df = df.iloc[train_idx].reset_index(drop=True)
         test_df = df.iloc[test_idx].reset_index(drop=True)
 
-        # include_negations=True is what makes a numeric attribute's
-        # "attr<t" exist at all (it's generated as the exact complement
-        # of "attr>=t" -- see DataSpecBuilder.add_numeric). It also
-        # makes a multi-valued nominal attribute's "attr!=v" columns
-        # exist; those are filtered back out just below unless
-        # NOMINAL_NEGATIONS is on. skip_unusable=True drops a column
-        # that turned constant or missing within this training fold.
+        # skip_unusable=True drops a column that turned constant or
+        # missing within this training fold.
         spec = build_dataspec(train_df, target=target, max_intervals=MAX_INTERVALS,
-                              include_negations=True, skip_unusable=True).build()
+                              include_negations=NOMINAL_NEGATIONS, skip_unusable=True).build()
+        names = spec.feature_names
 
-        # op is "==" (an "attr=v" column), "!=" (nominal negation,
-        # dropped by default), ">=" or "<" (the numeric pair, always
-        # kept) -- see pyrulearn.data.attributes.FeatureSpec's docstring
-        # for the full list of possible op values.
-        keep = [i for i, fs in enumerate(spec.feature_specs)
-               if NOMINAL_NEGATIONS or fs.op not in ("!=", "not")]
-        names = [spec.feature_names[i] for i in keep]
-
-        train_X = binarize(spec, train_df)[:, keep].astype(int)
-        test_X = binarize(spec, test_df)[:, keep].astype(int)
+        train_X = binarize(spec, train_df).astype(int)
+        test_X = binarize(spec, test_df).astype(int)
 
         train_out = pd.DataFrame(train_X, columns=names)
         train_out[target] = train_df[target].to_numpy()

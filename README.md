@@ -288,11 +288,11 @@ is stored.
 
 Build any of the others from a horizontal bitmap with `.from_boolean(bitmap)` (or `from_xy` /
 `from_dataframe`); see `demos/representations.py`, which also runs
-both feature encodings (paired negation features vs. positive tests
-only). Any `DataRepresentation` can switch between
-those encodings in place: `rep.without_negations()` drops every
-`not f` / `x != v` / `x < t` feature (a column slice; regenerates the
-constraints), and `rep.with_negations()` adds the missing ones back
+both feature encodings (with and without negation features). Any
+`DataRepresentation` can switch between those encodings in place:
+`rep.without_negations()` drops every `not f` / `x != v` feature (a
+column slice; regenerates the constraints; numeric attributes keep both
+`x >= t` and `x < t`), and `rep.with_negations()` adds the missing ones back
 (synthesized as complements -- exact for data with no missing-value
 routing). `DataSpec.without_negations()` / `.with_negations()` are the
 schema-only versions. `rep.select_rows(mask)` gives a same-type
@@ -338,14 +338,15 @@ b.add_boolean("smoker")
 b.add_binary("sex", ["male", "female"])
 b.add_nominal("color", ["red", "green", "blue"])
 b.add_numeric("age", [20, 30, 40])
+b.add_ordinal("size", ["small", "medium", "large"])
 b.add_set("tags", ["urgent", "billing", "bug"])
 b.add_hierarchical("region", {"Europe": {"France": {"Paris": {}}}, "Asia": {}})
 b.add_relational("income_gt_age_scaled", ["income", "age"], expression="income > age * 1000")
 ds = b.build()
 ```
 
-Nominal/numeric/set/hierarchical attributes each generate one derived
-Boolean feature per value/threshold/node; relational attributes register
+Nominal/numeric/ordinal/set/hierarchical attributes each generate
+derived Boolean features per value/threshold/node; relational attributes register
 a single feature derived from several source attributes (the value
 itself is still supplied externally, via a `HorizontalBitmapRepresentation`).
 The
@@ -378,10 +379,33 @@ two values (declared in an ARFF header, else observed in the data) as
 binary. Importers that infer a `DataSpec` from a rule set (Weka, LORD,
 wittgenstein) always use nominal: rules need not mention every value.
 
-`add_numeric`'s `ge_thresholds=` generates ``>=`` features, as above; a
+The two ordered types differ in what they test:
+
+- **Numeric** (`add_numeric("age", [20, 30, 40])`) -- a continuous
+  quantity, tested at chosen thresholds: `age>=20` and its complement
+  `age<20`, and so on for every threshold. Both directions always,
+  whatever the negation setting: one direction alone would let a rule
+  bound an attribute from one side only. (Until 0.3.4, `age<20` existed
+  only with negation on.)
+- **Ordinal** (`add_ordinal("size", ["small", "medium", "large"])`) --
+  a few ordered values, or a small set of numbers (a count, a rating):
+  `size=v` for every value, `size<=v` and its complement `size>v` for
+  every value but the largest, and with negation on `size!=v` -- the
+  equality and inequality tests that thresholds can't express (`x!=v`
+  would be a disjunction). Values compare by their position in the
+  given order, or numerically if they are all numbers (then an unseen
+  value still satisfies the right `<=`/`>` tests); one `OrdinalGroup`
+  constraint propagates all of them, so `size=medium` implies
+  `size<=medium` and `size>small`. `read_csv` (and `run_cv`) infer a
+  numeric column with three to `max_ordinal_values` distinct values
+  (default 10, independent of `max_intervals`) as ordinal (two make a
+  binary attribute); a column declared numeric in an ARFF header stays
+  numeric.
+
+`add_numeric`'s `ge_thresholds=` generates ``>=``/``<`` features, as above; a
 separate `le_thresholds=` argument (default: none, a complete no-op)
-generates ``<=`` features instead -- a second, independent
-`ThresholdChain`, not a reinterpretation of the first. The two aren't
+generates ``<=``/``>`` features instead -- a second, independent
+`NumericGroup`, not a reinterpretation of the first. The two aren't
 the same family in disguise: ``x<=t`` is the exact logical complement of
 ``x>t``, *not* of ``x>=t`` (they disagree exactly at ``x==t``), so
 treating a `<=` condition as `NOT(x>=t)` would get that boundary wrong.
@@ -507,7 +531,8 @@ handled per `pyrulearn.data.attributes.MissingStrategy`, resolved (explicit
   cheaper alternative to genuinely tracking a third "unknown" state
   through `Rule`'s coverage checks, which isn't implemented.
 - **`MAJORITY`** -- impute the raw value before evaluating: the column
-  median for a NUMERIC attribute, the most frequent value (mode)
+  median for a NUMERIC attribute, the lower median value for an ORDINAL
+  one (always one of its values), the most frequent value (mode)
   otherwise.
 - **`RANDOM`** -- impute with another, uniformly randomly chosen
   non-missing example's value from the same column (`random_state=`
@@ -515,7 +540,9 @@ handled per `pyrulearn.data.attributes.MissingStrategy`, resolved (explicit
 - **`SEPARATE`** -- route into a dedicated feature, treating "missing"
   as its own value alongside the attribute's declared domain. Requires
   the attribute to have been built with `missing_name=`
-  (`add_nominal`/`add_numeric`) -- raises if none was declared. For a
+  (`add_nominal`/`add_numeric`/`add_ordinal`) -- raises if none was
+  declared. For an ORDINAL attribute it is one more position, outside
+  the order. For a
   NOMINAL attribute the dedicated feature rides in the same exhaustive
   `ExactlyOne` group as the declared domain (missing is just one more
   category); for a NUMERIC attribute it's a standalone feature outside
@@ -539,12 +566,13 @@ supported for those attribute types.
 A `Rule` is a conjunction of Boolean literals over a fixed feature space
 (`Literal(feature)` -- a literal is just a feature index; there are no
 negative literals). "Feature absent" is expressed by conditioning on a
-separate *negation feature* (`not f`, `age<30`, `color!=red`), paired
-with its positive counterpart by a `MutuallyExclusive` / `NominalGroup`
-/ `NumericGroup` constraint -- `DataSpecBuilder` generates these by
+separate *negation feature* (`not f`, `color!=red`), paired with its
+positive counterpart by a `MutuallyExclusive` / `NominalGroup` /
+`OrdinalGroup` constraint -- `DataSpecBuilder` generates these by
 default (`negation=False` opts out). A binary attribute (`sex=male` /
 `sex=female`, see *Typed attributes*) needs no extra columns: its two
-value features are each other's negation. A rule reads back out as one tuple
+value features are each other's negation; neither does a numeric one,
+which always has `age>=30` and its complement `age<30`. A rule reads back out as one tuple
 of feature indices (`pos`, the features that must be True) plus a single
 integer bitmask, so coverage of one example is a genuine O(1)-ish subset
 check:
@@ -2288,7 +2316,7 @@ order reproduces JRip's own predictions correctly -- confirmed by
 `.predict()` on the underlying data matching JRip's rule logic exactly
 *and* Weka's own reported training accuracy. No `dataspec=` needed up
 front: `parse` discovers and caches a typed `DataSpec` from the rule
-text itself, with numeric attributes getting a proper `ThresholdChain`
+text itself, with numeric attributes getting a proper `NumericGroup`
 on *both* sides: `>=`/`<` conditions go through `add_numeric`'s usual
 `ge_thresholds=` family, `<=`/`>` conditions through its `le_thresholds=`
 family (see `DataSpecBuilder.add_numeric`'s own docstring for why
@@ -2798,7 +2826,7 @@ If you use pyrulearn, please cite it via [`CITATION.cff`](CITATION.cff)
   author  = {F{\"u}rnkranz, Johannes},
   title   = {pyrulearn},
   year    = {2026},
-  version = {0.3.4},
+  version = {0.4.0},
   url     = {https://github.com/juffif/pyrulearn}
 }
 ```

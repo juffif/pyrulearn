@@ -217,9 +217,9 @@ class DataRepresentation(ABC):
 
     def without_negations(self) -> "DataRepresentation":
         """A representation of the same concrete type over this data's
-        *positive-only* feature space -- every ``not f`` / ``x != v`` /
-        ``x < t`` / ``x > t`` feature dropped, via
-        `DataSpec.without_negations`. Returns `self` unchanged if there
+        feature space without negation features -- every ``not f`` /
+        ``x != v`` feature dropped, via `DataSpec.without_negations`
+        (a numeric attribute keeps both ``x >= t`` and ``x < t``). Returns `self` unchanged if there
         are no negation features. No data is recomputed: the surviving
         columns are exactly the columns that were already there."""
         new_spec, keep = self.spec.without_negations()
@@ -1303,10 +1303,11 @@ class SparseDataRepresentation(DataRepresentation):
     x`), each pair contributes exactly one True value to every row, so
     density is *exactly* 50% regardless of how skewed the underlying
     attributes are -- not "sparse" at all, and worse than the packed
-    matrix has any reason to be. `without_negations()` (which drops
-    exactly the redundant complement half) is what makes this
-    representation worth using; build with it, or call it on an
-    already-negated representation, before reaching for `Sparse`.
+    matrix has any reason to be. `without_negations()` (which drops the
+    ``not f`` / ``x != v`` half) is what makes this representation worth
+    using; build with it, or call it on an already-negated
+    representation, before reaching for `Sparse`. A numeric attribute
+    keeps both ``x >= t`` and ``x < t`` either way, so it stays dense.
     """
 
     def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,

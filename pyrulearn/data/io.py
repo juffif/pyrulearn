@@ -69,7 +69,7 @@ from typing import Any, Dict, List, Optional, Sequence, Type
 import numpy as np
 import pandas as pd
 
-from .attributes import AttributeType, MissingStrategy, evaluate_feature
+from .attributes import AttributeType, FeatureSpec, MissingStrategy, evaluate_feature, is_numeric_domain
 from .spec import DataSpec, DataSpecBuilder
 from .representation import HorizontalBitmapRepresentation, DataRepresentation, default_representation
 
@@ -77,35 +77,41 @@ from .representation import HorizontalBitmapRepresentation, DataRepresentation, 
 # into (`max_intervals` below) -- a ceiling passed to `tree_thresholds`,
 # not a target; see its docstring in `pyrulearn.interfaces.sklearn`.
 DEFAULT_MAX_INTERVALS = 8
+# Default cap on the distinct values of a numeric column that is still
+# inferred ORDINAL rather than NUMERIC (`max_ordinal_values` below) --
+# independent of `max_intervals`, so that varying the discretization
+# doesn't change which columns are ordinal.
+DEFAULT_MAX_ORDINAL_VALUES = 10
 
 
 # -- column -> Attribute inference -------------------------------------------
 
 def _infer_csv_column_type(
     series: pd.Series,
-    categorical_max_unique: int = 10,
+    max_ordinal_values: int = DEFAULT_MAX_ORDINAL_VALUES,
     categorical_min_ratio: float = 0.5,
 ) -> str:
     """Heuristic type guess for one CSV column, since CSV carries no
     declared types: 'numeric' if the dtype is numeric (and not boolean)
-    AND cardinality looks continuous -- more than `categorical_max_unique`
+    AND cardinality looks continuous -- more than `max_ordinal_values`
     distinct values (an absolute floor, for large datasets where even a
     small fraction of rows being distinct is still plenty of values), OR
     more than `categorical_min_ratio` of rows are distinct (a relative
     floor, so this still works on small datasets where the absolute
-    count is never going to be large) -- 'nominal' otherwise. A numeric
-    dtype with only a handful of distinct values relative to the dataset
-    (e.g. an encoded category) is treated as nominal, since a handful of
-    numeric-looking labels are almost always categories, not a
-    continuous quantity.
+    count is never going to be large). A numeric dtype with only a
+    handful of distinct values (a count, a rating, an encoded category)
+    is 'ordinal' from three values on, keeping their order and testing
+    each value on its own (`DataSpecBuilder.add_ordinal`); with two
+    values or fewer it is 'nominal' (two values make a BINARY
+    attribute). A non-numeric (or boolean) dtype is 'nominal'.
     """
     if not pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
         return "nominal"
     n = len(series)
     n_unique = series.nunique(dropna=True)
-    if n_unique > categorical_max_unique or n_unique > categorical_min_ratio * n:
+    if n_unique > max_ordinal_values or n_unique > categorical_min_ratio * n:
         return "numeric"
-    return "nominal"
+    return "ordinal" if n_unique >= 3 else "nominal"
 
 
 def build_dataspec(
@@ -117,14 +123,18 @@ def build_dataspec(
     negation_overrides: Optional[Dict[str, bool]] = None,
     domains: Optional[Dict[str, Sequence[Any]]] = None,
     skip_unusable: bool = False,
+    max_ordinal_values: int = DEFAULT_MAX_ORDINAL_VALUES,
 ) -> DataSpecBuilder:
     """Infer one attribute per (non-target) column of `df` and return the
     `DataSpecBuilder` that generated them -- the shared core of "read and
     infer the DataSpec" (task 3) for both `read_arff` and `read_csv`.
 
     `arff_types` (from `read_arff`'s ARFF metadata) gives declared types
-    per column ('numeric'/'nominal'/...); columns missing from it (the
-    CSV case) fall back to `_infer_csv_column_type`'s heuristic. Numeric
+    per column ('numeric'/'nominal'/'ordinal'/...); columns missing from
+    it (the CSV case) fall back to `_infer_csv_column_type`'s heuristic,
+    which makes a numeric column with three to `max_ordinal_values`
+    distinct values (default 10) ORDINAL (its sorted observed values,
+    `DataSpecBuilder.add_ordinal`). Numeric
     columns are discretized via
     `pyrulearn.interfaces.sklearn.tree_thresholds` against
     `df[target]`, capped at `max_intervals` buckets -- requires `target`.
@@ -136,9 +146,10 @@ def build_dataspec(
     negation, no ``!=`` columns); otherwise it's NOMINAL.
 
     `include_negations` (default True) is the builder-wide default for
-    whether each attribute also gets explicit negation features;
-    `negation_overrides` (``{column: bool}``) overrides it per column.
-    Neither affects a BINARY attribute.
+    whether each attribute also gets explicit negation features
+    (``x!=v``, ``not f``); `negation_overrides` (``{column: bool}``)
+    overrides it per column. Neither affects a BINARY or NUMERIC
+    attribute: a numeric attribute always gets ``x>=t`` and ``x<t``.
 
     A numeric column the discretization finds no split for, or a nominal
     column with no observed value, raises `ValueError` -- unless
@@ -154,7 +165,7 @@ def build_dataspec(
         if col == target:
             continue
         declared = (arff_types or {}).get(col)
-        kind = declared if declared is not None else _infer_csv_column_type(df[col])
+        kind = declared if declared is not None else _infer_csv_column_type(df[col], max_ordinal_values)
         negation = overrides.get(col)
 
         if kind in ("nominal", "string"):
@@ -167,6 +178,11 @@ def build_dataspec(
                 builder.add_binary(col, domain)
             else:
                 builder.add_nominal(col, domain, negation=negation)
+        elif kind == "ordinal":
+            values = sorted(df[col].dropna().unique().tolist())
+            if not values and skip_unusable:
+                continue
+            builder.add_ordinal(col, values, negation=negation)
         elif kind == "numeric":
             if y is None:
                 raise ValueError(
@@ -184,7 +200,7 @@ def build_dataspec(
                     f"column {col!r} (max_intervals={max_intervals}); provide thresholds "
                     "explicitly via a DataSpec if this attribute should still be included."
                 )
-            builder.add_numeric(col, thresholds, negation=negation)
+            builder.add_numeric(col, thresholds)
         else:
             raise ValueError(f"Unsupported column type {kind!r} for column {col!r}")
 
@@ -214,8 +230,15 @@ def validate_dataspec(
         value_typed = attr.type in (AttributeType.NOMINAL, AttributeType.BINARY)
         if value_typed and kind not in ("nominal", "string"):
             problems.append(f"attribute {name!r} is {attr.type.name} but column {name!r} looks {kind!r}")
-        elif attr.type == AttributeType.NUMERIC and kind != "numeric":
+        elif attr.type == AttributeType.NUMERIC and kind not in ("numeric", "ordinal"):
             problems.append(f"attribute {name!r} is NUMERIC but column {name!r} looks {kind!r}")
+        elif attr.type == AttributeType.ORDINAL:
+            numeric_values = is_numeric_domain(attr.domain)
+            if numeric_values and kind not in ("numeric", "ordinal"):
+                problems.append(f"attribute {name!r} is ORDINAL over numbers but column {name!r} looks {kind!r}")
+            elif not numeric_values and kind not in ("nominal", "string"):
+                problems.append(f"attribute {name!r} is ORDINAL but column {name!r} looks {kind!r}")
+            value_typed = not numeric_values  # numbers outside the domain still compare
         if value_typed and attr.domain is not None:
             unknown = sorted(set(df[name].dropna().unique().tolist()) - set(attr.domain))
             if unknown:
@@ -226,6 +249,53 @@ def validate_dataspec(
 
 
 # -- binarization (tasks 2 & 3 share this) ------------------------------------
+
+def _prepared_column(raw: pd.Series, attr, specs: List[FeatureSpec], resolved: MissingStrategy,
+                     rng, source_col: str):
+    """One source column made ready for `evaluate_feature`, the shared
+    first step of `binarize` and `encode`: declared `missing_values` set
+    to missing, NUMERIC values (and ORDINAL ones over numbers) coerced to
+    numbers, ORDINAL ones over other values replaced by their position in
+    the declared order (a value outside it counts as missing) -- with
+    `specs` rewritten to compare positions too -- and, for `MAJORITY`/
+    `RANDOM`, missing values imputed. Returns ``(values, missing_mask,
+    specs)``, the mask taken after imputation."""
+    if attr is not None and attr.missing_values:
+        missing_set = set(attr.missing_values)
+        raw = raw.apply(lambda v: None if v in missing_set else v)
+    ordinal = attr is not None and attr.type == AttributeType.ORDINAL
+    numeric = attr is not None and (attr.type == AttributeType.NUMERIC
+                                    or (ordinal and is_numeric_domain(attr.domain)))
+    if numeric:
+        raw = pd.to_numeric(raw, errors="coerce")
+    elif ordinal:
+        position = {v: p for p, v in enumerate(attr.domain)}
+        raw = raw.map(lambda v: position.get(v, np.nan)).astype(float)
+        specs = [s if s.value not in position else
+                 FeatureSpec(s.index, s.name, attribute=s.attribute, op=s.op, value=position[s.value])
+                 for s in specs]
+    missing_mask = raw.isna()
+
+    if missing_mask.any() and resolved in (MissingStrategy.MAJORITY, MissingStrategy.RANDOM):
+        known = raw.dropna()
+        if known.empty:
+            raise ValueError(f"Column {source_col!r} has no non-missing values to impute from")
+        if resolved == MissingStrategy.MAJORITY:
+            if ordinal:  # the lower median, so always one of the values
+                ordered = np.sort(known.to_numpy(dtype=float))
+                fill = ordered[(len(ordered) - 1) // 2]
+            elif numeric:
+                fill = float(known.astype(float).median())
+            else:
+                fill = known.mode().iloc[0]
+            raw = raw.fillna(fill)
+        else:  # RANDOM
+            raw = raw.copy()
+            idx = raw.index[missing_mask]
+            raw.loc[idx] = rng.choice(known.to_numpy(), size=len(idx))
+        missing_mask = raw.isna()  # now all False
+    return raw, missing_mask, specs
+
 
 def binarize(
     dataspec: DataSpec,
@@ -247,12 +317,17 @@ def binarize(
     - ``NEVER_COVERS`` (default): every feature derived from a missing
       value is left False.
     - ``MAJORITY``/``RANDOM``: the raw value is imputed (column median
-      for a NUMERIC attribute, else mode; or a uniformly random other
-      non-missing value -- `random_state` seeds this one) before
-      evaluating normally.
+      for a NUMERIC attribute, the lower median value for an ORDINAL
+      one, else mode; or a uniformly random other non-missing value --
+      `random_state` seeds this one) before evaluating normally.
     - ``SEPARATE``: routes into the attribute's dedicated missing
-      feature (see `DataSpecBuilder.add_nominal`/`add_numeric`'s
-      `missing_name=`) -- raises if the attribute has none declared.
+      feature (see `DataSpecBuilder.add_nominal`/`add_numeric`/
+      `add_ordinal`'s `missing_name=`) -- raises if the attribute has
+      none declared.
+
+    An ORDINAL attribute's values compare by their position in its
+    declared order, or numerically if they are all numbers; a value
+    outside a non-numeric order counts as missing.
     """
     resolved = missing_strategy or dataspec.missing_strategy or DataSpec.DEFAULT_MISSING_STRATEGY
     n = len(df)
@@ -269,28 +344,7 @@ def binarize(
             names = [s.name for s in specs]
             raise ValueError(f"Column {source_col!r} (for feature(s) {names}) not found in data")
         attr = dataspec.attributes.get(source_col)
-        raw = df[source_col]
-
-        if attr is not None and attr.missing_values:
-            missing_set = set(attr.missing_values)
-            raw = raw.apply(lambda v: None if v in missing_set else v)
-        if attr is not None and attr.type == AttributeType.NUMERIC:
-            raw = pd.to_numeric(raw, errors="coerce")
-        missing_mask = raw.isna()
-
-        if missing_mask.any() and resolved in (MissingStrategy.MAJORITY, MissingStrategy.RANDOM):
-            known = raw.dropna()
-            if known.empty:
-                raise ValueError(f"Column {source_col!r} has no non-missing values to impute from")
-            if resolved == MissingStrategy.MAJORITY:
-                numeric = attr is not None and attr.type == AttributeType.NUMERIC
-                fill = float(known.astype(float).median()) if numeric else known.mode().iloc[0]
-                raw = raw.fillna(fill)
-            else:  # RANDOM
-                raw = raw.copy()
-                idx = raw.index[missing_mask]
-                raw.loc[idx] = rng.choice(known.to_numpy(), size=len(idx))
-            missing_mask = raw.isna()  # now all False
+        raw, missing_mask, specs = _prepared_column(df[source_col], attr, specs, resolved, rng, source_col)
 
         for spec in specs:
             results = raw.apply(lambda v: evaluate_feature(spec, v))
@@ -389,28 +443,7 @@ def encode(
             names = [s.name for s in specs]
             raise ValueError(f"Column {source_col!r} (for feature(s) {names}) not found in data")
         attr = dataspec.attributes.get(source_col)
-        raw = df[source_col]
-
-        if attr is not None and attr.missing_values:
-            missing_set = set(attr.missing_values)
-            raw = raw.apply(lambda v: None if v in missing_set else v)
-        if attr is not None and attr.type == AttributeType.NUMERIC:
-            raw = pd.to_numeric(raw, errors="coerce")
-        missing_mask = raw.isna()
-
-        if missing_mask.any() and resolved in (MissingStrategy.MAJORITY, MissingStrategy.RANDOM):
-            known = raw.dropna()
-            if known.empty:
-                raise ValueError(f"Column {source_col!r} has no non-missing values to impute from")
-            if resolved == MissingStrategy.MAJORITY:
-                numeric = attr is not None and attr.type == AttributeType.NUMERIC
-                fill = float(known.astype(float).median()) if numeric else known.mode().iloc[0]
-                raw = raw.fillna(fill)
-            else:  # RANDOM
-                raw = raw.copy()
-                idx = raw.index[missing_mask]
-                raw.loc[idx] = rng.choice(known.to_numpy(), size=len(idx))
-            missing_mask = raw.isna()  # now all False
+        raw, missing_mask, specs = _prepared_column(df[source_col], attr, specs, resolved, rng, source_col)
 
         for spec in specs:
             results = raw.apply(lambda v: evaluate_feature(spec, v))
@@ -448,6 +481,7 @@ def read_arff(
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
     include_negations: bool = True,
+    max_ordinal_values: int = DEFAULT_MAX_ORDINAL_VALUES,
     representation: Optional[Type[DataRepresentation]] = None,
 ) -> DataRepresentation:
     """Read an ARFF file (path or file-like object) into a
@@ -496,7 +530,7 @@ def read_arff(
     else:
         dataspec = build_dataspec(
             df, target=target, arff_types=arff_types, max_intervals=max_intervals,
-            include_negations=include_negations, domains=domains,
+            include_negations=include_negations, max_ordinal_values=max_ordinal_values, domains=domains,
         ).build()
 
     y = df[target].to_numpy() if target is not None else None
@@ -513,6 +547,7 @@ def read_csv(
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
     include_negations: bool = True,
+    max_ordinal_values: int = DEFAULT_MAX_ORDINAL_VALUES,
     representation: Optional[Type[DataRepresentation]] = None,
     **read_csv_kwargs,
 ) -> DataRepresentation:
@@ -535,7 +570,7 @@ def read_csv(
     else:
         dataspec = build_dataspec(
             df, target=target, max_intervals=max_intervals,
-            include_negations=include_negations,
+            include_negations=include_negations, max_ordinal_values=max_ordinal_values,
         ).build()
 
     y = df[target].to_numpy() if target is not None else None
