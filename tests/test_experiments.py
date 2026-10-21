@@ -121,6 +121,42 @@ def test_run_cv_caches_finished_folds(tmp_path):
     )
 
 
+def test_run_cv_does_not_load_or_encode_what_is_cached(tmp_path, monkeypatch):
+    import pyrulearn.experiments.runner as runner
+
+    loads, encodings = {"n": 0}, {"n": 0}
+    entry = _synthetic_entry("synth_a")
+    load = entry.load
+
+    def counting_load():
+        loads["n"] += 1
+        return load()
+
+    entry.load = counting_load
+    encode = runner.encode
+
+    def counting_encode(*args, **kwargs):
+        encodings["n"] += 1
+        return encode(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "encode", counting_encode)
+    cache_dir = str(tmp_path / "cache")
+    kwargs = dict(n_folds=3, fit_timeout=None, random_state=0, cache_dir=cache_dir, verbose=False)
+    first = run_cv([Pypper(random_state=0)], [entry], **kwargs)
+    assert (loads["n"], encodings["n"]) == (1, 2 * 3)  # train and test, per fold
+
+    # everything cached: the dataset is not loaded, no fold encoded -- also in parallel
+    for n_jobs in (1, 2):
+        again = run_cv([Pypper(random_state=0)], [entry], n_jobs=n_jobs, **kwargs)
+        assert (loads["n"], encodings["n"]) == (1, 2 * 3)
+        pd.testing.assert_frame_equal(first, again)
+
+    # a new learner: its folds are not cached, so they are encoded again
+    both = run_cv([Pypper(random_state=0), PFossil(random_state=0)], [entry], **kwargs)
+    assert (loads["n"], encodings["n"]) == (2, 4 * 3)
+    assert len(both) == 2 * 3 and both["error"].isna().all()
+
+
 def test_cache_key_is_stable_for_learners_built_from_components():
     # regression test: a SeCo learner's parameters include its
     # SingleRuleLearner object, whose default str() carries a memory

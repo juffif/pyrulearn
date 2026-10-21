@@ -360,36 +360,50 @@ class _Cell:
     learner: RuleLearner
     key: str                        # cache key
     cached: Optional[Dict[str, Any]]
-    train_rep: DataRepresentation
-    test_rep: DataRepresentation
+    train_rep: Optional[DataRepresentation]  # None for a cached cell: never built
+    test_rep: Optional[DataRepresentation]
 
 
 def _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_dir,
                 representation, verbose, max_ordinal_values=DEFAULT_MAX_ORDINAL_VALUES):
     """Yield every cell in (dataset, fold, learner) order, loading and
     encoding each dataset and fold only when the consumer asks for its
-    first cell -- so a parallel run holds just the folds in flight."""
+    first cell -- so a parallel run holds just the folds in flight.
+
+    The cache is looked up first (a key depends only on the dataset, the
+    fold's number and the settings, not on the encoded data): a fold whose
+    cells are all cached is not discretized or encoded, and a dataset whose
+    cells are all cached is not even loaded -- their cells carry no data."""
     index = 0
     for entry in datasets:
         if verbose:
             print(f"{entry.name} ...", flush=True)
+        cached = [[(key, _cache_load(cache_dir, key))
+                   for key in (_cache_key(entry, n_folds, fold, random_state, learner, representation,
+                                          discretizer, max_ordinal_values) for learner in learners)]
+                  for fold in range(n_folds)]
+        if all(row is not None for fold_cells in cached for _, row in fold_cells):
+            for fold, fold_cells in enumerate(cached):
+                for learner, (key, row) in zip(learners, fold_cells):
+                    yield _Cell(index, entry.name, fold, n_folds, learner, key, row, None, None)
+                    index += 1
+            continue
         df, target = entry.load()
         y_all = df[target].to_numpy()
         folds = _stratified_folds(y_all, n_folds, random_state)
 
         for fold, (train_idx, test_idx) in enumerate(folds):
-            train_df = df.iloc[train_idx].reset_index(drop=True)
-            test_df = df.iloc[test_idx].reset_index(drop=True)
-            spec = build_dataspec(train_df, target=target, discretizer=discretizer,
-                                  max_ordinal_values=max_ordinal_values, skip_unusable=True).build()
-            train_rep = encode(spec, train_df, train_df[target].to_numpy(), representation=representation)
-            test_rep = encode(spec, test_df, test_df[target].to_numpy(), representation=representation)
+            train_rep = test_rep = None
+            if any(row is None for _, row in cached[fold]):
+                train_df = df.iloc[train_idx].reset_index(drop=True)
+                test_df = df.iloc[test_idx].reset_index(drop=True)
+                spec = build_dataspec(train_df, target=target, discretizer=discretizer,
+                                      max_ordinal_values=max_ordinal_values, skip_unusable=True).build()
+                train_rep = encode(spec, train_df, train_df[target].to_numpy(), representation=representation)
+                test_rep = encode(spec, test_df, test_df[target].to_numpy(), representation=representation)
 
-            for learner in learners:
-                key = _cache_key(entry, n_folds, fold, random_state, learner, representation,
-                                 discretizer, max_ordinal_values)
-                yield _Cell(index, entry.name, fold, n_folds, learner, key,
-                            _cache_load(cache_dir, key), train_rep, test_rep)
+            for learner, (key, row) in zip(learners, cached[fold]):
+                yield _Cell(index, entry.name, fold, n_folds, learner, key, row, train_rep, test_rep)
                 index += 1
 
 
