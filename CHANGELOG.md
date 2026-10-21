@@ -3,7 +3,13 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.4.1 (2026-10-21)
+
+Discretization becomes an object passed as `discretizer=` -- the decision tree so far,
+still the default at 8 intervals, and new ones: FUSINTER, equal width, equal frequency,
+and the `BoundaryCorrection` and `PerClass` wrappers. `demos/numeric_discretization.py`
+compares them. A small break: `max_intervals=` becomes
+`discretizer=TreeDiscretizer(max_intervals=...)`. No change to what the default learns.
 
 ### Added
 
@@ -19,6 +25,21 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   changes (Fayyad & Irani, 1993), and `PerClass`, which runs a
   discretizer once per class (that class against all others) and keeps
   the union of the thresholds.
+- `TreeDiscretizer(max_intervals=None)` grows the full tree, which cuts
+  at exactly the boundary points; `FusinterDiscretizer(max_intervals=...)`
+  caps FUSINTER by going on merging the least harmful pair.
+- `demos/numeric_discretization.py`, rewritten: the discretizers at 3 to
+  12 intervals with Pypper, PFossil and PFoil; per class vs. all classes
+  on many-class data; JRip and J48 on raw numeric data vs. discretized.
+  Its results are saved, so `--replot` redraws report and plots without
+  running.
+
+### Changed
+
+- `run_cv` looks up the cache before loading and encoding: a fold whose
+  cells are all cached is not discretized and encoded, a dataset whose
+  cells are all cached not even loaded. A fully cached rerun takes
+  seconds.
 
 ### Changed (breaking)
 
