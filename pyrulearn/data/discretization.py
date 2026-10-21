@@ -10,10 +10,15 @@ thresholds, each threshold ``t`` becoming the two features ``x>=t`` and
 
 - `TreeDiscretizer` -- supervised: the split points of a single-feature
   decision tree (`pyrulearn.interfaces.sklearn.tree_thresholds`).
+- `FusinterDiscretizer` -- supervised, bottom-up: FUSINTER (Zighed,
+  Rabaseda & Rakotomalala, 1998), merging class-homogeneous intervals
+  while a regularized quadratic entropy improves. Native.
 - `EqualFrequencyDiscretizer` -- unsupervised equal-frequency
   ("quantile", "k-bins") binning, native.
+- `EqualWidthDiscretizer` -- unsupervised equal-width binning, native.
 - `BoundaryCorrection` -- wraps another discretizer and moves each of
-  its thresholds to the nearest *boundary point*: a gap between two
+  its thresholds to the nearest *boundary point* (thresholds landing on
+  the same one merge): a gap between two
   adjacent observed values where the class changes, i.e. not between two
   values whose examples all have one and the same class (Fayyad & Irani,
   1993). A threshold inside such a single-class stretch is never the
@@ -22,6 +27,10 @@ thresholds, each threshold ``t`` becoming the two features ``x>=t`` and
   end of the stretch is at least as good, also inside the subset a
   partially grown rule covers. E.g.
   ``BoundaryCorrection(EqualFrequencyDiscretizer(8))``.
+- `PerClass` -- wraps a supervised discretizer and runs it once per
+  class, on that class against all others, keeping the union of the
+  thresholds: each class gets cuts placed for it, not only for the
+  overall class mix. E.g. ``PerClass(TreeDiscretizer(3))``.
 
 This module needs only numpy; `TreeDiscretizer` imports scikit-learn
 when it is used.
@@ -101,14 +110,16 @@ class TreeDiscretizer(Discretizer):
     ``max_leaf_nodes=max_intervals``), prettified. `max_intervals` is a
     ceiling, not a target: the tree's own criterion decides how much of
     it the data justifies, so a column may get fewer thresholds, or
-    none. Every split point of such a tree lies on a boundary point, so
-    there is nothing to correct."""
+    none. ``max_intervals=None`` grows the full tree, until every
+    interval holds one class or one value -- a threshold at every
+    boundary point (see below). Every split point of such a tree lies on
+    a boundary point, so there is nothing to correct."""
 
     supervised = True
 
-    def __init__(self, max_intervals: int = DEFAULT_MAX_INTERVALS):
-        if max_intervals < 2:
-            raise ValueError(f"max_intervals must be at least 2, got {max_intervals}")
+    def __init__(self, max_intervals: Optional[int] = DEFAULT_MAX_INTERVALS):
+        if max_intervals is not None and max_intervals < 2:
+            raise ValueError(f"max_intervals must be at least 2 (or None), got {max_intervals}")
         self.max_intervals = max_intervals
 
     def thresholds(self, values: np.ndarray, y: Optional[np.ndarray] = None) -> List[float]:
@@ -125,7 +136,8 @@ class _Column:
     """A column's non-missing values sorted, as the gaps between adjacent
     distinct values: `distinct` (ascending), `below[i]` -- the number of
     examples below gap i (between ``distinct[i]`` and ``distinct[i + 1]``)
-    -- and, given labels, `boundaries`: the gaps where the class changes."""
+    -- and, given labels, `boundaries`: the gaps where the class changes,
+    and `class_counts`: per distinct value, its examples per class."""
 
     def __init__(self, values: np.ndarray, y: Optional[np.ndarray] = None):
         values = np.asarray(values, dtype=float).ravel()
@@ -136,8 +148,11 @@ class _Column:
         self.distinct, starts, counts = np.unique(self.values, return_index=True, return_counts=True)
         self.below = np.cumsum(counts)[:-1]
         self.boundaries = None
+        self.class_counts = None
         if y is not None and len(self.distinct) >= 2:
             _, codes = np.unique(np.asarray(y)[observed][order], return_inverse=True)
+            self.class_counts = np.zeros((len(self.distinct), codes.max() + 1))
+            np.add.at(self.class_counts, (np.repeat(np.arange(len(self.distinct)), counts), codes), 1)
             lowest = np.minimum.reduceat(codes, starts)
             highest = np.maximum.reduceat(codes, starts)
             pure = lowest == highest  # every example with this value has the same class
@@ -198,14 +213,15 @@ class EqualFrequencyDiscretizer(Discretizer):
 
 class BoundaryCorrection(Discretizer):
     """Supervised wrapper: `discretizer`'s thresholds, each moved to the
-    nearest boundary point not yet taken -- a gap between two adjacent
-    observed values where the class changes (see the module docstring)
-    -- measured in examples: a threshold with ``m`` examples below it
-    goes to the boundary whose number of examples below is closest to
-    ``m``. A threshold already on a boundary stays (up to
-    prettification). Two thresholds never share one boundary; with fewer
-    boundaries than thresholds, the column gets one threshold per
-    boundary. Missing values are ignored."""
+    nearest boundary point -- a gap between two adjacent observed values
+    where the class changes (see the module docstring) -- measured in
+    examples: a threshold with ``m`` examples below it goes to the
+    boundary whose number of examples below is closest to ``m`` (ties:
+    the lower one). A threshold already on a boundary stays (up to
+    prettification). Thresholds that land on the same boundary become
+    one, so the column may get fewer thresholds than `discretizer` gave
+    it -- where few class changes lie close together, which is where a
+    second cut adds least. Missing values are ignored."""
 
     supervised = True
 
@@ -227,5 +243,153 @@ class BoundaryCorrection(Discretizer):
         if column.boundaries is None or len(column.boundaries) == 0:
             return []
         proposed = self.discretizer.thresholds(values, y if self.discretizer.supervised else None)
-        positions = [int(np.searchsorted(column.values, t, side="left")) for t in sorted(proposed)]
-        return column.thresholds(column.nearest_gaps(positions, column.boundaries))
+        positions = np.searchsorted(column.values, np.asarray(proposed, dtype=float), side="left")
+        below = column.below[column.boundaries]
+        nearest = np.abs(below[None, :] - positions[:, None]).argmin(axis=1)  # ties: the lower boundary
+        return column.thresholds(sorted({int(column.boundaries[i]) for i in nearest}))
+
+
+class EqualWidthDiscretizer(Discretizer):
+    """Unsupervised equal-width binning: the column's observed range split
+    into `max_intervals` intervals of equal width, each cut (``min + k *
+    width``) placed in the gap between observed values it falls into, as
+    the prettified midpoint of that gap. Intervals that hold no example
+    merge with their neighbour, so a skewed column (or one with an
+    outlier) gets fewer thresholds. Native; missing values are ignored."""
+
+    supervised = False
+
+    def __init__(self, max_intervals: int = DEFAULT_MAX_INTERVALS):
+        if max_intervals < 2:
+            raise ValueError(f"max_intervals must be at least 2, got {max_intervals}")
+        self.max_intervals = max_intervals
+
+    def params(self) -> Dict[str, Any]:
+        return {"max_intervals": self.max_intervals}
+
+    def thresholds(self, values: np.ndarray, y: Optional[np.ndarray] = None) -> List[float]:
+        column = _Column(values)
+        distinct = column.distinct
+        if len(distinct) < 2:
+            return []
+        lo, hi = distinct[0], distinct[-1]
+        cuts = lo + (hi - lo) * np.arange(1, self.max_intervals) / self.max_intervals
+        # the gap with distinct[i] < cut <= distinct[i + 1]
+        gaps = np.searchsorted(distinct, cuts, side="left") - 1
+        return column.thresholds(sorted({int(i) for i in gaps if 0 <= i < len(distinct) - 1}))
+
+
+class FusinterDiscretizer(Discretizer):
+    """FUSINTER (Zighed, Rabaseda & Rakotomalala, 1998): supervised,
+    bottom-up. Starts from the class-homogeneous intervals -- one per
+    stretch between two boundary points (see the module docstring) --
+    and repeatedly merges the two adjacent intervals whose merge lowers
+    the criterion most, until no merge lowers it. The criterion sums,
+    over the intervals ``j``,
+
+        alpha * n_j / n * sum_i q_ij * (1 - q_ij)  +  (1 - alpha) * m * lam / n_j,
+        q_ij = (n_ij + lam) / (n_j + m * lam),
+
+    with ``n_ij`` the examples of class ``i`` in interval ``j``, ``n_j``
+    the interval's size, ``n`` the column's and ``m`` the number of
+    classes: a quadratic entropy, smoothed by `lam`, plus a penalty on
+    small intervals, weighted by ``1 - alpha``. The defaults are the
+    authors' recommendation. FUSINTER decides the number of intervals
+    itself; `max_intervals` (default none) caps it, by going on merging
+    the least harmful pair. Native; missing values are ignored."""
+
+    supervised = True
+
+    def __init__(self, alpha: float = 0.975, lam: float = 1.0, max_intervals: Optional[int] = None):
+        if not 0 <= alpha <= 1:
+            raise ValueError(f"alpha must be in [0, 1], got {alpha}")
+        if lam <= 0:
+            raise ValueError(f"lam must be positive, got {lam}")
+        if max_intervals is not None and max_intervals < 2:
+            raise ValueError(f"max_intervals must be at least 2 (or None), got {max_intervals}")
+        self.alpha = alpha
+        self.lam = lam
+        self.max_intervals = max_intervals
+
+    def params(self) -> Dict[str, Any]:
+        return {"alpha": self.alpha, "lam": self.lam, "max_intervals": self.max_intervals}
+
+    def _terms(self, counts: np.ndarray, n: int) -> np.ndarray:
+        """Each interval's share of the criterion; `counts` is intervals x classes."""
+        m = counts.shape[-1]
+        size = counts.sum(axis=-1)
+        q = (counts + self.lam) / (size + m * self.lam)[..., None]
+        return (self.alpha * size / n * (q * (1 - q)).sum(axis=-1)
+                + (1 - self.alpha) * m * self.lam / size)
+
+    def thresholds(self, values: np.ndarray, y: Optional[np.ndarray] = None) -> List[float]:
+        if y is None:
+            raise ValueError("FusinterDiscretizer is supervised -- it needs the class labels y")
+        column = _Column(values, y)
+        if column.boundaries is None or len(column.boundaries) == 0:
+            return []
+        cuts = list(column.boundaries)
+        starts = np.concatenate([[0], column.boundaries + 1])
+        counts = np.add.reduceat(column.class_counts, starts, axis=0)  # the class-homogeneous intervals
+        n = len(column.values)
+        terms = self._terms(counts, n)
+        while len(cuts) > 0:
+            merged = counts[:-1] + counts[1:]
+            merged_terms = self._terms(merged, n)
+            gain = terms[:-1] + terms[1:] - merged_terms  # how much each merge lowers the criterion
+            best = int(np.argmax(gain))
+            over_cap = self.max_intervals is not None and len(cuts) + 1 > self.max_intervals
+            if gain[best] <= 1e-12 and not over_cap:
+                break
+            counts = np.concatenate([counts[:best], merged[best:best + 1], counts[best + 2:]])
+            terms = np.concatenate([terms[:best], merged_terms[best:best + 1], terms[best + 2:]])
+            del cuts[best]
+        return column.thresholds(cuts)
+
+
+class PerClass(Discretizer):
+    """Supervised wrapper: `discretizer` run once per class ``c``, on the
+    two-class problem ``c`` against all other classes, keeping the union
+    of the thresholds, sorted and without duplicates: thresholds of
+    different classes in the same gap between two observed values (e.g.
+    1.4 and 2 between the values 1 and 3) split the data the same way,
+    so only the first of them is kept. A capped discretizer then
+    places its cuts for every class on its own -- with many classes and
+    few intervals, a global discretization may place none for a small
+    class -- at the cost of more thresholds: up to ``m`` times as many
+    for ``m`` classes, e.g. ``PerClass(TreeDiscretizer(3))`` gives up to
+    two per class. With two classes it is `discretizer` itself (both
+    one-against-the-rest problems are the same). Wrapping an
+    unsupervised discretizer changes nothing -- it gives the same
+    thresholds for every class."""
+
+    supervised = True
+
+    def __init__(self, discretizer: Discretizer):
+        if not isinstance(discretizer, Discretizer):
+            raise TypeError(f"PerClass wraps a Discretizer, got {discretizer!r}")
+        self.discretizer = discretizer
+
+    def params(self) -> Dict[str, Any]:
+        return {"discretizer": self.discretizer}
+
+    def __repr__(self) -> str:
+        return f"PerClass({self.discretizer!r})"
+
+    def thresholds(self, values: np.ndarray, y: Optional[np.ndarray] = None) -> List[float]:
+        if y is None:
+            raise ValueError("PerClass is supervised -- it needs the class labels y")
+        y = np.asarray(y)
+        classes = np.unique(y)
+        if len(classes) <= 2:
+            return list(self.discretizer.thresholds(values, y))
+        union = set()
+        for c in classes:
+            union.update(self.discretizer.thresholds(values, (y == c).astype(int)))
+        # one threshold per gap between observed values: the gap is the
+        # number of distinct values below the threshold
+        distinct = _Column(values).distinct
+        kept: Dict[int, float] = {}
+        for t in sorted(union):
+            kept.setdefault(int(np.searchsorted(distinct, t, side="left")), t)
+        return sorted(kept.values())

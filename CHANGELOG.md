@@ -9,11 +9,16 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 - Discretizer objects (`pyrulearn.data.discretization`, also exported from
   `pyrulearn` and `pyrulearn.data`): `TreeDiscretizer` (the decision-tree
-  discretization so far, still the default), `EqualFrequencyDiscretizer`
-  (unsupervised equal-frequency binning, native), and `BoundaryCorrection`,
+  discretization so far, still the default), `FusinterDiscretizer`
+  (FUSINTER, Zighed, Rabaseda & Rakotomalala 1998: supervised bottom-up
+  merging of class-homogeneous intervals, native),
+  `EqualFrequencyDiscretizer` and `EqualWidthDiscretizer` (unsupervised
+  equal-frequency and equal-width binning, native), and `BoundaryCorrection`,
   which wraps another discretizer and moves each of its thresholds to the
   nearest boundary point -- a gap between adjacent values where the class
-  changes (Fayyad & Irani, 1993).
+  changes (Fayyad & Irani, 1993), and `PerClass`, which runs a
+  discretizer once per class (that class against all others) and keeps
+  the union of the thresholds.
 
 ### Changed (breaking)
 

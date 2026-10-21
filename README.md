@@ -507,19 +507,34 @@ Numeric columns without pre-given thresholds are discretized by a
 - `TreeDiscretizer(max_intervals=8)` (the default) -- the split points of
   a single-feature decision tree against the class (scikit-learn's).
   `max_intervals` is a ceiling: a column with little signal gets fewer
-  thresholds.
+  thresholds. `max_intervals=None` grows the full tree: a threshold at
+  every point where the class changes.
+- `FusinterDiscretizer(alpha=0.975, lam=1.0, max_intervals=None)` --
+  FUSINTER (Zighed, Rabaseda & Rakotomalala, 1998), supervised and
+  bottom-up, native: starts from the class-homogeneous intervals and
+  merges adjacent ones while a quadratic entropy with a penalty on small
+  intervals improves. It decides the number of intervals itself;
+  `max_intervals` caps it, by going on merging the least harmful pair.
 - `EqualFrequencyDiscretizer(max_intervals=8)` -- unsupervised
   equal-frequency ("quantile") binning, native: each threshold in the
   gap between two observed values nearest to an equal-frequency
   position.
+- `EqualWidthDiscretizer(max_intervals=8)` -- unsupervised equal-width
+  binning, native; empty intervals merge with their neighbour.
 - `BoundaryCorrection(discretizer)` -- moves each of another
   discretizer's thresholds to the nearest *boundary point* (counted in
   examples): a gap between two adjacent values where the class changes.
+  Thresholds that land on the same boundary merge, so a column may get
+  a few fewer thresholds.
   A threshold between two values whose examples all share one class is
   never the best place for one, for any heuristic that rewards covered
   positives and penalizes covered negatives (Fayyad & Irani, 1993).
+- `PerClass(discretizer)` -- runs a supervised discretizer once per
+  class, on that class against all others, and keeps the union of the
+  thresholds, so every class gets cuts placed for it, e.g.
+  `PerClass(TreeDiscretizer(3))` (up to two thresholds per class).
 
-A supervised discretizer (the tree, or one with boundary correction)
+A supervised discretizer (the tree, FUSINTER, or one wrapped in `BoundaryCorrection` or `PerClass`)
 needs a `target` column. `validate_dataspec(dataspec, df)` checks an existing `DataSpec`
 against a file's header without reading data (missing attributes, type
 mismatches, unknown nominal categories); `strict=True` (the default on

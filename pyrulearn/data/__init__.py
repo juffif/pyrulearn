@@ -18,7 +18,8 @@ Everything about representing data, split by concern:
   same `coverage(rule)` interface, so every rule learner runs on any of them.
 - `pyrulearn.data.discretization` -- discretizers, turning a numeric
   column into thresholds: `TreeDiscretizer` (the default),
-  `EqualFrequencyDiscretizer`, and the `BoundaryCorrection` wrapper.
+  `FusinterDiscretizer`, `EqualFrequencyDiscretizer`, `EqualWidthDiscretizer`,
+  and the `BoundaryCorrection` and `PerClass` wrappers.
 - `pyrulearn.data.io` -- `read_arff`/`read_csv`/`write_arff`/`write_csv`/
   `binarize`/`build_dataspec`, reading/writing a `HorizontalBitmapRepresentation`
   from/to ARFF or CSV. Requires `pandas` -- **not** re-exported here, so a
@@ -34,7 +35,8 @@ working as a single import.
 from __future__ import annotations
 
 from .spec import DataSpec, DataSpecBuilder, merge_dataspecs
-from .discretization import BoundaryCorrection, Discretizer, EqualFrequencyDiscretizer, TreeDiscretizer
+from .discretization import (BoundaryCorrection, Discretizer, EqualFrequencyDiscretizer, EqualWidthDiscretizer,
+                             FusinterDiscretizer, PerClass, TreeDiscretizer)
 from .representation import (
     DataRepresentation,
     HorizontalBitmapRepresentation,
@@ -51,6 +53,7 @@ __all__ = [
     "DataRepresentation", "HorizontalBitmapRepresentation",
     "NListRepresentation", "PrePostNListRepresentation", "SparseDataRepresentation", "VerticalBitmapRepresentation",
     "REPRESENTATION_PREFERENCE_ORDER", "default_representation",
-    "Discretizer", "TreeDiscretizer", "EqualFrequencyDiscretizer", "BoundaryCorrection",
+    "Discretizer", "TreeDiscretizer", "FusinterDiscretizer", "EqualFrequencyDiscretizer", "EqualWidthDiscretizer",
+    "BoundaryCorrection", "PerClass",
 ]
 

@@ -552,7 +552,8 @@ class SKLRandomForest(ExternalRuleLearner):
         return RandomForestClassifier(**self.params).fit(X, y)
 
 
-def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = DEFAULT_MAX_INTERVALS) -> List[float]:
+def tree_thresholds(values: np.ndarray, y: np.ndarray,
+                    max_intervals: Optional[int] = DEFAULT_MAX_INTERVALS) -> List[float]:
     """Supervised numeric discretization: fit a single-feature decision
     tree against `values`/`y` and return its internal split points as
     ascending thresholds, prettified (see `pyrulearn.data.discretization.
@@ -564,14 +565,14 @@ def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = DEFA
     passed straight through as the tree's `max_leaf_nodes`, so the
     tree's own splitting criterion decides how much of that budget the
     data actually justifies; a column with little signal may come back
-    with fewer thresholds, or none.
+    with fewer thresholds, or none. `None` grows the full tree.
     """
     from sklearn.tree import DecisionTreeClassifier
 
     flat_values = np.asarray(values, dtype=float).ravel()
     sorted_unique = np.unique(flat_values)
     y = np.asarray(y)
-    tree = DecisionTreeClassifier(max_leaf_nodes=max(2, max_intervals))
+    tree = DecisionTreeClassifier(max_leaf_nodes=None if max_intervals is None else max(2, max_intervals))
     tree.fit(flat_values.reshape(-1, 1), y)
     feature = tree.tree_.feature
     threshold = tree.tree_.threshold
