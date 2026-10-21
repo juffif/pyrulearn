@@ -2,536 +2,742 @@
 demos/numeric_discretization.py
 ===============================
 
-RIPPER-family comparison (e): does discretizing numeric attributes
-ourselves cost accuracy against a learner's own intrinsic handling, and
-how much does the discretization level matter? Weka's JRip and J48 --
-both capable of thresholding numeric attributes internally during
-learning -- run in nine data preparations per dataset:
+How should numeric attributes be discretized for rule learning? The
+discretizers of `pyrulearn.data.discretization`, compared with fast
+native rule learners -- Pypper, PFossil and PFoil -- in two sections:
 
-- **raw** -- the original numeric columns, unmodified; Weka does its
-  own thresholding, same as it would standalone.
-- **tree@3 / tree@5 / tree@8 / tree@12** -- our own discretization
-  (`pyrulearn.data.io.build_dataspec`'s supervised, decision-tree-based
-  binning, `pyrulearn.interfaces.sklearn.tree_thresholds`) at
-  `max_intervals` 3, 5, 8, 12, then binarized (`binarize`) before fitting --
-  the same pipeline every other comparison demo uses.
-- **kbins@3 / kbins@5 / kbins@8 / kbins@12** -- `sklearn.preprocessing.
-  KBinsDiscretizer` (`strategy="quantile"`, unsupervised -- no target
-  used, unlike `tree_thresholds`) at `n_bins` 3, 5, 8, 12, then binarized
-  the same way (`build_kbins_dataspec` below turns its `bin_edges_`
-  into a `DataSpec` the rest of the pipeline treats identically to a
-  tree-discretized one).
+1. **Discretizers and interval counts.** Six discretizers, each at
+   3, 5, 8 and 12 intervals:
 
-(A native learner -- Pypper, then PFossil -- was tried alongside JRip/
-J48 here too, to test whether a `pyrulearn.data.attributes`-constraint-
-aware search degrades less steeply with the interval count than Weka's
-independent-binarized-feature search does. Dropped after confirming
-Pypper's `ReplaceReviseOptimization` post-pass made it ~10x *slower*
-than Weka on a high-feature-count dataset, not faster, and PFossil
-(no such post-pass) was still markedly slower too -- the search itself,
-not just the optimization pass, scales worse than Weka's built-in
-threshold search here. Back to JRip/J48 only, as originally planned.)
+   - `tree` -- `TreeDiscretizer` (a single-feature decision tree),
+     also unbounded (`max_intervals=None`: the full tree, a threshold at
+     every point where the class changes);
+   - `fusinter` -- `FusinterDiscretizer` (Zighed et al., 1998), also
+     unbounded (`max_intervals=None`: FUSINTER's own criterion decides);
+   - `ew` / `ew+bc` -- `EqualWidthDiscretizer`, plain and wrapped in
+     `BoundaryCorrection` (each threshold moved to the nearest point
+     where the class changes);
+   - `ef` / `ef+bc` -- `EqualFrequencyDiscretizer`, plain and wrapped in
+     `BoundaryCorrection`.
 
-Both discretizers are fit **on the training fold only**, per fold --
-the test fold is binarized against that same fold's fitted thresholds,
-never re-discretized from its own values (leaking test-set information
-into the discretization the same way it would into a supervised
-learner). This matters doubly here since it's the entire subject of the
-comparison, not just incidental correctness.
+   On `FULL_DATASETS` (every small/medium catalog dataset with only
+   numeric attributes, up to `FULL_MAX_ROWS_TIMES_FEATURES`).
 
-`raw` bypasses `pyrulearn.learners`' `RuleLearner`/`DataRepresentation`
-abstractions entirely (Weka needs the true continuous values, not a
-Boolean matrix) -- `_fit_weka_raw` below writes the training fold's
-DataFrame straight to ARFF and imports the printed rules back through
-`JRipImporter`/`J48Importer`'s own dataspec-discovery (no `dataspec=`
-passed at construction, mirroring how the pre-infra version of
-`demos/ripper_comparison.py` handled its `jrip_native` variant -- this
-demo is where that comparison actually belongs, per
-`examples/REVISION_PLAN.md`).
+2. **Per class vs. all classes.** `PerClass` runs a supervised
+   discretizer once per class (that class against all others) and keeps
+   the union of the thresholds, so each class gets cuts placed for it.
+   `tree`, `fusinter` and `ef+bc` globally (3, 5, 8, 12 intervals, and
+   FUSINTER unbounded) vs. per class (2, 3, 5 intervals per class), compared over
+   the number of binary features they produce, on `MULTICLASS_DATASETS`
+   (small/medium catalog datasets with numeric attributes and at least
+   `MIN_CLASSES` classes).
 
-Datasets: every small/medium **numeric-attribute** catalog entry (no
-nominal columns -- `pyrulearn.experiments.catalog`'s
-`attributes="numeric"` category; keeping every dataset's features
-uniformly numeric means `build_kbins_dataspec` never has to
-special-case a nominal column). Missing values are fine -- `raw`
-(`write_arff`) and the tree discretizer (`DecisionTreeClassifier`
-accepts NaN natively) already handle them, and `build_kbins_dataspec`
-fits each column's `KBinsDiscretizer` on its own non-missing training
-values only (it's the one piece here that rejects NaN outright);
-`binarize`'s own `MissingStrategy` (default `NEVER_COVERS`) scores
-missing values the same way regardless of which discretizer produced
-the thresholds. `--full` additionally excludes any dataset whose
-`n_instances * n_features` is too high
-(`FULL_MAX_ROWS_TIMES_FEATURES`) -- confirmed directly against a real
-run to predict this demo's fit time far better than row count alone
-(a "medium" 6,118-row, 51-attribute dataset took 33 minutes across its
-140 fits, ~15x the typical dataset here).
+3. **Against raw numeric data.** Weka's JRip and J48, which handle
+   numeric attributes themselves, on the raw data (`raw`: Weka sets its
+   own thresholds) vs. discretized by `tree` and by `ef+bc`, at 3, 5, 8
+   and 12 intervals, on `SECTION3_DATASETS` (every small/medium catalog
+   dataset with only numeric attributes, up to
+   `MULTICLASS_MAX_ROWS_TIMES_FEATURES` rows times features). Needs Weka
+   (`$WEKA_JAR`, `$WEKA_JAVA`).
 
-Measures: accuracy, rule count, condition count -- fit time is recorded
-but secondary here (every fit is a bounded Weka subprocess call either
-way; this demo's question is about representations, not runtime) --
-plus, for each discretized prep, how many binary features it produced
-(`n_features`) -- the direct answer to "how much does raising the
-interval count actually grow the search space".
+Every column with at least three distinct values is discretized
+(`run_cv(max_ordinal_values=2)`, so none is made ordinal). Each training
+fold is discretized on its own (`run_cv`); the test fold is binarized
+against that fold's thresholds.
 
-Run: `python demos/numeric_discretization.py` with no arguments
-is the **quick** default (`QUICK_DATASETS_SPEC`, `QUICK_FOLDS`) --
-its report/plot go to ``numeric_discretization_quick_*`` and are
-*not* checked in (see `.gitignore`), the same quick/full split
-`demos/ripper_comparison.py` uses. `--full` runs the full comparison
-instead (every small/medium numeric-attribute catalog entry,
-`N_FOLDS`-fold) and writes to the canonical
-``numeric_discretization_report.md`` (plot in ``numeric_discretization_plots/``), which *are* checked
-in -- a sample from a real full run. Either way needs Weka installed at
-`WEKA_JAR`/`WEKA_JAVA` below, plus the `experiments` extra.
+Run: `python demos/numeric_discretization.py` with no arguments is the
+**quick** default (`QUICK_DATASETS_SPEC`/`QUICK_MULTICLASS_SPEC`,
+`QUICK_FOLDS`-fold); its report and plots go to
+``numeric_discretization_quick_*`` and are not checked in. `--full` runs
+the full comparison (`N_FOLDS`-fold) and writes the canonical
+``numeric_discretization_report.md`` (plots in
+``numeric_discretization_plots/``). `--n-jobs N` runs N fits at a time;
+`--replot` rewrites the report and plots from the last run's saved
+results (for the same mode), without running anything.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import subprocess
 import tempfile
 import time
-import warnings
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 
-from pyrulearn.data import HorizontalBitmapRepresentation, DataSpecBuilder
-from pyrulearn.data.discretization import TreeDiscretizer
-from pyrulearn.data.io import binarize, build_dataspec, write_arff
-from pyrulearn.experiments.catalog import Catalog
-from pyrulearn.experiments.report import (
-    format_accuracy, format_mean_count, render_results_table, render_setup_section,
+from pyrulearn.data.discretization import (
+    BoundaryCorrection, Discretizer, EqualFrequencyDiscretizer, EqualWidthDiscretizer,
+    FusinterDiscretizer, PerClass, TreeDiscretizer,
 )
-from pyrulearn.experiments.stats import mean_rank, win_counts
+from pyrulearn.experiments.catalog import MEDIUM_MAX, SMALL_MAX, Catalog
+from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_setup_section
+from pyrulearn.data.io import binarize, write_arff
+from pyrulearn.data.representation import HorizontalBitmapRepresentation
+from pyrulearn.experiments.runner import _stratified_folds, run_cv
 from pyrulearn.interfaces.weka import J48Importer, JRipImporter, WekaJ48, WekaJRip, _resolve_weka, _weka_cli_options
+from pyrulearn.experiments.stats import critical_difference, friedman_test, mean_rank
+from pyrulearn.learners.seco import PFoil, PFossil, Pypper
 
-# $WEKA_JAR / $WEKA_JAVA win; else this machine's Windows install, else `java` on the PATH
-_WIN_JAVA = r"C:\Program Files\Weka-3-8-7\jre\jre-25.0.2-full\bin\java.exe"
-WEKA_JAVA = os.environ.get("WEKA_JAVA") or (_WIN_JAVA if os.path.exists(_WIN_JAVA) else "java")
-WEKA_JAR = os.environ.get("WEKA_JAR") or r"C:\Program Files\Weka-3-8-7\weka.jar"
-
+NAME = "numeric_discretization"
 RANDOM_STATE = 0
-LEVELS = (3, 5, 8, 12)
-KBINS_STRATEGY = "quantile"
-FIT_TIMEOUT = 120.0  # seconds, per (dataset, fold, algorithm, prep) -- a Weka subprocess call
-
 N_FOLDS = 10
 QUICK_FOLDS = 3
-# Small, purely-numeric-attribute datasets, a spread of feature counts
-# (4 to 60) so the "how many binary features does each discretization
-# produce" measure actually varies -- five of the 41 candidates
-# Catalog.default().select(attributes="numeric", size="small") lists.
-QUICK_DATASETS_SPEC = "iris,wine,glass,blood-transfusion-service-center,ionosphere"
+FIT_TIMEOUT = 300.0  # seconds per fit
 
-# Full run: every small/medium numeric-attribute catalog entry -- 41 of
-# them (15 small + 26 medium; see Catalog.default().summary()). Missing
-# values are fine here (see the module docstring), so this isn't
-# restricted to select(missing=False) the way an earlier version was --
-# not expressible as a Catalog.parse() string either way (parse() has
-# no "missing" axis), so full_datasets() calls select() directly rather
-# than going through parse() the way the quick default does.
+LEVELS = (3, 5, 8, 12)
+UNBOUNDED = "∞"  # the level label of max_intervals=None
+PER_CLASS_LEVELS = (2, 3, 5)
+
+LEARNERS = ("Pypper", "PFossil", "PFoil")
+
+
+def build_learners():
+    return [Pypper(random_state=RANDOM_STATE), PFossil(random_state=RANDOM_STATE),
+            PFoil(random_state=RANDOM_STATE)]
+
+
+# -- section 1: the discretizers ---------------------------------------------
+
+#: family -> (label, factory taking max_intervals, whether it has an unbounded variant)
+FAMILIES = {
+    "tree": ("tree", TreeDiscretizer, True),
+    "fusinter": ("FUSINTER", lambda k: FusinterDiscretizer(max_intervals=k), True),
+    "ew": ("equal width", EqualWidthDiscretizer, False),
+    "ew+bc": ("equal width + boundary correction",
+              lambda k: BoundaryCorrection(EqualWidthDiscretizer(k)), False),
+    "ef": ("equal frequency", EqualFrequencyDiscretizer, False),
+    "ef+bc": ("equal frequency + boundary correction",
+              lambda k: BoundaryCorrection(EqualFrequencyDiscretizer(k)), False),
+}
+
+
+def section1_preps() -> List[Tuple[str, str, object, Discretizer]]:
+    """(prep label, family, level, discretizer) for section 1."""
+    preps = []
+    for family, (_, factory, unbounded) in FAMILIES.items():
+        for k in LEVELS:
+            preps.append((f"{family}@{k}", family, k, factory(k)))
+        if unbounded:
+            preps.append((f"{family}@{UNBOUNDED}", family, UNBOUNDED, factory(None)))
+    return preps
+
+
+# Every small/medium catalog dataset with only numeric attributes ...
 FULL_SELECT_KWARGS = dict(attributes="numeric", size=["small", "medium"])
-
-# ... except datasets `n_instances * n_features` puts above this --
-# confirmed directly against a real run, not a guess: `n * features`
-# predicts this demo's per-dataset fit time far better than the
-# catalog's own row-count-only `size` (a "medium" 6,118-row, 51-attribute
-# dataset took 33 minutes total across its 140 fits, ~15x the typical
-# small/medium dataset here, because both a raw fit's cost (rows) and a
-# discretized fit's binarized feature count (features, further
-# multiplied by max_intervals) scale with their own factor). There's a
-# natural gap in the actual data right at this cutoff (57,831 to
-# 83,160) -- not an arbitrary round number.
+# ... except those `n_instances * n_features` puts above this: that
+# predicts the cost of a fold (rows times binary features) far better than
+# the row count alone, and there is a natural gap in the catalog here
+# (57,831 to 83,160).
 FULL_MAX_ROWS_TIMES_FEATURES = 60_000
-
-
-def _full_candidates():
-    return Catalog.default().select(**FULL_SELECT_KWARGS)
+QUICK_DATASETS_SPEC = "iris,wine,glass,blood-transfusion-service-center,ionosphere"
 
 
 def full_datasets():
-    return [e for e in _full_candidates()
-           if e.n_instances * e.n_features <= FULL_MAX_ROWS_TIMES_FEATURES]
+    return [e for e in Catalog.default().select(**FULL_SELECT_KWARGS)
+            if e.n_instances * e.n_features <= FULL_MAX_ROWS_TIMES_FEATURES]
 
 
-HERE = os.path.dirname(__file__)
-REPORT_PATH = os.path.join(HERE, "numeric_discretization_report.md")
-PLOTS_DIR = os.path.join(HERE, "numeric_discretization_plots")
-PLOT_PATH = os.path.join(PLOTS_DIR, "numeric_discretization_accuracy.png")
-QUICK_REPORT_PATH = os.path.join(HERE, "numeric_discretization_quick_report.md")
-QUICK_PLOT_PATH = os.path.join(PLOTS_DIR, "numeric_discretization_quick_accuracy.png")
-CACHE_DIR = os.path.join(HERE, "_numeric_discretization_cache")
+# -- section 2: per class vs. all classes ------------------------------------
 
-ALGORITHMS = {"JRip": (WekaJRip, JRipImporter, "weka.classifiers.rules.JRip"),
-             "J48": (WekaJ48, J48Importer, "weka.classifiers.trees.J48")}
-PREPS = ["raw"] + [f"tree@{n}" for n in LEVELS] + [f"kbins@{n}" for n in LEVELS]
-DISCRETIZERS = ["tree", "kbins"]
-COLORS = dict(zip(ALGORITHMS, ["tab:blue", "tab:orange"]))
-LINESTYLES = dict(zip(DISCRETIZERS, ["-o", "--s"]))
-
-
-def _build_description(datasets, n_folds: int, quick: bool) -> str:
-    # Built from the actual datasets/n_folds a run used, not the module's
-    # QUICK_*/N_FOLDS constants directly -- those can be overridden by a
-    # caller (as the smoke test does), and a static string would then
-    # silently print the wrong numbers.
-    mode_note = (
-        f"**Quick run** ({len(datasets)} datasets, {n_folds}-fold) -- a fast sanity "
-        f"check, not a statistically rigorous comparison; default with no arguments. "
-        f"For the full comparison ({len(full_datasets())} datasets, {N_FOLDS}-fold): "
-        f"`python demos/numeric_discretization.py --full`; a sample from that "
-        f"run is committed at `{os.path.basename(REPORT_PATH)}` (plus its plot) in "
-        f"this directory.\n\n"
-        if quick else
-        f"**Full run** ({len(datasets)} small and medium-sized datasets, all attributes "
-        f"numeric, {n_folds}-fold). For a quick sanity check instead "
-        f"({len(QUICK_DATASETS_SPEC.split(','))} small datasets, {QUICK_FOLDS}-fold): "
-        f"`python demos/numeric_discretization.py` with no arguments -- its "
-        f"output isn't checked in (see `{os.path.basename(QUICK_REPORT_PATH)}` after "
-        f"running it).\n\n"
-    )
-    return f"""\
-{mode_note}Weka's JRip and J48 compared across {len(PREPS)} data preparations per dataset: `raw`
-(Weka's own intrinsic numeric thresholding), our own decision-tree-based
-discretization (`build_dataspec`/`tree_thresholds`) and `sklearn.preprocessing.
-KBinsDiscretizer` (`strategy={KBINS_STRATEGY!r}`, unsupervised), each of the
-latter two at {', '.join(str(n) for n in LEVELS)} intervals. Both discretizers
-are fit on the training fold only, per fold; the test fold is binarized
-against that same fold's thresholds.
-
-Measures: test accuracy, rule count, condition count, and (for the discretized
-preps) the number of binary features that discretization produced. Fit time
-is recorded but secondary here -- every fit is a single bounded Weka
-subprocess call regardless of preparation. Each fit is capped at
-{FIT_TIMEOUT:.0f}s; a timeout or an exception is recorded as a failure, not
-fatal to the run.
-
-Missing values: in the discretized preps a missing value makes both a
-threshold feature and its negation false (e.g. neither `plas>=154.5` nor
-`plas<154.5`), so a rule never covers it through that attribute. Weka's
-own `raw` handling differs, which can hurt the discretized preps on
-datasets with many missing values -- here mainly `diabetes` (376 of 768
-rows with a missing value; `breast-w` has 16 of 699).
-"""
+PER_CLASS_FAMILIES = ("tree", "fusinter", "ef+bc")
+# the global unbounded variant in section 2: FUSINTER only -- the full tree
+# cuts at nearly every distinct value of a continuous many-class column
+# (tens of thousands of binary features on mfeat-fourier), which takes hours
+# to fit and is section 1's extreme case anyway
+PER_CLASS_UNBOUNDED = ("fusinter",)
+MIN_CLASSES = 5
+# a larger cap than section 1's: Pypper, PFossil and PFoil are fast enough,
+# and many-class datasets tend to be wide; it leaves out only the three
+# largest candidates (first-order-theorem-proving, GesturePhaseSegmentation-
+# Processed, optdigits), where unbounded and per-class discretization
+# multiply the binary features
+MULTICLASS_MAX_ROWS_TIMES_FEATURES = 250_000
+QUICK_MULTICLASS_SPEC = "glass,ecoli,yeast"
 
 
-def build_kbins_dataspec(train_df, target: str, n_bins: int, strategy: str = KBINS_STRATEGY,
-                         include_negations: bool = True) -> DataSpecBuilder:
-    """`build_dataspec`'s counterpart for `sklearn.preprocessing.
-    KBinsDiscretizer` -- fit purely on `train_df` (the training fold
-    only; see the module docstring), one `KBinsDiscretizer(n_bins=
-    n_bins, strategy=strategy)` per numeric feature column, its interior
-    bin edges (`bin_edges_[0][1:-1]` -- the outer two edges are just
-    that column's own train-fold min/max, not real thresholds) becoming
-    that column's `DataSpecBuilder.add_numeric` cut points. A column
-    KBinsDiscretizer collapses to a single bin (no interior edges left,
-    e.g. too many tied values) is left out, matching `build_dataspec`'s
-    own `skip_unusable`.
-
-    Missing values: unlike `tree_thresholds` (sklearn's
-    `DecisionTreeClassifier` accepts NaN directly) and `binarize` (its
-    own `MissingStrategy`, unaffected by any of this), `KBinsDiscretizer`
-    itself rejects NaN outright -- so each column is fit on its own
-    non-missing training values only, same rows `binarize` later scores
-    as "missing" regardless of what threshold was learned. A column with
-    fewer than two observed values (all/almost-all missing in this fold)
-    is left out, same as one KBinsDiscretizer collapses to a single bin.
-
-    Every feature column must already be numeric (no nominal handling
-    here -- this demo only runs it against `attributes="numeric"`
-    catalog entries)."""
-    from sklearn.preprocessing import KBinsDiscretizer
-
-    builder = DataSpecBuilder(negation=include_negations)
-    feature_cols = [c for c in train_df.columns if c != target]
-    for col in feature_cols:
-        raw = train_df[col].to_numpy(dtype=float)
-        values = raw[~np.isnan(raw)].reshape(-1, 1)
-        if len(values) < 2:
-            continue
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # sklearn warns when it has to shrink n_bins for this column
-            disc = KBinsDiscretizer(n_bins=n_bins, encode="ordinal", strategy=strategy)
-            disc.fit(values)
-        thresholds = sorted({float(e) for e in disc.bin_edges_[0][1:-1]})
-        if thresholds:
-            builder.add_numeric(col, thresholds)
-    return builder
+def section2_preps() -> List[Tuple[str, str, str, object, Discretizer]]:
+    """(prep label, family, scope "global"/"per class", level, discretizer)."""
+    preps = []
+    for family in PER_CLASS_FAMILIES:
+        _, factory, unbounded = FAMILIES[family]
+        for k in LEVELS:
+            preps.append((f"{family}@{k}", family, "global", k, factory(k)))
+        if unbounded and family in PER_CLASS_UNBOUNDED:
+            preps.append((f"{family}@{UNBOUNDED}", family, "global", UNBOUNDED, factory(None)))
+        for k in PER_CLASS_LEVELS:
+            preps.append((f"pc-{family}@{k}", family, "per class", k, PerClass(factory(k))))
+    return preps
 
 
-def _fit_weka_raw(weka_class: str, importer_cls, train_df, target: str, timeout: float):
-    """`raw`: write `train_df` straight to ARFF (real numeric columns,
-    no binarization) and run `weka_class` on it directly -- bypassing
-    `pyrulearn.interfaces.weka.run_weka` (which assumes an
-    already-Boolean matrix) and `WekaJRip`/`WekaJ48` (same assumption,
-    via `ExternalRuleLearner.prepare`'s default). `importer_cls()` with
-    no `dataspec=` discovers one purely from Weka's own printed
-    thresholds -- see `JRipImporter`/`J48Importer`'s shared
-    dataspec-discovery convention. Returns `(model, dataspec)`; raises
-    `subprocess.TimeoutExpired` or `RuntimeError` on failure, same as
-    `run_weka`."""
-    jar, java = _resolve_weka(WEKA_JAR, WEKA_JAVA)
+def multiclass_datasets():
+    """Small/medium datasets with numeric attributes (only, or mixed with
+    nominal ones) and at least `MIN_CLASSES` classes, up to
+    `MULTICLASS_MAX_ROWS_TIMES_FEATURES` rows times features."""
+    return [e for e in Catalog.default().select(attributes=["numeric", "mixed"], size=["small", "medium"],
+                                                 task="multiclass")
+            if (e.n_classes or 0) >= MIN_CLASSES
+            and e.n_instances * e.n_features <= MULTICLASS_MAX_ROWS_TIMES_FEATURES]
+
+
+# -- section 3: against JRip and J48 on the raw data -------------------------
+
+WEKA_LEARNERS = ("Weka:JRip", "Weka:J48")
+SECTION3_FAMILIES = ("tree", "ef+bc")
+QUICK_SECTION3_SPEC = "iris,wine,glass,diabetes,blood-transfusion-service-center"
+#: Weka's class and the importer reading its printed model, for `raw`
+RAW_WEKA = {"Weka:JRip": ("weka.classifiers.rules.JRip", JRipImporter),
+            "Weka:J48": ("weka.classifiers.trees.J48", J48Importer)}
+#: part of the `raw` cache keys -- bump it when the `raw` procedure changes
+RAW_VERSION = "raw-1"
+
+
+def build_weka_learners():
+    return [WekaJRip(), WekaJ48()]  # Weka from $WEKA_JAR / $WEKA_JAVA
+
+
+def section3_preps() -> List[Tuple[str, str, object, Discretizer]]:
+    """(prep label, family, level, discretizer) for section 3's discretized runs."""
+    return [(f"{family}@{k}", family, k, FAMILIES[family][1](k)) for family in SECTION3_FAMILIES for k in LEVELS]
+
+
+def section3_datasets():
+    """Every small/medium catalog dataset with only numeric attributes, up to
+    `MULTICLASS_MAX_ROWS_TIMES_FEATURES` rows times features."""
+    return [e for e in Catalog.default().select(attributes="numeric", size=["small", "medium"])
+            if e.loadable and e.n_instances * e.n_features <= MULTICLASS_MAX_ROWS_TIMES_FEATURES]
+
+
+def _fit_weka_raw(algorithm: str, train_df, target: str):
+    """`raw`: `train_df` written to ARFF as it is (real numeric columns) and
+    Weka run on it directly -- `WekaJRip`/`WekaJ48` expect binarized data.
+    The importer, given no `DataSpec`, builds one from the thresholds Weka
+    printed. Returns `(model, dataspec)`; raises `subprocess.TimeoutExpired`
+    or `RuntimeError`."""
+    weka_class, importer_cls = RAW_WEKA[algorithm]
+    jar, java = _resolve_weka(None, None)
     with tempfile.TemporaryDirectory(prefix="weka_raw_") as d:
         arff = os.path.join(d, "train.arff")
         write_arff(train_df, target, arff)
         cmd = [java, "-Duser.language=en", "-Duser.country=US", "-cp", jar, weka_class,
-              "-t", arff, "-no-cv", *_weka_cli_options(None)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+               "-t", arff, "-no-cv", *_weka_cli_options(None)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=FIT_TIMEOUT)
     if result.returncode != 0 or "=== " not in result.stdout:
-        raise RuntimeError(
-            f"{weka_class} produced no usable model (exit {result.returncode}).\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
+        raise RuntimeError(f"{weka_class} produced no usable model (exit {result.returncode}):\n"
+                           f"{result.stdout}\n{result.stderr}")
     importer = importer_cls()
     model = importer.parse(result.stdout)
     return model, importer.dataspec
 
 
-def _evaluate(model, dataspec, test_df, target: str):
-    test_y = test_df[target].to_numpy()
-    rep = HorizontalBitmapRepresentation(dataspec, binarize(dataspec, test_df), test_y)
-    stats = model.evaluate(rep)
-    return {
-        "accuracy": stats.confusion.accuracy if stats.confusion is not None else np.nan,
-        "n_rules": stats.n_rules,
-        "n_conditions": stats.n_conditions,
-    }
-
-
-def _cache_key(dataset_name: str, n_folds: int, fold: int, algorithm: str, prep: str) -> str:
-    import hashlib
-    payload = "|".join([dataset_name, str(n_folds), str(fold), algorithm, prep, str(RANDOM_STATE)])
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _cache_path(key: str) -> str:
-    return os.path.join(CACHE_DIR, f"{key}.json")
-
-
-def _cache_load(key: str):
-    import json
-    path = _cache_path(key)
-    if not os.path.exists(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _cache_save(key: str, row: dict) -> None:
-    import json
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(_cache_path(key), "w", encoding="utf-8") as f:
-        json.dump(row, f)
-
-
-def select_datasets(spec: str = QUICK_DATASETS_SPEC):
-    return Catalog.default().parse(spec, random_state=RANDOM_STATE)
-
-
-def run(datasets, n_folds: int, verbose: bool = True):
-    """The custom cross-validation loop this comparison needs --
-    `pyrulearn.experiments.runner.run_cv` hands every learner the same
-    *one* per-fold representation, but this demo's entire subject is
-    comparing *several* representations per fold (`raw` plus six
-    discretized variants), so it can't be expressed as a `run_cv` call
-    (the same reason `demos/ripper_comparison.py` dropped its analogous
-    `jrip_native` variant rather than force it through `run_cv`).
-    Still reuses `Catalog` for dataset selection and `pyrulearn.data.io`
-    directly for discretization -- only the orchestration loop and
-    timeout handling (a plain Weka subprocess timeout suffices here,
-    see the module docstring) are demo-local.
-
-    Returns one long-format `pandas.DataFrame`: `dataset`, `fold`,
-    `algorithm` (``"JRip"``/``"J48"``), `prep`, `learner`
-    (``f"{algorithm}:{prep}"`` -- so `pyrulearn.experiments.stats`/
-    `.report`, which key off a `learner` column, work unmodified),
-    `fit_time`, `error`, `accuracy`, `n_rules`, `n_conditions`,
-    `n_features` (the discretized feature count; NaN for `raw`)."""
-    import pandas as pd
-    from sklearn.model_selection import KFold, StratifiedKFold
-
-    rows = []
-    for entry in datasets:
-        if verbose:
-            print(f"{entry.name} ...", flush=True)
-        df, target = entry.load()
-        y_all = df[target].to_numpy()
-        try:
-            splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_STATE)
-            folds = list(splitter.split(np.zeros(len(y_all)), y_all))
-        except ValueError:
-            splitter = KFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_STATE)
-            folds = list(splitter.split(np.zeros(len(y_all))))
-
-        for fold, (train_idx, test_idx) in enumerate(folds):
-            train_df = df.iloc[train_idx].reset_index(drop=True)
-            test_df = df.iloc[test_idx].reset_index(drop=True)
-
-            # one DataSpec per (level, discretizer) this fold -- shared by both algorithms.
-            # Every column is declared numeric, so the tree discretizer discretizes all of
-            # them, as the quantile binning does: without it, a column with at most
-            # `max_ordinal_values` distinct values would be inferred ordinal (nominal
-            # until 0.3.4) and not discretized at all.
-            numeric = {c: "numeric" for c in train_df.columns if c != target}
-            specs = {}
-            for n in LEVELS:
-                specs[f"tree@{n}"] = build_dataspec(train_df, target=target, arff_types=numeric,
-                                                    discretizer=TreeDiscretizer(max_intervals=n), skip_unusable=True).build()
-                specs[f"kbins@{n}"] = build_kbins_dataspec(train_df, target=target, n_bins=n).build()
-            reps = {prep: (HorizontalBitmapRepresentation(spec, binarize(spec, train_df), train_df[target].to_numpy()),
-                          HorizontalBitmapRepresentation(spec, binarize(spec, test_df), test_df[target].to_numpy()))
-                   for prep, spec in specs.items()}
-
-            for algorithm, (learner_cls, importer_cls, weka_class) in ALGORITHMS.items():
-                for prep in PREPS:
-                    if verbose:
-                        print(f"  fold {fold + 1}/{n_folds}  {algorithm}:{prep:9s} ...", end="", flush=True)
-                    key = _cache_key(entry.name, n_folds, fold, algorithm, prep)
-                    cached = _cache_load(key)
-                    if cached is not None:
-                        rows.append(cached)
-                        if verbose:
-                            print(" (cached)", flush=True)
-                        continue
-
-                    row = {"dataset": entry.name, "fold": fold, "algorithm": algorithm, "prep": prep,
-                          "learner": f"{algorithm}:{prep}"}
-                    t0 = time.time()
-                    try:
-                        if prep == "raw":
-                            model, dataspec = _fit_weka_raw(weka_class, importer_cls, train_df, target,
-                                                            FIT_TIMEOUT)
-                            measures = _evaluate(model, dataspec, test_df, target)
-                            measures["n_features"] = np.nan
-                        else:
-                            train_rep, test_rep = reps[prep]
-                            model = learner_cls(jar=WEKA_JAR, java=WEKA_JAVA, timeout=FIT_TIMEOUT).fit(train_rep)
-                            stats = model.evaluate(test_rep)
-                            measures = {
-                                "accuracy": stats.confusion.accuracy if stats.confusion is not None else np.nan,
-                                "n_rules": stats.n_rules, "n_conditions": stats.n_conditions,
-                                "n_features": specs[prep].n_features,
-                            }
-                        row["fit_time"], row["error"] = time.time() - t0, None
-                        row.update(measures)
-                    except subprocess.TimeoutExpired:
-                        row.update(fit_time=time.time() - t0, error="timeout", accuracy=np.nan,
-                                  n_rules=np.nan, n_conditions=np.nan, n_features=np.nan)
-                    except Exception as e:  # noqa: BLE001 -- a failed fit is recorded, not fatal
-                        row.update(fit_time=time.time() - t0, error=f"{type(e).__name__}: {e}",
-                                  accuracy=np.nan, n_rules=np.nan, n_conditions=np.nan, n_features=np.nan)
-
-                    _cache_save(key, row)
-                    rows.append(row)
-                    if verbose:
-                        outcome = row["error"] if row["error"] is not None else f"acc={format_accuracy(row['accuracy'])}"
-                        print(f" {row['fit_time']:6.2f}s  {outcome}", flush=True)
-
-    return pd.DataFrame(rows)
-
-
-def write_report(results, datasets, n_folds: int, report_path: str, plot_path: str, quick: bool) -> None:
-    results = results.copy()
-    results["conds_per_rule"] = results["n_conditions"] / results["n_rules"]
-
-    lines = ["# Numeric attributes: intrinsic handling vs. discretization (JRip / J48)\n\n"]
-    lines.append(render_setup_section(_build_description(datasets, n_folds, quick)))
-    lines.append(f"![accuracy vs. discretization level]({os.path.basename(PLOTS_DIR)}/{os.path.basename(plot_path)})\n\n")
-
-    lines.append("## Binary features produced per discretization level\n\n")
-    feat = results[results["prep"] != "raw"].groupby("prep")["n_features"].mean()
-    lines.append("| prep | mean binary features |\n|---|--:|\n")
-    for prep in [p for p in PREPS if p != "raw"]:
-        lines.append(f"| {prep} | {format_mean_count(feat.get(prep, float('nan')))} |\n")
-    lines.append("\n")
-
-    lines.append("## Summary by variant (mean across every dataset and fold)\n\n")
-    ranks = mean_rank(results, "accuracy")
-    wins = win_counts(results, "accuracy")
-    summary = results.groupby("learner")[["accuracy", "n_rules", "conds_per_rule", "fit_time"]].mean(
-        numeric_only=True)
-    lines.append("| variant | accuracy | n_rules | conds/rule | fit_time (s) | wins | mean rank |\n"
-                "|---|--:|--:|--:|--:|--:|--:|\n")
-    for learner in ranks.index:
-        row = summary.loc[learner]
-        lines.append(f"| {learner} | {format_accuracy(row['accuracy'])} | {format_mean_count(row['n_rules'])} | "
-                     f"{format_mean_count(row['conds_per_rule'])} | {row['fit_time']:.2f} | "
-                     f"{wins.get(learner, 0.0):.1f} | {ranks[learner]:.2f} |\n")
-    lines.append("\n`wins` -- datasets where a variant's mean accuracy was (tied-for-)best, a tie "
-                "split evenly; `mean rank` -- average accuracy rank across datasets, failures tied "
-                "for last.\n\n")
-
-    lines.append("## Per-dataset results, per variant (mean across folds)\n\n")
-    lines.append(render_results_table(
-        results, ["accuracy", "n_rules", "n_conditions", "conds_per_rule", "fit_time"],
-        group_by=["dataset", "algorithm", "prep"], include_overall=False))
-    lines.append("\n")
-
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-    print(f"Report -> {report_path}")
-
-
-def write_plots(results, plot_path: str) -> None:
-    """One line per (algorithm, discretizer) pair -- four curves --
-    accuracy against discretization level; each algorithm's `raw`
-    accuracy (no discretization level to place it at) as a dashed
-    horizontal reference line in that algorithm's color instead of a
-    fifth point on the level axis, so it reads as "the bar each curve
-    would need to clear", not as an extra, artificially-ordered level."""
+def _raw_cell(entry, n_folds: int, fold: int, algorithm: str, train_df, test_df, target: str) -> dict:
+    """One `raw` fit and its evaluation on the test fold (binarized against
+    the thresholds Weka chose), as a result row; cached in `CACHE_DIR`."""
+    payload = "|".join([RAW_VERSION, entry.name, str(entry.openml_id), str(entry.openml_version),
+                        str(n_folds), str(fold), str(RANDOM_STATE), algorithm])
+    path = os.path.join(CACHE_DIR, f"raw_{hashlib.sha256(payload.encode('utf-8')).hexdigest()}.json")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    row = {"dataset": entry.name, "fold": fold, "algorithm": algorithm, "error": None,
+           "accuracy": np.nan, "n_rules": np.nan, "n_conditions": np.nan}
+    t0 = time.time()
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.ticker import PercentFormatter
-    except ImportError:
-        return
+        model, dataspec = _fit_weka_raw(algorithm, train_df, target)
+        row["fit_time"] = time.time() - t0
+        rep = HorizontalBitmapRepresentation(dataspec, binarize(dataspec, test_df), test_df[target].to_numpy())
+        stats = model.evaluate(rep)
+        row.update(accuracy=stats.confusion.accuracy if stats.confusion is not None else np.nan,
+                   n_rules=stats.n_rules, n_conditions=stats.n_conditions)
+    except subprocess.TimeoutExpired:
+        row.update(fit_time=time.time() - t0, error="timeout")
+    except Exception as exc:  # recorded, not fatal -- like run_cv
+        row.update(fit_time=time.time() - t0, error=f"{type(exc).__name__}: {exc}"[:300])
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(row, f, default=float)
+    return row
 
-    per_variant = results.groupby(["algorithm", "prep"], as_index=False)["accuracy"].mean()
+
+def run_raw(datasets, n_folds: int, verbose: bool = True) -> pd.DataFrame:
+    """`raw` for JRip and J48: the same folds as `run_cv` (`_stratified_folds`,
+    `RANDOM_STATE`), `N_JOBS` Weka processes at a time."""
+    if verbose:
+        print("== raw: Weka's own thresholds", flush=True)
+    rows = []
+    with ThreadPoolExecutor(max_workers=max(1, int(N_JOBS.rstrip("!")))) as pool:
+        for entry in datasets:
+            df, target = entry.load()
+            folds = _stratified_folds(df[target].to_numpy(), n_folds, RANDOM_STATE)
+            jobs = []
+            for fold, (train_idx, test_idx) in enumerate(folds):
+                train_df = df.iloc[train_idx].reset_index(drop=True)
+                test_df = df.iloc[test_idx].reset_index(drop=True)
+                for algorithm in WEKA_LEARNERS:
+                    jobs.append(pool.submit(_raw_cell, entry, n_folds, fold, algorithm, train_df, test_df, target))
+            for job in jobs:
+                row = job.result()
+                rows.append(row)
+                if verbose:
+                    outcome = row["error"] or f"acc={100 * row['accuracy']:.2f}%"
+                    print(f"  {row['dataset']} fold {row['fold'] + 1}/{n_folds}  {row['algorithm']:10s} "
+                          f"{row['fit_time']:6.2f}s  {outcome}", flush=True)
+    out = pd.DataFrame(rows)
+    out["prep"], out["family"], out["level"], out["n_features"] = "raw", "raw", "raw", np.nan
+    return out
+
+
+# -- running -------------------------------------------------------------------
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
+CACHE_DIR = os.path.join(HERE, f"_{NAME}_cv_cache")
+
+# fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
+# set by --n-jobs
+N_JOBS = "1"
+
+
+def _n_jobs():
+    return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
+
+
+def _feature_count(model, test_rep) -> Dict[str, int]:
+    """`run_cv`'s `measure_fn`: the number of binary features of the fold."""
+    return {"n_features": test_rep.spec.n_features}
+
+
+def run_preps(preps, datasets, n_folds: int, verbose: bool = True, learners=build_learners) -> pd.DataFrame:
+    """One `run_cv` per preparation, all learners; the results tagged with
+    the preparation's columns (`prep` and whatever else each tuple
+    carries, see `section1_preps`/`section2_preps`)."""
+    frames = []
+    for prep in preps:
+        label, discretizer = prep[0], prep[-1]
+        if verbose:
+            print(f"== {label}: {discretizer!r}", flush=True)
+        results = run_cv(learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
+                         discretizer=discretizer, max_ordinal_values=2, random_state=RANDOM_STATE,
+                         cache_dir=CACHE_DIR, measure_fn=_feature_count, n_jobs=_n_jobs(), verbose=verbose)
+        results = results.rename(columns={"learner": "algorithm"})
+        results["prep"] = label
+        for column, value in zip(_PREP_COLUMNS[len(prep)], prep[1:-1]):
+            results[column] = value
+        frames.append(results)
+    out = pd.concat(frames, ignore_index=True)
+    out["level"] = out["level"].astype(str)
+    return out
+
+
+_PREP_COLUMNS = {4: ("family", "level"), 5: ("family", "scope", "level")}
+
+
+# -- report --------------------------------------------------------------------
+
+def _ranked(results, algorithm: str) -> pd.DataFrame:
+    """`results` of one learner with `learner` = prep, for the rank statistics."""
+    sub = results[results["algorithm"] == algorithm].copy()
+    sub["learner"] = sub["prep"]
+    return sub
+
+
+def _summary_table(results, preps: List[str], extra_columns: Dict[str, str], learners=LEARNERS) -> List[str]:
+    """Rows: preparations; per learner its mean accuracy and mean rank (among
+    these preparations); then the mean binary features and rules."""
+    stats = {a: (mean_rank(_ranked(results, a), "accuracy"),
+                 _ranked(results, a).groupby("learner")["accuracy"].mean())
+             for a in learners}
+    head = ["prep", *extra_columns.values()]
+    for a in learners:
+        head += [f"{a} acc.", f"{a} rank"]
+    head += ["features", "rules (mean)"]
+    lines = ["| " + " | ".join(head) + " |\n",
+             "|" + "|".join(["---"] * (1 + len(extra_columns)) + ["--:"] * (len(head) - 1 - len(extra_columns))) + "|\n"]
+    per_prep = results.groupby("prep")
+    for prep in preps:
+        rows = per_prep.get_group(prep)
+        cells = [prep] + [str(rows[c].iloc[0]) for c in extra_columns]
+        for a in learners:
+            ranks, acc = stats[a]
+            cells += [format_accuracy(acc.get(prep, np.nan)), f"{ranks.get(prep, np.nan):.2f}"]
+        n_features = rows["n_features"].mean()
+        cells += [format_mean_count(n_features) if n_features == n_features else "--",
+                  format_mean_count(rows["n_rules"].mean())]
+        lines.append("| " + " | ".join(cells) + " |\n")
+    return lines
+
+
+def _friedman_lines(results, n_preps: int, learners=LEARNERS) -> List[str]:
+    lines = []
+    for a in learners:
+        sub = _ranked(results, a)
+        try:
+            f = friedman_test(sub, "accuracy")
+            cd = critical_difference(f.n_learners, f.n_datasets)
+            lines.append(f"- {a}: Friedman p = {f.pvalue:.2g} over {f.n_datasets} datasets; "
+                         f"critical difference of the mean ranks {cd:.2f} ({f.n_learners} preparations).\n")
+        except ValueError as exc:
+            lines.append(f"- {a}: no Friedman test ({exc}).\n")
+    return lines
+
+
+def _datasets_text(section: int, datasets, quick: bool) -> str:
+    """How a section's datasets were selected, and which they are."""
+    names = ", ".join(sorted(d.name for d in datasets))
+    if quick:
+        return f"Datasets (quick run): {len(datasets)} small datasets picked by hand for a fast check -- {names}.\n\n"
+    size = (f"small or medium-sized in the catalog (fewer than {SMALL_MAX:,} rows, or {SMALL_MAX:,} to "
+            f"{MEDIUM_MAX:,})")
+    criteria = {
+        1: (f"has only numeric attributes, and has at most {FULL_MAX_ROWS_TIMES_FEATURES:,} rows times "
+            "attributes -- which predicts the cost of a fold far better than the row count alone; the "
+            "catalog has a natural gap there (57,831 to 83,160)"),
+        2: (f"has numeric attributes (only, or together with nominal ones), at least {MIN_CLASSES} classes, "
+            f"and at most {MULTICLASS_MAX_ROWS_TIMES_FEATURES:,} rows times attributes -- which leaves out "
+            "only the three largest candidates (first-order-theorem-proving, "
+            "GesturePhaseSegmentationProcessed, optdigits)"),
+        3: (f"has only numeric attributes, and has at most {MULTICLASS_MAX_ROWS_TIMES_FEATURES:,} rows times "
+            "attributes -- section 1's selection with section 2's larger size limit"),
+    }[section]
+    return (f"Datasets: every catalog dataset that is {size}, {criteria}: {len(datasets)} datasets -- "
+            f"{names}.\n\n")
+
+
+def _setup(datasets1, datasets2, n_folds: int, quick: bool) -> str:
+    mode = (f"**Quick run** (a few small datasets per section, {n_folds}-fold) -- a fast "
+            f"sanity check, the default with no arguments. Full comparison: `python demos/{NAME}.py --full`.\n\n"
+            if quick else
+            f"**Full run** ({n_folds}-fold). Quick sanity check instead: `python demos/{NAME}.py` with no "
+            "arguments.\n\n")
+    concurrency = ("Fits run one at a time." if N_JOBS.rstrip("!") == "1" else
+                   f"Fits run {N_JOBS.rstrip('!')} at a time (`run_cv`'s `n_jobs`), each in its own process.")
+    return f"""\
+{mode}How to discretize numeric attributes for rule learning: the discretizers of
+`pyrulearn.data.discretization` with three fast native rule learners --
+Pypper (RIPPER), PFossil and PFoil -- at their defaults (sections 1 and 2),
+and the most promising of them against Weka's JRip and J48 on the raw
+numeric data (section 3).
+
+Every column with at least three distinct values is discretized (none is
+made ordinal); each training fold is discretized on its own, and the test
+fold is binarized against that fold's thresholds. Each threshold `t` gives
+two binary features, `x>=t` and `x<t`. Each fit is capped at
+{FIT_TIMEOUT:.0f}s; a timeout counts as a failure. {concurrency}
+"""
+
+
+def write_report(res1, res2, res3, datasets1, datasets2, datasets3, n_folds: int, quick: bool,
+                 paths: Dict[str, str]) -> None:
+    plots_dir = os.path.basename(PLOTS_DIR)
+    lines = ["# Numeric attributes: discretizers for rule learning\n\n"]
+    lines.append(render_setup_section(_setup(datasets1, datasets2, n_folds, quick)))
+
+    # section 1
+    preps1 = [p[0] for p in section1_preps()]
+    lines.append("## 1. Discretizers and interval counts\n\n")
+    lines.append(
+        _datasets_text(1, datasets1, quick)
+        + "Discretizers, each at " + ", ".join(str(k) for k in LEVELS) + " intervals: "
+        + "; ".join(f"`{f}` -- {label}" for f, (label, _, _) in FAMILIES.items())
+        + f". `tree` and `fusinter` also unbounded (`{UNBOUNDED}`): the full tree, which places a threshold "
+        "at every point where the class changes, and FUSINTER deciding the number of intervals itself.\n\n")
+    for a in LEARNERS:
+        lines.append(f"![{a}: accuracy vs. intervals]({plots_dir}/{os.path.basename(paths[f's1_{a}'])})\n\n")
+    lines.append("Mean accuracy over all datasets and folds, and mean rank among the "
+                 f"{len(preps1)} preparations (per learner; 1 = best):\n\n")
+    lines += _summary_table(res1, preps1, {})
+    lines.append("\n`features` -- mean number of binary features per fold; `rules` -- mean over the three "
+                 "learners.\n\n")
+    lines += _friedman_lines(res1, len(preps1))
+    lines.append("\n")
+
+    # section 2
+    preps2 = [p[0] for p in section2_preps()]
+    lines.append("## 2. Per class vs. all classes\n\n")
+    lines.append(
+        _datasets_text(2, datasets2, quick)
+        + "`PerClass` (`pc-`) runs a discretizer once per class, on that class against all others, and keeps "
+        "the union of the thresholds (one per gap between observed values). "
+        + ", ".join(f"`{f}`" for f in PER_CLASS_FAMILIES)
+        + " globally at " + ", ".join(str(k) for k in LEVELS) + f" intervals (`fusinter` also unbounded, "
+        f"`{UNBOUNDED}`; the full tree, which cuts at nearly every distinct value of a continuous many-class "
+        "column, is left out here), and per class at " + ", ".join(str(k) for k in PER_CLASS_LEVELS)
+        + " intervals per class. Plotted over the number of binary features they produce, so a per-class "
+        "and a global discretization of the same size can be compared directly.\n\n")
+    lines.append(f"![per class vs. all]({plots_dir}/{os.path.basename(paths['s2'])})\n\n")
+    lines += _summary_table(res2, preps2, {"scope": "scope"})
+    lines.append("\n")
+    lines += _friedman_lines(res2, len(preps2))
+    lines.append(
+        "\n**Reading.** For equal frequency, per class does not pay off. It is unsupervised: per class, "
+        "only the boundary correction depends on the class, so every class's cuts start from the same "
+        "equal-frequency positions and end up close together -- with two intervals per class, all near the "
+        "median. That gives more thresholds in about the same places, and lower accuracy than a global "
+        "discretization with as many features. The decision tree and FUSINTER place their cuts for each "
+        "class, and there per class is competitive and sometimes the best preparation, mostly at small "
+        "numbers of intervals per class -- though not significantly, and at several times the features of a "
+        "global discretization of similar accuracy.\n\n"
+        "**Tentative conclusion.** Pooling the per-class thresholds may dilute their gain: a learner "
+        "working on one class searches every class's cuts, most of them placed for other classes. Separate "
+        "feature sets per class -- a learner with a dedicated target class seeing only the thresholds placed "
+        "for it -- might pay off more. Not tested here; see *Per-class feature sets* in `ROADMAP.md`.\n")
+    # section 3
+    preps3 = ["raw"] + [p[0] for p in section3_preps()]
+    lines.append("\n## 3. Against JRip and J48 on the raw data\n\n")
+    lines.append(
+        _datasets_text(3, datasets3, quick)
+        + "Weka's JRip and J48 handle numeric attributes themselves: `raw` gives them the original numeric "
+        "columns, and they choose their own thresholds while learning. Against that, the same data "
+        "discretized per training fold by `tree` (decision tree) and by `ef+bc` (equal frequency + boundary "
+        "correction) -- the strongest supervised and unsupervised discretizers of section 1 -- at "
+        + ", ".join(str(k) for k in LEVELS) + " intervals, then binarized. Weka's models of `raw` are "
+        "evaluated by binarizing the test fold against the thresholds they use. A missing value: Weka "
+        "handles it its own way when learning; at test time it covers no threshold feature.\n\n")
+    lines.append(f"![JRip and J48: raw vs. discretized]({plots_dir}/{os.path.basename(paths['s3'])})\n\n")
+    lines += _summary_table(res3, preps3, {}, learners=WEKA_LEARNERS)
+    lines.append("\n`features` -- mean number of binary features per fold (`--` for `raw`); `rules` -- mean "
+                 "over both learners (for J48, its tree's leaves).\n\n")
+    lines += _friedman_lines(res3, len(preps3), learners=WEKA_LEARNERS)
+    failures = res3[res3["error"].notna()]
+    if len(failures):
+        lines.append(f"\nFailed fits: {len(failures)} ("
+                     + ", ".join(f"{d}/{a}/{p}" for d, a, p in failures[["dataset", "algorithm", "prep"]]
+                                 .drop_duplicates().itertuples(index=False)) + ").\n")
+
+    with open(paths["report"], "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    print(f"Report -> {paths['report']}")
+
+
+# -- plots ---------------------------------------------------------------------
+
+#: the discretizers' names in the plots
+FAMILY_LABELS = {"tree": "decision tree", "fusinter": "FUSINTER", "ew": "equal width",
+                 "ew+bc": "equal width + boundary corr.", "ef": "equal frequency",
+                 "ef+bc": "equal frequency + boundary corr."}
+# a base discretizer and its boundary-corrected version share a color: solid
+# line for the base, dashed for the corrected one
+FAMILY_COLORS = {"tree": "tab:blue", "fusinter": "tab:red", "ew": "tab:green", "ew+bc": "tab:green",
+                 "ef": "tab:orange", "ef+bc": "tab:orange"}
+FAMILY_STYLES = {"tree": ("-", "o"), "fusinter": ("-", "D"), "ew": ("-", "s"), "ew+bc": ("--", "s"),
+                 "ef": ("-", "^"), "ef+bc": ("--", "^")}
+
+
+#: the four methods, by their base family (the color and marker they share
+#: with their boundary-corrected version)
+METHODS = {"tree": "decision tree", "fusinter": "FUSINTER", "ew": "equal width", "ef": "equal frequency"}
+
+
+def write_section1_plots(results, paths: Dict[str, str], n_attributes: Dict[str, int]) -> None:
+    """One plot per learner: mean accuracy over the interval count, per
+    discretizer. The unbounded points are labelled with their mean number
+    of intervals per attribute, comparable to the capped levels: per
+    dataset ``n_features / (2 * attributes) + 1`` -- every threshold gives
+    two features (`n_attributes`: dataset -> number of attributes) --
+    averaged over the datasets."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import PercentFormatter
+
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    positions = {str(k): i for i, k in enumerate(LEVELS)}
+    positions[UNBOUNDED] = len(LEVELS) + 0.4
+    intervals = None
+    if "n_features" in results:
+        per_dataset = results.groupby(["family", "level", "dataset"])["n_features"].mean().reset_index()
+        per_dataset["intervals"] = (per_dataset["n_features"]
+                                    / (2 * per_dataset["dataset"].map(n_attributes)) + 1)
+        intervals = per_dataset.groupby(["family", "level"])["intervals"].mean()
+    for a in LEARNERS:
+        sub = results[results["algorithm"] == a]
+        mean = sub.groupby(["family", "level"])["accuracy"].mean()
+        fig, ax = plt.subplots(figsize=(7.5, 5.2))
+        for family, (_, _, unbounded) in FAMILIES.items():
+            linestyle, marker = FAMILY_STYLES[family]
+            color = FAMILY_COLORS[family]
+            levels = [str(k) for k in LEVELS]
+            xs = list(range(len(LEVELS)))
+            ys = [mean.get((family, k), np.nan) for k in levels]
+            ax.plot(xs, ys, linestyle=linestyle, marker=marker, color=color)
+            if unbounded and (family, UNBOUNDED) in mean.index:
+                x_inf, y_inf = positions[UNBOUNDED], mean[(family, UNBOUNDED)]
+                ax.plot([xs[-1], x_inf], [ys[-1], y_inf], linestyle=":", color=color)
+                ax.plot([x_inf], [y_inf], marker=marker, color=color, linestyle="none", markersize=8)
+                levels.append(UNBOUNDED); xs.append(x_inf); ys.append(y_inf)
+                if intervals is not None and (family, UNBOUNDED) in intervals.index:
+                    v = intervals[(family, UNBOUNDED)]
+                    ax.annotate(f"{v:.1f}" if v < 20 else f"{v:.0f}", (x_inf, y_inf), fontsize=8,
+                                color=color, xytext=(7, -3), textcoords="offset points")
+        ax.axvline(len(LEVELS) - 0.3, color="grey", linewidth=0.8, alpha=0.5)
+        ax.set_xlim(-0.3, positions[UNBOUNDED] + 0.6)  # room for the unbounded points' labels
+        ax.set_xticks(list(positions.values()), list(positions.keys()))
+        ax.set_xlabel(f"intervals (max_intervals; {UNBOUNDED} = unbounded, labelled with the mean intervals "
+                      "per attribute)" if intervals is not None else
+                      f"intervals (max_intervals; {UNBOUNDED} = unbounded)")
+        ax.set_ylabel("mean test accuracy")
+        ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+        ax.set_title(f"{a}: accuracy vs. discretization")
+        # the four methods by color and marker, plain vs. boundary-corrected by
+        # line style: three columns, filled column by column
+        handles = [Line2D([], [], color=FAMILY_COLORS[f], marker=FAMILY_STYLES[f][1], linestyle="-", label=label)
+                   for f, label in METHODS.items()]
+        handles += [Line2D([], [], color="grey", linestyle="-", label="plain"),
+                    Line2D([], [], color="grey", linestyle="--", label="+ boundary correction")]
+        ax.legend(handles=handles, fontsize=7.5, ncol=3, loc="lower right")
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(paths[f"s1_{a}"], dpi=110)
+        plt.close(fig)
+        print(f"Plot   -> {paths[f's1_{a}']}")
+
+
+def write_section2_plot(results, paths: Dict[str, str]) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import LogLocator, NullFormatter, PercentFormatter, ScalarFormatter
+
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    fig, axes = plt.subplots(1, len(LEARNERS), figsize=(5.2 * len(LEARNERS), 4.8), sharey=False)
+    for ax, a in zip(axes, LEARNERS):
+        sub = results[results["algorithm"] == a]
+        mean = sub.groupby(["family", "scope", "level"])[["accuracy", "n_features"]].mean()
+        for family in PER_CLASS_FAMILIES:
+            color = FAMILY_COLORS[family]
+            for scope, (linestyle, marker) in (("global", ("-", "o")), ("per class", ("--", "^"))):
+                levels = [str(k) for k in (LEVELS if scope == "global" else PER_CLASS_LEVELS)]
+                if scope == "global" and (family, scope, UNBOUNDED) in mean.index:
+                    levels.append(UNBOUNDED)
+                pts = [mean.loc[(family, scope, k)] for k in levels if (family, scope, k) in mean.index]
+                ax.plot([p["n_features"] for p in pts], [p["accuracy"] for p in pts],
+                        linestyle=linestyle, marker=marker, color=color)
+                for k, p in zip(levels, pts):
+                    ax.annotate(k, (p["n_features"], p["accuracy"]), fontsize=7, color=color,
+                                xytext=(3, 3), textcoords="offset points")
+        ax.set_xscale("log")
+        ax.xaxis.set_major_locator(LogLocator(base=10, subs=(1, 2, 5)))
+        ax.xaxis.set_major_formatter(ScalarFormatter())
+        ax.xaxis.set_minor_formatter(NullFormatter())
+        ax.set_xlabel("mean binary features (log scale)")
+        ax.set_ylabel("mean test accuracy")
+        ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+        ax.set_title(a)
+        ax.grid(alpha=0.3, which="both")
+    handles = [Line2D([], [], color=FAMILY_COLORS[f], marker="o", linestyle="none", label=FAMILY_LABELS[f])
+               for f in PER_CLASS_FAMILIES]
+    handles += [Line2D([], [], color="grey", linestyle="-", marker="o", label="global (intervals)"),
+                Line2D([], [], color="grey", linestyle="--", marker="^", label="per class (intervals per class)")]
+    axes[-1].legend(handles=handles, fontsize=8, loc="lower right")
+    fig.suptitle("per class vs. all classes: accuracy over the number of binary features")
+    fig.tight_layout()
+    fig.savefig(paths["s2"], dpi=110)
+    plt.close(fig)
+    print(f"Plot   -> {paths['s2']}")
+
+
+#: section 3's plot: a color per learner, a line style per preparation
+WEKA_COLORS = {"Weka:JRip": "tab:blue", "Weka:J48": "tab:orange"}
+SECTION3_STYLES = {"raw": ("-", None), "tree": ("--", "o"), "ef+bc": ("-.", "^")}
+SECTION3_LABELS = {"raw": "raw (Weka's own thresholds)", "tree": "decision tree",
+                   "ef+bc": "equal frequency + boundary corr."}
+
+
+def write_section3_plots(results, paths: Dict[str, str]) -> None:
+    """One plot: per Weka learner (a color each) `tree` and `ef+bc` over the
+    interval count and `raw` as a horizontal line (a line style each)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import PercentFormatter
+
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    mean = results.groupby(["algorithm", "family", "level"])["accuracy"].mean()
     fig, ax = plt.subplots(figsize=(7.5, 5.5))
-    for algorithm, color in COLORS.items():
-        sub = per_variant[per_variant["algorithm"] == algorithm].set_index("prep")
-        for discretizer, style in LINESTYLES.items():
-            ys = [sub["accuracy"].get(f"{discretizer}@{n}", np.nan) for n in LEVELS]
-            ax.plot(LEVELS, ys, style, color=color, label=f"{algorithm} ({discretizer})")
-        raw_acc = sub["accuracy"].get("raw", np.nan)
-        if raw_acc == raw_acc:  # not NaN
-            ax.axhline(raw_acc, color=color, linestyle=":", linewidth=1.5, alpha=0.8,
-                      label=f"{algorithm} (raw)")
-    ax.set_xticks(list(LEVELS))
-    ax.set_xlabel("discretization level (intervals)")
+    for a, color in WEKA_COLORS.items():
+        for family in SECTION3_FAMILIES:
+            linestyle, marker = SECTION3_STYLES[family]
+            ys = [mean.get((a, family, str(k)), np.nan) for k in LEVELS]
+            ax.plot(range(len(LEVELS)), ys, linestyle=linestyle, marker=marker, color=color)
+        ax.axhline(mean.get((a, "raw", "raw"), np.nan), color=color, linestyle=SECTION3_STYLES["raw"][0],
+                   linewidth=1.5, alpha=0.8)
+    ax.set_xticks(range(len(LEVELS)), [str(k) for k in LEVELS])
+    ax.set_xlabel("intervals (max_intervals)")
     ax.set_ylabel("mean test accuracy")
     ax.yaxis.set_major_formatter(PercentFormatter(1.0))
-    ax.set_title("accuracy vs. discretization level")
-    ax.legend(fontsize=8)
+    ax.set_title("JRip and J48: raw numeric data vs. discretized")
+    # two legend groups: the learners by color, the preparations by (grey) line style
+    handles = [Line2D([], [], color=color, marker="o", linestyle="none", label=a.split(":")[-1])
+               for a, color in WEKA_COLORS.items()]
+    handles += [Line2D([], [], color="grey", linestyle=SECTION3_STYLES[f][0], marker=SECTION3_STYLES[f][1],
+                       label=SECTION3_LABELS[f]) for f in ("raw", *SECTION3_FAMILIES)]
+    ax.legend(handles=handles, fontsize=8, loc="lower right")
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    os.makedirs(os.path.dirname(plot_path), exist_ok=True)
-    fig.savefig(plot_path, dpi=110)
+    fig.savefig(paths["s3"], dpi=110)
     plt.close(fig)
-    print(f"Plot   -> {plot_path}")
+    print(f"Plot   -> {paths['s3']}")
 
 
-def main(full: bool = False) -> None:
+def _paths(quick: bool) -> Dict[str, str]:
+    q = "_quick" if quick else ""
+    paths = {"report": os.path.join(HERE, f"{NAME}{q}_report.md"),
+             "s2": os.path.join(PLOTS_DIR, f"{NAME}{q}_per_class.png")}
+    for a in LEARNERS:
+        paths[f"s1_{a}"] = os.path.join(PLOTS_DIR, f"{NAME}{q}_{a.lower()}.png")
+    paths["s3"] = os.path.join(PLOTS_DIR, f"{NAME}{q}_raw_vs_discretized.png")
+    return paths
+
+
+def _results_path(quick: bool, section: int) -> str:
+    """Where a run keeps its results table, so `--replot` can redraw the
+    report and plots without recomputing (in the cache directory, not
+    checked in)."""
+    return os.path.join(CACHE_DIR, f"results{'_quick' if quick else ''}_section{section}.pkl")
+
+
+def main(full: bool = False, replot: bool = False) -> None:
     quick = not full
-    datasets = select_datasets(QUICK_DATASETS_SPEC) if quick else full_datasets()
     n_folds = QUICK_FOLDS if quick else N_FOLDS
-    report_path = QUICK_REPORT_PATH if quick else REPORT_PATH
-    plot_path = QUICK_PLOT_PATH if quick else PLOT_PATH
-
-    results = run(datasets, n_folds=n_folds)
-    write_report(results, datasets, n_folds, report_path, plot_path, quick)
-    write_plots(results, plot_path)
+    catalog = Catalog.default()
+    datasets1 = catalog.parse(QUICK_DATASETS_SPEC) if quick else full_datasets()
+    datasets2 = catalog.parse(QUICK_MULTICLASS_SPEC) if quick else multiclass_datasets()
+    datasets3 = catalog.parse(QUICK_SECTION3_SPEC) if quick else section3_datasets()
+    paths = _paths(quick)
+    if replot:
+        res1, res2, res3 = (pd.read_pickle(_results_path(quick, i)) for i in (1, 2, 3))
+    else:
+        res1 = run_preps(section1_preps(), datasets1, n_folds)
+        res2 = run_preps(section2_preps(), datasets2, n_folds)
+        res3 = pd.concat([run_raw(datasets3, n_folds),
+                          run_preps(section3_preps(), datasets3, n_folds, learners=build_weka_learners)],
+                         ignore_index=True)
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        for i, res in enumerate((res1, res2, res3), start=1):
+            res.to_pickle(_results_path(quick, i))
+    write_report(res1, res2, res3, datasets1, datasets2, datasets3, n_folds, quick, paths)
+    write_section1_plots(res1, paths, {e.name: e.n_features for e in datasets1})
+    write_section2_plot(res2, paths)
+    write_section3_plots(res3, paths)
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--full", action="store_true",
-                        help=f"run the full comparison ({len(full_datasets())} datasets, "
-                             f"{N_FOLDS}-fold) instead of the quick default; writes to the "
-                             "checked-in report/plot rather than the quick ones")
+    parser.add_argument("--full", action="store_true", help="run the full comparison instead of the quick default")
+    parser.add_argument("--n-jobs", default="1",
+                        help="fits to run at the same time (default 1); capped at the available cores "
+                             "unless given as 'N!'")
+    parser.add_argument("--replot", action="store_true",
+                        help="rewrite the report and plots from the last run's saved results, without running")
     args = parser.parse_args()
-    main(full=args.full)
+    N_JOBS = args.n_jobs
+    main(full=args.full, replot=args.replot)

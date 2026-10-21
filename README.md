@@ -2725,8 +2725,11 @@ report and plots are checked in next to the script:
 
 - `ripper_comparison` -- the RIPPER family: Weka's JRip, wittgenstein's
   RIPPER, Pypper and Slipper.
-- `numeric_discretization` -- JRip and J48 on raw numeric data vs. two
-  discretizations at 3, 5 and 8 intervals.
+- `numeric_discretization` -- the discretizers (decision tree, FUSINTER,
+  equal width, equal frequency, with and without boundary correction) at
+  3 to 12 intervals with Pypper, PFossil and PFoil; per class vs. all
+  classes on many-class data; and JRip and J48 on raw numeric data vs.
+  discretized.
 - `heuristic_comparison` -- rule learning heuristics inside one plain
   separate-and-conquer learner, after Janssen & Fürnkranz (2010).
 - `seco_learners_comparison` -- CN2, PFoil, PFossil, Pypper and PyLORD

@@ -931,6 +931,23 @@ different orders, so it only works while every value is `True`.
   35 s) shows it is the heuristic's strength, not the class count, that
   matters for accuracy. Until this is settled, the multi-class demo uses PFoil
   instead of CN2 as its superlinear learner.
+- **Per-class feature sets** (a perspective, from `demos/numeric_discretization.py`,
+  2026-10-21; not planned yet). `PerClass` discretizes each class against
+  the rest but pools the thresholds, so a learner working on one class
+  searches every class's cuts, most of them placed for other classes. The
+  demo's section 2 suggests that this pooling dilutes the gain of
+  per-class cuts: for the decision tree and FUSINTER, per class is
+  competitive and sometimes best (not significantly), at several times
+  the features of a global discretization of similar accuracy. The idea:
+  keep one feature space with every class's thresholds, but when a
+  learner works on a dedicated target class (`ConceptCascade`,
+  `ConceptSet`, a covering loop with `target_class`), mask out the
+  features placed for other classes; a pairwise learner (class c vs. d)
+  would see the features of c and d. Perhaps expressed as constraints
+  derived from the classes on the `DataSpec`, so the learners need no
+  code of their own. The same mechanism -- a feature set per learning
+  task -- would also be a natural place for feature selection, which
+  pyrulearn does not do at all yet.
 - **Parallel learners** (not planned for now, 2026-10-14): every native
   learner runs on one thread. Some would parallelize well because they
   consist of independent searches: `PyLORD` runs one rule search per
