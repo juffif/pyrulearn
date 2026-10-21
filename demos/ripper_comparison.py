@@ -80,6 +80,7 @@ from typing import Optional
 import numpy as np
 
 from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -207,7 +208,7 @@ see "Why IMod:Slipper isn't in the main comparison". {prelim_verdict}
 
 Protocol: `{n_folds}`-fold stratified cross-validation
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
-(`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
+(`build_dataspec(discretizer=TreeDiscretizer(max_intervals={MAX_INTERVALS}))`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical
 binary features per fold (as vertical bitmaps, the library's default representation;
 the Weka learners convert them to the matrix they need), so differences
@@ -261,7 +262,7 @@ def run_preliminary_slipper_check():
     datasets = Catalog.default().select(names=PRELIM_DATASETS)
     results = run_cv([Slipper(random_state=RANDOM_STATE), IModSlipper(random_state=RANDOM_STATE)],
                      datasets, n_folds=PRELIM_FOLDS, fit_timeout=PRELIM_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
                      n_jobs=_n_jobs())
     by_learner = results.groupby("learner").agg(accuracy=("accuracy", "mean"), fit_time=("fit_time", "mean"))
     slipper, imod = by_learner.loc["Slipper"], by_learner.loc["IMod:Slipper"]
@@ -422,7 +423,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
 
     datasets = select_datasets(spec)
     results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
                      n_jobs=_n_jobs())
     write_report(results, datasets, n_folds, prelim_results, prelim_verdict,
                 report_path, accuracy_plot_path, fit_time_plot_path, cd_plot_path, quick)

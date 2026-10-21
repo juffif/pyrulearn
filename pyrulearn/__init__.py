@@ -114,6 +114,7 @@ from .interfaces import (
 from .learners import ExternalRuleLearner, NativeRuleLearner, RuleLearner
 from .models import DefaultPrediction, DisjointRuleSet, MajorityClass
 from .data import (
+    BoundaryCorrection,
     DataRepresentation,
     DataSpec,
     DataSpecBuilder,
@@ -122,6 +123,9 @@ from .data import (
     PrePostNListRepresentation,
     SparseDataRepresentation,
     VerticalBitmapRepresentation,
+    Discretizer,
+    EqualFrequencyDiscretizer,
+    TreeDiscretizer,
     merge_dataspecs,
 )
 from .rule import Literal, Rule
@@ -132,6 +136,7 @@ __all__ = [
     "DataRepresentation", "HorizontalBitmapRepresentation", "NListRepresentation",
     "PrePostNListRepresentation", "SparseDataRepresentation", "VerticalBitmapRepresentation",
     "DisjointRuleSet", "merge_dataspecs",
+    "Discretizer", "TreeDiscretizer", "EqualFrequencyDiscretizer", "BoundaryCorrection",
     "RuleSetClassifier", "sort_rules",
     "RuleImporter", "ObjectRuleImporter", "StringRuleImporter", "PatternStringImporter",
     "register_importer", "get_importer",

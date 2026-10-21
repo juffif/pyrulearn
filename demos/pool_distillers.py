@@ -29,7 +29,7 @@ Two studies, not one, because the three generators don't scale alike:
 
 - **Study 1** (`vote`, `SPECT`, `hepatitis`, `tic-tac-toe`,
   `heart-statlog` -- all narrow, binary-feature counts kept under 60 by
-  `max_intervals=3`) uses all three generators. Even here `CARMiner`'s
+  `TreeDiscretizer(max_intervals=3)`) uses all three generators. Even here `CARMiner`'s
   pool runs into the thousands while the other two stay in the hundreds
   -- itemset mining doesn't taper off the way a bounded random forest or
   a one-search-per-row LORD pool does, even capped at `max_len=3` and a
@@ -76,6 +76,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data import DataRepresentation
 from pyrulearn.experiments.catalog import Catalog, CatalogEntry
 from pyrulearn.experiments.report import (
@@ -322,7 +323,7 @@ def run_study(
     accuracy/n_rules/fit_time/error -- none for a pool that failed to build.
     """
     cache_dir = CACHE_DIR if cache_dir is None else cache_dir
-    common = dict(n_folds=n_folds, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+    common = dict(n_folds=n_folds, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE,
                   cache_dir=cache_dir, verbose=verbose, n_jobs=_n_jobs())
 
     if verbose:
@@ -580,7 +581,7 @@ Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`) in
 passes over the same folds -- first every pool is built on every training fold, then
 every distiller is fit on the pool built on its fold (the time to load the stored pool is
 not counted in the distiller's fit time). Data in the library's default representation
-(vertical bitmaps (`VerticalBitmapRepresentation`)). Discretization: `max_intervals={MAX_INTERVALS}`. Distiller fits are
+(vertical bitmaps (`VerticalBitmapRepresentation`)). Discretization: `TreeDiscretizer(max_intervals={MAX_INTERVALS})`. Distiller fits are
 capped at {FIT_TIMEOUT:.0f}s; pool building gets a longer cap of
 {POOL_FIT_TIMEOUT:.0f}s, since `pylord_candidates`' cost grows
 super-linearly with row count and can need much longer than any

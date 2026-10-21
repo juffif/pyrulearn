@@ -48,7 +48,7 @@ the importer by hand. Deliberately *not* a separate hierarchy: reusing
 keep in sync.
 
 Also `tree_thresholds`, a numeric-discretization helper used by
-`pyrulearn.data.io` (fits a single-feature decision tree and harvests
+`pyrulearn.data.discretization.TreeDiscretizer` (fits a single-feature decision tree and harvests
 its split points) -- unrelated to rule *import* as such, but it reuses
 the same sklearn tree machinery, so it lives here rather than forcing a
 separate module just for one function.
@@ -80,6 +80,7 @@ from .base import ObjectRuleImporter, register_importer
 from ..combiners import HeuristicMaxCombiner, RuleCombiner
 from ..data import HorizontalBitmapRepresentation, DataRepresentation
 from ..data import DataSpec, DataSpecBuilder
+from ..data.discretization import DEFAULT_MAX_INTERVALS, prettify_threshold
 from ..learners import ExternalRuleLearner, RelabelingExternalLearner
 from .. import models
 from ..models import FlatRuleSet, RuleModel
@@ -551,40 +552,12 @@ class SKLRandomForest(ExternalRuleLearner):
         return RandomForestClassifier(**self.params).fit(X, y)
 
 
-def _prettify_threshold(t: float, sorted_unique: np.ndarray) -> float:
-    """Replace a computed split point with the coarsest (fewest decimal
-    digits) number that still falls in the same open gap between two
-    *actually observed* values of the column -- so the resulting
-    ``>=``/``<`` test partitions the real data identically, just without
-    ugly floating-point artifacts. sklearn's tree computes each
-    threshold as the exact midpoint of two adjacent values in whatever
-    (possibly already-split) subset reached that node, e.g.
-    ``(15.1458 + 15.2) / 2 == 15.172900199890137`` -- a value nobody
-    would write down by hand, and no more "correct" than ``15.17`` for
-    the same purpose: any number strictly between the two nearest real
-    values on *this* column produces the exact same split of the full
-    dataset, so rounding here changes nothing but the display.
-    """
-    below = sorted_unique[sorted_unique < t]
-    above = sorted_unique[sorted_unique > t]
-    lo = below[-1] if len(below) else -np.inf
-    hi = above[0] if len(above) else np.inf
-    for decimals in range(0, 10):
-        candidate = round(t, decimals)
-        if lo < candidate < hi:
-            return candidate
-    return t  # every rounding collided with a real value -- keep the exact one
-
-
-def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -> List[float]:
+def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = DEFAULT_MAX_INTERVALS) -> List[float]:
     """Supervised numeric discretization: fit a single-feature decision
     tree against `values`/`y` and return its internal split points as
-    ascending thresholds, prettified (see `_prettify_threshold`) against
-    the column's own observed values.
-
-    The default mirrors `pyrulearn.data.io.DEFAULT_MAX_INTERVALS` (kept
-    as a separate literal here rather than imported, so this module
-    doesn't pick up a pandas dependency just to read a constant).
+    ascending thresholds, prettified (see `pyrulearn.data.discretization.
+    prettify_threshold`) against the column's own observed values. The
+    engine of `pyrulearn.data.discretization.TreeDiscretizer`.
 
     `max_intervals` is a ceiling on the number of resulting buckets
     (``max_intervals - 1`` thresholds at most), not a target -- it's
@@ -604,7 +577,7 @@ def tree_thresholds(values: np.ndarray, y: np.ndarray, max_intervals: int = 8) -
     threshold = tree.tree_.threshold
     # feature[i] == -2 (sklearn's TREE_UNDEFINED) marks a leaf, i.e. no split there.
     raw = sorted(float(t) for f, t in zip(feature, threshold) if f != -2)
-    return [_prettify_threshold(t, sorted_unique) for t in raw]
+    return [prettify_threshold(t, sorted_unique) for t in raw]
 
 # -- naming ------------------------------------------------------------------
 

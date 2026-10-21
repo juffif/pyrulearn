@@ -398,7 +398,7 @@ The two ordered types differ in what they test:
   constraint propagates all of them, so `size=medium` implies
   `size<=medium` and `size>small`. `read_csv` (and `run_cv`) infer a
   numeric column with three to `max_ordinal_values` distinct values
-  (default 10, independent of `max_intervals`) as ordinal (two make a
+  (default 10, independent of the discretizer) as ordinal (two make a
   binary attribute); a column declared numeric in an ARFF header stays
   numeric.
 
@@ -482,10 +482,13 @@ a rule's training stats deliberately (see *Statistics*).
 from pyrulearn.data.io import read_arff, read_csv
 
 # infer a DataSpec from the file's own column types, discretizing numeric
-# columns against `target` with a decision tree (max_intervals - 1 thresholds,
-# capped at DEFAULT_MAX_INTERVALS = 8 by default -- a full 3-level binary tree)
+# columns against `target` with a decision tree (TreeDiscretizer(): at most
+# max_intervals - 1 = 7 thresholds -- a full 3-level binary tree)
 rep = read_arff("weather.arff", target="play")
-rep = read_csv("data.csv", target="label", max_intervals=4)  # override the cap
+from pyrulearn.data import BoundaryCorrection, EqualFrequencyDiscretizer, TreeDiscretizer
+rep = read_csv("data.csv", target="label", discretizer=TreeDiscretizer(max_intervals=4))
+rep = read_csv("data.csv", target="label",       # equal-frequency cuts, each moved
+               discretizer=BoundaryCorrection(EqualFrequencyDiscretizer(8)))  # to where the class changes
 # rep.spec is the inferred DataSpec; rep is a VerticalBitmapRepresentation
 # (representation=, default default_representation() -- pass
 # HorizontalBitmapRepresentation for the dense matrix instead)
@@ -497,10 +500,27 @@ rep = read_csv("data.csv", dataspec=my_dataspec, target="label",
 # rep.spec is my_dataspec; rep.X / rep.y hold the dense data
 ```
 
-Numeric columns without pre-given thresholds need a `target` column to
-discretize against (decision-tree splits are the only strategy
-implemented so far -- equal-width/equal-frequency and FUSINTER are
-planned). `validate_dataspec(dataspec, df)` checks an existing `DataSpec`
+Numeric columns without pre-given thresholds are discretized by a
+`Discretizer` object (`pyrulearn.data.discretization`), passed as
+`discretizer=` to `read_csv`, `read_arff`, `build_dataspec` and `run_cv`:
+
+- `TreeDiscretizer(max_intervals=8)` (the default) -- the split points of
+  a single-feature decision tree against the class (scikit-learn's).
+  `max_intervals` is a ceiling: a column with little signal gets fewer
+  thresholds.
+- `EqualFrequencyDiscretizer(max_intervals=8)` -- unsupervised
+  equal-frequency ("quantile") binning, native: each threshold in the
+  gap between two observed values nearest to an equal-frequency
+  position.
+- `BoundaryCorrection(discretizer)` -- moves each of another
+  discretizer's thresholds to the nearest *boundary point* (counted in
+  examples): a gap between two adjacent values where the class changes.
+  A threshold between two values whose examples all share one class is
+  never the best place for one, for any heuristic that rewards covered
+  positives and penalizes covered negatives (Fayyad & Irani, 1993).
+
+A supervised discretizer (the tree, or one with boundary correction)
+needs a `target` column. `validate_dataspec(dataspec, df)` checks an existing `DataSpec`
 against a file's header without reading data (missing attributes, type
 mismatches, unknown nominal categories); `strict=True` (the default on
 `read_arff`/`read_csv`) raises on anything `validate_dataspec` reports
@@ -2648,13 +2668,13 @@ itself, and reports columns that look like unrecognized category codes.
 
 ### Cross-validation runner
 
-`run_cv(learners, datasets, n_folds=10, fit_timeout=60, max_intervals=8,
+`run_cv(learners, datasets, n_folds=10, fit_timeout=60, discretizer=None,
 random_state=0, cache_dir=None, measure_fn=None, verbose=True)` runs every
 learner on every dataset, with stratified cross-validation:
 
 - In each fold a `DataSpec` is built on the training part only
-  (`build_dataspec`, numeric attributes discretized into at most
-  `max_intervals` intervals), and the test part is binarized against it,
+  (`build_dataspec`, numeric attributes discretized by `discretizer`,
+  default `TreeDiscretizer()`), and the test part is binarized against it,
   so every learner sees the same Boolean data.
 - Each fit runs in a persistent worker process (`TimeoutRunner`) and is
   stopped after `fit_timeout` seconds. A time-out or an exception is

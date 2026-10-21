@@ -87,6 +87,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog, CatalogEntry
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -259,7 +260,7 @@ def run_section(
     (dataset, fold, name) with accuracy/n_rules/n_conditions/fit_time/
     overlap/error."""
     results = run_cv([build_fn(name) for name in names], datasets, n_folds=n_folds,
-                     fit_timeout=fit_timeout, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                     fit_timeout=fit_timeout, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE,
                      cache_dir=cache_dir, measure_fn=_overlap_measure, verbose=verbose, n_jobs=_n_jobs())
     results = results.rename(columns={"learner": "name"})
     if "overlap" not in results.columns:  # every fit failed
@@ -581,7 +582,7 @@ are no faster on it). Boosting (`Slipper`, `ENDER` x 3 configs,
 {N_RULES_BUDGETS}.
 
 Protocol: stratified cross-validation (`pyrulearn.experiments.runner.run_cv`), one
-`DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`), the test
+`DataSpec` per training fold (`build_dataspec(discretizer=TreeDiscretizer(max_intervals={MAX_INTERVALS}))`), the test
 fold encoded against that same `DataSpec`, in the library's default representation
 (vertical bitmaps (`VerticalBitmapRepresentation`)). Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out or an error counts
 as a failure, not as the end of the run, and is excluded from every

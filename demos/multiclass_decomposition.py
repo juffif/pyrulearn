@@ -64,6 +64,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -243,7 +244,7 @@ def run_default_confidence_check() -> pd.DataFrame:
     learners = [Decomposition(base, method, record_default=True)
                 for base in BASES for method in ("pw_smaller", "pw_larger")]
     return run_cv(learners, Catalog.default().select(names=CHECK_DATASETS), n_folds=CHECK_FOLDS,
-                  fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                  fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE,
                   cache_dir=CACHE_DIR, measure_fn=measure_default_confidence, n_jobs=_n_jobs())
 
 
@@ -309,7 +310,7 @@ def _growth_jobs(datasets, folds_of: dict):
         for fraction in sorted(GROWTH_FRACTIONS):
             rows = np.sort(np.concatenate([r[:max(1, int(round(fraction * len(r))))] for r in by_class.values()]))
             sub = df.iloc[rows].reset_index(drop=True)
-            spec = build_dataspec(sub, target=target, max_intervals=MAX_INTERVALS, skip_unusable=True).build()
+            spec = build_dataspec(sub, target=target, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), skip_unusable=True).build()
             rep = encode(spec, sub, sub[target].to_numpy(), representation=default_representation())
             subsamples.append((fraction, len(rows), rep))
         yield entry.name, len(counts), counts, subsamples
@@ -537,7 +538,7 @@ times as long; for one that grows faster, pairwise gains more with every
 class. Prediction goes the other way: every pair model has to be asked.
 
 Datasets, with their numbers of classes: {names}. Protocol: {folds}, one
-`DataSpec` per training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`).
+`DataSpec` per training fold (`build_dataspec(discretizer=TreeDiscretizer(max_intervals={MAX_INTERVALS}))`).
 Each fit is capped at {FIT_TIMEOUT:.0f}s; a time-out counts as a failure, and it fails the whole
 cross-validation of that learner on that dataset (`run_cv`'s `stop_on_timeout`): its remaining folds are
 not run, and all its folds count as failures.
@@ -697,7 +698,7 @@ def main(quick: bool = True) -> None:
     ]
     results = pd.concat([
         run_cv(build_learners(), group, n_folds=folds, fit_timeout=FIT_TIMEOUT,
-               max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+               discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
                measure_fn=measure, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)

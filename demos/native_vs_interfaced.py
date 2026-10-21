@@ -108,6 +108,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -336,7 +337,7 @@ def run_preliminary_optimal_rule_boosting_check():
     datasets = Catalog.default().select(names=PRELIM_DATASETS)
     # realkd's exhaustive search (its default) vs. ORB with the matching search
     results = run_cv([ORB(search=BranchAndBoundSearch()), RKDRuleBoosting()], datasets, n_folds=PRELIM_FOLDS,
-                     fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE,
+                     fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE,
                      cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     by_learner = results.groupby("learner").agg(accuracy=("accuracy", "mean"), fit_time=("fit_time", "mean"))
     native, ext = by_learner.loc["ORB"], by_learner.loc["RKD:RuleBoosting"]
@@ -385,7 +386,7 @@ rule boosting isn't in the main comparison". {prelim_verdict}
 {pair_lines}
 
 Protocol: {folds_note} (`pyrulearn.experiments.runner.run_cv`), one
-`DataSpec` per training fold (`build_dataspec(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS})`),
+`DataSpec` per training fold (`build_dataspec(discretizer=TreeDiscretizer(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS}))`),
 the test fold binarized against that same `DataSpec`. Each fit is capped
 at {FIT_TIMEOUT:.0f}s; a time-out or an error counts as a failure (and
 as last in the ranking), not as the end of the run -- CBA/PArc:CBA's
@@ -581,7 +582,7 @@ def main(quick: bool = True) -> None:
     ]
     max_intervals = QUICK_MAX_INTERVALS if quick else MAX_INTERVALS
     results = pd.concat([
-        run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, max_intervals=max_intervals,
+        run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=max_intervals),
               random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)

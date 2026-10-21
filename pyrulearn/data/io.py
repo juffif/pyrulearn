@@ -33,20 +33,20 @@ want that dense matrix directly or explicitly want
 `representation=HorizontalBitmapRepresentation` to `read_arff`/`read_csv`/
 `encode` for that, or call `binarize` yourself and wrap the result.
 
-Numeric columns without pre-given thresholds are discretized via a
-single-feature decision tree
-(`pyrulearn.interfaces.sklearn.tree_thresholds`) -- the only
-discretizer implemented so far; equal-width/equal-frequency and
-FUSINTER are planned but not yet built. This needs a `target` column to
-supervise the split search -- a numeric column can't be auto-discretized
-without one.
+Numeric columns without pre-given thresholds are discretized by a
+`pyrulearn.data.discretization.Discretizer`, passed as ``discretizer=``:
+by default `TreeDiscretizer()` (a single-feature decision tree,
+`pyrulearn.interfaces.sklearn.tree_thresholds`), or e.g.
+`EqualFrequencyDiscretizer`, optionally wrapped in `BoundaryCorrection`.
+A supervised discretizer (the default included) needs a `target`
+column to discretize a numeric column.
 
 This module requires ``pandas`` (only this module does); ARFF support
 additionally needs ``scipy`` (imported lazily, only inside `read_arff`).
 `tree_thresholds` (from `pyrulearn.interfaces.sklearn`, needing
-scikit-learn) is also imported lazily here, only when actually invoked
--- reading with an already-complete `DataSpec` (every numeric attribute
-already has thresholds) skips it entirely, even though scikit-learn
+scikit-learn) is imported lazily by `TreeDiscretizer`, only when
+actually invoked -- reading with an already-complete `DataSpec` (every
+numeric attribute already has thresholds) skips it entirely, even though scikit-learn
 itself is a hard dependency of `pyrulearn` overall (via
 `pyrulearn.interfaces.sklearn.RuleSetClassifier`).
 
@@ -71,15 +71,12 @@ import pandas as pd
 
 from .attributes import AttributeType, FeatureSpec, MissingStrategy, evaluate_feature, is_numeric_domain
 from .spec import DataSpec, DataSpecBuilder
+from .discretization import DEFAULT_MAX_INTERVALS, Discretizer, TreeDiscretizer  # noqa: F401 (re-exported)
 from .representation import HorizontalBitmapRepresentation, DataRepresentation, default_representation
 
-# Default cap on the number of buckets a numeric column is discretized
-# into (`max_intervals` below) -- a ceiling passed to `tree_thresholds`,
-# not a target; see its docstring in `pyrulearn.interfaces.sklearn`.
-DEFAULT_MAX_INTERVALS = 8
 # Default cap on the distinct values of a numeric column that is still
 # inferred ORDINAL rather than NUMERIC (`max_ordinal_values` below) --
-# independent of `max_intervals`, so that varying the discretization
+# independent of the discretizer, so that varying the discretization
 # doesn't change which columns are ordinal.
 DEFAULT_MAX_ORDINAL_VALUES = 10
 
@@ -118,7 +115,7 @@ def build_dataspec(
     df: pd.DataFrame,
     target: Optional[str] = None,
     arff_types: Optional[Dict[str, str]] = None,
-    max_intervals: int = DEFAULT_MAX_INTERVALS,
+    discretizer: Optional[Discretizer] = None,
     include_negations: bool = True,
     negation_overrides: Optional[Dict[str, bool]] = None,
     domains: Optional[Dict[str, Sequence[Any]]] = None,
@@ -135,9 +132,11 @@ def build_dataspec(
     which makes a numeric column with three to `max_ordinal_values`
     distinct values (default 10) ORDINAL (its sorted observed values,
     `DataSpecBuilder.add_ordinal`). Numeric
-    columns are discretized via
-    `pyrulearn.interfaces.sklearn.tree_thresholds` against
-    `df[target]`, capped at `max_intervals` buckets -- requires `target`.
+    columns are discretized by `discretizer` (a
+    `pyrulearn.data.discretization.Discretizer`; default
+    `TreeDiscretizer()`, a decision tree against `df[target]` with at most
+    `DEFAULT_MAX_INTERVALS` intervals) -- a supervised one requires
+    `target`.
 
     A nominal column's values are its declared ones in `domains` (e.g.
     an ARFF header's value list), else the non-missing values observed
@@ -158,6 +157,7 @@ def build_dataspec(
     constant or entirely missing within one training fold).
     """
     overrides = negation_overrides or {}
+    discretizer = discretizer if discretizer is not None else TreeDiscretizer()
     builder = DataSpecBuilder(negation=include_negations)
     y = df[target].to_numpy() if target is not None else None
 
@@ -184,21 +184,20 @@ def build_dataspec(
                 continue
             builder.add_ordinal(col, values, negation=negation)
         elif kind == "numeric":
-            if y is None:
+            if y is None and discretizer.supervised:
                 raise ValueError(
-                    f"Cannot auto-discretize numeric column {col!r} without a "
-                    "target column for supervised decision-tree discretization "
-                    "-- pass target=, or provide thresholds via an explicit DataSpec."
+                    f"Cannot auto-discretize numeric column {col!r} with the supervised "
+                    f"{discretizer!r} without a target column -- pass target=, an "
+                    "unsupervised discretizer, or thresholds via an explicit DataSpec."
                 )
-            from ..interfaces.sklearn import tree_thresholds
-            thresholds = tree_thresholds(df[col].to_numpy(dtype=float), y, max_intervals=max_intervals)
+            thresholds = discretizer.thresholds(df[col].to_numpy(dtype=float), y)
             if not thresholds:
                 if skip_unusable:
                     continue
                 raise ValueError(
-                    f"Decision-tree discretization found no useful split for numeric "
-                    f"column {col!r} (max_intervals={max_intervals}); provide thresholds "
-                    "explicitly via a DataSpec if this attribute should still be included."
+                    f"{discretizer!r} found no threshold for numeric column {col!r}; "
+                    "provide thresholds explicitly via a DataSpec if this attribute "
+                    "should still be included."
                 )
             builder.add_numeric(col, thresholds)
         else:
@@ -476,7 +475,7 @@ def read_arff(
     source,
     dataspec: Optional[DataSpec] = None,
     target: Optional[str] = None,
-    max_intervals: int = DEFAULT_MAX_INTERVALS,
+    discretizer: Optional[Discretizer] = None,
     strict: bool = True,
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
@@ -493,7 +492,7 @@ def read_arff(
     (see `validate_dataspec`) before encoding -- `strict=True`
     (default) raises on any mismatch found. If `dataspec` is omitted,
     one is inferred from ARFF's own declared attribute types
-    (`build_dataspec`). `missing_strategy`/`random_state` are passed
+    (`build_dataspec`, numeric columns discretized by `discretizer`). `missing_strategy`/`random_state` are passed
     through to `encode`.
 
     Nominal *data* values wrapped in quotes (``'like this'``/``"like
@@ -529,7 +528,7 @@ def read_arff(
             raise ValueError("DataSpec does not match the ARFF header:\n" + "\n".join(problems))
     else:
         dataspec = build_dataspec(
-            df, target=target, arff_types=arff_types, max_intervals=max_intervals,
+            df, target=target, arff_types=arff_types, discretizer=discretizer,
             include_negations=include_negations, max_ordinal_values=max_ordinal_values, domains=domains,
         ).build()
 
@@ -542,7 +541,7 @@ def read_csv(
     source,
     dataspec: Optional[DataSpec] = None,
     target: Optional[str] = None,
-    max_intervals: int = DEFAULT_MAX_INTERVALS,
+    discretizer: Optional[Discretizer] = None,
     strict: bool = True,
     missing_strategy: Optional[MissingStrategy] = None,
     random_state: Optional[int] = None,
@@ -557,7 +556,8 @@ def read_csv(
     `HorizontalBitmapRepresentation` for the dense matrix instead). CSV carries no declared column types,
     so when `dataspec` is omitted, types are guessed heuristically
     (`_infer_csv_column_type`); pass an explicit `dataspec` whenever that
-    guess isn't good enough. `missing_strategy`/`random_state` are
+    guess isn't good enough; numeric columns are discretized by
+    `discretizer` (see `build_dataspec`). `missing_strategy`/`random_state` are
     passed through to `encode`. `**read_csv_kwargs` are passed through
     to `pandas.read_csv`.
     """
@@ -569,7 +569,7 @@ def read_csv(
             raise ValueError("DataSpec does not match the CSV header:\n" + "\n".join(problems))
     else:
         dataspec = build_dataspec(
-            df, target=target, max_intervals=max_intervals,
+            df, target=target, discretizer=discretizer,
             include_negations=include_negations, max_ordinal_values=max_ordinal_values,
         ).build()
 

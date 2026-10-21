@@ -65,6 +65,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from pyrulearn import DataSpec, Rule
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data import (
     HorizontalBitmapRepresentation,
     NListRepresentation,
@@ -246,7 +247,7 @@ def run_size_curve(runner, cache, sizes, defer: Optional[list] = None) -> List[d
     for negation in (True, False):
         for n in sizes:
             train_df = pool.iloc[:n]
-            spec = build_dataspec(train_df, target=target, max_intervals=MAX_INTERVALS,
+            spec = build_dataspec(train_df, target=target, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                                   include_negations=negation, skip_unusable=True).build()
             X, Xt = binarize(spec, train_df), binarize(spec, test_df)
             y, yt = train_df[target].astype(str).to_numpy(), test_df[target].astype(str).to_numpy()
@@ -781,7 +782,7 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         f"Training sets of doubling size, drawn from one shuffled pool of the `{SIZE_DATASET}` "
         f"dataset (48,842 examples, 14 attributes, 8 of them nominal), each evaluated on the "
         f"same {SIZE_TEST_FRACTION:.0%} test set. Numeric attributes are discretized per "
-        f"training set (`max_intervals={MAX_INTERVALS}`). Two encodings: **with negation** "
+        f"training set (`TreeDiscretizer(max_intervals={MAX_INTERVALS})`). Two encodings: **with negation** "
         "(pyrulearn's default -- every test comes with its negation, so exactly half the "
         "features are true in every example) and **without negation** (no `x != v` features; "
         "numeric attributes keep both `x >= t` and `x < t`, so it is sparser only in the "

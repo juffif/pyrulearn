@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from pyrulearn.data import DataSpecBuilder, merge_dataspecs
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data.attributes import AttributeType, MissingStrategy, NumericGroup, OrdinalGroup
 from pyrulearn.data.io import binarize, build_dataspec, read_csv
 from pyrulearn.rule import Rule
@@ -217,7 +218,7 @@ def test_ordinal_display_merges_intervals_and_value_sets():
 def test_max_ordinal_values_is_configurable_and_independent_of_max_intervals():
     df = pd.DataFrame({"x": [i % 6 for i in range(60)], "y": ["a", "b"] * 30})
     assert build_dataspec(df, target="y").build().attributes["x"].type == AttributeType.ORDINAL
-    assert build_dataspec(df, target="y", max_intervals=3).build().attributes["x"].type == AttributeType.ORDINAL
+    assert build_dataspec(df, target="y", discretizer=TreeDiscretizer(max_intervals=3)).build().attributes["x"].type == AttributeType.ORDINAL
     numeric = build_dataspec(df, target="y", max_ordinal_values=5).build()
     assert numeric.attributes["x"].type == AttributeType.NUMERIC
 

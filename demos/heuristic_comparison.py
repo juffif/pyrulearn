@@ -50,6 +50,7 @@ from typing import Optional
 import numpy as np
 
 from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -218,7 +219,7 @@ companion demo, [heuristic_isometrics](heuristic_isometrics_report.md).
 Datasets: {len(datasets)} of the paper's datasets that are in
 `pyrulearn.experiments.catalog` ({len(datasets) - n_multiclass} binary,
 {n_multiclass} multi-class). Numeric attributes are discretized per
-training fold (`build_dataspec(max_intervals={MAX_INTERVALS})`) instead
+training fold (`build_dataspec(discretizer=TreeDiscretizer(max_intervals={MAX_INTERVALS}))`) instead
 of the paper's tests at every midpoint. Each fit is capped at
 {FIT_TIMEOUT:.0f}s; a timeout counts as a failure.
 
@@ -338,7 +339,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
 
     datasets = Catalog.default().parse(spec, random_state=RANDOM_STATE)
     results = run_cv(build_learners(), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT,
-                     max_intervals=MAX_INTERVALS, random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
+                     discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE, cache_dir=CACHE_DIR,
                      n_jobs=_n_jobs())
     write_report(results, datasets, n_folds, report_path, tradeoff_plot_path, m_sweep_plot_path, quick)
     write_plots(results, tradeoff_plot_path, m_sweep_plot_path)

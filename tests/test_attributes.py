@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from pyrulearn.data import DataSpec, DataSpecBuilder
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data.attributes import (
     Attribute, AttributeType, ExactlyOne, Implies, MutuallyExclusive, NominalGroup,
     NumericGroup, ThresholdChain, evaluate_feature, FeatureSpec,
@@ -474,7 +475,7 @@ def test_extend_closure_matches_propagate_from_scratch():
         "c": rng.choice(["r", "g", "b", "k"], size=60), "b": rng.choice(["y", "n"], size=60),
         "t": rng.choice(["p", "q"], size=60),
     })
-    spec = build_dataspec(df, target="t", max_intervals=5).build()
+    spec = build_dataspec(df, target="t", discretizer=TreeDiscretizer(max_intervals=5)).build()
     n = spec.n_features
     checked = 0
     for _ in range(400):

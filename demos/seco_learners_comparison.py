@@ -64,6 +64,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.experiments.catalog import Catalog
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.report import (
     format_accuracy, format_mean_count, render_results_table, render_setup_section,
 )
@@ -197,7 +198,7 @@ def run_preliminary_aqr_check():
     learners = [CN2(random_state=RANDOM_STATE), AQR(random_state=RANDOM_STATE),
                 LabeledOpus("Opus(Laplace)", random_state=RANDOM_STATE)]
     results = run_cv(learners, datasets,
-                     n_folds=PRELIM_FOLDS, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
+                     n_folds=PRELIM_FOLDS, fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                      random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     r = results.copy()
     r["conds_per_rule"] = r["n_conditions"] / r["n_rules"]
@@ -315,7 +316,7 @@ Opus(Laplace) aren't in the main comparison".
 
 Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
-(`build_dataspec(max_intervals={MAX_INTERVALS})`), the test fold binarized
+(`build_dataspec(discretizer=TreeDiscretizer(max_intervals={MAX_INTERVALS}))`), the test fold binarized
 against that same `DataSpec` -- every learner sees the identical binary
 features per fold (as vertical bitmaps, the library's default representation; the learners
 that need the dense matrix convert them). Each fit is capped at {FIT_TIMEOUT:.0f}s; a
@@ -520,7 +521,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
         ([d for d in datasets if d.size == "large"], LARGE_FOLDS),
     ]
     results = pd.concat([
-        run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, max_intervals=MAX_INTERVALS,
+        run_cv(learners, group, n_folds=folds, fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                random_state=RANDOM_STATE, cache_dir=CACHE_DIR, n_jobs=_n_jobs())
         for group, folds in groups if group
     ], ignore_index=True)

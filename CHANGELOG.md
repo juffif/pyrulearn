@@ -3,6 +3,30 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- Discretizer objects (`pyrulearn.data.discretization`, also exported from
+  `pyrulearn` and `pyrulearn.data`): `TreeDiscretizer` (the decision-tree
+  discretization so far, still the default), `EqualFrequencyDiscretizer`
+  (unsupervised equal-frequency binning, native), and `BoundaryCorrection`,
+  which wraps another discretizer and moves each of its thresholds to the
+  nearest boundary point -- a gap between adjacent values where the class
+  changes (Fayyad & Irani, 1993).
+
+### Changed (breaking)
+
+- `build_dataspec`, `read_csv`, `read_arff` and `run_cv` take
+  `discretizer=` (a `Discretizer`, default `TreeDiscretizer()`) instead of
+  `max_intervals=`: `max_intervals=4` becomes
+  `discretizer=TreeDiscretizer(max_intervals=4)`. `run_cv`'s cache keys of
+  the default tree are unchanged, so existing caches stay valid.
+- `pyrulearn.interfaces.sklearn._prettify_threshold` is now
+  `pyrulearn.data.discretization.prettify_threshold`; the constant
+  `DEFAULT_MAX_INTERVALS` lives there too (`pyrulearn.data.io` still has
+  it; `pyrulearn.experiments.runner` no longer does).
+
 ## 0.4.0 (2026-10-20)
 
 A change to the feature space: numeric attributes always test both directions, and a

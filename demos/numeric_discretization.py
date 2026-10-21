@@ -97,6 +97,7 @@ import warnings
 import numpy as np
 
 from pyrulearn.data import HorizontalBitmapRepresentation, DataSpecBuilder
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data.io import binarize, build_dataspec, write_arff
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import (
@@ -376,7 +377,7 @@ def run(datasets, n_folds: int, verbose: bool = True):
             specs = {}
             for n in LEVELS:
                 specs[f"tree@{n}"] = build_dataspec(train_df, target=target, arff_types=numeric,
-                                                    max_intervals=n, skip_unusable=True).build()
+                                                    discretizer=TreeDiscretizer(max_intervals=n), skip_unusable=True).build()
                 specs[f"kbins@{n}"] = build_kbins_dataspec(train_df, target=target, n_bins=n).build()
             reps = {prep: (HorizontalBitmapRepresentation(spec, binarize(spec, train_df), train_df[target].to_numpy()),
                           HorizontalBitmapRepresentation(spec, binarize(spec, test_df), test_df[target].to_numpy()))

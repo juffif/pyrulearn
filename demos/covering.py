@@ -61,6 +61,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from pyrulearn.data import HorizontalBitmapRepresentation
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.data.io import binarize, build_dataspec
 from pyrulearn.evaluation import CoverageSpace, rule_refinement_path
 from pyrulearn.heuristics import Correlation, RuleStats
@@ -96,7 +97,7 @@ def load_titanic():
     train_df = train_df.reset_index(drop=True)
     arff_types = {c: ("nominal" if c in NOMINAL_FEATURES else "numeric") for c in FEATURES}
     negation_overrides = {c: False for c in NOMINAL_FEATURES}
-    ds = build_dataspec(train_df, target=TARGET_COL, arff_types=arff_types, max_intervals=MAX_INTERVALS,
+    ds = build_dataspec(train_df, target=TARGET_COL, arff_types=arff_types, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                         negation_overrides=negation_overrides).build()
     train_rep = HorizontalBitmapRepresentation(ds, binarize(ds, train_df), train_df[TARGET_COL].to_numpy())
     return train_df, train_rep

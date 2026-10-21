@@ -65,6 +65,7 @@ import numpy as np
 import pandas as pd
 
 from pyrulearn.data import HorizontalBitmapRepresentation, default_representation
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_setup_section
 from pyrulearn.experiments.runner import run_cv
@@ -276,7 +277,7 @@ def run_exhaustive_check(quick: bool):
     datasets = Catalog.default().select(names=names)
     results = run_on_own_representation(
         build_exhaustive_learners(), datasets, EXHAUSTIVE_FOLDS, fit_timeout=EXHAUSTIVE_TIMEOUT,
-        max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS, random_state=RANDOM_STATE,
+        discretizer=TreeDiscretizer(max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS), random_state=RANDOM_STATE,
         cache_dir=CACHE_DIR, n_jobs=_n_jobs())
     ok = results[results["error"].isna()]
     m = ok.groupby("learner")[["accuracy", "n_conditions", "fit_time"]].mean()
@@ -336,7 +337,7 @@ isn't in the main comparison". {exhaustive_verdict}
 
 Protocol: {folds_note}
 (`pyrulearn.experiments.runner.run_cv`), one `DataSpec` per training fold
-(`build_dataspec(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS})`), the test fold encoded against that same
+(`build_dataspec(discretizer=TreeDiscretizer(max_intervals={QUICK_MAX_INTERVALS if quick else MAX_INTERVALS}))`), the test fold encoded against that same
 `DataSpec` -- every learner sees the identical binary features per fold, the dense learners as a
 Boolean matrix and the modular ones as vertical bitmaps; the `[HBitmap]` rows are the modular learners on
 the same data as horizontal bitmaps. Each fit is capped at
@@ -580,7 +581,7 @@ def main(datasets_spec: Optional[str] = None) -> None:
         ([d for d in datasets if d.size != "medium"], n_folds),
         ([d for d in datasets if d.size == "medium"], MEDIUM_FOLDS),
     ]
-    common = dict(fit_timeout=FIT_TIMEOUT, max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS, random_state=RANDOM_STATE,
+    common = dict(fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=QUICK_MAX_INTERVALS if quick else MAX_INTERVALS), random_state=RANDOM_STATE,
                   cache_dir=CACHE_DIR, measure_fn=digest, n_jobs=_n_jobs())
     results = pd.concat([
         run_on_own_representation(learners, group, folds, **common)

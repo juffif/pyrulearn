@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from pyrulearn.data import HorizontalBitmapRepresentation, NListRepresentation
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.evaluation import RuleStats
 from pyrulearn.heuristics import SlipperZ
 from pyrulearn.learners.boosting import Slipper
@@ -373,7 +374,7 @@ def _numeric_data(n=300, seed=3):
     df = pd.DataFrame({"x": rng.normal(size=n), "z": rng.normal(size=n), "c": rng.choice(list("pqr"), n)})
     y = np.where((df["x"] > 0.3) & (df["c"] != "q") | (df["z"] < -0.8), "pos", "neg")
     df["y"] = np.where(rng.random(n) < 0.1, np.where(y == "pos", "neg", "pos"), y)
-    spec = build_dataspec(df, target="y", max_intervals=6).build()
+    spec = build_dataspec(df, target="y", discretizer=TreeDiscretizer(max_intervals=6)).build()
     return HorizontalBitmapRepresentation(spec, binarize(spec, df), df["y"].to_numpy())
 
 

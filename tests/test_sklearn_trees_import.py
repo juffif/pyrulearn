@@ -304,20 +304,20 @@ def test_sklearn_tree_importer_stamps_stats_only_when_data_is_given():
 
 
 def test_prettify_threshold_finds_the_coarsest_value_in_the_real_data_gap():
-    from pyrulearn.interfaces.sklearn import _prettify_threshold
+    from pyrulearn.data.discretization import prettify_threshold
 
     sorted_unique = np.array([1.0, 4.0, 15.1458, 15.2, 30.0])
     ugly = (15.1458 + 15.2) / 2  # 15.172899999999998 -- sklearn's own style of split point
-    pretty = _prettify_threshold(ugly, sorted_unique)
+    pretty = prettify_threshold(ugly, sorted_unique)
     assert pretty == 15.17                       # coarsely rounded, not sklearn's raw many-digit value
     assert 15.1458 < pretty < 15.2               # still the same open gap -- identical partition
 
     # a value sitting in a genuinely tight real gap can't be shortened
     # below the precision that gap actually needs
     tight_unique = np.array([15.1458, 15.14581])
-    tight = _prettify_threshold(15.145805, tight_unique)
+    tight = prettify_threshold(15.145805, tight_unique)
     assert 15.1458 < tight < 15.14581
-    print("_prettify_threshold: OK")
+    print("prettify_threshold: OK")
 
 
 def test_tree_thresholds_prettifies_without_changing_the_partition():

@@ -23,6 +23,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
 from pyrulearn.data.io import binarize, build_dataspec
+from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.catalog import Catalog
 
 # ---------------------------------------------------------------- settings --
@@ -56,7 +57,7 @@ def export_dataset(entry) -> None:
 
         # skip_unusable=True drops a column that turned constant or
         # missing within this training fold.
-        spec = build_dataspec(train_df, target=target, max_intervals=MAX_INTERVALS,
+        spec = build_dataspec(train_df, target=target, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                               include_negations=NOMINAL_NEGATIONS, skip_unusable=True).build()
         names = spec.feature_names
 

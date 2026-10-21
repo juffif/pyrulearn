@@ -49,14 +49,13 @@ import numpy as np
 
 from ..data import DataRepresentation, default_representation
 from ..evaluation import format_accuracy
+from ..data.discretization import Discretizer, TreeDiscretizer
 from ..data.io import DEFAULT_MAX_ORDINAL_VALUES, build_dataspec, encode
 from ..learners.base import RuleLearner
 from .catalog import CatalogEntry
 
 #: default per-fit time budget, seconds -- see `TimeoutRunner`
 DEFAULT_FIT_TIMEOUT = 60.0
-#: default discretization cap, forwarded to `build_dataspec`
-DEFAULT_MAX_INTERVALS = 8
 #: the version of how `build_dataspec` encodes a fold, part of every
 #: cache key -- bumped whenever that changes, so cached fold results of
 #: an older encoding are not reused (0.4.0: numeric attributes in both
@@ -239,16 +238,26 @@ def _stable_params(value, depth: int = 0):
     return f"{type(value).__module__}.{type(value).__qualname__}:{value!r}"
 
 
+def _discretizer_token(discretizer: Discretizer) -> str:
+    """`discretizer` in a cache key: a plain `TreeDiscretizer` as just its
+    `max_intervals` -- what the key held before discretizers were objects,
+    so caches from then stay valid -- any other as its class and params."""
+    if type(discretizer) is TreeDiscretizer:
+        return str(discretizer.max_intervals)
+    return json.dumps(_stable_params(discretizer), sort_keys=True)
+
+
 def _cache_key(dataset: CatalogEntry, n_folds: int, fold: int, random_state: int,
               learner: RuleLearner, representation: Type[DataRepresentation],
-              max_intervals: int = DEFAULT_MAX_INTERVALS,
+              discretizer: Optional[Discretizer] = None,
               max_ordinal_values: int = DEFAULT_MAX_ORDINAL_VALUES) -> str:
     """A stable hash identifying one (dataset, fold split, encoding,
     representation, learner configuration) cell -- see `run_cv`'s "Fold
     caching" paragraph."""
     params_repr = json.dumps(_stable_params(learner._provenance_params()), sort_keys=True)
     payload = "|".join([
-        ENCODING_VERSION, str(max_intervals), str(max_ordinal_values),
+        ENCODING_VERSION, _discretizer_token(discretizer if discretizer is not None else TreeDiscretizer()),
+        str(max_ordinal_values),
         dataset.name, str(dataset.openml_id), str(dataset.openml_version),
         str(n_folds), str(fold), str(random_state), representation.__name__,
         learner.display_name, params_repr,
@@ -355,7 +364,7 @@ class _Cell:
     test_rep: DataRepresentation
 
 
-def _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,
+def _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_dir,
                 representation, verbose, max_ordinal_values=DEFAULT_MAX_ORDINAL_VALUES):
     """Yield every cell in (dataset, fold, learner) order, loading and
     encoding each dataset and fold only when the consumer asks for its
@@ -371,14 +380,14 @@ def _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_
         for fold, (train_idx, test_idx) in enumerate(folds):
             train_df = df.iloc[train_idx].reset_index(drop=True)
             test_df = df.iloc[test_idx].reset_index(drop=True)
-            spec = build_dataspec(train_df, target=target, max_intervals=max_intervals,
+            spec = build_dataspec(train_df, target=target, discretizer=discretizer,
                                   max_ordinal_values=max_ordinal_values, skip_unusable=True).build()
             train_rep = encode(spec, train_df, train_df[target].to_numpy(), representation=representation)
             test_rep = encode(spec, test_df, test_df[target].to_numpy(), representation=representation)
 
             for learner in learners:
                 key = _cache_key(entry, n_folds, fold, random_state, learner, representation,
-                                 max_intervals, max_ordinal_values)
+                                 discretizer, max_ordinal_values)
                 yield _Cell(index, entry.name, fold, n_folds, learner, key,
                             _cache_load(cache_dir, key), train_rep, test_rep)
                 index += 1
@@ -541,7 +550,7 @@ def run_cv(
     datasets: Sequence[CatalogEntry],
     n_folds: int = 10,
     fit_timeout: Optional[float] = DEFAULT_FIT_TIMEOUT,
-    max_intervals: int = DEFAULT_MAX_INTERVALS,
+    discretizer: Optional[Discretizer] = None,
     random_state: int = 0,
     cache_dir: Optional[str] = None,
     measure_fn: Optional[Callable[[Any, DataRepresentation], dict]] = None,
@@ -609,13 +618,15 @@ def run_cv(
     the run ends with a line naming them.
 
     Each training fold is encoded by `build_dataspec`: numeric columns
-    discretized into at most `max_intervals` intervals, and numeric
-    columns with three to `max_ordinal_values` distinct values (default
-    10, independent of `max_intervals`) made ORDINAL.
+    discretized by `discretizer` (a `pyrulearn.data.discretization.
+    Discretizer`, fit on the training fold only; default
+    `TreeDiscretizer()`), and numeric columns with three to
+    `max_ordinal_values` distinct values (default 10, independent of the
+    discretizer) made ORDINAL.
 
     Fold caching (`cache_dir`, off by default): one JSON file per
     `cache_dir`, keyed by a stable hash of (the encoding --
-    `ENCODING_VERSION`, `max_intervals`, `max_ordinal_values` -- dataset
+    `ENCODING_VERSION`, the discretizer, `max_ordinal_values` -- dataset
     name + OpenML id + version, `n_folds`, fold index, `random_state`,
     `representation`'s
     class name, `learner.display_name`, a stable repr of the learner's
@@ -666,7 +677,7 @@ def run_cv(
     n_jobs = _resolve_n_jobs(n_jobs)
 
     resolved_representation = representation or default_representation()
-    cells = _iter_cells(learners, datasets, n_folds, max_intervals, random_state, cache_dir,
+    cells = _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_dir,
                         resolved_representation, verbose, max_ordinal_values=max_ordinal_values)
     if n_jobs > 1:
         rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose,
