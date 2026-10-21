@@ -9,7 +9,6 @@ plan in [`examples/REVISION_PLAN.md`](examples/REVISION_PLAN.md).
 
 **Done in 0.4.0 (2026-10-20).** Two changes to the feature space,
 released together with the beta clean-up (removed deprecated names).
-Open: the demos are re-run separately, on a faster machine.
 
 *Numeric attributes always test both directions.* A threshold `t` gives
 `x>=t` and `x<t`, whatever the negation setting: one direction alone
