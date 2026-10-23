@@ -3,6 +3,18 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Changed
+
+- `HorizontalBitmapRepresentation` no longer unpacks the whole feature matrix
+  during a search. `refine_cover`, `features_of`, `batch_cover_counts` and
+  `batch_cover_sums` read the packed bits directly, and the batch counts unpack
+  only the open features' bytes, a bounded block of rows at a time
+  (`BATCH_BLOCK_CELLS`). Fits keep their peak memory far lower (on adult,
+  8,000 rows: CN2 from 21.5 to 1.4 MiB, Pypper from 15.1 to 1.2 MiB, ENDER
+  from 7.9 to 3.5 MiB) and run faster, and they learn the same rules.
+
 ## 0.4.1 (2026-10-21)
 
 Discretization becomes an object passed as `discretizer=` -- the decision tree so far,

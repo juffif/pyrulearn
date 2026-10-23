@@ -283,13 +283,19 @@ class DataRepresentation(ABC):
 class HorizontalBitmapRepresentation(DataRepresentation):
     """The canonical Boolean bit-matrix encoding: a `numpy.packbits`-packed
     feature matrix (shape ``(n_samples, ceil(spec.n_features / 8))``) plus
-    optional labels `y`. `coverage`/`Rule.covers_data_packed` run against
-    the packed form (`packed_rows()`) without ever touching `X`; the
-    unpacked ``(n_samples, spec.n_features)`` bool matrix `X` is
-    reconstructed lazily on first access (see the property) -- for handing
-    a plain array to external learners, and (once) by `refine_cover`'s
-    incremental search fast path.
+    optional labels `y`. `coverage`/`Rule.covers_data_packed` and a
+    search's primitives (`refine_cover`, `batch_cover_counts`,
+    `batch_cover_sums`, `features_of`) all run against the packed form
+    without ever touching `X`; the unpacked ``(n_samples, spec.n_features)``
+    bool matrix `X` is reconstructed lazily on first access (see the
+    property) -- for handing a plain array to external or dense learners.
     """
+
+    #: the most cells `batch_cover_counts`/`batch_cover_sums` unpack at a
+    #: time (covered rows x the bits of the open features' bytes), so
+    #: their temporaries -- with weights, a float copy at eight bytes per
+    #: cell -- stay small however large the data
+    BATCH_BLOCK_CELLS = 1 << 18
 
     def __init__(self, spec: DataSpec, X, y: Optional[np.ndarray] = None,
                  weights: Optional[np.ndarray] = None):
@@ -366,7 +372,26 @@ class HorizontalBitmapRepresentation(DataRepresentation):
         return np.all((self._packed & want) == want, axis=1)
 
     def features_of(self, row: int) -> np.ndarray:
-        return np.flatnonzero(self.X[row])
+        return np.flatnonzero(np.unpackbits(self._packed[row], count=self.spec.n_features))
+
+    def _column(self, feature: int) -> np.ndarray:
+        """Feature `feature`'s column as a bool array, read off its bit in
+        the packed rows -- one byte per row is touched, nothing cached."""
+        return (self._packed[:, feature >> 3] & np.uint8(0x80 >> (feature & 7))) != 0
+
+    def _open_column_blocks(self, rows: np.ndarray, feature_indices: Sequence[int]):
+        """The columns `feature_indices` of the rows `rows`, unpacked a
+        block of rows at a time: yields ``(start, block)``, `block` the
+        ``uint8`` 0/1 matrix of ``rows[start:start + len(block)]`` x the
+        features. Only the bytes holding one of the features are unpacked,
+        and a block holds at most `BATCH_BLOCK_CELLS` unpacked bits."""
+        feats = np.asarray(feature_indices, dtype=np.intp)
+        byte_idx, inverse = np.unique(feats >> 3, return_inverse=True)
+        bit_pos = inverse.ravel() * 8 + (feats & 7)
+        step = max(1, self.BATCH_BLOCK_CELLS // max(8 * len(byte_idx), 1))
+        for start in range(0, len(rows), step):
+            bits = np.unpackbits(self._packed[np.ix_(rows[start:start + step], byte_idx)], axis=1)
+            yield start, bits[:, bit_pos]
 
     # -- incremental coverage (search fast path) -----------------------
     #
@@ -386,10 +411,9 @@ class HorizontalBitmapRepresentation(DataRepresentation):
 
     def refine_cover(self, handle, feature: int):
         cov, scope, w = handle
-        # `X` materializes here on first use -- a one-time O(n*k) unpack,
-        # paid back many times over versus `coverage`'s O(n*k/8) *every*
-        # call regardless of how short the rule being grown is.
-        return cov & self.X[:, feature], scope, w
+        # one bit per row, read from the packed bytes: as fast as a column
+        # of the unpacked `X`, without unpacking (and caching) all of it
+        return cov & self._column(feature), scope, w
 
     def cover_counts(self, handle, positive_class: Any) -> Tuple[int, int, int, int]:
         if self.y is None:
@@ -409,13 +433,17 @@ class HorizontalBitmapRepresentation(DataRepresentation):
         return handle[0]
 
     def batch_cover_sums(self, handle, values: np.ndarray, feature_indices: Sequence[int]) -> np.ndarray:
-        """`DataRepresentation.batch_cover_sums` as one matrix product over
+        """`DataRepresentation.batch_cover_sums` as a matrix product over
         the covered rows with a nonzero value only -- with a subsample,
-        the rows outside it carry zeros and are skipped."""
+        the rows outside it carry zeros and are skipped -- a block of rows
+        at a time (`_open_column_blocks`), so that the float copy the
+        product needs stays small."""
         values = np.asarray(values, dtype=float)
         rows = np.flatnonzero(handle[0] & (values != 0).any(axis=1))
-        cols = self.X[np.ix_(rows, np.asarray(feature_indices, dtype=np.intp))]
-        return values[rows].T @ cols
+        out = np.zeros((values.shape[1], len(feature_indices)))
+        for start, block in self._open_column_blocks(rows, feature_indices):
+            out += values[rows[start:start + len(block)]].T @ block
+        return out
 
     def chain_cover_counts(
         self, handle, positive_class: Any, feature_indices: Sequence[int]
@@ -472,17 +500,14 @@ class HorizontalBitmapRepresentation(DataRepresentation):
         `pyrulearn.learners.seco.count_open_children` -- and so every
         rule search -- counts with on this representation.
 
-        Multiplies only the covered rows of the open columns,
-        ``X[covered][:, feature_indices]`` -- one copy, which numpy's
-        fancy indexing always makes, of a block that shrinks with every
-        condition the rule gains (uncovered rows would only add zero
-        weights). Measured 1.9-6x faster than all rows on `spambase`
-        (4601 rows), 1.2-2.3x on `sonar`/`kr-vs-kp`, same models
-        (`ROADMAP.md`). Earlier, matmul-ing against the *whole* matrix
-        and selecting `feature_indices` from the result (no copy at all)
-        was tried and measured worse than slicing the open columns in
-        every real search -- it pays the full width however narrow the
-        open set is (`ROADMAP.md`'s "Design decisions").
+        Works on the covered rows of the open columns only (uncovered
+        rows would only add zero weights), unpacked from the packed bits
+        a block of rows at a time (`_open_column_blocks`): without weights
+        it counts the set bits per column, with weights it multiplies each
+        block by them. The temporaries stay bounded by
+        `BATCH_BLOCK_CELLS`, where an unpacked, float copy of all covered
+        rows of the open columns at eight bytes per cell made a fit need
+        about ten times the unpacked matrix (`ROADMAP.md`).
 
         `keeps_all` marks the features that drop no covered row with a
         nonzero weight: refining by one changes nothing, so its tp/fp
@@ -498,20 +523,28 @@ class HorizontalBitmapRepresentation(DataRepresentation):
         # contribute zeros, and a deeper rule covers fewer and fewer of them
         rows = np.flatnonzero(cov if w is None else cov & (w != 0))
         pos = (self.y == positive_class)[rows]
-        if w is not None:
-            wr = w[rows]
-            pos_w = np.where(pos, wr, 0.0)
-            neg_w = np.where(pos, 0.0, wr)
-        else:
-            pos_w = pos.astype(float)
-            neg_w = (~pos).astype(float)
-        cols = self.X[np.ix_(rows, np.asarray(feature_indices, dtype=np.intp))]
-        tp = pos_w @ cols
-        fp = neg_w @ cols
+        m = len(feature_indices)
+        keeps_all = np.ones(m, dtype=bool)
         if w is None:
-            tp = tp.astype(int)
-            fp = fp.astype(int)
-        return tp, fp, cols.all(axis=0)
+            tp = np.zeros(m, dtype=np.int64)
+            fp = np.zeros(m, dtype=np.int64)
+            for start, block in self._open_column_blocks(rows, feature_indices):
+                p = pos[start:start + len(block)]
+                tp += np.count_nonzero(block[p], axis=0)
+                fp += np.count_nonzero(block[~p], axis=0)
+                keeps_all &= block.all(axis=0)
+            return tp, fp, keeps_all
+        wr = w[rows]
+        pos_w = np.where(pos, wr, 0.0)
+        neg_w = np.where(pos, 0.0, wr)
+        tp = np.zeros(m)
+        fp = np.zeros(m)
+        for start, block in self._open_column_blocks(rows, feature_indices):
+            end = start + len(block)
+            tp += pos_w[start:end] @ block
+            fp += neg_w[start:end] @ block
+            keeps_all &= block.all(axis=0)
+        return tp, fp, keeps_all
 
     @classmethod
     def from_dataframe(
