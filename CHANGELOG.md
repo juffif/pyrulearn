@@ -3,7 +3,11 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
-## Unreleased
+## 0.4.2 (2026-10-25)
+
+The horizontal bitmap searches on its packed bits: fits on it need about as little
+memory as on the vertical bitmap and run faster, with the same rules. The
+representations demo is re-run on it, and the tutorial follows 0.4.1. No API change.
 
 ### Changed
 
@@ -19,6 +23,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   current cap is larger. With 600 s, PyLORD finishes 16,000 rows of `adult`
   (with negation features) on every representation and 32,000 rows on the
   vertical bitmap (505 s).
+- The tutorial, re-executed for 0.4.1: accuracies as percentages, the inferred
+  attribute types (ordinal, numeric, binary, nominal), learning without negated
+  features, and the lower bound for ordinal columns.
 
 ## 0.4.1 (2026-10-21)
 
