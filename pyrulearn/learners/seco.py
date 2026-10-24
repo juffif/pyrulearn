@@ -66,15 +66,17 @@ A search can also look for the best rule of *any* class: with
 which counts each rule's covered examples per class and lets the
 heuristic choose its head (`pyrulearn.heuristics.RuleHeuristic.
 best_head`) -- the head may change from a rule to its refinement.
-`model=DecisionList` builds on it: one covering loop over all classes at
-once, rules kept in learn order, first match wins (`model=FlatRuleSet`
-gives the same rules resolved by that order, `ListCombiner()`):
-- `SeCo._head_covering_fit` -- each rule the best of any class, as in
-  CN2's ordered mode;
-- `SeCo._seed_covering_fit` for a seeded learner (`SeedExample`, `AQR`'s
-  own `_MULTICLASS_DEFAULT`) -- each rule seeded on a random uncovered
-  example and headed with that example's own label, AQ's multi-class
-  covering.
+`model=DecisionList` (`SeCo._decision_list_fit`) is one covering loop
+over all classes at once, rules kept in learn order, first match wins
+(`model=FlatRuleSet` gives the same rules resolved by that order,
+`ListCombiner()`). Each of its rules comes from three independent
+choices (see "seeds and heads" below): a seed (`seed=`: `FirstSeed`,
+`RandomSeed`, or none), the search space (`space_init=`; with a seed,
+the seed's generalizations unless given) and the head (`target_class=`:
+`AnyClass`, `SeedClass`, `EachClass`; with a seed, `SeedClass`). AQ's
+seed covering is a random seed with its generalizations and its class
+(`AQR`'s own `_MULTICLASS_DEFAULT`); CN2's ordered mode is no seed, all
+features and `AnyClass()`.
 
 "Masks, not splits": every one of these building blocks that needs to
 restrict which examples are in scope (a grow/prune split, "which
@@ -2062,6 +2064,150 @@ class SeedExample(SearchSpaceInit):
         return [(empty, open_mask)]
 
 
+# ================================================= seeds and heads ====
+#
+# A covering loop gets each rule from three independent choices: which
+# example to explain next (the *seed*, `SeedSelection`, a learner's
+# `seed=`), where the search starts (`SearchSpaceInit`, `space_init=`;
+# with a seed, `SeedExample` -- the seed's generalizations) and the rule's
+# head (`HeadSelection`, `target_class=`: a fixed class, any class, the
+# seed's class, or the best of one search per class). A seed only sets
+# the defaults of the other two -- the seed's generalizations and its
+# class, AQ's seed covering -- and either can be overridden.
+
+
+class SeedSelection(ABC):
+    """Which example a covering loop explains next -- the seed. `pick`
+    returns a row in scope (of class `target`, unless None), or None if
+    there is none. A seed for which no acceptable rule is found is set
+    aside and another one tried."""
+
+    @abstractmethod
+    def pick(self, data, scope, target: Any, rng: np.random.Generator) -> Optional[int]:
+        raise NotImplementedError
+
+    @staticmethod
+    def _candidates(data, scope, target: Any) -> np.ndarray:
+        support = data.scope(scope)[0]
+        rows = np.ones(data.n_samples, dtype=bool) if support is None else support
+        if target is not None:
+            rows = rows & (np.asarray(data.y) == target)
+        return np.flatnonzero(rows)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+
+class FirstSeed(SeedSelection):
+    """The lowest-indexed example in scope."""
+
+    def pick(self, data, scope, target, rng):
+        candidates = self._candidates(data, scope, target)
+        return int(candidates[0]) if len(candidates) else None
+
+
+class RandomSeed(SeedSelection):
+    """A random example in scope, drawn from the covering loop's random
+    generator (the learner's `random_state`)."""
+
+    def pick(self, data, scope, target, rng):
+        candidates = self._candidates(data, scope, target)
+        return int(rng.choice(candidates)) if len(candidates) else None
+
+
+class _SpaceInitSeed(SeedSelection):
+    """A `SeedExample`'s own strategy (``"first"``/``"random"``) as the
+    seed of a one-class covering loop -- how seeds were chosen before
+    `seed=` existed, kept so that such a learner learns what it did."""
+
+    def __init__(self, space_init: "SeedExample"):
+        self.space_init = space_init
+
+    def pick(self, data, scope, target, rng):
+        return self.space_init.pick_seed(data, target, scope)
+
+
+class HeadSelection(ABC):
+    """How a covering loop gets its next rule, and that rule's head --
+    what a learner's `target_class` holds besides a plain class label
+    (which means `FixedClass`). `next_rules` returns the rule(s) of one
+    search, each with its head; `seed` is the loop's seed (None without
+    one) and `space_init` the search space for it (None: the learner's
+    own)."""
+
+    @abstractmethod
+    def next_rules(self, learner: "SeCo", data, remaining, seed: Optional[int],
+                   space_init: Optional[SearchSpaceInit]) -> List[Rule]:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+    def __eq__(self, other) -> bool:
+        return type(self) is type(other) and vars(self) == vars(other)
+
+    def __hash__(self) -> int:
+        return hash(type(self))
+
+
+class FixedClass(HeadSelection):
+    """Every rule predicts `label` -- what a plain class label as
+    `target_class` means."""
+
+    def __init__(self, label: Any):
+        self.label = label
+
+    def next_rules(self, learner, data, remaining, seed, space_init):
+        return learner._learn_rules(data, self.label, remaining, space_init)
+
+    def __repr__(self) -> str:
+        return f"FixedClass({self.label!r})"
+
+
+class AnyClass(HeadSelection):
+    """The best rule of any class: the heuristic chooses each rule's
+    head while the rule is searched (`HeadObjective`) -- CN2's ordered
+    mode."""
+
+    def next_rules(self, learner, data, remaining, seed, space_init):
+        return learner._learn_rules(data, None, remaining, space_init)
+
+
+class SeedClass(HeadSelection):
+    """The seed's class -- AQ's seed covering. Needs a seed."""
+
+    def next_rules(self, learner, data, remaining, seed, space_init):
+        if seed is None:
+            raise ValueError("SeedClass() needs a seed (seed=FirstSeed() or RandomSeed())")
+        return learner._learn_rules(data, np.asarray(data.y)[seed], remaining, space_init)
+
+
+class EachClass(HeadSelection):
+    """One search per class still in scope, and the best of their rules:
+    each scored by the learner's heuristic for its class on the
+    remaining examples (a gain heuristic over the scope as a whole)."""
+
+    def next_rules(self, learner, data, remaining, seed, space_init):
+        heuristic = learner.single_rule_learner.heuristic
+        if not isinstance(heuristic, RuleHeuristic):
+            raise ValueError(f"EachClass() compares rules by a RuleHeuristic, got {type(heuristic).__name__}")
+        support = data.scope(remaining)[0]
+        classes = np.unique(np.asarray(data.y) if support is None else np.asarray(data.y)[support])
+        best, best_score = None, None
+        for c in classes:
+            found = learner._learn_rules(data, c, remaining, space_init)
+            if not found:
+                continue
+            stats = RuleStats.from_rule(found[0], data, c, example_mask=remaining)
+            if isinstance(heuristic, GainHeuristic):
+                score = heuristic.score(stats, RuleStats.universal(stats.n_pos, stats.n_neg))
+            else:
+                score = heuristic.score(stats)
+            if best_score is None or score > best_score:
+                best, best_score = found[0], score
+        return [] if best is None else [best]
+
+
 class SingleRulePreparation(ABC):
     """Base for building block 3: what to do with the in-scope examples
     before searching for a single rule. `example_mask` is the incoming
@@ -2259,6 +2405,7 @@ class SingleRuleLearner:
         self.preparation = preparation if preparation is not None else NoSplit()
         self.postprocessing = postprocessing if postprocessing is not None else NoPostProcessing()
         self.space_init = space_init if space_init is not None else EmptyRuleAllFeatures()
+        self._space_init_given = space_init is not None   # else a seed implies SeedExample()
         self.filtering = filtering
         self.stopping = stopping
 
@@ -2272,9 +2419,8 @@ class SingleRuleLearner:
         straight from `RuleSearch.search` -- post-processing is skipped).
 
         `space_init` overrides `self.space_init` for this call only --
-        used by `SeCo`'s `model=DecisionList` seed-covering loop
-        (`_seed_covering_fit`) to seed each rule on a specific chosen
-        example."""
+        used by `SeCo`'s covering loops to search the generalizations of
+        the seed they picked (`SeedExample(strategy="index")`)."""
         si = space_init if space_init is not None else self.space_init
         search_mask, context = self.preparation.prepare(data, target_class, example_mask)
         initial = si.initial_candidates(data, target_class, search_mask)
@@ -2891,11 +3037,14 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
       one-vs-rest / ordered peeling / round robin, via `DecomposingLearner`
       (each fits per-class copies through the covering loop).
     - `fit(data, model=DecisionList)` -- one covering loop over all
-      classes at once, rules in learn order, first match wins:
-      `_head_covering_fit` (each rule the best of any class, its head
-      chosen by the heuristic -- CN2's ordered mode), or for a seeded
-      learner `_seed_covering_fit` (random uncovered example -> its label
-      as the head -> learn -> remove -> repeat; AQ's multi-class covering).
+      classes at once, rules in learn order, first match wins
+      (`_decision_list_fit`): each rule from a seed (`seed=`), a search
+      space and a head (`target_class=` a `HeadSelection`); without
+      either, the best rule of any class (`AnyClass()`, CN2's ordered
+      mode), or for a seeded learner a random seed, its generalizations
+      and its class (AQ's seed covering). `fit(data)` builds it whenever
+      `target_class` is a `HeadSelection` other than `FixedClass`, or a
+      `seed` is given.
     - `fit(data, model=FlatRuleSet)` -- the same rules, as a rule set
       resolved by learn order (`ListCombiner()`), e.g. to compare other
       combiners on them.
@@ -2928,6 +3077,17 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     binary path (`target_class` set, or a per-class stage of a decomposition);
     ignored by the all-classes seed covering (`model=DecisionList` /
     `FlatRuleSet`), which has no single target class.
+
+    `seed` (a `SeedSelection`: `FirstSeed()`, `RandomSeed()`; default
+    none) makes each search explain one uncovered example: by default it
+    searches that example's generalizations (unless `space_init` is
+    given) and, in a decision list, predicts its class (unless
+    `target_class` is a `HeadSelection`). In a one-class covering loop
+    the seed is an uncovered example of the class. A seed for which no
+    acceptable rule is found is set aside and the next one tried.
+    `target_class` takes a class (or `FixedClass`) for one concept, or
+    `AnyClass()`, `SeedClass()` or `EachClass()` for a decision list
+    (see "seeds and heads" above `HeadSelection`).
     """
 
     #: model type `fit(data)` builds with no `model=` and no `target_class`.
@@ -2944,6 +3104,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         random_state: Optional[int] = 0,
         optimization: Optional[RuleSetOptimizer] = None,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
     ):
         self.single_rule_learner = single_rule_learner
         self.target_class = target_class
@@ -2952,12 +3113,59 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         self.optimization = optimization
         self.random_state = random_state
         self.covering = covering
+        self.seed = seed
+
+    def _provenance_params(self):
+        params = super()._provenance_params()
+        if params.get("seed") is None:   # absent unless given: keeps earlier cache keys valid
+            params.pop("seed", None)
+        return params
 
     def _default_model(self, data: HorizontalBitmapRepresentation) -> type:
-        """`fit(data)` with no `model=`: one concept (`target_class` set)
-        or the family's multi-class default (`ConceptSet`; `DecisionList`
-        for `AQR`)."""
-        return ConceptModel if self.target_class is not None else self._MULTICLASS_DEFAULT
+        """`fit(data)` with no `model=`: one concept (`target_class` a
+        class, or `FixedClass`), a decision list (`target_class` another
+        `HeadSelection`, or a `seed`), or the family's multi-class default
+        (`ConceptSet`; `DecisionList` for `AQR`)."""
+        head = self.target_class
+        if isinstance(head, HeadSelection):
+            return ConceptModel if isinstance(head, FixedClass) else DecisionList
+        if head is not None:
+            return ConceptModel
+        return DecisionList if self.seed is not None else self._MULTICLASS_DEFAULT
+
+    def _fixed_class(self, label: Any = None) -> Any:
+        """The one class of a concept: `label`, or `target_class` (a class
+        or `FixedClass`); None if there is none."""
+        target = label if label is not None else self.target_class
+        if isinstance(target, FixedClass):
+            return target.label
+        if isinstance(target, HeadSelection):
+            raise ValueError(f"target_class={target!r} has no single class; pass label=")
+        return target
+
+    def _seed_selection(self, seed: Optional[SeedSelection], multiclass: bool) -> Optional[SeedSelection]:
+        """The seed of a covering loop: `seed`, else the learner's own
+        `seed=`, else -- with a `SeedExample` search space and no `seed=`,
+        as before `seed=` existed -- its own strategy in a one-class loop
+        and a random seed in a decision list (AQR's seed covering)."""
+        if seed is None:
+            seed = self.seed
+        if seed is not None:
+            return seed
+        space_init = getattr(self.single_rule_learner, "space_init", None)
+        if isinstance(space_init, SeedExample) and space_init.strategy != "index":
+            return RandomSeed() if multiclass else _SpaceInitSeed(space_init)
+        return None
+
+    def _seed_space(self, seed: Optional[SeedSelection]) -> bool:
+        """Whether each search generalizes the loop's seed: with a
+        `SeedExample` search space, or with a seed and no `space_init`
+        given (a seed implies its generalizations)."""
+        space_init = getattr(self.single_rule_learner, "space_init", None)
+        if isinstance(space_init, SeedExample):
+            return space_init.strategy != "index"
+        given = getattr(self.single_rule_learner, "_space_init_given", True)
+        return (seed if seed is not None else self.seed) is not None and not given
 
     def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
@@ -2965,51 +3173,6 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         with `negative` (a pair sub-problem) or `MajorityClass` (one-vs-
         rest) as the fallback."""
         return self._fit_covering(data, label=positive, fallback=negative)
-
-    def _seed_covering_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
-        """`model=DecisionList`: one separate-and-conquer loop over *all*
-        classes at once. Repeatedly pick a uniformly random still-uncovered
-        example, take its own label as the rule head, learn the best rule
-        for it (seeded on that example, `SeedExample(strategy="index")`),
-        and remove everything the rule covers. This is AQ's multi-class
-        covering, and the same per-example seeding `pyrulearn.learners.pylord.PyLORD`
-        does -- but inside a covering loop rather than once per row. Best
-        paired with a consistency-filtered learner (`AQR`): consistent
-        per-class rules never conflict, so the arbitrary seed order
-        doesn't matter."""
-        if not isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering):
-            raise ValueError("the all-classes seed covering (model=DecisionList) needs RemovalCovering: "
-                             "a decision list's first-match semantics assumes covered examples are removed")
-        rng = np.random.default_rng(self.random_state)
-        remaining = np.ones(data.n_samples, dtype=bool)
-        rules: List[Rule] = []
-        while np.any(remaining):
-            if self.max_rules is not None and len(rules) >= self.max_rules:
-                break
-            seed = int(rng.choice(np.flatnonzero(remaining)))
-            target = data.y[seed]
-            rule = self.single_rule_learner.learn_one_rule(
-                data, target, remaining,
-                space_init=SeedExample(strategy="index", index=seed),
-            )
-            if rule is not None and rule.length() > 0:
-                stats = RuleStats.from_rule(rule, data, target, example_mask=remaining)
-                stop = self.stop_covering is not None and self.stop_covering.evaluate(
-                    rule, stats, data, target, remaining
-                )
-                if stats.tp > 0 and not stop:
-                    rules.append(rule)
-                    remaining = remaining & ~rule.covers_data_packed(data)
-            remaining[seed] = False  # drop the seed either way -> guaranteed progress
-
-        # each rule was consistent *within its covering scope* but can pick up
-        # negatives earlier rules had already removed, so two classes' rules
-        # can overlap on a later example -- first match in learn order breaks
-        # that (the big, clean rules come first in a covering loop), the
-        # honest reading of a sequential-covering result: a decision list.
-        rules = annotate_rules(rules, data)
-        model = DecisionList(rules, default_prediction=MajorityClass(data))
-        return annotate_default_rule(model, data)
 
     def _covering_loop(self, data: HorizontalBitmapRepresentation, target: Any) -> List[Rule]:
         """The separate-and-conquer covering loop for one class `target`
@@ -3040,8 +3203,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
                              "rule sets can't hold -- use a boosting learner (e.g. Slipper)")
         state = covering.start(data, positive)
         rules: List[Rule] = []
-        space_init = getattr(self.single_rule_learner, "space_init", None)
-        seeded = isinstance(space_init, SeedExample) and space_init.strategy != "index"
+        seeds = self._seed_selection(None, multiclass=False)
+        seed_space = self._seed_space(None)
+        rng = np.random.default_rng(self.random_state)
 
         while True:
             if self.max_rules is not None and len(rules) >= self.max_rules:
@@ -3050,9 +3214,12 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
                 break  # every positive covered (or dropped as a failed seed), or a stop criterion
             remaining = state.scope
 
-            if seeded:
-                seed = space_init.pick_seed(data, target, remaining)
-                found = self._learn_rules(data, target, remaining, SeedExample(strategy="index", index=seed))
+            if seeds is not None:
+                seed = seeds.pick(data, remaining, target, rng)
+                if seed is None:
+                    break
+                found = self._learn_rules(data, target, remaining,
+                                          SeedExample(strategy="index", index=seed) if seed_space else None)
             else:
                 found = self._learn_rules(data, target, remaining)
             # one rule per search, unless the search branches (CPAR's): then
@@ -3077,7 +3244,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
             if outcome == "unacceptable":
                 # nothing (more) acceptable found (no rule, one covering
                 # nothing new, or one `stop_covering` rejects)
-                if seeded:
+                if seeds is not None:
                     covering.drop(state, seed)
                     continue
                 break
@@ -3109,7 +3276,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         uncovered rows (`MajorityClass(data)` if not given)."""
         if data.y is None:
             raise ValueError("SeCo needs data.y")
-        target = label if label is not None else self.target_class
+        target = self._fixed_class(label)
         if target is None:
             raise ValueError("model=ConceptModel needs label= (or target_class set)")
         rules = annotate_rules(self._covering_loop(data, target), data)
@@ -3123,7 +3290,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         covering loop, no optimization."""
         if data.y is None:
             raise ValueError("SeCo needs data.y")
-        target = label if label is not None else self.target_class
+        target = self._fixed_class(label)
         if target is None:
             raise ValueError("model=SingleRule needs label= (or target_class set)")
         all_rows = np.ones(data.n_samples, dtype=bool)
@@ -3134,70 +3301,95 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         sr.set_stats(data)
         return sr
 
-    def _head_covering_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
-        """`model=DecisionList` for a learner that doesn't seed its search:
-        one separate-and-conquer loop over *all* classes at once, as in
-        CN2's ordered mode. Each search looks for the best rule of any
-        class -- the single-rule learner with no target class, its
-        heuristic choosing each rule's head (`HeadObjective`) -- and the
-        rule's covered examples are removed. The loop ends once nothing is
-        left, the search finds nothing acceptable, or a rule covers no
-        example of its head (`stats.tp == 0`), is unconditional, or is
-        rejected by `stop_covering` (judged for its head). The default is
-        the majority class of the examples no rule covers -- of all of
-        them if every example is covered."""
+    def _decision_list_fit(self, data: HorizontalBitmapRepresentation, target_class: Any = None,
+                           seed: Optional[SeedSelection] = None) -> DecisionList:
+        """`model=DecisionList`: one separate-and-conquer loop over *all*
+        classes at once, rules in learn order, first match wins. Each
+        round picks a seed if there is one (`seed`, else the learner's;
+        see `_seed_selection`), gets the next rule from the head selection
+        (`target_class`, else the learner's if it is a `HeadSelection`,
+        else `SeedClass()` with a seed and `AnyClass()` without), searched
+        on the seed's generalizations if the seed implies them
+        (`_seed_space`), and removes the examples it covers. A rule is
+        refused if it covers no example of its head (`stats.tp == 0`), is
+        unconditional, or `stop_covering` rejects it (judged for its
+        head); then the seed is set aside and the next one tried, or,
+        without a seed, the loop ends -- as it does once nothing is left.
+        The default is the majority class of the examples no rule covers
+        (of all of them if every example is covered).
+
+        The combinations: AQ's seed covering (`RandomSeed()`, its
+        generalizations, `SeedClass()`; `AQR`'s default), CN2's ordered
+        mode (no seed, all features, `AnyClass()`), one search per class
+        (`EachClass()`), or a seed with a free head (`AnyClass()`: the
+        rule covers the seed but may predict another class)."""
+        if data.y is None:
+            raise ValueError("SeCo needs data.y")
         if not isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering):
             raise ValueError("a decision list (model=DecisionList) needs RemovalCovering: its first-match "
                              "semantics assumes covered examples are removed")
+        seeds = self._seed_selection(seed, multiclass=True)
+        seed_space = self._seed_space(seed)
+        head = target_class if target_class is not None else self.target_class
+        if not isinstance(head, HeadSelection):
+            head = SeedClass() if seeds is not None else AnyClass()
+        if isinstance(head, FixedClass):
+            raise ValueError("a decision list has rules of several classes; for one class use "
+                             "model=ConceptModel")
+        if isinstance(head, SeedClass) and seeds is None:
+            raise ValueError("SeedClass() needs a seed (seed=FirstSeed() or RandomSeed())")
+        rng = np.random.default_rng(self.random_state)
         remaining = np.ones(data.n_samples, dtype=bool)
         rules: List[Rule] = []
         while remaining.any():
             if self.max_rules is not None and len(rules) >= self.max_rules:
                 break
-            found = self._learn_rules(data, None, remaining)
-            done = not found
+            picked = seeds.pick(data, remaining, None, rng) if seeds is not None else None
+            if seeds is not None and picked is None:
+                break
+            space = SeedExample(strategy="index", index=picked) if seed_space and picked is not None else None
+            found = head.next_rules(self, data, remaining, picked, space)
+            accepted = full = False
             for rule in found:
                 if self.max_rules is not None and len(rules) >= self.max_rules:
-                    done = True
+                    full = True
                     break
                 stats = RuleStats.from_rule(rule, data, rule.target, example_mask=remaining)
                 if rule.length() == 0 or stats.tp == 0 or (
                         self.stop_covering is not None
                         and self.stop_covering.evaluate(rule, stats, data, rule.target, remaining)):
-                    done = True
                     break
                 rules.append(rule)
                 remaining = remaining & ~rule.covers_data_packed(data)
-            if done:
+                accepted = True
+            if full:
                 break
+            if not accepted:
+                if picked is None:
+                    break
+                remaining = remaining.copy()
+                remaining[picked] = False   # set the seed aside, try another
         rules = annotate_rules(rules, data)
         default = MajorityClass(data, mask=remaining) if remaining.any() else MajorityClass(data)
         return annotate_default_rule(DecisionList(rules, default_prediction=default), data)
 
-    def _decision_list_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
-        """A seeded learner's (`SeedExample`, i.e. `AQR`) seed covering, or
-        everyone else's search for a rule of any class."""
-        if data.y is None:
-            raise ValueError("SeCo needs data.y")
-        if isinstance(getattr(self.single_rule_learner, "space_init", None), SeedExample):
-            return self._seed_covering_fit(data)
-        return self._head_covering_fit(data)
-
     @produces(DecisionList)
-    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
+    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, *, target_class: Any = None,
+                           seed: Optional[SeedSelection] = None, **kw) -> DecisionList:
         """`fit(data, model=DecisionList)`: one covering loop over all
-        classes at once, rules in learn order, first match wins -- AQ's
-        seed covering for a seeded learner (`_seed_covering_fit`), CN2's
-        ordered mode otherwise (`_head_covering_fit`)."""
-        return self._decision_list_fit(data)
+        classes at once, rules in learn order, first match wins -- see
+        `_decision_list_fit`. `target_class=` (a `HeadSelection`) and
+        `seed=` override the learner's for this fit."""
+        return self._decision_list_fit(data, target_class, seed)
 
     @produces(FlatRuleSet)
-    def _fit_decision_list_set(self, data: HorizontalBitmapRepresentation, **kw) -> FlatRuleSet:
+    def _fit_decision_list_set(self, data: HorizontalBitmapRepresentation, *, target_class: Any = None,
+                               seed: Optional[SeedSelection] = None, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)`: the same rules as
         `model=DecisionList`, as a rule set resolved by learn order
         (`ListCombiner()`, so it predicts identically) -- e.g. to compare
         other combiners on the same rules via `predict(combiner=...)`."""
-        dl = self._decision_list_fit(data)
+        dl = self._decision_list_fit(data, target_class, seed)
         model = FlatRuleSet(dl.rules, default_prediction=dl.default_prediction, combiner=ListCombiner())
         return annotate_default_rule(model, data)
 
@@ -3312,6 +3504,7 @@ class CN2(_ClassCountLaplace, SeCo):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
     ):
         self._default_laplace = heuristic is None
         heuristic = heuristic if heuristic is not None else Laplace()
@@ -3333,6 +3526,7 @@ class CN2(_ClassCountLaplace, SeCo):
             max_rules=max_rules,
             random_state=random_state,
             covering=covering,
+            seed=seed,
         )
 
     @produces(ConceptSet)
@@ -3416,7 +3610,7 @@ class AQR(SeCo):
     has neither a grow/prune split nor rule truncation.
 
     **Multi-class:** `AQR`'s `fit(data)` default is `model=DecisionList` --
-    one covering loop over all classes (`SeCo._seed_covering_fit`): pick a
+    one covering loop over all classes (`SeCo._decision_list_fit`): pick a
     random uncovered example, take its label as the head, learn a
     consistent rule seeded on it, remove what it covers, repeat. That's
     AQ's own multi-class covering. A rule is consistent only within its
@@ -3447,6 +3641,7 @@ class AQR(SeCo):
         stop_covering: Optional[PrePruningCriterion] = None,
         max_rules: Optional[int] = None,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
     ):
         heuristic = heuristic if heuristic is not None else LEF(
             CoveredPositives(), CoveredNegatives(), MinimalLength()
@@ -3471,6 +3666,7 @@ class AQR(SeCo):
             max_rules=max_rules,
             random_state=random_state,
             covering=covering,
+            seed=seed,
         )
 
 
@@ -3526,6 +3722,7 @@ class PFoil(SeCo):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
     ):
         heuristic = heuristic if heuristic is not None else FoilGain()
         search = search if search is not None else GainAscentHillClimbing()
@@ -3546,6 +3743,7 @@ class PFoil(SeCo):
             max_rules=max_rules,
             random_state=random_state,
             covering=covering,
+            seed=seed,
         )
 
 
@@ -3622,6 +3820,7 @@ class PFossil(SeCo):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
     ):
         search = search if search is not None else HillClimbing()
         if heuristic is None:
@@ -3643,6 +3842,7 @@ class PFossil(SeCo):
             max_rules=max_rules,
             random_state=random_state,
             covering=covering,
+            seed=seed,
         )
 
 
@@ -3715,6 +3915,7 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         grow_heuristic: Optional[RuleHeuristic] = None,
         search: Optional[RuleSearch] = None,
         target_class: Any = None,
+        seed: Optional[SeedSelection] = None,
     ):
         self.k = k
         self.prune_fraction = prune_fraction
@@ -3723,6 +3924,13 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         self.grow_heuristic = grow_heuristic
         self.search = search
         self.target_class = target_class
+        self.seed = seed
+
+    def _provenance_params(self):
+        params = super()._provenance_params()
+        if params.get("seed") is None:   # absent unless given: keeps earlier cache keys valid
+            params.pop("seed", None)
+        return params
 
     def _stage_learner(self) -> SeCo:
         heuristic = self.grow_heuristic if self.grow_heuristic is not None else FoilGain()
@@ -3748,10 +3956,18 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
             ),
             max_rules=self.max_rules,
             optimization=ReplaceReviseOptimization(self.k, self.prune_fraction, self.random_state),
+            target_class=self.target_class,
+            random_state=self.random_state,
+            seed=self.seed,
         )
 
     def _default_model(self, data: HorizontalBitmapRepresentation) -> type:
-        return ConceptModel if self.target_class is not None else ConceptCascade
+        head = self.target_class
+        if isinstance(head, HeadSelection):
+            return ConceptModel if isinstance(head, FixedClass) else DecisionList
+        if head is not None:
+            return ConceptModel
+        return DecisionList if self.seed is not None else ConceptCascade
 
     @produces(ConceptModel)
     def _fit_concept(self, data: HorizontalBitmapRepresentation, *,
@@ -3759,25 +3975,25 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         """`fit(data, model=ConceptModel, label="a")` -- binary Pypper
         for one class: the configured IREP* + optimization covering loop,
         no peeling."""
-        target = label if label is not None else self.target_class
-        return self._stage_learner()._fit_covering(data, label=target, fallback=fallback)
+        return self._stage_learner()._fit_covering(data, label=label, fallback=fallback)
 
     @produces(SingleRule)
     def _fit_one_rule(self, data: HorizontalBitmapRepresentation, *, label: Any = None) -> SingleRule:
         """`fit(data, model=SingleRule, label="a")` -- one grown-and-pruned
         rule for `label`, no covering loop and no optimization phase."""
-        target = label if label is not None else self.target_class
-        return self._stage_learner()._fit_one_rule(data, label=target)
+        return self._stage_learner()._fit_one_rule(data, label=label)
 
     def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
 
     @produces(DecisionList)
-    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
+    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, *, target_class: Any = None,
+                           seed: Optional[SeedSelection] = None, **kw) -> DecisionList:
         """`fit(data, model=DecisionList)` -- one IREP\\* covering loop over
-        all classes at once (`SeCo._head_covering_fit`): each rule grown
-        for whichever class `FoilGain` prefers (the head may change while
-        it grows), pruned for that class, no optimization phase."""
-        return self._stage_learner()._head_covering_fit(data)
+        all classes at once (`SeCo._decision_list_fit`), no optimization
+        phase: by default each rule grown for whichever class `FoilGain`
+        prefers at its first refinement, then pruned for that class; with
+        a seed (`seed=`), grown from the seed's features for its class."""
+        return self._stage_learner()._decision_list_fit(data, target_class, seed)
 

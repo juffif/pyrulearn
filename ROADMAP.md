@@ -87,11 +87,30 @@ heuristic at zero:
   class showing large gains from 3 examples).
 
 `fit(data, model=DecisionList)` is now CN2's ordered mode for CN2, PFoil,
-PFossil, SeCo and Pypper (`_head_covering_fit`); AQR keeps its seed
-covering. With a fixed target class nothing changes: the search runs on
-`HeuristicObjective` as before (all tests unchanged).
+PFossil, SeCo and Pypper; AQR keeps its seed covering. With a fixed target
+class nothing changes: the search runs on `HeuristicObjective` as before
+(all tests unchanged).
+
+**Seeds and heads (2026-10-25).** A covering loop's rule comes from three
+independent choices: the seed (`seed=`: `FirstSeed`, `RandomSeed`, none),
+the search space (`space_init=`) and the head (`target_class=`: a class /
+`FixedClass`, `AnyClass`, `SeedClass`, `EachClass`). A seed only sets the
+defaults of the other two (its generalizations, its class), so AQ is
+`seed=RandomSeed()` alone, and the unusual combinations need one override
+(a seed with `AnyClass()`: the rule covers the seed but may predict
+another class; a seed with `EmptyRuleAllFeatures()`: the seed only picks
+the class). One decision-list loop (`SeCo._decision_list_fit`) replaces
+the seed covering and the head covering; AQR's rules are identical to
+before (`SeedExample`'s own strategies still choose the seeds when no
+`seed=` is given). The defaults (which head `model=DecisionList` uses
+without a `target_class`) are still to be decided; for now a seeded
+learner's is `SeedClass()`, everyone else's `AnyClass()`.
 
 Still to do:
+
+- **PyLORD on the same parts:** it seeds a search on every example
+  (`EachExample`, not yet a `SeedSelection`) and takes its class; with
+  `target_class=AnyClass()` its rules would get a free head too.
 
 - **A demo comparing the rule models**, for the paper's section on rule
   models: rule sets (one-vs-rest, with several combiners), decision lists,

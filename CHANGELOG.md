@@ -21,13 +21,25 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - `fit(data, model=DecisionList)` for CN2, PFoil, PFossil, SeCo and Pypper:
   one covering loop over all classes, each rule the best of any class, the
   default the majority of what no rule covers -- CN2's ordered mode.
+- Seeds and heads as three independent choices of a covering loop: `seed=`
+  (`FirstSeed()`, `RandomSeed()`) picks the example a search explains,
+  `space_init=` where the search starts, and `target_class=` the head --
+  a class (`FixedClass`) for one concept, or `AnyClass()` (the heuristic
+  chooses), `SeedClass()` (the seed's class) or `EachClass()` (the best of
+  one search per class) for a decision list. A seed implies its
+  generalizations and its class unless those are given, so
+  `CN2(seed=RandomSeed())` is AQ's seed covering with CN2's search. All
+  in `pyrulearn.learners.seco`, for every SeCo learner and Pypper, also as
+  `fit(data, model=DecisionList, target_class=..., seed=...)`. An unset
+  `seed` leaves a learner's parameters (and so cached results) unchanged.
 
 ### Changed
 
 - `model=DecisionList` (and `model=FlatRuleSet`) for a learner that doesn't
   seed its search (CN2, PFoil, PFossil) now searches rules of any class instead
-  of AQ's seed covering, which AQR keeps. Pypper's `model=DecisionList` is the
-  new covering loop instead of its converted class cascade.
+  of AQ's seed covering, which AQR keeps -- and which every learner gets with
+  `seed=RandomSeed()`. Pypper's `model=DecisionList` is the new covering loop
+  instead of its converted class cascade.
 
 ## 0.4.2 (2026-10-25)
 

@@ -13,8 +13,11 @@ from pyrulearn.heuristics import (
     LEF, CoveredPositives, Correlation, Entropy, FoilGain, GHeuristic, Laplace, LengthPenalized, MEstimate,
     MinimalLength, Precision, RuleHeuristic, RuleStats, WRAcc,
 )
-from pyrulearn.learners.seco import AQR, CN2, PFossil, Pypper
-from pyrulearn.models import DecisionList, FlatRuleSet
+from pyrulearn.learners.seco import (
+    AQR, CN2, AnyClass, EachClass, EmptyRuleAllFeatures, FirstSeed, FixedClass, PFossil, Pypper, RandomSeed,
+    SeedClass, SeedExample,
+)
+from pyrulearn.models import ConceptCascade, ConceptModel, ConceptSet, DecisionList, FlatRuleSet
 
 
 def _three_classes(n=600, seed=0, weights=None):
@@ -177,3 +180,81 @@ def test_a_seeded_learner_keeps_its_seed_covering():
     rep, _ = _three_classes()
     model = AQR(random_state=0).fit(rep, model=DecisionList)
     assert [r.rule for r in model.rules] == [r.rule for r in AQR(random_state=0).fit(rep).rules]
+
+
+# ------------------------------------------------------ seeds and heads ----
+
+def _rules(model):
+    return [r.rule for r in model.rules]
+
+
+def test_target_class_chooses_the_model():
+    rep, _ = _three_classes()
+    assert type(CN2(target_class=AnyClass()).fit(rep)) is DecisionList
+    assert type(CN2(target_class=EachClass()).fit(rep)) is DecisionList
+    assert type(CN2(seed=RandomSeed()).fit(rep)) is DecisionList
+    fixed = CN2(target_class=FixedClass("x")).fit(rep)
+    assert type(fixed) is ConceptModel and fixed.label == "x"
+    assert _rules(fixed) == _rules(CN2(target_class="x").fit(rep))
+    assert type(CN2().fit(rep)) is ConceptSet                       # the multi-class default, as before
+
+
+def test_the_head_options_also_go_to_fit():
+    rep, _ = _three_classes()
+    assert _rules(CN2().fit(rep, model=DecisionList, target_class=EachClass())) == \
+        _rules(CN2(target_class=EachClass()).fit(rep))
+    assert _rules(CN2().fit(rep, model=DecisionList)) == _rules(CN2(target_class=AnyClass()).fit(rep))
+    assert _rules(CN2().fit(rep, model=DecisionList, seed=RandomSeed())) == _rules(CN2(seed=RandomSeed()).fit(rep))
+
+
+def test_a_seed_implies_its_generalizations_and_its_class():
+    rep, y = _three_classes()
+    # the seed covering, asked for by seed= or (as before) by a SeedExample search space
+    seeded = CN2(seed=RandomSeed()).fit(rep)
+    assert _rules(seeded) == _rules(CN2(space_init=SeedExample()).fit(rep, model=DecisionList))
+    assert _rules(seeded) == _rules(CN2(seed=RandomSeed(), target_class=SeedClass(),
+                                        space_init=SeedExample()).fit(rep))
+    assert _rules(seeded) != _rules(CN2(seed=RandomSeed(), random_state=1).fit(rep))
+    assert np.mean(np.asarray(seeded.predict(rep)) == y) > 0.9
+
+
+def test_a_seed_can_leave_the_search_space_or_the_head_free():
+    rep, y = _three_classes()
+    for learner in (CN2(seed=RandomSeed(), space_init=EmptyRuleAllFeatures()),    # the seed only picks the class
+                    CN2(seed=RandomSeed(), target_class=AnyClass()),              # covers the seed, any head
+                    CN2(seed=FirstSeed())):
+        model = learner.fit(rep)
+        assert type(model) is DecisionList and len({r.target for r in model.rules}) >= 2
+        assert np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+
+
+def test_each_class_takes_the_best_of_one_search_per_class():
+    rep, y = _three_classes()
+    model = CN2(target_class=EachClass()).fit(rep)
+    assert len({r.target for r in model.rules}) >= 2
+    assert np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+    assert type(Pypper(target_class=EachClass()).fit(rep)) is DecisionList
+
+
+def test_impossible_combinations_are_refused():
+    rep, _ = _three_classes()
+    with pytest.raises(ValueError, match="needs a seed"):
+        CN2(target_class=SeedClass()).fit(rep)
+    with pytest.raises(ValueError, match="several classes"):
+        CN2().fit(rep, model=DecisionList, target_class=FixedClass("x"))
+    with pytest.raises(ValueError, match="no single class"):
+        CN2(target_class=AnyClass()).fit(rep, model=ConceptModel)
+
+
+def test_pypper_takes_seeds_too():
+    rep, y = _three_classes()
+    model = Pypper(seed=RandomSeed()).fit(rep)
+    assert type(model) is DecisionList
+    assert np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+    assert type(Pypper().fit(rep)) is ConceptCascade                # the default, as before
+
+
+def test_a_seed_not_given_stays_out_of_the_parameters():
+    # cache keys are built from the parameters: a new, unset seed= must not change them
+    assert "seed" not in CN2()._provenance_params() and "seed" not in Pypper()._provenance_params()
+    assert isinstance(CN2(seed=RandomSeed())._provenance_params()["seed"], RandomSeed)
