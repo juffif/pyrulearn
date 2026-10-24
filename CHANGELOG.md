@@ -3,6 +3,32 @@
 All notable changes to pyrulearn are listed here, newest first. The project
 is in early development (alpha): until 1.0, minor versions may change the API.
 
+## Unreleased
+
+### Added
+
+- Rules of any class: a search with no target class looks for the best rule of
+  any class, its heuristic choosing the rule's head. Every heuristic gets this
+  from its `batch_score` alone (`RuleHeuristic.best_head`: each class scored
+  against the rest, the best one wins); the `MajorityHead` mixin is a speed-up
+  for heuristics that always prefer the covered majority (`Precision`,
+  `Laplace`, `GHeuristic`, `CoveredPositives`), and the `ClassNeutral` mixin
+  is for heuristics defined on the whole class distribution (`Entropy`, now
+  CN2's multi-class entropy there). In the search, `HeadObjective`; the head
+  may change from a rule to its refinement, except with a gain heuristic
+  (`FoilGain`), which compares heads only at the first refinement, where all
+  of them start from the scope, and then keeps the head.
+- `fit(data, model=DecisionList)` for CN2, PFoil, PFossil, SeCo and Pypper:
+  one covering loop over all classes, each rule the best of any class, the
+  default the majority of what no rule covers -- CN2's ordered mode.
+
+### Changed
+
+- `model=DecisionList` (and `model=FlatRuleSet`) for a learner that doesn't
+  seed its search (CN2, PFoil, PFossil) now searches rules of any class instead
+  of AQ's seed covering, which AQR keeps. Pypper's `model=DecisionList` is the
+  new covering loop instead of its converted class cascade.
+
 ## 0.4.2 (2026-10-25)
 
 The horizontal bitmap searches on its packed bits: fits on it need about as little

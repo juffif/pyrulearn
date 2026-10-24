@@ -51,28 +51,30 @@ isolation) -- not yet implemented; `SeCo` as built so far always
 accepts every rule it finds (down to the covering criterion) without
 ever reconsidering earlier ones.
 
-Throughout, `target_class` is a fixed parameter -- every building block
-only ever finds/scores rules for one predetermined class. Multi-class is
-handled *around* this machinery, via the `fit(data, model=...)` switcher
-(see `pyrulearn.learners.RuleLearner.fit`) -- `fit(data)` with no
+Usually, `target_class` is a fixed parameter -- the building blocks find
+and score rules for one predetermined class. Multi-class is then handled
+*around* this machinery, via the `fit(data, model=...)` switcher (see
+`pyrulearn.learners.RuleLearner.fit`) -- `fit(data)` with no
 `target_class` builds `_MULTICLASS_DEFAULT` (`ConceptSet`, one-vs-rest,
-for the SeCo family):
-- a binary decomposition (`model=ConceptSet | ConceptCascade |
-  PairwiseModel` -- one-vs-rest / ordered peeling / round robin, via
-  `DecomposingLearner`; `pyrulearn.learners.multiclass` wraps these as thin sugar)
-  fitting copies of itself with `target_class` set; or
-- `model=DecisionList` (`AQR`'s own `_MULTICLASS_DEFAULT`):
-  `SeCo._seed_covering_fit`, one covering loop over all classes at once,
-  each rule seeded on a random uncovered example and headed with that
-  example's own label -- AQ's multi-class covering, rules kept in learn
-  order (`model=FlatRuleSet` gives the same rules resolved by that order,
-  `ListCombiner()`).
+for the SeCo family): a binary decomposition (`model=ConceptSet |
+ConceptCascade | PairwiseModel` -- one-vs-rest / ordered peeling / round
+robin, via `DecomposingLearner`; `pyrulearn.learners.multiclass` wraps
+these as thin sugar) fits copies of itself with `target_class` set.
 
-A single global "best rule for any class" search (the early-CN2 entropy
-heuristic) is a different, deferred thing; when built it would also wrap
-this machinery from the outside (calling `SingleRuleLearner.
-learn_one_rule` once per candidate class and picking the best via a
-heuristic comparable across classes), not rework anything here.
+A search can also look for the best rule of *any* class: with
+`target_class` None, `SingleRuleLearner` searches with a `HeadObjective`,
+which counts each rule's covered examples per class and lets the
+heuristic choose its head (`pyrulearn.heuristics.RuleHeuristic.
+best_head`) -- the head may change from a rule to its refinement.
+`model=DecisionList` builds on it: one covering loop over all classes at
+once, rules kept in learn order, first match wins (`model=FlatRuleSet`
+gives the same rules resolved by that order, `ListCombiner()`):
+- `SeCo._head_covering_fit` -- each rule the best of any class, as in
+  CN2's ordered mode;
+- `SeCo._seed_covering_fit` for a seeded learner (`SeedExample`, `AQR`'s
+  own `_MULTICLASS_DEFAULT`) -- each rule seeded on a random uncovered
+  example and headed with that example's own label, AQ's multi-class
+  covering.
 
 "Masks, not splits": every one of these building blocks that needs to
 restrict which examples are in scope (a grow/prune split, "which
@@ -826,6 +828,153 @@ class ValueSumObjective(Objective):
         return stats.count == 0
 
 
+@dataclass(frozen=True)
+class HeadStats(RuleStats):
+    """`HeadObjective`'s statistics: the `RuleStats` of a rule's best
+    head -- so that `filtering`/`stopping` criteria read them like any
+    other -- plus its covered examples per class (`covered`, ``k``, or
+    ``k x m`` for a batch), how many in-scope rows it covers (`count`,
+    exact), the head (`head`, an index into `HeadObjective.classes`) and
+    its score."""
+    covered: Any = None
+    count: Any = 0
+    head: Any = 0
+    score: Any = 0.0
+
+
+class HeadObjective(Objective):
+    """A `RuleHeuristic` as an objective for a rule of *any* class -- the
+    search of a decision list, where the head isn't fixed beforehand
+    (`target_class` None) but follows the covered examples. Each rule is
+    counted per class, and the heuristic scores it for its best head
+    (`RuleHeuristic.best_head`), so the head can change from a rule to
+    its refinement. The searches run unchanged on it; the head of the
+    rule they return is `head_of`.
+
+    Counting is one `batch_cover_sums` per node over one indicator column
+    per class (weighted by the scope), so every data representation works.
+    The statistics are `HeadStats`, the best head's `RuleStats`, so
+    `filtering`/`stopping` criteria apply to the head the rule would get.
+    A gain heuristic gains over the parent's statistics for the same
+    head, which makes heads comparable only at the first refinement,
+    where all of them start from the scope: there the head is chosen, and
+    then it stays. A rule is dead once it covers no example in scope, and
+    consistent once all it covers are of its head's class."""
+
+    supports_criteria = True
+
+    def __init__(self, heuristic: RuleHeuristic):
+        self.heuristic = heuristic
+        self._gain = isinstance(heuristic, GainHeuristic)
+
+    @property
+    def supports_bound(self) -> bool:
+        return not self._gain
+
+    def begin(self, data, target_class, example_mask) -> None:
+        if data.y is None:
+            raise ValueError("a search for a rule of any class needs data.y")
+        self.classes, index = np.unique(np.asarray(data.y), return_inverse=True)
+        weights = data.scope_weights(example_mask)
+        values = np.zeros((data.n_samples, len(self.classes) + 1))
+        values[np.arange(data.n_samples), index.ravel()] = weights
+        values[:, -1] = weights > 0
+        self._values = values
+        self.totals = values[:, :-1].sum(axis=0)
+
+    def head_of(self, stats: HeadStats) -> Any:
+        """The class `stats`' rule predicts."""
+        return self.classes[int(stats.head)]
+
+    def _stats(self, covered: np.ndarray, count: Any, length: Any, parent: Optional[HeadStats]) -> HeadStats:
+        if self._gain and parent is None:   # a root has no parent to gain over: the covered majority
+            head = covered.argmax(axis=0)
+            score = np.zeros(covered.shape[1:])
+        elif self._gain and np.ndim(parent.length) == 0 and parent.length > 0:
+            # a gain is over the parent *for the same head*: comparing heads
+            # is fair only from the root, where every head starts from its
+            # prior -- further down, a rare head the parent covers at a low
+            # precision would show a large gain from a handful of examples.
+            # So the head chosen at the first refinement stays.
+            head = np.full(covered.shape[1:], int(parent.head), dtype=np.int64)
+            score = self.heuristic.head_scores(covered, self.totals, length, parent.covered)[int(parent.head)]
+        else:
+            score, head = self.heuristic.best_head(covered, self.totals, length,
+                                                   parent.covered if self._gain else None)
+        pick = lambda a: np.take_along_axis(a, np.asarray(head)[None, ...], axis=0)[0]   # noqa: E731
+        tp = pick(covered)
+        n_covered = covered.sum(axis=0)
+        n_pos = self.totals[head]
+        fp = n_covered - tp
+        return HeadStats(tp=tp, fp=fp, fn=n_pos - tp, tn=(self.totals.sum() - n_pos) - fp, length=length,
+                         covered=covered, count=count, head=head, score=score)
+
+    def rule_stats(self, data, target_class, rule, handle) -> HeadStats:
+        total = self._values[data.cover_rows(handle)].sum(axis=0)
+        return self._stats(total[:-1], int(round(total[-1])), rule.length(), None)
+
+    def children(self, data, target_class, mask, handle, stats: HeadStats):
+        features = np.asarray(sorted(mask), dtype=np.int64)
+        if not len(features):
+            empty = np.zeros((len(self.classes), 0))
+            return features, self._stats(empty, np.zeros(0, dtype=np.int64), stats.length + 1, stats), \
+                np.zeros(0, bool), set()
+        totals = np.asarray(data.batch_cover_sums(handle, self._values, features.tolist()), dtype=float)
+        covered, count = totals[:-1], np.rint(totals[-1]).astype(np.int64)
+        same = count == stats.count
+        if same.any():
+            covered[:, same] = stats.covered[:, None]
+        alive = count != 0
+        dead = set(features[~alive].tolist())
+        return (features[alive], self._stats(covered[:, alive], count[alive], stats.length + 1, stats),
+                same[alive], dead)
+
+    def batch_score(self, batch: HeadStats, parent=None):
+        return np.asarray(batch.score, dtype=float)
+
+    def score_one(self, stats: HeadStats, parent=None) -> Score:
+        return float(stats.score)
+
+    def batch_bound(self, batch: HeadStats):
+        return self.heuristic.head_bound(batch.covered, self.totals, batch.length)
+
+    def bound_one(self, stats: HeadStats) -> Score:
+        return float(self.heuristic.head_bound(stats.covered, self.totals, stats.length))
+
+    def take(self, batch: HeadStats, index) -> HeadStats:
+        length = batch.length if np.ndim(batch.length) == 0 else np.asarray(batch.length)[index]
+        return HeadStats(tp=batch.tp[index], fp=batch.fp[index], fn=batch.fn[index], tn=batch.tn[index],
+                         length=length, covered=batch.covered[:, index], count=np.asarray(batch.count)[index],
+                         head=np.asarray(batch.head)[index], score=np.asarray(batch.score)[index])
+
+    def at(self, batch: HeadStats, i: int) -> HeadStats:
+        length = batch.length if np.ndim(batch.length) == 0 else int(np.asarray(batch.length)[i])
+        return HeadStats(tp=float(batch.tp[i]), fp=float(batch.fp[i]), fn=float(batch.fn[i]),
+                         tn=float(batch.tn[i]), length=length, covered=batch.covered[:, i],
+                         count=int(np.asarray(batch.count)[i]), head=int(np.asarray(batch.head)[i]),
+                         score=float(np.asarray(batch.score)[i]))
+
+    def concat(self, batches):
+        lengths = [np.full(b.covered.shape[1], b.length) if np.ndim(b.length) == 0 else np.asarray(b.length)
+                   for b in batches]
+        return HeadStats(
+            tp=np.concatenate([b.tp for b in batches]), fp=np.concatenate([b.fp for b in batches]),
+            fn=np.concatenate([b.fn for b in batches]), tn=np.concatenate([b.tn for b in batches]),
+            length=np.concatenate(lengths), covered=np.concatenate([b.covered for b in batches], axis=1),
+            count=np.concatenate([np.asarray(b.count) for b in batches]),
+            head=np.concatenate([np.asarray(b.head) for b in batches]),
+            score=np.concatenate([np.asarray(b.score) for b in batches]))
+
+    def dead(self, stats: HeadStats) -> bool:
+        return stats.count == 0
+
+    def consistent(self, stats: HeadStats) -> bool:
+        return stats.fp == 0
+
+    def __repr__(self) -> str:
+        return f"HeadObjective({self.heuristic!r})"
+
+
 class BeamSearch(RuleSearch):
     """Standard top-down beam search: starting from `initial_candidates`,
     repeatedly specialize every rule currently in the beam by one
@@ -1248,7 +1397,7 @@ class HillClimbing(RuleSearch):
     #    below are the plain-heuristic behaviour. --------------------------
 
     def _reject_heuristic(self, objective: Objective) -> None:
-        if isinstance(objective, HeuristicObjective) and isinstance(objective.heuristic, GainHeuristic):
+        if isinstance(getattr(objective, "heuristic", None), GainHeuristic):
             raise ValueError(
                 f"{type(self).__name__} needs a plain RuleHeuristic, got "
                 f"{type(objective.heuristic).__name__} -- use GainAscentHillClimbing for a GainHeuristic"
@@ -2129,13 +2278,16 @@ class SingleRuleLearner:
         si = space_init if space_init is not None else self.space_init
         search_mask, context = self.preparation.prepare(data, target_class, example_mask)
         initial = si.initial_candidates(data, target_class, search_mask)
+        objective = self._objective(target_class)
         rule = self.search.search(
-            data, target_class, self.heuristic, initial,
+            data, target_class, objective, initial,
             example_mask=search_mask, filtering=self.filtering, stopping=self.stopping,
         )
         if rule is None:
             return None
-        return self.postprocessing.postprocess(rule, data, target_class, context)
+        rule = self._with_head(rule, data, objective, search_mask)
+        return self.postprocessing.postprocess(rule, data, rule.target if target_class is None else target_class,
+                                               context)
 
     def learn_rules(
         self, data: HorizontalBitmapRepresentation, target_class: Any,
@@ -2149,11 +2301,36 @@ class SingleRuleLearner:
         si = space_init if space_init is not None else self.space_init
         search_mask, context = self.preparation.prepare(data, target_class, example_mask)
         initial = si.initial_candidates(data, target_class, search_mask)
+        objective = self._objective(target_class)
         rules = self.search.search_all(
-            data, target_class, self.heuristic, initial,
+            data, target_class, objective, initial,
             example_mask=search_mask, filtering=self.filtering, stopping=self.stopping,
         )
-        return [self.postprocessing.postprocess(rule, data, target_class, context) for rule in rules]
+        rules = [self._with_head(rule, data, objective, search_mask) for rule in rules]
+        return [self.postprocessing.postprocess(rule, data, rule.target if target_class is None else target_class,
+                                                context) for rule in rules]
+
+    def _objective(self, target_class: Any) -> Union[RuleHeuristic, Objective]:
+        """What the search maximizes: `heuristic` for a fixed
+        `target_class`; for none -- a rule of any class -- the heuristic
+        choosing each rule's head (`HeadObjective`)."""
+        if target_class is not None:
+            return self.heuristic
+        if isinstance(self.heuristic, Objective):
+            raise ValueError(f"a rule of any class (target_class None) needs a RuleHeuristic to choose its "
+                             f"head, got {type(self.heuristic).__name__}")
+        return HeadObjective(self.heuristic)
+
+    @staticmethod
+    def _with_head(rule: Rule, data, objective, search_mask) -> Rule:
+        """`rule` with the head the search chose for it (`HeadObjective`),
+        or unchanged for a fixed target class -- before post-processing,
+        which then keeps that head."""
+        if not isinstance(objective, HeadObjective):
+            return rule
+        stats = objective.rule_stats(data, None, rule, handle_for(data, rule, search_mask))
+        return Rule(rule.conditions, target=objective.head_of(stats), dataspec=rule.dataspec,
+                    n_features=rule.n_features, default_fmt=rule.default_fmt)
 
 
 class RuleSetOptimizer(ABC):
@@ -2713,10 +2890,12 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     - `fit(data, model=ConceptSet | ConceptCascade | PairwiseModel)` --
       one-vs-rest / ordered peeling / round robin, via `DecomposingLearner`
       (each fits per-class copies through the covering loop).
-    - `fit(data, model=DecisionList)` -- `_seed_covering_fit`: one covering
-      loop over all classes at once (random uncovered example -> its label
-      as the head -> learn -> remove -> repeat; AQ's multi-class covering),
-      rules in learn order, first match wins.
+    - `fit(data, model=DecisionList)` -- one covering loop over all
+      classes at once, rules in learn order, first match wins:
+      `_head_covering_fit` (each rule the best of any class, its head
+      chosen by the heuristic -- CN2's ordered mode), or for a seeded
+      learner `_seed_covering_fit` (random uncovered example -> its label
+      as the head -> learn -> remove -> repeat; AQ's multi-class covering).
     - `fit(data, model=FlatRuleSet)` -- the same rules, as a rule set
       resolved by learn order (`ListCombiner()`), e.g. to compare other
       combiners on them.
@@ -2955,20 +3134,70 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         sr.set_stats(data)
         return sr
 
+    def _head_covering_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
+        """`model=DecisionList` for a learner that doesn't seed its search:
+        one separate-and-conquer loop over *all* classes at once, as in
+        CN2's ordered mode. Each search looks for the best rule of any
+        class -- the single-rule learner with no target class, its
+        heuristic choosing each rule's head (`HeadObjective`) -- and the
+        rule's covered examples are removed. The loop ends once nothing is
+        left, the search finds nothing acceptable, or a rule covers no
+        example of its head (`stats.tp == 0`), is unconditional, or is
+        rejected by `stop_covering` (judged for its head). The default is
+        the majority class of the examples no rule covers -- of all of
+        them if every example is covered."""
+        if not isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering):
+            raise ValueError("a decision list (model=DecisionList) needs RemovalCovering: its first-match "
+                             "semantics assumes covered examples are removed")
+        remaining = np.ones(data.n_samples, dtype=bool)
+        rules: List[Rule] = []
+        while remaining.any():
+            if self.max_rules is not None and len(rules) >= self.max_rules:
+                break
+            found = self._learn_rules(data, None, remaining)
+            done = not found
+            for rule in found:
+                if self.max_rules is not None and len(rules) >= self.max_rules:
+                    done = True
+                    break
+                stats = RuleStats.from_rule(rule, data, rule.target, example_mask=remaining)
+                if rule.length() == 0 or stats.tp == 0 or (
+                        self.stop_covering is not None
+                        and self.stop_covering.evaluate(rule, stats, data, rule.target, remaining)):
+                    done = True
+                    break
+                rules.append(rule)
+                remaining = remaining & ~rule.covers_data_packed(data)
+            if done:
+                break
+        rules = annotate_rules(rules, data)
+        default = MajorityClass(data, mask=remaining) if remaining.any() else MajorityClass(data)
+        return annotate_default_rule(DecisionList(rules, default_prediction=default), data)
+
+    def _decision_list_fit(self, data: HorizontalBitmapRepresentation) -> DecisionList:
+        """A seeded learner's (`SeedExample`, i.e. `AQR`) seed covering, or
+        everyone else's search for a rule of any class."""
+        if data.y is None:
+            raise ValueError("SeCo needs data.y")
+        if isinstance(getattr(self.single_rule_learner, "space_init", None), SeedExample):
+            return self._seed_covering_fit(data)
+        return self._head_covering_fit(data)
+
     @produces(DecisionList)
-    def _fit_seed_covering(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
-        """`fit(data, model=DecisionList)`: one AQ-style covering loop over
-        all classes at once (`_seed_covering_fit`), rules in learn order,
-        first match wins."""
-        return self._seed_covering_fit(data)
+    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
+        """`fit(data, model=DecisionList)`: one covering loop over all
+        classes at once, rules in learn order, first match wins -- AQ's
+        seed covering for a seeded learner (`_seed_covering_fit`), CN2's
+        ordered mode otherwise (`_head_covering_fit`)."""
+        return self._decision_list_fit(data)
 
     @produces(FlatRuleSet)
-    def _fit_seed_covering_set(self, data: HorizontalBitmapRepresentation, **kw) -> FlatRuleSet:
+    def _fit_decision_list_set(self, data: HorizontalBitmapRepresentation, **kw) -> FlatRuleSet:
         """`fit(data, model=FlatRuleSet)`: the same rules as
         `model=DecisionList`, as a rule set resolved by learn order
         (`ListCombiner()`, so it predicts identically) -- e.g. to compare
         other combiners on the same rules via `predict(combiner=...)`."""
-        dl = self._seed_covering_fit(data)
+        dl = self._decision_list_fit(data)
         model = FlatRuleSet(dl.rules, default_prediction=dl.default_prediction, combiner=ListCombiner())
         return annotate_default_rule(model, data)
 
@@ -3057,6 +3286,15 @@ class CN2(_ClassCountLaplace, SeCo):
     even then the two combiners' accuracy differs by a fraction of a
     point either way); the point is matching what Clark & Boswell's own
     algorithm does, not a functional improvement.
+
+    **Ordered CN2.** `fit(data, model=DecisionList)` is CN2's ordered
+    mode: one covering loop over all classes, each rule the best of any
+    class, predicting the class the heuristic chooses for it (with
+    `Laplace`, the covered majority); the default is the majority of the
+    examples no rule covers. `heuristic=Entropy()` gives the original's
+    entropy over the whole class distribution. One difference remains:
+    the significance test is the two-class one for the rule's head
+    against the rest, not the original's statistic over all classes.
     """
 
     def __init__(
@@ -3106,9 +3344,9 @@ class CN2(_ClassCountLaplace, SeCo):
         example class distribution and predicting the largest total --
         `pyrulearn.combiners.MicroVoteCombiner`. Only this one producer is
         overridden: `model=ConceptModel` (one concept, nothing to
-        reconcile) and the AQ-style seed covering (`model=DecisionList` /
-        `FlatRuleSet`, not CN2's own induction shape; resolved by learn
-        order) are unaffected."""
+        reconcile) and the decision list (`model=DecisionList` /
+        `FlatRuleSet` -- ordered CN2, resolved by learn order) are
+        unaffected."""
         model = super()._fit_one_vs_rest(data, **kw)
         model.combiner = MicroVoteCombiner()
         return model
@@ -3426,8 +3664,9 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
       covering loop and no optimization phase.
     - `ConceptSet` -- one-vs-rest Pypper (each class its own full loop).
     - `PairwiseModel` -- round-robin Pypper.
-    - `FlatRuleSet` / `DecisionList` -- via the `ConceptSet -> FlatRuleSet`
-      / `ConceptCascade -> DecisionList` converters.
+    - `DecisionList` -- one covering loop over all classes, each rule
+      grown for the class `FoilGain` prefers (see `_fit_decision_list`).
+    - `FlatRuleSet` -- via the `ConceptSet -> FlatRuleSet` converter.
 
     (Pypper has no `FlatRuleSet` seed-covering producer -- it is not a
     seed-covering algorithm -- but still reaches `FlatRuleSet` by
@@ -3533,4 +3772,12 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
     def _fit_binary(self, data: HorizontalBitmapRepresentation, positive: Any,
                     negative: Any = None) -> ConceptModel:
         return self._fit_concept(data, label=positive, fallback=negative)
+
+    @produces(DecisionList)
+    def _fit_decision_list(self, data: HorizontalBitmapRepresentation, **kw) -> DecisionList:
+        """`fit(data, model=DecisionList)` -- one IREP\\* covering loop over
+        all classes at once (`SeCo._head_covering_fit`): each rule grown
+        for whichever class `FoilGain` prefers (the head may change while
+        it grows), pruned for that class, no optimization phase."""
+        return self._stage_learner()._head_covering_fit(data)
 

@@ -157,6 +157,46 @@ def _loop(score_one, stats: RuleStats):
     return out.reshape(shape + out.shape[1:])
 
 
+def _class_axis(totals, covered: np.ndarray) -> np.ndarray:
+    """`totals` (one count per class) shaped to broadcast against
+    `covered` (``k`` or ``k x m``) along its first axis."""
+    return np.asarray(totals, dtype=float).reshape((-1,) + (1,) * (covered.ndim - 1))
+
+
+def head_stats(covered, totals, length: Any = 0) -> RuleStats:
+    """The one-vs-rest `RuleStats` of every possible head: for class ``c``,
+    the covered examples of ``c`` are the true positives and those of
+    every other class the false positives, against the class totals of
+    the scope (`totals`, one per class). `covered` is ``k`` (one rule)
+    or ``k x m`` (``m`` rules); the result's arrays have its shape."""
+    covered = np.asarray(covered, dtype=float)
+    totals = _class_axis(totals, covered)
+    n_covered = covered.sum(axis=0)
+    fp = n_covered - covered
+    fn = totals - covered
+    return RuleStats(tp=covered, fp=fp, fn=fn, tn=(totals.sum() - totals) - fp, length=length)
+
+
+def _best_of_heads(scores, covered: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Per rule, the best score over the heads (``k`` or ``k x m``
+    `scores`) and its head: only heads the rule covers an example of
+    count, and ties go to the head with more covered examples, then to
+    the first. ``-inf`` (and head 0) for a rule covering nothing."""
+    if isinstance(scores, tuple) or np.asarray(scores).ndim != covered.ndim:
+        raise TypeError("choosing the head needs one score per rule -- a lexicographic (LEF) "
+                        "score has no single maximum over the heads")
+    scores = np.where(covered > 0, np.asarray(scores, dtype=float), -np.inf)
+    best = np.full(covered.shape[1:], -np.inf)
+    best_covered = np.full(covered.shape[1:], -1.0)
+    head = np.zeros(covered.shape[1:], dtype=np.int64)
+    for c in range(covered.shape[0]):
+        better = (scores[c] > best) | ((scores[c] == best) & (covered[c] > best_covered))
+        best = np.where(better, scores[c], best)
+        best_covered = np.where(better, covered[c], best_covered)
+        head = np.where(better, c, head)
+    return best, head
+
+
 class RuleHeuristic(ABC):
     """Base for rule-evaluation heuristics. Higher `score(...)` = more
     preferred, uniformly across every concrete heuristic. `score(...)`
@@ -205,6 +245,45 @@ class RuleHeuristic(ABC):
         array (a tuple of arrays for `LEF`), one entry per element. See
         the class docstring for why this exists next to `score`."""
         return _loop(self.score, stats)
+
+    # -- choosing the head ------------------------------------------------
+    #
+    # A search for a rule of any class (a decision list's, `target_class`
+    # None) knows a rule's covered examples per class, not its head. It
+    # asks the heuristic for the best head: by default, the heuristic
+    # scores the rule once per class, as that class against the rest
+    # (`head_stats`), and the best of these scores wins. Every heuristic
+    # gets this from its `batch_score` alone. A heuristic that always
+    # prefers the covered majority can skip the other heads
+    # (`MajorityHead`), and one defined on the whole class distribution
+    # rather than on one class against the rest overrides it
+    # (`ClassNeutral`).
+
+    def head_scores(self, covered, totals, length: Any = 0, parent_covered=None) -> np.ndarray:
+        """The score of each possible head: ``k`` scores for ``k`` covered
+        counts (``k x m`` for ``k x m``), each class against the rest of
+        the scope (`totals`). `parent_covered` is for `GainHeuristic`."""
+        return np.asarray(self.batch_score(head_stats(covered, totals, length)))
+
+    def best_head(self, covered, totals, length: Any = 0, parent_covered=None) -> Tuple[Any, Any]:
+        """``(score, head)`` of a rule covering `covered` examples of each
+        class (``k``, or ``k x m`` for ``m`` rules) in a scope holding
+        `totals` of each: the best `head_scores` over the classes the rule
+        covers, and the index of that class (ties: more covered examples,
+        then the first class)."""
+        covered = np.asarray(covered, dtype=float)
+        return _best_of_heads(self.head_scores(covered, totals, length, parent_covered), covered)
+
+    def head_bound(self, covered, totals, length: Any = 0) -> Any:
+        """An upper bound on the score of every refinement of a rule
+        covering `covered` of each class, over all heads: for each head
+        the score of keeping all of its covered examples and none of the
+        others (the ``(tp, 0)`` projection), maximized over the heads."""
+        covered = np.asarray(covered, dtype=float)
+        stats = head_stats(covered, totals, length)
+        optimistic = RuleStats(tp=stats.tp, fp=np.zeros_like(stats.fp), fn=stats.fn, tn=stats.fp + stats.tn,
+                               length=length)
+        return _best_of_heads(self.batch_score(optimistic), covered)[0]
 
     def __repr__(self) -> str:
         """The class name plus every constructor argument that differs
@@ -431,6 +510,24 @@ class GainHeuristic(RuleHeuristic):
         `parent_stats` (plain numbers) -- see `RuleHeuristic.batch_score`."""
         return _loop(lambda s: self.score(s, parent_stats), stats)
 
+    def head_scores(self, covered, totals, length: Any = 0, parent_covered=None) -> np.ndarray:
+        """Each head's gain over the parent's statistics *for the same
+        head* (`parent_covered`, ``k``) -- one `batch_score` per head, so
+        that every gain heuristic gets it. With no parent (a search's
+        root) every head gains 0."""
+        covered = np.asarray(covered, dtype=float)
+        if parent_covered is None:
+            return np.zeros_like(covered)
+        stats = head_stats(covered, totals, length)
+        parent = head_stats(parent_covered, totals)
+        rows = []
+        for c in range(covered.shape[0]):
+            child = RuleStats(tp=stats.tp[c], fp=stats.fp[c], fn=stats.fn[c], tn=stats.tn[c], length=length)
+            own = RuleStats(tp=float(parent.tp[c]), fp=float(parent.fp[c]), fn=float(parent.fn[c]),
+                            tn=float(parent.tn[c]))
+            rows.append(np.asarray(self.batch_score(child, own), dtype=float))
+        return np.stack(rows)
+
     def score_rule(
         self, rule: Rule, data: DataRepresentation,
         positive_class: Optional[Any] = None, parent_rule: Optional[Rule] = None,
@@ -445,7 +542,56 @@ class GainHeuristic(RuleHeuristic):
         return self.score(stats, parent_stats)
 
 
-class Precision(RuleHeuristic):
+class MajorityHead:
+    """Mixin for a heuristic whose best head is always the covered
+    majority -- one whose score, for a fixed number of covered examples,
+    grows with the number of them that are positive, whatever the class
+    totals (`Precision`, `Laplace`, ...). `best_head` then scores only
+    that head instead of all of them, with the same result. Purely a
+    speed-up: without it, the default `RuleHeuristic.best_head` finds the
+    same head. Put it before the heuristic's base class."""
+
+    def best_head(self, covered, totals, length: Any = 0, parent_covered=None) -> Tuple[Any, Any]:
+        covered = np.asarray(covered, dtype=float)
+        head = covered.argmax(axis=0)
+        stats = head_stats(covered, totals, length)
+        pick = lambda a: np.take_along_axis(a, head[None, ...], axis=0)[0]   # noqa: E731
+        scores = np.asarray(self.batch_score(RuleStats(tp=pick(stats.tp), fp=pick(stats.fp), fn=pick(stats.fn),
+                                                       tn=pick(stats.tn), length=length)), dtype=float)
+        return np.where(covered.sum(axis=0) > 0, scores, -np.inf), head
+
+
+class ClassNeutral:
+    """Mixin for a heuristic defined on the whole class distribution of
+    the covered examples rather than on one class against the rest --
+    original CN2's entropy, say. Such a heuristic implements
+    `score_distribution` (``k`` or ``k x m`` covered counts to one score
+    per rule); its rule predicts the covered majority, and its bound is
+    the best score of a rule covering one class only. `score(stats)` stays
+    the two-class case, the positive class against the rest. Put it
+    before the heuristic's base class."""
+
+    @abstractmethod
+    def score_distribution(self, covered: np.ndarray, length: Any = 0) -> np.ndarray:
+        raise NotImplementedError
+
+    def best_head(self, covered, totals, length: Any = 0, parent_covered=None) -> Tuple[Any, Any]:
+        covered = np.asarray(covered, dtype=float)
+        scores = np.asarray(self.score_distribution(covered, length), dtype=float)
+        return np.where(covered.sum(axis=0) > 0, scores, -np.inf), covered.argmax(axis=0)
+
+    def head_bound(self, covered, totals, length: Any = 0) -> Any:
+        covered = np.asarray(covered, dtype=float)
+        best = np.full(covered.shape[1:], -np.inf)
+        for c in range(covered.shape[0]):
+            pure = np.zeros_like(covered)
+            pure[c] = covered[c]
+            score = np.asarray(self.score_distribution(pure, length), dtype=float)
+            best = np.where(covered[c] > 0, np.maximum(best, score), best)
+        return best
+
+
+class Precision(MajorityHead, RuleHeuristic):
     """h = tp / (tp+fp) -- also called Confidence in association-rule-
     mining terminology (same formula, different literature). Isometrics:
     a pencil of lines through the origin -- rewards purity regardless of
@@ -517,7 +663,7 @@ class FBeta(RuleHeuristic):
         return _div((1 + b2) * p * r, b2 * p + r)
 
 
-class CoveredPositives(RuleHeuristic):
+class CoveredPositives(MajorityHead, RuleHeuristic):
     """h = tp -- maximizes covered positives alone; a rule's covered
     negatives don't affect its score at all. Isometrics: horizontal
     lines (tp constant), the degenerate limit of the parallel-line
@@ -601,7 +747,7 @@ class UncoveredNegatives(RuleHeuristic):
         return _counts(stats)[3].copy()
 
 
-class Laplace(RuleHeuristic):
+class Laplace(MajorityHead, RuleHeuristic):
     """h = (tp+1) / (tp+fp+n_classes). Precision with its pivot moved to
     (-1, -(n_classes-1)) -- regularizes toward 1/n_classes, the accuracy
     expected of a rule on a problem with `n_classes` evenly distributed
@@ -677,7 +823,7 @@ class GeneralizedMEstimate(RuleHeuristic):
             return (tp + self.m * self.cost) / (tp + fp + self.m)
 
 
-class GHeuristic(RuleHeuristic):
+class GHeuristic(MajorityHead, RuleHeuristic):
     """The "g heuristic" from Gamberger & Lavrač's expert-guided subgroup
     discovery (as used in CN2-SD), ``h = tp / (fp + g)``, where the
     "generalization parameter" `g` trades off purity against coverage.
@@ -904,6 +1050,13 @@ class LengthPenalized(RuleHeuristic):
     def batch_score(self, stats: RuleStats) -> np.ndarray:
         return self.base.batch_score(stats) - self.penalty * _counts(stats)[4]
 
+    def best_head(self, covered, totals, length: Any = 0, parent_covered=None) -> Tuple[Any, Any]:
+        score, head = self.base.best_head(covered, totals, length, parent_covered)
+        return score - self.penalty * np.asarray(length, dtype=float), head
+
+    def head_bound(self, covered, totals, length: Any = 0) -> Any:
+        return self.base.head_bound(covered, totals, length) - self.penalty * np.asarray(length, dtype=float)
+
 
 class MinimalLength(RuleHeuristic):
     """h = -length -- shorter (fewer conditions) scores higher, i.e.
@@ -1009,7 +1162,7 @@ class ChiSquare(RuleHeuristic):
         return np.where(n == 0, 0.0, _div(n * diff * diff, denom))
 
 
-class Entropy(RuleHeuristic):
+class Entropy(ClassNeutral, RuleHeuristic):
     """CN2's original search heuristic (Clark & Niblett, 1989): the
     *negated* binary entropy of the class distribution among covered
     examples, ``p = tp/(tp+fp)``, ``h = p*log2(p) + (1-p)*log2(1-p)``
@@ -1027,7 +1180,20 @@ class Entropy(RuleHeuristic):
     alone can't tell a 90%-positive rule from a 90%-*negative* one
     apart, only how skewed either split is (`RuleHeuristic.plot_isometrics`
     makes this pairing directly visible).
+
+    Searching for a rule of any class (`best_head`), it is the negated
+    entropy of the covered examples' whole class distribution, and the
+    rule predicts their majority -- CN2's ordered mode. For two classes
+    that is exactly `score`.
     """
+
+    def score_distribution(self, covered: np.ndarray, length: Any = 0) -> np.ndarray:
+        covered = np.asarray(covered, dtype=float)
+        n = covered.sum(axis=0)
+        p = covered / np.where(n > 0, n, 1.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            h = np.where(p > 0, p * np.log2(p), 0.0).sum(axis=0)
+        return np.where(n > 0, h, -math.log2(covered.shape[0]))
 
     def score(self, stats: RuleStats) -> float:
         covered = stats.tp + stats.fp

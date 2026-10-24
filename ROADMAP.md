@@ -60,6 +60,55 @@ attributes, where `x!=red` and `x!=green` show as `x=blue`.
   `max_intervals`, `max_ordinal_values`), so caches from 0.3.x are not
   reused for the new encoding.
 
+## Rules of any class: decision lists; comparing the rule models
+
+**Done (2026-10-24), on branch `multiclass-heads`.** A search with no
+target class looks for the best rule of any class
+(`HeadObjective`): each rule is counted per class (one indicator column
+per class through `batch_cover_sums`), and the heuristic chooses its head
+(`RuleHeuristic.best_head`). The design keeps the effort for a new
+heuristic at zero:
+
+- **Default:** the heuristic scores the rule once per class, that class
+  against the rest of the scope (`head_stats`), through its own
+  `batch_score`; the best score wins (ties: more covered examples, then
+  the first class). The covered majority is not always the best head:
+  heuristics comparing with the prior (WRAcc, correlation) prefer the
+  class whose share rises most, the m-estimate leans towards frequent
+  classes.
+- **`MajorityHead`** (a speed-up, same result): for heuristics that always
+  prefer the covered majority -- `Precision`, `Laplace`, `GHeuristic`,
+  `CoveredPositives`.
+- **`ClassNeutral`**: for heuristics defined on the whole class
+  distribution -- `Entropy`, which is now CN2's multi-class entropy there.
+- **Gain heuristics** gain over the parent for the same head, so heads are
+  compared only at the first refinement and the head then stays (without
+  this, Pypper's decision list on `segment` stopped after 2 rules, a rare
+  class showing large gains from 3 examples).
+
+`fit(data, model=DecisionList)` is now CN2's ordered mode for CN2, PFoil,
+PFossil, SeCo and Pypper (`_head_covering_fit`); AQR keeps its seed
+covering. With a fixed target class nothing changes: the search runs on
+`HeuristicObjective` as before (all tests unchanged).
+
+Still to do:
+
+- **A demo comparing the rule models**, for the paper's section on rule
+  models: rule sets (one-vs-rest, with several combiners), decision lists,
+  ordered rule sets (rules sorted by quality, i.e. the best-rule combiner)
+  and class cascades (least and most frequent first), for CN2, PFossil and
+  Pypper on multi-class datasets, binary ones as a control; accuracy, rules,
+  conditions, training time, mean ranks. A first look on `car`, `vehicle`
+  and `segment` (one 70/30 split) shows no model type ahead throughout.
+- **Pairwise with a head per pair** (`PairwiseModel` with `positive=None`):
+  each pair model a decision list over its two classes. Deferred; the
+  pairwise vote schemes need a test with decision-list members.
+- **CN2's significance test over all classes.** The ordered mode's test is
+  the two-class one for the rule's head against the rest; the original
+  uses the statistic over the whole class distribution.
+- **Lexicographic scores (`LEF`)** have no single maximum over the heads
+  and are refused for now.
+
 ## Count a numeric attribute's thresholds together
 
 **Done for `HorizontalBitmapRepresentation` (2026-10-07); still open for the
