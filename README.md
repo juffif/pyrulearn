@@ -246,9 +246,9 @@ features):
   separate-and-conquer learners and PyLORD fit fastest on it (`adult`,
   32,000 rows, with negation features: Pypper 1.6 s against 5.2 s on
   N-lists, 13.5 s on Sparse and 25.3 s on the horizontal bitmap; CN2
-  15.5 s against 21.7, 31.1 and 34.9 s; PyLORD finishes 16,000 rows in
-  143 s, against 294 s on N-lists, while the other two time out at
-  300 s), and ENDER is close to the fastest (23.0 s against 20.6 s on
+  15.5 s against 21.7, 31.1 and 34.9 s; PyLORD finishes 32,000 rows in
+  505 s only on the vertical bitmap, and needs more than 600 s on the
+  others), and ENDER is close to the fastest (23.0 s against 20.6 s on
   N-lists). It holds one bit per cell, like the horizontal bitmap (1.1 MiB
   for `adult`, against 38-42 MiB for N-lists and Sparse), and a fit
   allocates little on top: a CN2 fit needs 4.5 MiB in total, about as

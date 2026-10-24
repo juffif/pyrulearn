@@ -14,6 +14,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   (`BATCH_BLOCK_CELLS`). Fits keep their peak memory far lower (on adult,
   8,000 rows: CN2 from 21.5 to 1.4 MiB, Pypper from 15.1 to 1.2 MiB, ENDER
   from 7.9 to 3.5 MiB) and run faster, and they learn the same rules.
+- `demos/representations.py`: a cap per learner (`FIT_TIMEOUTS`; PyLORD
+  600 s, the others 300 s), and a cached time-out is fitted again when the
+  current cap is larger. With 600 s, PyLORD finishes 16,000 rows of `adult`
+  (with negation features) on every representation and 32,000 rows on the
+  vertical bitmap (505 s).
 
 ## 0.4.1 (2026-10-21)
 

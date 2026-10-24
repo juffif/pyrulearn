@@ -37,8 +37,10 @@ the peak the fit allocates on top of it (caches a representation builds
 while a learner runs included), again in a separate, untimed pass.
 
 Learners: CN2, PFossil, Pypper, PyLORD and ENDER, each with its defaults.
-Every fit runs in a worker process under a `FIT_TIMEOUT` cap; after a
-time-out the remaining, larger points of that curve are skipped.
+Every fit runs in a worker process under a cap (`FIT_TIMEOUT`, longer
+for the learners in `FIT_TIMEOUTS`); after a time-out the remaining,
+larger points of that curve are skipped. A cached time-out under a
+smaller cap than the current one is fitted again.
 `--parallel` first prepares every point (representations, their memory,
 the `coverage()` timings) with nothing else running, and then fits the
 learners side by side, one worker process each, every learner's fits one
@@ -82,6 +84,8 @@ from pyrulearn.learners.seco import CN2, PFossil, Pypper
 RANDOM_STATE = 0
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
+#: learners with a longer cap than FIT_TIMEOUT: PyLORD's larger points need it
+FIT_TIMEOUTS = {"PyLORD": 600.0}
 REPRESENTATIONS = ("HBitmap", "VBitmap", "NList", "Sparse")
 _VERTICAL = {"VBitmap": VerticalBitmapRepresentation, "NList": NListRepresentation,
              "Sparse": SparseDataRepresentation}
@@ -196,19 +200,29 @@ class Cache:
                 f.write(json.dumps(row) + "\n")
 
 
+def fit_timeout(learner: str) -> float:
+    """The cap on one fit of `learner`, in seconds."""
+    return FIT_TIMEOUTS.get(learner, FIT_TIMEOUT)
+
+
 def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_reps: dict,
                skip: set, label: str = "") -> List[dict]:
     """Fits `learner` on every representation in `reps` (unless its curve
     already timed out, see `skip`), checking rules and test predictions
-    against HBitmap."""
+    against HBitmap. A cached time-out is fitted again when it happened under
+    a smaller cap than `fit_timeout(learner)` (a row without a recorded cap
+    timed out under `FIT_TIMEOUT`)."""
     rows = []
+    cap = fit_timeout(learner)
     for kind in REPRESENTATIONS:
         key = json.dumps({**key_base, "learner": learner, "rep": kind}, sort_keys=True)
         row = cache.get(key)
+        if row is not None and row["error"] == "timeout" and row.get("timeout", FIT_TIMEOUT) < cap:
+            row = None
         if row is None:
             if (learner, key_base.get("negation"), kind) in skip:
                 continue
-            (result, err) = runner.run(timed_fit, learner, reps[kind])
+            (result, err) = runner.run(timed_fit, learner, reps[kind], timeout=cap)
             if err is None:
                 model, seconds = result
                 row = {"key": key, **key_base, "learner": learner, "rep": kind, "fit_time": seconds,
@@ -217,13 +231,13 @@ def _fit_point(runner, cache, key_base: dict, learner: str, reps: dict, test_rep
                        "n_rules": model.evaluate(test_reps[kind]).n_rules}
             else:
                 row = {"key": key, **key_base, "learner": learner, "rep": kind, "fit_time": None,
-                       "error": err, "rules": None, "preds": None, "n_rules": None}
+                       "error": err, "rules": None, "preds": None, "n_rules": None, "timeout": cap}
             cache.put(row)
             cached = ""
         else:
             cached = " (cached)"
         if row["error"] is None and "fit_peak" not in row:
-            (peak, err) = runner.run(measured_fit, learner, reps[kind])
+            (peak, err) = runner.run(measured_fit, learner, reps[kind], timeout=cap)
             row = {**row, "fit_peak": peak if err is None else None}
             cache.put(row)
         status = f"{row['fit_time']:.2f}s" if row["error"] is None else row["error"]
@@ -763,7 +777,9 @@ def write_report(size_rows, density_rows, width_rows, paths, quick: bool, report
         "This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and "
         "ENDER, each with its default settings -- and checks the rules and the test-set predictions "
         "against HBitmap at every point. Each fit runs in a separate process and is "
-        f"capped at {FIT_TIMEOUT:.0f}s; after a time-out, the larger points of that curve are "
+        f"capped at {FIT_TIMEOUT:.0f}s"
+        + "".join(f", {name}'s at {t:.0f}s" for name, t in FIT_TIMEOUTS.items())
+        + "; after a time-out, the larger points of that curve are "
         "skipped. "
         + ("The learners ran side by side, one worker process each, every learner's fits one after "
            "another; building the representations, timing `coverage()` and measuring memory came "

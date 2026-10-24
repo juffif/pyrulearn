@@ -9,9 +9,9 @@ pyrulearn's learners never look at the data directly. They ask it two things -- 
 - **NList** -- LORD's vertical index (Huynh, Fürnkranz & Beck, 2023): examples are inserted into a prefix tree of their true features, and each feature keeps the list of tree nodes it occurs in (its N-list). Covering a rule intersects these lists; the work grows with how often the features are true, not with the number of examples.
 - **Sparse** -- `scipy` sparse matrices: per-feature example lists without the prefix tree.
 
-All four must lead to exactly the same rules, so the only thing that differs is time. This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and ENDER, each with its default settings -- and checks the rules and the test-set predictions against HBitmap at every point. Each fit runs in a separate process and is capped at 300s; after a time-out, the larger points of that curve are skipped. The learners ran side by side, one worker process each, every learner's fits one after another; building the representations, timing `coverage()` and measuring memory came first, with nothing else running. The numerical libraries were limited to one thread (`OMP_NUM_THREADS=1` and its relatives), so each fit used one core.
+All four must lead to exactly the same rules, so the only thing that differs is time. This demo measures that time for five learners -- CN2, PFossil, Pypper, PyLORD and ENDER, each with its default settings -- and checks the rules and the test-set predictions against HBitmap at every point. Each fit runs in a separate process and is capped at 300s, PyLORD's at 600s; after a time-out, the larger points of that curve are skipped. The learners ran side by side, one worker process each, every learner's fits one after another; building the representations, timing `coverage()` and measuring memory came first, with nothing else running. Only PyLORD's points that timed out under the earlier 300s cap were fitted again under 600s, side by side in separate processes on an otherwise idle machine; all other fits come from the run before. The numerical libraries were limited to one thread (`OMP_NUM_THREADS=1` and its relatives), so each fit used one core.
 
-**Equality check:** at 147 points where HBitmap and at least one other representation finished, 147 gave identical rules and predictions for every representation.
+**Equality check:** at 148 points where HBitmap and at least one other representation finished, 148 gave identical rules and predictions for every representation.
 
 ## 1. Training-set size
 
@@ -47,10 +47,10 @@ Fit time in seconds, with negation:
 | Pypper | VBitmap | 0.04 (35%) | 0.09 (34%) | 0.06 (34%) | 0.15 (23%) | 0.28 (15%) | 0.39 (14%) | 1.64 (6%) |
 | Pypper | NList | 0.08 (65%) | 0.23 (82%) | 0.14 (72%) | 0.35 (54%) | 0.72 (39%) | 0.88 (32%) | 5.17 (20%) |
 | Pypper | Sparse | 0.06 (52%) | 0.16 (59%) | 0.12 (63%) | 0.40 (63%) | 1.01 (54%) | 1.26 (46%) | 13.48 (53%) |
-| PyLORD | HBitmap | 1.12 | 3.03 | 10.52 | 34.22 | 111.09 | time-out |  |
-| PyLORD | VBitmap | 0.77 (69%) | 1.99 (66%) | 6.12 (58%) | 16.90 (49%) | 44.34 (40%) | 142.57 | time-out |
-| PyLORD | NList | 1.10 (99%) | 2.96 (97%) | 9.66 (92%) | 29.16 (85%) | 87.18 (78%) | 294.03 | time-out |
-| PyLORD | Sparse | 1.16 (104%) | 3.22 (106%) | 10.75 (102%) | 36.61 (107%) | 120.82 (109%) | time-out |  |
+| PyLORD | HBitmap | 1.12 | 3.03 | 10.52 | 34.22 | 111.09 | 414.91 | time-out |
+| PyLORD | VBitmap | 0.77 (69%) | 1.99 (66%) | 6.12 (58%) | 16.90 (49%) | 44.34 (40%) | 142.57 (34%) | 505.01 |
+| PyLORD | NList | 1.10 (99%) | 2.96 (97%) | 9.66 (92%) | 29.16 (85%) | 87.18 (78%) | 294.03 (71%) | time-out |
+| PyLORD | Sparse | 1.16 (104%) | 3.22 (106%) | 10.75 (102%) | 36.61 (107%) | 120.82 (109%) | 456.45 (110%) | time-out |
 | ENDER | HBitmap | 1.03 | 1.53 | 2.38 | 4.00 | 6.95 | 12.59 | 23.34 |
 | ENDER | VBitmap | 0.84 (82%) | 1.30 (85%) | 2.14 (90%) | 3.81 (95%) | 6.83 (98%) | 12.46 (99%) | 23.03 (99%) |
 | ENDER | NList | 1.12 (109%) | 1.53 (100%) | 2.31 (97%) | 3.69 (92%) | 6.26 (90%) | 11.28 (90%) | 20.55 (88%) |
@@ -97,10 +97,10 @@ Without negation:
 | Pypper | VBitmap | 1.08 | 1.21 |
 | Pypper | NList | 1.18 | 1.32 |
 | Pypper | Sparse | 1.53 | 1.77 |
-| PyLORD | HBitmap | 1.70 (3 points) | 1.75 (4 points) |
-| PyLORD | VBitmap | 1.50 (4 points) | 1.57 |
+| PyLORD | HBitmap | 1.76 (4 points) | 1.75 (4 points) |
+| PyLORD | VBitmap | 1.58 | 1.57 |
 | PyLORD | NList | 1.64 (4 points) | 1.63 (4 points) |
-| PyLORD | Sparse | 1.75 (3 points) | 1.65 (4 points) |
+| PyLORD | Sparse | 1.79 (4 points) | 1.65 (4 points) |
 | ENDER | HBitmap | 0.82 | 0.86 |
 | ENDER | VBitmap | 0.86 | 0.88 |
 | ENDER | NList | 0.79 | 0.84 |
@@ -121,7 +121,7 @@ With negation:
 | HBitmap | 14 KiB | 31 KiB | 65 KiB | 133 KiB | 274 KiB | 547 KiB | 1.1 MiB |
 | VBitmap | 15 KiB (105%) | 31 KiB (103%) | 66 KiB (102%) | 135 KiB (102%) | 271 KiB (99%) | 542 KiB (99%) | 1.1 MiB (100%) |
 | NList | 828 KiB (5869%) | 1.5 MiB (4858%) | 3.2 MiB (5109%) | 6.0 MiB (4592%) | 12.0 MiB (4505%) | 21.5 MiB (4020%) | 37.7 MiB (3528%) |
-| Sparse | 539 KiB (3823%) | 1.2 MiB (3857%) | 2.5 MiB (3887%) | 5.1 MiB (3953%) | 10.4 MiB (3896%) | 20.8 MiB (3897%) | 41.9 MiB (3925%) |
+| Sparse | 539 KiB (3823%) | 1.2 MiB (3858%) | 2.5 MiB (3887%) | 5.1 MiB (3953%) | 10.4 MiB (3896%) | 20.8 MiB (3897%) | 41.9 MiB (3925%) |
 | unpacked `X` | 108 KiB | 238 KiB | 508 KiB | 1.0 MiB | 2.1 MiB | 4.2 MiB | 8.5 MiB |
 
 Without negation:
@@ -130,7 +130,7 @@ Without negation:
 |---|--:|--:|--:|--:|--:|--:|--:|
 | HBitmap | 10 KiB | 21 KiB | 43 KiB | 90 KiB | 180 KiB | 360 KiB | 719 KiB |
 | VBitmap | 10 KiB (108%) | 21 KiB (103%) | 44 KiB (102%) | 89 KiB (99%) | 178 KiB (99%) | 356 KiB (99%) | 716 KiB (100%) |
-| NList | 230 KiB (2417%) | 410 KiB (1979%) | 742 KiB (1718%) | 1.3 MiB (1509%) | 2.9 MiB (1629%) | 5.0 MiB (1410%) | 8.2 MiB (1169%) |
+| NList | 230 KiB (2417%) | 411 KiB (1979%) | 742 KiB (1718%) | 1.3 MiB (1509%) | 2.9 MiB (1629%) | 5.0 MiB (1410%) | 8.2 MiB (1169%) |
 | Sparse | 238 KiB (2503%) | 483 KiB (2331%) | 984 KiB (2278%) | 1.9 MiB (2183%) | 3.8 MiB (2184%) | 7.7 MiB (2185%) | 15.3 MiB (2185%) |
 | unpacked `X` | 74 KiB | 160 KiB | 338 KiB | 699 KiB | 1.4 MiB | 2.8 MiB | 5.6 MiB |
 
@@ -191,7 +191,7 @@ Peak memory while building (with negation) -- the vertical indexes need more tha
 | HBitmap | 19 KiB | 36 KiB | 70 KiB | 138 KiB | 279 KiB | 552 KiB | 1.1 MiB |
 | VBitmap | 143 KiB (742%) | 306 KiB (856%) | 645 KiB (924%) | 1.3 MiB (970%) | 2.6 MiB (972%) | 5.2 MiB (972%) | 9.5 MiB (889%) |
 | NList | 4.4 MiB (23384%) | 8.5 MiB (24321%) | 17.7 MiB (26016%) | 34.5 MiB (25571%) | 69.8 MiB (25629%) | 130.9 MiB (24267%) | 255.7 MiB (23823%) |
-| Sparse | 698 KiB (3625%) | 1.2 MiB (3303%) | 2.5 MiB (3601%) | 5.1 MiB (3806%) | 10.4 MiB (3825%) | 20.8 MiB (3860%) | 41.9 MiB (3907%) |
+| Sparse | 698 KiB (3625%) | 1.2 MiB (3304%) | 2.5 MiB (3601%) | 5.1 MiB (3806%) | 10.4 MiB (3825%) | 20.8 MiB (3860%) | 41.9 MiB (3907%) |
 | unpacked `X` | 108 KiB | 238 KiB | 508 KiB | 1.0 MiB | 2.1 MiB | 4.2 MiB | 8.5 MiB |
 
 ## 2. Density
@@ -245,8 +245,8 @@ Memory held by each representation (share of HBitmap in parentheses; the last ro
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
 | HBitmap | 62 KiB | 62 KiB | 62 KiB | 62 KiB | 62 KiB | 62 KiB | 62 KiB | 62 KiB |
 | VBitmap | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) | 63 KiB (102%) |
-| NList | 16.9 MiB (27943%) | 10.1 MiB (16816%) | 3.4 MiB (5637%) | 1.7 MiB (2810%) | 709 KiB (1148%) | 376 KiB (608%) | 209 KiB (338%) | 111 KiB (180%) |
-| Sparse | 2.4 MiB (3962%) | 1.4 MiB (2390%) | 509 KiB (824%) | 264 KiB (428%) | 119 KiB (193%) | 72 KiB (116%) | 48 KiB (78%) | 34 KiB (54%) |
+| NList | 16.9 MiB (27943%) | 10.1 MiB (16816%) | 3.4 MiB (5637%) | 1.7 MiB (2809%) | 709 KiB (1148%) | 376 KiB (609%) | 209 KiB (338%) | 111 KiB (180%) |
+| Sparse | 2.4 MiB (3961%) | 1.4 MiB (2390%) | 509 KiB (824%) | 264 KiB (428%) | 119 KiB (193%) | 72 KiB (117%) | 48 KiB (77%) | 33 KiB (54%) |
 | unpacked `X` | 488 KiB | 488 KiB | 488 KiB | 488 KiB | 488 KiB | 488 KiB | 488 KiB | 488 KiB |
 
 Memory a fit costs in total -- what the representation holds plus the peak the fit allocates on top of it, caches the representation builds during the fit included (`tracemalloc`, a separate untimed pass):
@@ -272,7 +272,7 @@ Memory a fit costs in total -- what the representation holds plus the peak the f
 | ENDER | HBitmap | 1.5 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB |
 | ENDER | VBitmap | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) | 1.4 MiB (91%) |
 | ENDER | NList | 19.4 MiB (1307%) | 11.9 MiB (796%) | 5.2 MiB (346%) | 3.5 MiB (232%) | 2.5 MiB (166%) | 810 KiB (53%) | 602 KiB (39%) | 476 KiB (31%) |
-| ENDER | Sparse | 3.4 MiB (230%) | 2.2 MiB (143%) | 1015 KiB (66%) | 703 KiB (46%) | 493 KiB (32%) | 410 KiB (27%) | 384 KiB (25%) | 363 KiB (24%) |
+| ENDER | Sparse | 3.4 MiB (230%) | 2.2 MiB (144%) | 1015 KiB (66%) | 702 KiB (46%) | 493 KiB (32%) | 410 KiB (27%) | 384 KiB (25%) | 363 KiB (24%) |
 
 ## 3. Width
 
@@ -287,7 +287,7 @@ Memory held by each representation (share of HBitmap in parentheses; the last ro
 | HBitmap | 13 KiB | 25 KiB | 62 KiB | 122 KiB | 244 KiB | 611 KiB | 1.2 MiB | 2.4 MiB |
 | VBitmap | 13 KiB (103%) | 26 KiB (105%) | 63 KiB (102%) | 126 KiB (103%) | 251 KiB (103%) | 626 KiB (102%) | 1.2 MiB (102%) | 2.4 MiB (102%) |
 | NList | 387 KiB (2997%) | 637 KiB (2586%) | 1.1 MiB (1846%) | 2.1 MiB (1754%) | 4.1 MiB (1703%) | 9.9 MiB (1652%) | 19.5 MiB (1634%) | 38.7 MiB (1624%) |
-| Sparse | 179 KiB (1383%) | 179 KiB (727%) | 181 KiB (292%) | 182 KiB (149%) | 186 KiB (76%) | 198 KiB (32%) | 218 KiB (18%) | 257 KiB (11%) |
+| Sparse | 179 KiB (1383%) | 179 KiB (727%) | 180 KiB (292%) | 183 KiB (150%) | 186 KiB (76%) | 198 KiB (32%) | 218 KiB (18%) | 257 KiB (11%) |
 | unpacked `X` | 98 KiB | 195 KiB | 488 KiB | 977 KiB | 1.9 MiB | 4.8 MiB | 9.5 MiB | 19.1 MiB |
 
 800 `coverage()` calls for random rules of 1-4 conditions:
@@ -336,7 +336,7 @@ Memory a fit costs in total -- what the representation holds plus the peak the f
 | Pypper | HBitmap | 362 KiB | 599 KiB | 1.1 MiB | 1.3 MiB | 1.6 MiB | 2.7 MiB | 4.4 MiB | 9.8 MiB |
 | Pypper | VBitmap | 135 KiB (37%) | 179 KiB (30%) | 409 KiB (37%) | 684 KiB (51%) | 1.2 MiB (76%) | 2.9 MiB (105%) | 5.1 MiB (115%) | 11.1 MiB (113%) |
 | Pypper | NList | 1.1 MiB (325%) | 2.1 MiB (351%) | 4.0 MiB (366%) | 2.6 MiB (200%) | 4.9 MiB (305%) | 11.7 MiB (430%) | 22.4 MiB (504%) | 45.7 MiB (464%) |
-| Pypper | Sparse | 401 KiB (111%) | 399 KiB (67%) | 443 KiB (40%) | 487 KiB (36%) | 803 KiB (49%) | 1.8 MiB (68%) | 2.9 MiB (65%) | 7.0 MiB (71%) |
+| Pypper | Sparse | 401 KiB (111%) | 399 KiB (67%) | 442 KiB (40%) | 487 KiB (36%) | 803 KiB (49%) | 1.8 MiB (68%) | 2.9 MiB (65%) | 7.0 MiB (71%) |
 | PyLORD | HBitmap | 1.4 MiB | 1.2 MiB | 1.5 MiB | 1.5 MiB | 1.5 MiB | 2.7 MiB | 4.7 MiB | 8.7 MiB |
 | PyLORD | VBitmap | 1.4 MiB (100%) | 1.2 MiB (99%) | 1.5 MiB (100%) | 1.5 MiB (100%) | 1.5 MiB (99%) | 2.0 MiB (76%) | 2.9 MiB (62%) | 4.6 MiB (53%) |
 | PyLORD | NList | 1.8 MiB (136%) | 2.8 MiB (232%) | 4.2 MiB (278%) | 3.7 MiB (252%) | 5.6 MiB (365%) | 11.5 MiB (427%) | 21.4 MiB (455%) | 41.1 MiB (474%) |
