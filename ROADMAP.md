@@ -112,13 +112,14 @@ Still to do:
   (`EachExample`, not yet a `SeedSelection`) and takes its class; with
   `target_class=AnyClass()` its rules would get a free head too.
 
-- **A demo comparing the rule models**, for the paper's section on rule
-  models: rule sets (one-vs-rest, with several combiners), decision lists,
-  ordered rule sets (rules sorted by quality, i.e. the best-rule combiner)
-  and class cascades (least and most frequent first), for CN2, PFossil and
-  Pypper on multi-class datasets, binary ones as a control; accuracy, rules,
-  conditions, training time, mean ranks. A first look on `car`, `vehicle`
-  and `segment` (one 70/30 split) shows no model type ahead throughout.
+- **A demo comparing the rule models** (`demos/rule_models.py`, built
+  2026-10-25; the full run is still to do), for the paper's section on rule
+  models: rule sets (one-vs-rest; best rule -- an ordered rule set --,
+  votes, class distributions), class cascades (rarest and most frequent
+  first), decision lists (any class, each class, seed covering, the seed's
+  class only) and pairwise, for CN2, PFossil and Pypper on 24 multi-class
+  datasets, 8 two-class ones as a control. The quick run (5 datasets,
+  3-fold) shows no model type ahead throughout.
 - **Pairwise with a head per pair** (`PairwiseModel` with `positive=None`):
   each pair model a decision list over its two classes. Deferred; the
   pairwise vote schemes need a test with decision-list members.
