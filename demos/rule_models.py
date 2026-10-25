@@ -28,9 +28,6 @@ base learner:
 - **decision list (seed)** -- AQ's seed covering: each search explains a
   random uncovered example, generalizing it and predicting its class
   (`seed=RandomSeed()`).
-- **decision list (seed's class)** -- the seed only picks the class; the
-  search sees all features (`seed=RandomSeed()`,
-  `space_init=EmptyRuleAllFeatures()`).
 
 Pairwise models are compared in `demos/multiclass_decomposition.py`.
 
@@ -39,7 +36,8 @@ every small and medium two-class dataset of the catalog,
 `BINARY_CONFIGURATIONS`): a concept for the **minority** class (the
 majority the default, Ripper's choice), a concept for the **majority**
 class (the minority the default), the **rule set** of both classes with
-its three combiners, and the **decision list** of rules of either class.
+its three combiners, and the three **decision lists** of rules of either
+class (any class, each class, seed).
 
 Measures: accuracy, numbers of rules and conditions, training time, mean
 rank across datasets.
@@ -68,7 +66,7 @@ from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference, critical_difference_diagram, friedman_test, mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.seco import (
-    CN2, AnyClass, EachClass, EmptyRuleAllFeatures, PFossil, Pypper, RandomSeed,
+    CN2, AnyClass, EachClass, PFossil, Pypper, RandomSeed,
 )
 from pyrulearn.models import ConceptCascade, ConceptModel, ConceptSet, DecisionList
 
@@ -87,8 +85,6 @@ CONFIGURATIONS = {
     "decision list (any class)": ({}, {"model": DecisionList, "target_class": AnyClass()}),
     "decision list (each class)": ({}, {"model": DecisionList, "target_class": EachClass()}),
     "decision list (seed)": ({}, {"model": DecisionList, "seed": RandomSeed()}),
-    "decision list (seed's class)": ({"space_init": EmptyRuleAllFeatures()},
-                                     {"model": DecisionList, "seed": RandomSeed()}),
 }
 #: the second part, on two-class data: a concept's class ("minority" or
 #: "majority") is resolved at fit time, the other class its default
@@ -96,7 +92,8 @@ BINARY_CONFIGURATIONS = {
     "concept (minority class)": ({}, {"model": ConceptModel, "label": "minority"}),
     "concept (majority class)": ({}, {"model": ConceptModel, "label": "majority"}),
     "rule set": ({}, {"model": ConceptSet}),
-    "decision list (any class)": ({}, {"model": DecisionList, "target_class": AnyClass()}),
+    **{name: CONFIGURATIONS[name] for name in ("decision list (any class)", "decision list (each class)",
+                                               "decision list (seed)")},
 }
 #: configurations a base learner can't be set up for
 UNSUPPORTED = set()
@@ -229,13 +226,12 @@ base learners:
   best of **any class** (its head chosen by the heuristic, CN2's ordered
   mode), the best of one search for **each class**, or explaining a random
   uncovered example, the **seed**: generalizing it and predicting its class
-  (AQ's seed covering), or with the seed only picking the class (**seed's
-  class**).
+  (AQ's seed covering).
 
 On two-class data (the second part), a cascade is a concept for one class
 with the other as the default; the configurations there are a concept for
 the **minority** class and one for the **majority** class, the **rule set**
-of both classes and the **decision list** of rules of either class.
+of both classes and the three **decision lists** of rules of either class.
 
 Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
 {n_folds}-fold stratified cross-validation, one `DataSpec` per training fold
@@ -339,7 +335,7 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
         two = var[var["dataset"].isin([d.name for d in binary])]
         L.append("## Two-class datasets\n\n"
                  "A concept for one class, the other the default; the rule set of both classes; the "
-                 "decision list of rules of either class.\n\n")
+                 "decision lists of rules of either class.\n\n")
         L += _summary(two, BASES)
         L += _overall(two, "twoclass", quick)
     L.append("## Per dataset (mean across folds)\n\n")
