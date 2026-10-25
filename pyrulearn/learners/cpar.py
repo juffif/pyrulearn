@@ -43,8 +43,8 @@ from ..models import ConceptModel, ConceptSet, MajorityClass, annotate_default_r
 from ..rule import Rule
 from .base import DEFAULT_MAX_AUTO_CONVERT_CELLS, NativeRuleLearner, produces
 from .seco import (
-    CoveringStrategy, GainAscentHillClimbing, MultiplicativeReweighting, PositiveWeightBelow, SeCo,
-    SingleRuleLearner, WeightedCovering,
+    CoveringStrategy, GainAscentHillClimbing, MultiplicativeReweighting, PositiveWeightBelow, SearchSpaceInit, SeCo,
+    SeedSelection, SingleRuleLearner, WeightedCovering,
 )
 
 
@@ -201,13 +201,15 @@ class CPAR(_CPARParameters, SeCo):
         covering: Optional[CoveringStrategy] = None,
         combiner: Optional[RuleCombiner] = None,
         target_class: Any = None,
+        seed: Optional[SeedSelection] = None,
+        space_init: Optional[SearchSpaceInit] = None,
     ):
         self._set_cpar_params(decay, min_total_weight, min_gain, gain_similarity, k, max_length, max_rounds,
                               heuristic, covering, combiner)
         search = GainAscentHillClimbing(max_conditions=max_length, optimistic_pruning=False,
                                         min_gain=min_gain, branch_similarity=gain_similarity)
-        SeCo.__init__(self, SingleRuleLearner(self._heuristic(), search=search),
-                      target_class=target_class, covering=self._covering())
+        SeCo.__init__(self, SingleRuleLearner(self._heuristic(), search=search, space_init=space_init),
+                      target_class=target_class, covering=self._covering(), seed=seed)
 
     @produces(ConceptSet)
     def _fit_one_vs_rest(self, data: Any, **kw) -> ConceptSet:

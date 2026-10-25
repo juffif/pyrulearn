@@ -29,9 +29,12 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   one search per class) for a decision list. A seed implies its
   generalizations and its class unless those are given, so
   `CN2(seed=RandomSeed())` is AQ's seed covering with CN2's search. All
-  in `pyrulearn.learners.seco`, for every SeCo learner and Pypper, also as
+  in `pyrulearn.learners.seco`, for every SeCo learner (CN2, AQR, PFoil,
+  PFossil, Opus, CPAR) and Pypper, which also take `space_init=` now, and as
   `fit(data, model=DecisionList, target_class=..., seed=...)`. An unset
-  `seed` leaves a learner's parameters (and so cached results) unchanged.
+  `seed` or `space_init` leaves a learner's parameters (and so cached results)
+  unchanged. With weighted covering (CPAR), a seed only seeds the class loops:
+  a decision list needs covered examples removed.
 
 ### Changed
 

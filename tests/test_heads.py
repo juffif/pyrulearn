@@ -254,7 +254,32 @@ def test_pypper_takes_seeds_too():
     assert type(Pypper().fit(rep)) is ConceptCascade                # the default, as before
 
 
+def test_pypper_takes_a_search_space():
+    rep, y = _three_classes()
+    model = Pypper(seed=RandomSeed(), space_init=EmptyRuleAllFeatures()).fit(rep)   # the seed only picks the class
+    assert type(model) is DecisionList and len({r.target for r in model.rules}) >= 2
+    assert np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+    assert _rules(model) != _rules(Pypper(seed=RandomSeed()).fit(rep))
+
+
+def test_opus_and_cpar_take_seeds():
+    from pyrulearn.learners.cpar import CPAR
+    from pyrulearn.learners.opus import Opus
+    rep, y = _three_classes()
+    model = Opus(max_conditions=2, seed=RandomSeed()).fit(rep)
+    assert type(model) is DecisionList and np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+    # CPAR reweights, so a seed only seeds its class loops; its model stays a rule set
+    model = CPAR(seed=FirstSeed()).fit(rep)
+    assert type(model) is ConceptSet and np.mean(np.asarray(model.predict(rep)) == y) > 0.9
+
+
 def test_a_seed_not_given_stays_out_of_the_parameters():
-    # cache keys are built from the parameters: a new, unset seed= must not change them
-    assert "seed" not in CN2()._provenance_params() and "seed" not in Pypper()._provenance_params()
+    # cache keys are built from the parameters: a new, unset seed= or space_init= must not change them
+    from pyrulearn.learners.cpar import CPAR
+    from pyrulearn.learners.opus import Opus
+    for learner in (CN2(), Pypper(), Opus(), CPAR()):
+        params = learner._provenance_params()
+        assert "seed" not in params and "space_init" not in params, type(learner).__name__
     assert isinstance(CN2(seed=RandomSeed())._provenance_params()["seed"], RandomSeed)
+    assert isinstance(Pypper(space_init=EmptyRuleAllFeatures())._provenance_params()["space_init"],
+                      EmptyRuleAllFeatures)

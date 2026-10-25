@@ -30,8 +30,7 @@ base learner:
   (`seed=RandomSeed()`).
 - **decision list (seed's class)** -- the seed only picks the class; the
   search sees all features (`seed=RandomSeed()`,
-  `space_init=EmptyRuleAllFeatures()`; not for Pypper, which takes no
-  `space_init`).
+  `space_init=EmptyRuleAllFeatures()`).
 
 Pairwise models are compared in `demos/multiclass_decomposition.py`.
 
@@ -100,7 +99,7 @@ BINARY_CONFIGURATIONS = {
     "decision list (any class)": ({}, {"model": DecisionList, "target_class": AnyClass()}),
 }
 #: configurations a base learner can't be set up for
-UNSUPPORTED = {("Pypper", "decision list (seed's class)")}
+UNSUPPORTED = set()
 
 #: a rule set's conflict resolution, all on the same fitted model
 COMBINERS = {"best rule": HeuristicMaxCombiner, "votes": CountVoteCombiner, "distributions": MicroVoteCombiner}
@@ -230,7 +229,7 @@ base learners:
   mode), the best of one search for **each class**, or explaining a random
   uncovered example, the **seed**: generalizing it and predicting its class
   (AQ's seed covering), or with the seed only picking the class (**seed's
-  class**; not for Pypper).
+  class**).
 
 On two-class data (the second part), a cascade is a concept for one class
 with the other as the default; the configurations there are a concept for

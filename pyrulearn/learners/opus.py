@@ -25,7 +25,9 @@ from ..heuristics import Laplace, RuleHeuristic, WRAcc
 from ..models import ConceptModel, ConceptSet, MajorityClass, annotate_default_rule, annotate_rules
 from ..pruning import AnyOf, PrePruningCriterion, ProductiveRule
 from .base import DecomposingLearner, NativeRuleLearner, produces
-from .seco import BranchAndBoundSearch, CoveringStrategy, SeCo, SingleRuleLearner, _ClassCountLaplace
+from .seco import (
+    BranchAndBoundSearch, CoveringStrategy, SearchSpaceInit, SeCo, SeedSelection, SingleRuleLearner, _ClassCountLaplace,
+)
 
 
 class Opus(_ClassCountLaplace, SeCo):
@@ -62,6 +64,8 @@ class Opus(_ClassCountLaplace, SeCo):
         max_rules: Optional[int] = None,
         random_state: Optional[int] = 0,
         covering: Optional[CoveringStrategy] = None,
+        seed: Optional[SeedSelection] = None,
+        space_init: Optional[SearchSpaceInit] = None,
     ):
         self.heuristic = heuristic
         self.max_conditions = max_conditions
@@ -71,10 +75,10 @@ class Opus(_ClassCountLaplace, SeCo):
         single_rule_learner = SingleRuleLearner(
             heuristic if heuristic is not None else Laplace(),
             search=BranchAndBoundSearch(max_conditions=max_conditions),
-            filtering=filtering, stopping=stopping,
+            filtering=filtering, stopping=stopping, space_init=space_init,
         )
         super().__init__(single_rule_learner, target_class=target_class, max_rules=max_rules,
-                         random_state=random_state, covering=covering)
+                         random_state=random_state, covering=covering, seed=seed)
 
 
 

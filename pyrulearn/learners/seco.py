@@ -3131,7 +3131,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
             return ConceptModel if isinstance(head, FixedClass) else DecisionList
         if head is not None:
             return ConceptModel
-        return DecisionList if self.seed is not None else self._MULTICLASS_DEFAULT
+        removal = isinstance(_resolve_covering(getattr(self, "covering", None)), RemovalCovering)
+        # a decision list needs removal: with weighted covering (CPAR), a seed only seeds the class loops
+        return DecisionList if self.seed is not None and removal else self._MULTICLASS_DEFAULT
 
     def _fixed_class(self, label: Any = None) -> Any:
         """The one class of a concept: `label`, or `target_class` (a class
@@ -3904,6 +3906,9 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
     and `GainAscentHillClimbing(stop_at_local_optimum=False)`; pass your
     own `search` and you own its `stop_at_local_optimum` too).
     `random_state` seeds every split and the class-order tie-break.
+    `seed`/`space_init` -- the example each rule explains and where its
+    growth starts, as in `SeCo` (with a seed, its generalizations unless
+    `space_init` is given).
     """
 
     def __init__(
@@ -3916,6 +3921,7 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         search: Optional[RuleSearch] = None,
         target_class: Any = None,
         seed: Optional[SeedSelection] = None,
+        space_init: Optional[SearchSpaceInit] = None,
     ):
         self.k = k
         self.prune_fraction = prune_fraction
@@ -3925,11 +3931,13 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
         self.search = search
         self.target_class = target_class
         self.seed = seed
+        self.space_init = space_init
 
     def _provenance_params(self):
         params = super()._provenance_params()
-        if params.get("seed") is None:   # absent unless given: keeps earlier cache keys valid
-            params.pop("seed", None)
+        for name in ("seed", "space_init"):   # absent unless given: keeps earlier cache keys valid
+            if params.get(name) is None:
+                params.pop(name, None)
         return params
 
     def _stage_learner(self) -> SeCo:
@@ -3943,6 +3951,7 @@ class Pypper(DecomposingLearner, NativeRuleLearner):
             search=search,
             preparation=GrowPruneSplit(self.prune_fraction, self.random_state),
             postprocessing=ReducedErrorPruning(Precision()),
+            space_init=self.space_init,
             stopping=ThresholdPrePruning(CoveredPositives(), 2, operator="<"),
         )
         return SeCo(
