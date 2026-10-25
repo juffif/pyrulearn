@@ -13,7 +13,8 @@ from pyrulearn.experiments.catalog import CatalogEntry
 from pyrulearn.experiments.report import render_results_table, render_setup_section
 from pyrulearn.experiments.runner import TimeoutRunner, run_cv
 from pyrulearn.experiments.stats import (
-    critical_difference, critical_difference_diagram, friedman_test, mean_rank, win_counts,
+    critical_difference, critical_difference_diagram, critical_difference_groups, friedman_test, mean_rank,
+    win_counts,
 )
 from pyrulearn.learners.seco import PFossil, Pypper
 
@@ -484,6 +485,14 @@ def test_critical_difference_diagram_returns_an_axes(cv_results):
     matplotlib.use("Agg")
     ax = critical_difference_diagram(cv_results, "accuracy")
     assert ax.get_xlabel() == "mean rank (accuracy)"
+
+
+def test_critical_difference_groups_are_maximal_and_may_overlap():
+    # each learner joined to every other within one CD, by the longest runs only
+    assert critical_difference_groups([3.68, 4.04, 4.15, 4.22, 4.53, 4.70, 5.31, 5.37], 1.24) == [(0, 5), (2, 7)]
+    assert critical_difference_groups([2.76, 3.16, 3.22, 3.60, 3.79, 4.47], 0.66) == [(0, 2), (1, 4)]
+    assert critical_difference_groups([1.0, 1.2, 1.4], 1.0) == [(0, 2)]
+    assert critical_difference_groups([1.0, 2.0, 3.0], 0.5) == []
 
 
 # ------------------------------------------------------------------ report

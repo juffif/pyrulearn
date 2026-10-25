@@ -35,8 +35,19 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   `seed` or `space_init` leaves a learner's parameters (and so cached results)
   unchanged. With weighted covering (CPAR), a seed only seeds the class loops:
   a decision list needs covered examples removed.
+- `demos/rule_models.py`: rule sets (three combiners), cascades and decision
+  lists of CN2, PFossil and Pypper, on multi-class and two-class data, with a
+  ranking of the kinds of model over all three base learners per group, its
+  Friedman test and critical-difference diagram.
+- `experiments.stats.critical_difference_groups`: the groups a
+  critical-difference diagram joins by a bar.
 
 ### Changed
+
+- `critical_difference_diagram` draws every maximal group of learners within
+  one critical difference of each other, overlapping ones included, in rows
+  below the points. It used to skip a group that overlapped the previous one,
+  so two learners within one CD could look significantly different.
 
 - `model=DecisionList` (and `model=FlatRuleSet`) for a learner that doesn't
   seed its search (CN2, PFoil, PFossil) now searches rules of any class instead

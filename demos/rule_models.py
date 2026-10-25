@@ -65,7 +65,7 @@ from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_results_table, \
     render_setup_section
 from pyrulearn.experiments.runner import run_cv
-from pyrulearn.experiments.stats import mean_rank
+from pyrulearn.experiments.stats import critical_difference, critical_difference_diagram, friedman_test, mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.seco import (
     CN2, AnyClass, EachClass, EmptyRuleAllFeatures, PFossil, Pypper, RandomSeed,
@@ -126,6 +126,7 @@ QUICK_BINARY = ["breast-cancer", "credit-g", "tic-tac-toe", "vote"]
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "rule_models"
 CACHE_DIR = os.path.join(HERE, "_rule_models_cache")
+PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 
 # fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
 # set by --n-jobs
@@ -265,6 +266,65 @@ def _summary(var: pd.DataFrame, bases) -> list:
     return L
 
 
+def _overall(var: pd.DataFrame, group: str, quick: bool) -> list:
+    """The kinds of model across the base learners: each model ranked within
+    each base learner on each dataset, the ranks averaged over all
+    (dataset, base learner) pairs -- the mean of the per-learner mean ranks,
+    since every base learner sees the same datasets. Only the kinds every
+    base learner has. Then the Friedman test over those pairs and the
+    critical-difference diagram."""
+    n_bases = var["base"].nunique()
+    common = [v for v, b in var.groupby("variant")["base"].nunique().items() if b == n_bases]
+    left_out = sorted(set(var["variant"]) - set(common))
+    blocks = var[var["variant"].isin(common)].assign(
+        dataset=lambda d: d["dataset"] + " / " + d["base"], learner=lambda d: d["variant"])
+    ranks = mean_rank(blocks, "accuracy")
+    means = blocks.groupby("learner")["accuracy"].mean()
+    L = ["### All base learners together\n\n"
+         f"Each kind of model's mean rank, averaged over the {n_bases} base learners (ranked within each "
+         "base learner on each dataset, as in the tables above), and its accuracy averaged over them"
+         + (f"; left out, since not every base learner has it: {', '.join(left_out)}" if left_out else "")
+         + ".\n\n| model | accuracy | mean rank |\n|---|--:|--:|\n"]
+    for learner in ranks.index:
+        L.append(f"| {learner} | {format_accuracy(means[learner])} | {ranks[learner]:.2f} |\n")
+    for variant in left_out:
+        # ranked where it exists: among all kinds of model of the base learners that have it
+        bases = sorted(var.loc[var["variant"] == variant, "base"].unique())
+        own = var[var["base"].isin(bases)].assign(
+            dataset=lambda d: d["dataset"] + " / " + d["base"], learner=lambda d: d["variant"])
+        n_kinds = own["variant"].nunique()
+        L.append(f"\n{variant[0].upper() + variant[1:]}, which only {' and '.join(bases)} have: mean rank "
+                 f"{mean_rank(own, 'accuracy')[variant]:.2f} among their {n_kinds} kinds of model (the ranks "
+                 f"above are among {len(common)}), accuracy "
+                 f"{format_accuracy(own.loc[own['variant'] == variant, 'accuracy'].mean())}.\n")
+    try:
+        f = friedman_test(blocks, "accuracy")
+        cd = critical_difference(f.n_learners, f.n_datasets)
+        L.append(f"\nFriedman test over the {f.n_datasets} (dataset, base learner) pairs: p = {f.pvalue:.2g} "
+                 f"({f.n_learners} kinds of model). Nemenyi critical difference at 5%: {cd:.2f} -- two kinds "
+                 "whose mean ranks differ by less are not significantly different; the diagram joins them by "
+                 "a bar. The pairs of one dataset aren't independent of each other, so the test is on the "
+                 "optimistic side.\n\n")
+    except ValueError as exc:
+        L.append(f"\nNo Friedman test ({exc}).\n\n")
+    path = os.path.join(PLOTS_DIR, f"{NAME}_{'quick_' if quick else ''}cd_{group}.png")
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        os.makedirs(PLOTS_DIR, exist_ok=True)
+        ax = critical_difference_diagram(blocks, "accuracy")
+        ax.figure.tight_layout()
+        ax.figure.savefig(path, dpi=110)
+        plt.close(ax.figure)
+        L.append(f"![critical-difference diagram, {group}]({os.path.basename(PLOTS_DIR)}/{os.path.basename(path)})\n\n")
+        print(f"Plot   -> {path}")
+    except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the rest of the report
+        print(f"Critical-difference diagram ({group}) skipped: {type(e).__name__}: {e}")
+    return L
+
+
 def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: str) -> None:
     L = ["# Rule models: rule sets, cascades, decision lists\n\n"]
     L.append(render_setup_section(_description(datasets, binary, quick, n_folds)))
@@ -274,12 +334,14 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
              "of a model's rules together; the three rule-set variants share their rules and training "
              "time.\n\n")
     L += _summary(multi, BASES)
+    L += _overall(multi, "multiclass", quick)
     if binary:
         two = var[var["dataset"].isin([d.name for d in binary])]
         L.append("## Two-class datasets\n\n"
                  "A concept for one class, the other the default; the rule set of both classes; the "
                  "decision list of rules of either class.\n\n")
         L += _summary(two, BASES)
+        L += _overall(two, "twoclass", quick)
     L.append("## Per dataset (mean across folds)\n\n")
     L.append(render_results_table(var, ["accuracy", "n_rules", "train_time"], group_by=["dataset", "learner"],
                                   include_overall=False))

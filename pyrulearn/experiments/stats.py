@@ -35,7 +35,7 @@ matrix; see their own docstrings).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -144,6 +144,25 @@ def critical_difference(n_learners: int, n_datasets: int, alpha: float = 0.05) -
     return float(q_alpha * np.sqrt(n_learners * (n_learners + 1) / (6 * n_datasets)))
 
 
+def critical_difference_groups(mean_ranks: Sequence[float], cd: float) -> List[Tuple[int, int]]:
+    """The groups a critical-difference diagram joins by a bar: for mean
+    ranks sorted ascending, every maximal run ``(i, j)`` (indices into the
+    sorted ranks, ``i < j``) whose first and last rank differ by at most
+    `cd` -- maximal meaning not contained in a longer run. Runs may
+    overlap: two learners are in a common group exactly when their ranks
+    are within `cd` of each other."""
+    groups: List[Tuple[int, int]] = []
+    last_end = 0
+    for i, r in enumerate(mean_ranks):
+        j = i
+        while j + 1 < len(mean_ranks) and mean_ranks[j + 1] - r <= cd:
+            j += 1
+        if j > i and j > last_end:
+            groups.append((i, j))
+            last_end = j
+    return groups
+
+
 def critical_difference_diagram(results, measure: str, higher_is_better: bool = True,
                                 ax=None, alpha: float = 0.05):
     """Mean ranks (`mean_rank`) plotted on a single axis, best to the
@@ -164,26 +183,22 @@ def critical_difference_diagram(results, measure: str, higher_is_better: bool = 
     n_learners = len(ranks)
     cd = critical_difference(n_learners, n_datasets, alpha=alpha)
 
-    if ax is None:
-        _, ax = plt.subplots(figsize=(6, 1.2 + 0.3 * n_learners))
-
     order = ranks.sort_values()
+    values = order.to_numpy()
+    groups = critical_difference_groups(values, cd)
+    if ax is None:
+        _, ax = plt.subplots(figsize=(6, 1.2 + 0.3 * n_learners + 0.12 * len(groups)))
+
     ys = np.arange(len(order))[::-1]
     ax.scatter(order.to_numpy(), ys, color="black", zorder=3)
     for y, (name, r) in zip(ys, order.items()):
         ax.text(r, y + 0.15, name, ha="center", va="bottom", fontsize=9)
 
-    # thick bars linking any maximal run of adjacent learners within one CD
-    values = order.to_numpy()
-    i = 0
-    while i < len(values):
-        j = i
-        while j + 1 < len(values) and values[j + 1] - values[i] <= cd:
-            j += 1
-        if j > i:
-            ax.plot([values[i], values[j]], [ys[i] - 0.3 - 0.1 * i, ys[i] - 0.3 - 0.1 * i],
-                    color="black", linewidth=2)
-        i = j + 1
+    # thick bars, in their own rows below the points, one per maximal group
+    # of learners within one CD of each other (the groups may overlap)
+    bar_ys = [-0.6 - 0.35 * g for g in range(len(groups))]
+    for (i, j), y in zip(groups, bar_ys):
+        ax.plot([values[i], values[j]], [y, y], color="black", linewidth=2)
 
     lo, hi = float(values.min()), float(values.max())
     ax.plot([lo, lo + cd], [ys[0] + 0.6, ys[0] + 0.6], color="black", linewidth=1.5)
@@ -191,7 +206,7 @@ def critical_difference_diagram(results, measure: str, higher_is_better: bool = 
 
     ax.set_xlabel(f"mean rank ({measure})")
     ax.set_yticks([])
-    ax.set_ylim(-0.6, ys[0] + 1.1)
+    ax.set_ylim(min(bar_ys, default=-0.3) - 0.3, ys[0] + 1.1)
     for spine in ("left", "right", "top"):
         ax.spines[spine].set_visible(False)
     return ax
