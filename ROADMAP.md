@@ -1251,6 +1251,42 @@ they aren't reopened by accident.
   stays informal/approximate for a decision list's non-first rules, most
   visibly its default.
 
+## Pypper: a general overhaul against JRip
+
+**Planned (2026-10-26).** Pypper and Weka's JRip are about equally
+accurate on the existing benchmarks (`demos/seco_learners_comparison.py`,
+27 datasets: 81.32% vs. 80.97%, multi-class 78.45% vs. 78.17%), but they get
+there differently: Pypper learns fewer rules (4.8 vs. 5.6) and is about ten
+times faster (0.09 vs. 0.97 s per fit). The speed is worth keeping; the
+differences in behaviour need understanding. Known or suspected ones:
+
+- **Stopping.** Pypper stops a class's covering loop at the first pruned
+  rule with a precision below 0.5 on the covering scope (IREP's criterion)
+  or a per-rule MDL test (`EncodingLengthRestriction`), instead of Cohen's
+  "total description length more than 64 bits over the minimum seen" with
+  its retroactive trim-back. In a decision list over all classes
+  (`model=DecisionList`, one loop), the first weak rule ends the whole
+  list: on `kropt` (18 classes) Pypper's head-search decision lists reach
+  only 19-22% (10-45 rules), its seeded one 61% (989 rules), and on `letter`
+  68% against 84% (`demos/rule_models_report.md`). A criterion made for one
+  class against the rest may have to end only that class's search there,
+  or be judged against the class's prior instead of 0.5.
+- **Numeric attributes.** JRip chooses thresholds during the search, Pypper
+  works on an a-priori discretization (`TreeDiscretizer(max_intervals=8)`
+  in the demos); this alone may explain part of the differences, and
+  should be separated from the others (e.g. by giving JRip the same
+  binarized data).
+- **The optimization phase.** `ReplaceReviseOptimization` and no
+  post-optimization residual IREP\* (see `Pypper`'s docstring); to be
+  compared with JRip's replacement/revision and its DL-based choice.
+- **Pairwise with the larger class as target** learns no rules for many
+  pairs (see "Open problems from the multi-class demo").
+
+Plan: analyze the differences on **multi-class** datasets first, where they
+show most (class order, rules per class, where the accuracies part), with
+JRip and Pypper on the same binarized data, then trace single datasets rule
+by rule against JRip's source.
+
 ## Open problems from the multi-class demo
 
 - **Pypper with the larger class as a pair's target** learns no rules for
