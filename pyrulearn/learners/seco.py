@@ -73,10 +73,10 @@ over all classes at once, rules kept in learn order, first match wins
 choices (see "seeds and heads" below): a seed (`seed=`: `FirstSeed`,
 `RandomSeed`, or none), the search space (`space_init=`; with a seed,
 the seed's generalizations unless given) and the head (`target_class=`:
-`AnyClass`, `SeedClass`, `EachClass`; with a seed, `SeedClass`). AQ's
+`HeadPerRefinement`, `HeadPerSeedExample`, `HeadPerRule`; with a seed, `HeadPerSeedExample`). AQ's
 seed covering is a random seed with its generalizations and its class
 (`AQR`'s own `_MULTICLASS_DEFAULT`); CN2's ordered mode is no seed, all
-features and `AnyClass()`.
+features and `HeadPerRefinement()`.
 
 "Masks, not splits": every one of these building blocks that needs to
 restrict which examples are in scope (a grow/prune split, "which
@@ -2070,8 +2070,8 @@ class SeedExample(SearchSpaceInit):
 # example to explain next (the *seed*, `SeedSelection`, a learner's
 # `seed=`), where the search starts (`SearchSpaceInit`, `space_init=`;
 # with a seed, `SeedExample` -- the seed's generalizations) and the rule's
-# head (`HeadSelection`, `target_class=`: a fixed class, any class, the
-# seed's class, or the best of one search per class). A seed only sets
+# head (`HeadSelection`, `target_class=`: a fixed class, or a class chosen
+# per refinement, per rule or per seed example). A seed only sets
 # the defaults of the other two -- the seed's generalizations and its
 # class, AQ's seed covering -- and either can be overridden.
 
@@ -2164,33 +2164,36 @@ class FixedClass(HeadSelection):
         return f"FixedClass({self.label!r})"
 
 
-class AnyClass(HeadSelection):
-    """The best rule of any class: the heuristic chooses each rule's
-    head while the rule is searched (`HeadObjective`) -- CN2's ordered
-    mode."""
+class HeadPerRefinement(HeadSelection):
+    """The class chosen per refinement: the heuristic chooses each rule's
+    head at every step of its search (`HeadObjective`), so that it can
+    change with each added condition (with a gain heuristic, only at the
+    first) -- CN2's ordered mode."""
 
     def next_rules(self, learner, data, remaining, seed, space_init):
         return learner._learn_rules(data, None, remaining, space_init)
 
 
-class SeedClass(HeadSelection):
-    """The seed's class -- AQ's seed covering. Needs a seed."""
+class HeadPerSeedExample(HeadSelection):
+    """The class chosen per seed example, before the search: the seed's
+    class -- AQ's seed covering. Needs a seed."""
 
     def next_rules(self, learner, data, remaining, seed, space_init):
         if seed is None:
-            raise ValueError("SeedClass() needs a seed (seed=FirstSeed() or RandomSeed())")
+            raise ValueError("HeadPerSeedExample() needs a seed (seed=FirstSeed() or RandomSeed())")
         return learner._learn_rules(data, np.asarray(data.y)[seed], remaining, space_init)
 
 
-class EachClass(HeadSelection):
-    """One search per class still in scope, and the best of their rules:
-    each scored by the learner's heuristic for its class on the
-    remaining examples (a gain heuristic over the scope as a whole)."""
+class HeadPerRule(HeadSelection):
+    """The class chosen once per rule: one complete search per class
+    still in scope, and the best of their rules, each scored by the
+    learner's heuristic for its class on the remaining examples (a gain
+    heuristic over the scope as a whole)."""
 
     def next_rules(self, learner, data, remaining, seed, space_init):
         heuristic = learner.single_rule_learner.heuristic
         if not isinstance(heuristic, RuleHeuristic):
-            raise ValueError(f"EachClass() compares rules by a RuleHeuristic, got {type(heuristic).__name__}")
+            raise ValueError(f"HeadPerRule() compares rules by a RuleHeuristic, got {type(heuristic).__name__}")
         support = data.scope(remaining)[0]
         classes = np.unique(np.asarray(data.y) if support is None else np.asarray(data.y)[support])
         best, best_score = None, None
@@ -3040,7 +3043,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
       classes at once, rules in learn order, first match wins
       (`_decision_list_fit`): each rule from a seed (`seed=`), a search
       space and a head (`target_class=` a `HeadSelection`); without
-      either, the best rule of any class (`AnyClass()`, CN2's ordered
+      either, the best rule of any class (`HeadPerRefinement()`, CN2's ordered
       mode), or for a seeded learner a random seed, its generalizations
       and its class (AQ's seed covering). `fit(data)` builds it whenever
       `target_class` is a `HeadSelection` other than `FixedClass`, or a
@@ -3086,7 +3089,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
     the seed is an uncovered example of the class. A seed for which no
     acceptable rule is found is set aside and the next one tried.
     `target_class` takes a class (or `FixedClass`) for one concept, or
-    `AnyClass()`, `SeedClass()` or `EachClass()` for a decision list
+    `HeadPerRefinement()`, `HeadPerSeedExample()` or `HeadPerRule()` for a decision list
     (see "seeds and heads" above `HeadSelection`).
     """
 
@@ -3310,7 +3313,7 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         round picks a seed if there is one (`seed`, else the learner's;
         see `_seed_selection`), gets the next rule from the head selection
         (`target_class`, else the learner's if it is a `HeadSelection`,
-        else `SeedClass()` with a seed and `AnyClass()` without), searched
+        else `HeadPerSeedExample()` with a seed and `HeadPerRefinement()` without), searched
         on the seed's generalizations if the seed implies them
         (`_seed_space`), and removes the examples it covers. A rule is
         refused if it covers no example of its head (`stats.tp == 0`), is
@@ -3321,9 +3324,9 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         (of all of them if every example is covered).
 
         The combinations: AQ's seed covering (`RandomSeed()`, its
-        generalizations, `SeedClass()`; `AQR`'s default), CN2's ordered
-        mode (no seed, all features, `AnyClass()`), one search per class
-        (`EachClass()`), or a seed with a free head (`AnyClass()`: the
+        generalizations, `HeadPerSeedExample()`; `AQR`'s default), CN2's ordered
+        mode (no seed, all features, `HeadPerRefinement()`), one search per class
+        (`HeadPerRule()`), or a seed with a free head (`HeadPerRefinement()`: the
         rule covers the seed but may predict another class)."""
         if data.y is None:
             raise ValueError("SeCo needs data.y")
@@ -3334,12 +3337,12 @@ class SeCo(DecomposingLearner, NativeRuleLearner):
         seed_space = self._seed_space(seed)
         head = target_class if target_class is not None else self.target_class
         if not isinstance(head, HeadSelection):
-            head = SeedClass() if seeds is not None else AnyClass()
+            head = HeadPerSeedExample() if seeds is not None else HeadPerRefinement()
         if isinstance(head, FixedClass):
             raise ValueError("a decision list has rules of several classes; for one class use "
                              "model=ConceptModel")
-        if isinstance(head, SeedClass) and seeds is None:
-            raise ValueError("SeedClass() needs a seed (seed=FirstSeed() or RandomSeed())")
+        if isinstance(head, HeadPerSeedExample) and seeds is None:
+            raise ValueError("HeadPerSeedExample() needs a seed (seed=FirstSeed() or RandomSeed())")
         rng = np.random.default_rng(self.random_state)
         remaining = np.ones(data.n_samples, dtype=bool)
         rules: List[Rule] = []
@@ -3489,7 +3492,7 @@ class CN2(_ClassCountLaplace, SeCo):
     entropy over the whole class distribution. One difference remains:
     the significance test is the two-class one for the rule's head
     against the rest, not the original's statistic over all classes.
-    `target_class=EachClass()` -- one search per class, the best rule of
+    `target_class=HeadPerRule()` -- one search per class, the best rule of
     them -- may be the better choice: in `demos/rule_models.py` it was
     clearly the best decision list for CN2, at about three times the
     training time.

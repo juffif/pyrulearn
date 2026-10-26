@@ -22,14 +22,20 @@ base learner:
 - **cascade (rarest first) / cascade (most frequent first)** -- ordered
   one-vs-rest (`ConceptCascade`): the classes learned one after the other,
   each against those not yet handled, the last one the default.
-- **decision list (any class)** -- one covering loop over all classes,
-  each rule the best of any class, its head chosen by the heuristic
-  (`target_class=AnyClass()`; CN2's ordered mode).
-- **decision list (each class)** -- the same loop, each rule the best of
-  one search per class (`target_class=EachClass()`).
-- **decision list (seed)** -- AQ's seed covering: each search explains a
-  random uncovered example, generalizing it and predicting its class
+- **decision list (per refinement)** -- one covering loop over all
+  classes, the class of each rule chosen by the heuristic at every
+  refinement, so that it can change with each added condition
+  (`target_class=HeadPerRefinement()`; CN2's ordered mode).
+- **decision list (per rule)** -- the same loop, the class chosen once per
+  rule: the best of one complete search per class
+  (`target_class=HeadPerRule()`).
+- **decision list (per seed example)** -- AQ's seed covering: the class of
+  a random uncovered example, whose generalizations the search explores
   (`seed=RandomSeed()`).
+
+(The configurations keep their earlier names internally -- "any class",
+"each class", "seed" -- so that cached results stay valid; `LABELS` maps
+them to these.)
 
 Pairwise models are compared in `demos/multiclass_decomposition.py`.
 
@@ -39,7 +45,7 @@ every small and medium two-class dataset of the catalog,
 majority the default, Ripper's choice), a concept for the **majority**
 class (the minority the default), the **rule set** of both classes with
 its four combiners, and the three **decision lists** of rules of either
-class (any class, each class, seed).
+class (per refinement, per rule, per seed example).
 
 Measures: accuracy, numbers of rules and conditions, training time, mean
 rank across datasets.
@@ -69,14 +75,14 @@ from pyrulearn.experiments.runner import run_cv
 from pyrulearn.experiments.stats import critical_difference, critical_difference_diagram, friedman_test, mean_rank
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.seco import (
-    CN2, AnyClass, EachClass, PFossil, Pypper, RandomSeed,
+    CN2, HeadPerRefinement, HeadPerRule, PFossil, Pypper, RandomSeed,
 )
 from pyrulearn.models import ConceptCascade, ConceptModel, ConceptSet, DecisionList
 
 RANDOM_STATE = 0
 N_FOLDS = 10
 #: the two large multi-class datasets, with a longer cap per fit (one search per class and rule
-#: makes "decision list (each class)" expensive with many classes)
+#: makes "decision list (per rule)" expensive with many classes)
 LARGE_DATASETS = ["kropt", "letter"]
 LARGE_FIT_TIMEOUT = 1800.0
 MAX_INTERVALS = 8
@@ -89,8 +95,8 @@ CONFIGURATIONS = {
     "rule set": ({}, {"model": ConceptSet}),
     "cascade (rarest first)": ({}, {"model": ConceptCascade, "order": "least_frequent"}),
     "cascade (most frequent first)": ({}, {"model": ConceptCascade, "order": "most_frequent"}),
-    "decision list (any class)": ({}, {"model": DecisionList, "target_class": AnyClass()}),
-    "decision list (each class)": ({}, {"model": DecisionList, "target_class": EachClass()}),
+    "decision list (any class)": ({}, {"model": DecisionList, "target_class": HeadPerRefinement()}),
+    "decision list (each class)": ({}, {"model": DecisionList, "target_class": HeadPerRule()}),
     "decision list (seed)": ({}, {"model": DecisionList, "seed": RandomSeed()}),
 }
 #: the second part, on two-class data: a concept's class ("minority" or
@@ -104,6 +110,13 @@ BINARY_CONFIGURATIONS = {
 }
 #: configurations a base learner can't be set up for
 UNSUPPORTED = set()
+
+#: the report's (and the paper's) names of configurations whose internal name -- part of the
+#: cache key -- differs: the class of a decision list's rule chosen per refinement, per rule or per
+#: seed example
+LABELS = {"decision list (any class)": "decision list (per refinement)",
+          "decision list (each class)": "decision list (per rule)",
+          "decision list (seed)": "decision list (per seed example)"}
 
 #: a rule set's conflict resolution, all on the same fitted model (named as in the paper)
 COMBINERS = {"best rule": HeuristicMaxCombiner, "voting": CountVoteCombiner,
@@ -208,7 +221,8 @@ def variants(results: pd.DataFrame) -> pd.DataFrame:
                 rows.append({**common, "learner": f"{base}:{variant}", "variant": variant,
                              "accuracy": r.get(f"accuracy_{name}")})
         else:
-            rows.append({**common, "learner": r["learner"], "variant": configuration, "accuracy": r["accuracy"]})
+            variant = LABELS.get(configuration, configuration)
+            rows.append({**common, "learner": f"{base}:{variant}", "variant": variant, "accuracy": r["accuracy"]})
     return pd.DataFrame(rows)
 
 
@@ -238,11 +252,12 @@ base learners:
   each against those not yet handled, from the **rarest** class (Ripper's
   order) or the **most frequent** one; the last class is the default.
 - **decision list** -- one covering loop over all classes, first match
-  wins, the default the majority of what no rule covers. Each rule the
-  best of **any class** (its head chosen by the heuristic, CN2's ordered
-  mode), the best of one search for **each class**, or explaining a random
-  uncovered example, the **seed**: generalizing it and predicting its class
-  (AQ's seed covering).
+  wins, the default the majority of what no rule covers. The class of a
+  rule is chosen **per refinement** (by the heuristic, at every added
+  condition; CN2's ordered mode), **per rule** (the best of one complete
+  search per class) or **per seed example** (the class of a random
+  uncovered example, whose generalizations the search explores; AQ's seed
+  covering).
 
 On two-class data (the second part), a cascade is a concept for one class
 with the other as the default; the configurations there are a concept for

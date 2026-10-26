@@ -24,8 +24,8 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 - Seeds and heads as three independent choices of a covering loop: `seed=`
   (`FirstSeed()`, `RandomSeed()`) picks the example a search explains,
   `space_init=` where the search starts, and `target_class=` the head --
-  a class (`FixedClass`) for one concept, or `AnyClass()` (the heuristic
-  chooses), `SeedClass()` (the seed's class) or `EachClass()` (the best of
+  a class (`FixedClass`) for one concept, or `HeadPerRefinement()` (the heuristic
+  chooses), `HeadPerSeedExample()` (the seed's class) or `HeadPerRule()` (the best of
   one search per class) for a decision list. A seed implies its
   generalizations and its class unless those are given, so
   `CN2(seed=RandomSeed())` is AQ's seed covering with CN2's search. All
