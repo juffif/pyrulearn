@@ -897,6 +897,15 @@ different orders, so it only works while every value is `True`.
 
 ## Other planned work
 
+- **Decision tables** (Kohavi, *The Power of Decision Tables*, ECML 1995),
+  as the paper's rule-models section discusses them: a schema of attributes
+  (chosen by a wrapper search) and one rule per cell that holds training
+  examples, each testing every schema attribute -- an oblivious decision
+  tree. The model is a `DisjointRuleSet` with a default (the majority class)
+  for cells without training examples. Possible routes: a native learner,
+  and/or an importer for Weka's `DecisionTable` next to `J48Importer`.
+  Not started.
+
 - **Measure the SeCo-search-vs-ENDER speed gap on `demos/covering_boosting.py`
   itself, now that the Boolean-representation threshold-counting speedup
   above has landed (2026-10-07).** Not done yet -- the chain-counting
