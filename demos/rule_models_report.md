@@ -31,10 +31,10 @@ with the other as the default; the configurations there are a concept for
 the **minority** class and one for the **majority** class, the **rule set**
 of both classes with its four combiners, and the three **decision lists** of rules of either class.
 
-Multi-class datasets, with their numbers of classes: `balance-scale` (3), `cmc` (3), `dna` (3), `hayes-roth` (3), `iris` (3), `splice` (3), `wine` (3), `car` (4), `lymph` (4), `vehicle` (4), `anneal` (5), `glass` (6), `solar-flare` (6), `segment` (7), `zoo` (7), `ecoli` (8), `led24` (10), `yeast` (10), `optdigits` (10), `texture` (11), `vowel` (11), `soybean` (19), `primary-tumor` (21), `audiology` (24). Two-class datasets: `SPECT`, `Titanic`, `banknote-authentication`, `blood-transfusion-service-center`, `breast-cancer`, `breast-w`, `churn`, `climate-model-simulation-crashes`, `colic`, `compas-two-years`, `credit-approval`, `credit-g`, `cylinder-bands`, `diabetes`, `dresses-sales`, `heart-c`, `heart-h`, `heart-statlog`, `heloc`, `hepatitis`, `ilpd`, `ionosphere`, `kc1`, `kc2`, `kr-vs-kp`, `mofn-3-7-10`, `molecular-biology_promoters`, `monks-problems-1`, `monks-problems-2`, `monks-problems-3`, `mushroom`, `ozone-level-8hr`, `pc1`, `pc3`, `pc4`, `phoneme`, `qsar-biodeg`, `sick`, `sonar`, `spambase`, `tic-tac-toe`, `vote`, `wdbc`, `wilt`. Protocol:
-10-fold stratified cross-validation, one `DataSpec` per training fold
+Multi-class datasets, with their numbers of classes: `balance-scale` (3), `cmc` (3), `dna` (3), `hayes-roth` (3), `iris` (3), `splice` (3), `wine` (3), `car` (4), `lymph` (4), `vehicle` (4), `anneal` (5), `glass` (6), `solar-flare` (6), `segment` (7), `zoo` (7), `ecoli` (8), `led24` (10), `yeast` (10), `optdigits` (10), `texture` (11), `vowel` (11), `kropt` (18), `soybean` (19), `primary-tumor` (21), `audiology` (24), `letter` (26). Two-class datasets: `SPECT`, `Titanic`, `banknote-authentication`, `blood-transfusion-service-center`, `breast-cancer`, `breast-w`, `churn`, `climate-model-simulation-crashes`, `colic`, `compas-two-years`, `credit-approval`, `credit-g`, `cylinder-bands`, `diabetes`, `dresses-sales`, `heart-c`, `heart-h`, `heart-statlog`, `heloc`, `hepatitis`, `ilpd`, `ionosphere`, `kc1`, `kc2`, `kr-vs-kp`, `mofn-3-7-10`, `molecular-biology_promoters`, `monks-problems-1`, `monks-problems-2`, `monks-problems-3`, `mushroom`, `ozone-level-8hr`, `pc1`, `pc3`, `pc4`, `phoneme`, `qsar-biodeg`, `sick`, `sonar`, `spambase`, `tic-tac-toe`, `vote`, `wdbc`, `wilt`. Protocol:
+10-fold stratified cross-validation (5-fold for the large `kropt` and `letter`), one `DataSpec` per training fold
 (`TreeDiscretizer(max_intervals=8)`). Each fit is capped at
-300s; a time-out fails the whole cross-validation of that
+300s (1800s for the large ones); a time-out fails the whole cross-validation of that
 learner on that dataset. Training time is measured inside the worker process.
 
 ## Multi-class datasets
@@ -45,43 +45,43 @@ Sorted by mean rank (accuracy rank across datasets, failures last). Rules and co
 
 | model | accuracy | mean rank | rules | conditions | train (s) | failures |
 |---|--:|--:|--:|--:|--:|--:|
-| decision list (each class) | 80.61% | 2.58 | 34.6 | 136.6 | 3.47 | 0 |
-| decision list (seed) | 79.62% | 3.73 | 33.8 | 143.1 | 0.57 | 0 |
-| decision list (any class) | 78.75% | 4.48 | 29.5 | 115.2 | 1.11 | 0 |
-| rule set (macro distribution voting) | 76.19% | 5.00 | 43.3 | 202.7 | 0.51 | 0 |
-| rule set (best rule) | 76.23% | 5.19 | 43.3 | 202.7 | 0.51 | 0 |
-| cascade (rarest first) | 75.81% | 5.42 | 29.2 | 122.0 | 0.33 | 0 |
-| cascade (most frequent first) | 75.52% | 5.50 | 28.4 | 109.6 | 0.33 | 0 |
-| rule set (micro distribution voting) | 75.15% | 6.40 | 43.3 | 202.7 | 0.51 | 0 |
-| rule set (voting) | 75.15% | 6.71 | 43.3 | 202.7 | 0.51 | 0 |
+| decision list (each class) | 80.50% | 2.54 | 60.7 | 345.9 | 11.50 | 0 |
+| decision list (seed) | 79.14% | 3.75 | 50.1 | 293.1 | 1.04 | 0 |
+| decision list (any class) | 78.66% | 4.37 | 58.8 | 331.3 | 4.22 | 0 |
+| rule set (macro distribution voting) | 76.14% | 4.85 | 85.9 | 534.4 | 1.41 | 0 |
+| rule set (best rule) | 76.19% | 5.02 | 85.9 | 534.4 | 1.41 | 0 |
+| cascade (most frequent first) | 74.39% | 5.62 | 55.4 | 303.2 | 0.82 | 0 |
+| cascade (rarest first) | 73.98% | 5.65 | 53.4 | 277.3 | 0.78 | 0 |
+| rule set (micro distribution voting) | 73.67% | 6.56 | 85.9 | 534.4 | 1.41 | 0 |
+| rule set (voting) | 74.13% | 6.65 | 85.9 | 534.4 | 1.41 | 0 |
 
 ### PFossil
 
 | model | accuracy | mean rank | rules | conditions | train (s) | failures |
 |---|--:|--:|--:|--:|--:|--:|
-| rule set (best rule) | 81.37% | 3.88 | 32.6 | 140.5 | 0.09 | 0 |
-| rule set (macro distribution voting) | 81.21% | 3.90 | 32.6 | 140.5 | 0.09 | 0 |
-| decision list (any class) | 80.46% | 4.27 | 21.1 | 58.1 | 0.10 | 0 |
-| decision list (each class) | 80.17% | 4.67 | 21.0 | 78.8 | 0.22 | 0 |
-| cascade (rarest first) | 79.85% | 4.79 | 24.5 | 94.5 | 0.06 | 0 |
-| rule set (micro distribution voting) | 79.97% | 5.38 | 32.6 | 140.5 | 0.09 | 0 |
-| rule set (voting) | 80.08% | 5.52 | 32.6 | 140.5 | 0.09 | 0 |
-| cascade (most frequent first) | 77.87% | 5.73 | 25.0 | 87.6 | 0.06 | 0 |
-| decision list (seed) | 77.38% | 6.88 | 17.4 | 59.5 | 0.05 | 0 |
+| rule set (best rule) | 80.13% | 4.00 | 34.9 | 166.8 | 0.14 | 0 |
+| rule set (macro distribution voting) | 79.97% | 4.02 | 34.9 | 166.8 | 0.14 | 0 |
+| decision list (each class) | 79.32% | 4.42 | 27.3 | 120.5 | 0.60 | 0 |
+| decision list (any class) | 79.33% | 4.48 | 22.4 | 71.3 | 0.16 | 0 |
+| cascade (rarest first) | 78.91% | 4.65 | 28.1 | 122.6 | 0.10 | 0 |
+| cascade (most frequent first) | 77.02% | 5.52 | 28.6 | 114.5 | 0.09 | 0 |
+| rule set (micro distribution voting) | 78.71% | 5.58 | 34.9 | 166.8 | 0.14 | 0 |
+| rule set (voting) | 78.83% | 5.71 | 34.9 | 166.8 | 0.14 | 0 |
+| decision list (seed) | 76.54% | 6.62 | 22.7 | 100.7 | 0.13 | 0 |
 
 ### Pypper
 
 | model | accuracy | mean rank | rules | conditions | train (s) | failures |
 |---|--:|--:|--:|--:|--:|--:|
-| cascade (rarest first) | 79.80% | 3.79 | 13.9 | 46.9 | 0.17 | 0 |
-| cascade (most frequent first) | 78.43% | 4.46 | 14.9 | 45.4 | 0.17 | 0 |
-| rule set (macro distribution voting) | 78.38% | 4.52 | 18.8 | 71.3 | 0.27 | 0 |
-| decision list (seed) | 78.80% | 4.52 | 26.4 | 98.4 | 0.13 | 0 |
-| rule set (best rule) | 78.40% | 4.67 | 18.8 | 71.3 | 0.27 | 0 |
-| decision list (each class) | 78.18% | 5.06 | 14.0 | 39.4 | 0.31 | 0 |
-| decision list (any class) | 77.78% | 5.15 | 15.7 | 49.0 | 0.12 | 0 |
-| rule set (micro distribution voting) | 77.58% | 6.40 | 18.8 | 71.3 | 0.27 | 0 |
-| rule set (voting) | 77.50% | 6.44 | 18.8 | 71.3 | 0.27 | 0 |
+| cascade (rarest first) | 79.33% | 3.65 | 22.8 | 96.5 | 0.46 | 0 |
+| decision list (seed) | 78.48% | 4.25 | 52.2 | 377.3 | 0.77 | 0 |
+| cascade (most frequent first) | 77.87% | 4.35 | 23.5 | 102.4 | 0.43 | 0 |
+| rule set (macro distribution voting) | 77.46% | 4.48 | 25.8 | 124.3 | 0.62 | 0 |
+| rule set (best rule) | 77.47% | 4.69 | 25.8 | 124.3 | 0.62 | 0 |
+| decision list (any class) | 76.45% | 5.37 | 18.6 | 71.3 | 0.26 | 0 |
+| decision list (each class) | 76.71% | 5.37 | 15.1 | 47.7 | 0.74 | 0 |
+| rule set (voting) | 76.60% | 6.40 | 25.8 | 124.3 | 0.62 | 0 |
+| rule set (micro distribution voting) | 76.68% | 6.44 | 25.8 | 124.3 | 0.62 | 0 |
 
 ### All base learners together
 
@@ -89,17 +89,17 @@ Each kind of model's mean rank, averaged over the 3 base learners (ranked within
 
 | model | accuracy | mean rank |
 |---|--:|--:|
-| decision list (each class) | 79.65% | 4.10 |
-| rule set (macro distribution voting) | 78.59% | 4.47 |
-| rule set (best rule) | 78.67% | 4.58 |
-| decision list (any class) | 79.00% | 4.63 |
-| cascade (rarest first) | 78.49% | 4.67 |
-| decision list (seed) | 78.60% | 5.04 |
-| cascade (most frequent first) | 77.27% | 5.23 |
-| rule set (micro distribution voting) | 77.57% | 6.06 |
-| rule set (voting) | 77.57% | 6.22 |
+| decision list (each class) | 78.84% | 4.11 |
+| rule set (macro distribution voting) | 77.86% | 4.45 |
+| rule set (best rule) | 77.93% | 4.57 |
+| cascade (rarest first) | 77.41% | 4.65 |
+| decision list (any class) | 78.15% | 4.74 |
+| decision list (seed) | 78.05% | 4.87 |
+| cascade (most frequent first) | 76.43% | 5.16 |
+| rule set (micro distribution voting) | 76.35% | 6.19 |
+| rule set (voting) | 76.52% | 6.26 |
 
-Friedman test over the 72 (dataset, base learner) pairs: p = 2.5e-06 (9 kinds of model). Nemenyi critical difference at 5%: 1.42 -- two kinds whose mean ranks differ by less are not significantly different; the diagram joins them by a bar. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
+Friedman test over the 78 (dataset, base learner) pairs: p = 1.2e-07 (9 kinds of model). Nemenyi critical difference at 5%: 1.36 -- two kinds whose mean ranks differ by less are not significantly different; the diagram joins them by a bar. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
 
 ![critical-difference diagram, multiclass](rule_models_plots/rule_models_cd_multiclass.png)
 
@@ -168,6 +168,27 @@ Each kind of model's mean rank, averaged over the 3 base learners (ranked within
 Friedman test over the 132 (dataset, base learner) pairs: p = 6e-19 (9 kinds of model). Nemenyi critical difference at 5%: 1.05 -- two kinds whose mean ranks differ by less are not significantly different; the diagram joins them by a bar. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
 
 ![critical-difference diagram, twoclass](rule_models_plots/rule_models_cd_twoclass.png)
+
+## Decision lists against rule sets, over the number of classes
+
+Per dataset and base learner, the accuracy of a decision list minus that of the rule set resolved by the best rule, in percentage points (positive: the decision list is better), and of the best decision list minus the best rule set, averaged over the datasets with the given numbers of classes and the three base learners.
+
+| classes | pairs | list (any class) | list (each class) | list (seed) | best list - best set |
+|---|--:|--:|--:|--:|--:|
+| 2 | 132 | -0.89 | -0.42 | -1.15 | +0.60 |
+| 3 | 21 | +0.21 | +1.01 | -1.28 | +1.71 |
+| 4-5 | 12 | +0.25 | +1.54 | +0.45 | +2.89 |
+| 6-9 | 15 | +1.46 | +1.04 | +0.07 | +2.12 |
+| 10-26 | 30 | -0.69 | +0.36 | +1.47 | +3.41 |
+
+Share of the pairs on which the decision list is better, and Spearman's rank correlation of the difference with the number of classes:
+
+| | ahead, two classes | ahead, more classes | correlation, all | correlation, more classes |
+|---|--:|--:|--:|--:|
+| decision list (any class) | 36% | 50% | +0.06 (p = 0.36) | -0.06 (p = 0.63) |
+| decision list (each class) | 39% | 54% | +0.15 (p = 0.027) | +0.01 (p = 0.9) |
+| decision list (seed) | 31% | 54% | +0.13 (p = 0.058) | +0.19 (p = 0.1) |
+| best decision list - best rule set | 51% | 73% | +0.26 (p = 0.00011) | +0.20 (p = 0.08) |
 
 ## Per dataset (mean across folds)
 
@@ -1118,6 +1139,33 @@ Friedman test over the 132 (dataset, base learner) pairs: p = 6e-19 (9 kinds of 
 | kr-vs-kp | Pypper:rule set (macro distribution voting) | 99.12% | 22.6 | 0.196 |
 | kr-vs-kp | Pypper:rule set (micro distribution voting) | 99.03% | 22.6 | 0.196 |
 | kr-vs-kp | Pypper:rule set (voting) | 98.91% | 22.6 | 0.196 |
+| kropt | CN2:cascade (most frequent first) | 41.19% | 1108.0 | 16.674 |
+| kropt | CN2:cascade (rarest first) | 32.26% | 942.2 | 14.432 |
+| kropt | CN2:decision list (any class) | 66.34% | 1107.8 | 88.686 |
+| kropt | CN2:decision list (each class) | 68.98% | 1009.0 | 154.575 |
+| kropt | CN2:decision list (seed) | 51.38% | 575.0 | 11.892 |
+| kropt | CN2:rule set (best rule) | 71.11% | 1798.0 | 32.539 |
+| kropt | CN2:rule set (macro distribution voting) | 70.00% | 1798.0 | 32.539 |
+| kropt | CN2:rule set (micro distribution voting) | 29.01% | 1798.0 | 32.539 |
+| kropt | CN2:rule set (voting) | 42.12% | 1798.0 | 32.539 |
+| kropt | PFossil:cascade (most frequent first) | 35.12% | 50.4 | 0.310 |
+| kropt | PFossil:cascade (rarest first) | 35.48% | 61.0 | 0.997 |
+| kropt | PFossil:decision list (any class) | 31.83% | 22.2 | 0.793 |
+| kropt | PFossil:decision list (each class) | 36.32% | 73.6 | 3.906 |
+| kropt | PFossil:decision list (seed) | 37.59% | 104.6 | 2.247 |
+| kropt | PFossil:rule set (best rule) | 24.99% | 44.8 | 0.860 |
+| kropt | PFossil:rule set (macro distribution voting) | 24.50% | 44.8 | 0.860 |
+| kropt | PFossil:rule set (micro distribution voting) | 22.78% | 44.8 | 0.860 |
+| kropt | PFossil:rule set (voting) | 22.69% | 44.8 | 0.860 |
+| kropt | Pypper:cascade (most frequent first) | 47.48% | 224.6 | 7.624 |
+| kropt | Pypper:cascade (rarest first) | 54.59% | 252.2 | 9.144 |
+| kropt | Pypper:decision list (any class) | 20.86% | 34.2 | 2.046 |
+| kropt | Pypper:decision list (each class) | 17.78% | 4.6 | 1.734 |
+| kropt | Pypper:decision list (seed) | 59.04% | 918.6 | 25.591 |
+| kropt | Pypper:rule set (best rule) | 33.63% | 135.6 | 7.872 |
+| kropt | Pypper:rule set (macro distribution voting) | 33.64% | 135.6 | 7.872 |
+| kropt | Pypper:rule set (micro distribution voting) | 33.48% | 135.6 | 7.872 |
+| kropt | Pypper:rule set (voting) | 33.49% | 135.6 | 7.872 |
 | led24 | CN2:cascade (most frequent first) | 54.31% | 118.7 | 0.749 |
 | led24 | CN2:cascade (rarest first) | 45.41% | 123.6 | 0.784 |
 | led24 | CN2:decision list (any class) | 65.91% | 95.4 | 1.929 |
@@ -1145,6 +1193,33 @@ Friedman test over the 132 (dataset, base learner) pairs: p = 6e-19 (9 kinds of 
 | led24 | Pypper:rule set (macro distribution voting) | 67.81% | 25.4 | 0.477 |
 | led24 | Pypper:rule set (micro distribution voting) | 67.88% | 25.4 | 0.477 |
 | led24 | Pypper:rule set (voting) | 67.47% | 25.4 | 0.477 |
+| letter | CN2:cascade (most frequent first) | 53.25% | 301.8 | 8.650 |
+| letter | CN2:cascade (rarest first) | 27.46% | 324.8 | 8.758 |
+| letter | CN2:decision list (any class) | 86.45% | 418.6 | 69.092 |
+| letter | CN2:decision list (each class) | 87.11% | 361.8 | 254.212 |
+| letter | CN2:decision list (seed) | 84.16% | 309.6 | 12.802 |
+| letter | CN2:rule set (best rule) | 79.13% | 421.2 | 13.318 |
+| letter | CN2:rule set (macro distribution voting) | 79.99% | 421.2 | 13.318 |
+| letter | CN2:rule set (micro distribution voting) | 47.30% | 421.2 | 13.318 |
+| letter | CN2:rule set (voting) | 57.17% | 421.2 | 13.318 |
+| letter | PFossil:cascade (most frequent first) | 78.21% | 176.6 | 1.401 |
+| letter | PFossil:cascade (rarest first) | 77.29% | 167.4 | 1.373 |
+| letter | PFossil:decision list (any class) | 72.54% | 85.8 | 2.587 |
+| letter | PFossil:decision list (each class) | 81.37% | 286.0 | 15.420 |
+| letter | PFossil:decision list (seed) | 75.07% | 195.6 | 1.898 |
+| letter | PFossil:rule set (best rule) | 75.67% | 137.4 | 1.903 |
+| letter | PFossil:rule set (macro distribution voting) | 75.80% | 137.4 | 1.903 |
+| letter | PFossil:rule set (micro distribution voting) | 73.98% | 137.4 | 1.903 |
+| letter | PFossil:rule set (voting) | 74.94% | 137.4 | 1.903 |
+| letter | Pypper:cascade (most frequent first) | 81.19% | 232.4 | 6.088 |
+| letter | Pypper:cascade (rarest first) | 81.39% | 220.8 | 5.807 |
+| letter | Pypper:decision list (any class) | 68.15% | 142.2 | 5.185 |
+| letter | Pypper:decision list (each class) | 64.89% | 79.2 | 20.326 |
+| letter | Pypper:decision list (seed) | 82.66% | 421.4 | 6.800 |
+| letter | Pypper:rule set (best rule) | 77.00% | 251.4 | 10.102 |
+| letter | Pypper:rule set (macro distribution voting) | 77.20% | 251.4 | 10.102 |
+| letter | Pypper:rule set (micro distribution voting) | 76.61% | 251.4 | 10.102 |
+| letter | Pypper:rule set (voting) | 76.68% | 251.4 | 10.102 |
 | lymph | CN2:cascade (most frequent first) | 81.86% | 6.0 | 0.017 |
 | lymph | CN2:cascade (rarest first) | 75.81% | 7.7 | 0.015 |
 | lymph | CN2:decision list (any class) | 82.62% | 5.2 | 0.029 |
