@@ -47,8 +47,8 @@ rank across datasets.
 Run: `python demos/rule_models.py` with no arguments is the **quick**
 default (`QUICK_DATASETS` and `QUICK_BINARY`, `QUICK_FOLDS`-fold); its report goes to
 ``rule_models_quick_report.md`` and is not checked in. `--full` runs
-`FULL_DATASETS` and `BINARY_DATASETS` (`N_FOLDS`-fold) and the large
-`LARGE_DATASETS` (`LARGE_FOLDS`-fold, `LARGE_FIT_TIMEOUT`) and writes
+`FULL_DATASETS`, the large `LARGE_DATASETS` (with `LARGE_FIT_TIMEOUT`) and
+`BINARY_DATASETS` (`N_FOLDS`-fold) and writes
 ``rule_models_report.md``. Needs the `experiments` extra.
 """
 
@@ -75,10 +75,9 @@ from pyrulearn.models import ConceptCascade, ConceptModel, ConceptSet, DecisionL
 
 RANDOM_STATE = 0
 N_FOLDS = 10
-#: the two large multi-class datasets, with fewer folds and a longer cap per fit (one search per
-#: class and rule makes "decision list (each class)" expensive with many classes)
+#: the two large multi-class datasets, with a longer cap per fit (one search per class and rule
+#: makes "decision list (each class)" expensive with many classes)
 LARGE_DATASETS = ["kropt", "letter"]
-LARGE_FOLDS = 5
 LARGE_FIT_TIMEOUT = 1800.0
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
@@ -220,8 +219,8 @@ def _description(datasets, binary, quick: bool, n_folds: int) -> str:
     names = ", ".join(f"`{d.name}` ({d.n_classes})" for d in sorted(datasets, key=lambda d: d.n_classes))
     control = (f" Two-class datasets: {', '.join(f'`{d.name}`' for d in binary)}." if binary else "")
     big = [d.name for d in datasets if d.name in LARGE_DATASETS]
-    large = (f" ({LARGE_FOLDS}-fold for the large {' and '.join(f'`{n}`' for n in big)})" if big else "")
-    large_cap = f" ({LARGE_FIT_TIMEOUT:.0f}s for the large ones)" if big else ""
+    large_cap = (f" ({LARGE_FIT_TIMEOUT:.0f}s for the large {' and '.join(f'`{n}`' for n in big)})"
+                 if big else "")
     return f"""\
 {mode}A rule learner's covering loop can build different kinds of models from
 the same search. This demo compares them, for CN2, PFossil and Pypper as
@@ -251,7 +250,7 @@ the **minority** class and one for the **majority** class, the **rule set**
 of both classes with its four combiners, and the three **decision lists** of rules of either class.
 
 Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
-{n_folds}-fold stratified cross-validation{large}, one `DataSpec` per training fold
+{n_folds}-fold stratified cross-validation, one `DataSpec` per training fold
 (`TreeDiscretizer(max_intervals={MAX_INTERVALS})`). Each fit is capped at
 {FIT_TIMEOUT:.0f}s{large_cap}; a time-out fails the whole cross-validation of that
 learner on that dataset. Training time is measured inside the worker process.
@@ -431,7 +430,7 @@ def main(quick: bool = True) -> None:
     runs = [run_cv(build_learners(CONFIGURATIONS), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT, **common),
             run_cv(build_learners(BINARY_CONFIGURATIONS), binary, n_folds=n_folds, fit_timeout=FIT_TIMEOUT, **common)]
     if large:
-        runs.append(run_cv(build_learners(CONFIGURATIONS), large, n_folds=LARGE_FOLDS,
+        runs.append(run_cv(build_learners(CONFIGURATIONS), large, n_folds=n_folds,
                            fit_timeout=LARGE_FIT_TIMEOUT, **common))
     results = pd.concat(runs, ignore_index=True)
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
