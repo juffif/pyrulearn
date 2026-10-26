@@ -203,7 +203,7 @@ class ListCombiner(RuleCombiner):
 
 
 class CountVoteCombiner(RuleCombiner):
-    """Plain majority vote across every covering rule's target -- each
+    """**Voting**: plain majority vote across every covering rule's target -- each
     covering rule counts as exactly one vote, no weight, heuristic, or
     distribution involved (see `HeuristicVoteCombiner` for a
     heuristic-weighted version). The motivating case is a random forest
@@ -224,7 +224,7 @@ class CountVoteCombiner(RuleCombiner):
         return _break_tie(_argmax_classes(tally), rules, covering)
 
     def describe(self) -> str:
-        return "vote (one vote per covering rule)"
+        return "voting (one vote per covering rule)"
 
 
 # -- heuristic-on-stats ---------------------------------------------------
@@ -413,9 +413,10 @@ class DistributionCombiner(RuleCombiner):
 
 
 class MicroVoteCombiner(DistributionCombiner):
-    """Pool every covering rule's *raw* class counts (larger leaves
-    contribute proportionally more, since they're not normalized away
-    first), sum them, argmax."""
+    """**Micro distribution voting**: pool every covering rule's *raw*
+    class counts (larger leaves contribute proportionally more, since
+    they're not normalized away first), sum them, argmax -- CN2's
+    conflict resolution (Clark & Boswell 1991)."""
 
     def resolve(self, rules: Sequence[Rule], covering: Sequence[int]) -> Any:
         trivial = _trivial_target(rules, covering)
@@ -425,13 +426,13 @@ class MicroVoteCombiner(DistributionCombiner):
         return _combine_class_scores(scores, sum, rules, covering)
 
     def describe(self) -> str:
-        return "sum of covered class counts"
+        return "micro distribution voting (sum of covered class counts)"
 
 
 class MacroVoteCombiner(DistributionCombiner):
-    """Normalize each covering rule's own class counts to proportions
-    first (every rule counts equally regardless of leaf size), sum,
-    argmax -- this is what actually matches sklearn's own
+    """**Macro distribution voting**: normalize each covering rule's own
+    class counts to proportions first (every rule counts equally
+    regardless of leaf size), sum, argmax -- this is what actually matches sklearn's own
     `RandomForestClassifier.predict()` mechanism: each tree contributes
     one normalized probability vector, not weighted by how many
     training examples happened to land in that leaf.
@@ -445,7 +446,7 @@ class MacroVoteCombiner(DistributionCombiner):
         return _combine_class_scores(scores, sum, rules, covering)
 
     def describe(self) -> str:
-        return "sum of covered class proportions"
+        return "macro distribution voting (sum of covered class proportions)"
 
 
 class MicroMaxCombiner(DistributionCombiner):

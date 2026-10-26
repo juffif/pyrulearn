@@ -310,9 +310,9 @@ def test_every_combiner_describes_itself():
         MacroVoteCombiner(), MicroMaxCombiner(), MacroMaxCombiner())} == {
         "ListCombiner": "first matching rule",
         "HeuristicMaxCombiner": "max Laplace",
-        "CountVoteCombiner": "vote (one vote per covering rule)",
-        "MicroVoteCombiner": "sum of covered class counts",
-        "MacroVoteCombiner": "sum of covered class proportions",
+        "CountVoteCombiner": "voting (one vote per covering rule)",
+        "MicroVoteCombiner": "micro distribution voting (sum of covered class counts)",
+        "MacroVoteCombiner": "macro distribution voting (sum of covered class proportions)",
         "MicroMaxCombiner": "max covered class count",
         "MacroMaxCombiner": "max covered class proportion",
     }

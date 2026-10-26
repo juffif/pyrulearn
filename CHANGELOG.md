@@ -35,7 +35,8 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   `seed` or `space_init` leaves a learner's parameters (and so cached results)
   unchanged. With weighted covering (CPAR), a seed only seeds the class loops:
   a decision list needs covered examples removed.
-- `demos/rule_models.py`: rule sets (three combiners), cascades and decision
+- `demos/rule_models.py`: rule sets (four combiners: best rule, voting, micro
+  and macro distribution voting), cascades and decision
   lists of CN2, PFossil and Pypper, on multi-class and two-class data, with a
   ranking of the kinds of model over all three base learners per group, its
   Friedman test and critical-difference diagram.
@@ -44,6 +45,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Changed
 
+- The combiners describe themselves with the paper's names, so a printed rule
+  set's `% conflict resolution:` line reads `voting (one vote per covering
+  rule)`, `micro distribution voting (sum of covered class counts)` (CN2's) or
+  `macro distribution voting (sum of covered class proportions)`; the class
+  names (`CountVoteCombiner`, `MicroVoteCombiner`, `MacroVoteCombiner`) stay.
 - `critical_difference_diagram` draws every maximal group of learners within
   one critical difference of each other, overlapping ones included, in rows
   below the points. It used to skip a group that overlapped the previous one,

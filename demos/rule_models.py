@@ -12,11 +12,13 @@ Configurations (`CONFIGURATIONS`), each a `fit(data, model=...)` of the
 base learner:
 
 - **rule set** -- one-vs-rest (`ConceptSet`): a rule set per class, learned
-  against all others; its conflicts resolved three ways on the same fitted
+  against all others; its conflicts resolved four ways on the same fitted
   model (`COMBINERS`): **best rule** (the covering rule with the best
   Laplace estimate -- the same as sorting the rules by it, an ordered rule
-  set), **votes** (one vote per covering rule) and **distributions** (the
-  covering rules' class counts summed, CN2's own).
+  set), **voting** (one vote per covering rule), **micro distribution
+  voting** (the covering rules' class counts summed, CN2's own) and **macro
+  distribution voting** (their class proportions summed, every rule
+  weighing the same).
 - **cascade (rarest first) / cascade (most frequent first)** -- ordered
   one-vs-rest (`ConceptCascade`): the classes learned one after the other,
   each against those not yet handled, the last one the default.
@@ -36,7 +38,7 @@ every small and medium two-class dataset of the catalog,
 `BINARY_CONFIGURATIONS`): a concept for the **minority** class (the
 majority the default, Ripper's choice), a concept for the **majority**
 class (the minority the default), the **rule set** of both classes with
-its three combiners, and the three **decision lists** of rules of either
+its four combiners, and the three **decision lists** of rules of either
 class (any class, each class, seed).
 
 Measures: accuracy, numbers of rules and conditions, training time, mean
@@ -57,7 +59,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, MicroVoteCombiner
+from pyrulearn.combiners import CountVoteCombiner, HeuristicMaxCombiner, MacroVoteCombiner, MicroVoteCombiner
 from pyrulearn.data.discretization import TreeDiscretizer
 from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_results_table, \
@@ -98,8 +100,9 @@ BINARY_CONFIGURATIONS = {
 #: configurations a base learner can't be set up for
 UNSUPPORTED = set()
 
-#: a rule set's conflict resolution, all on the same fitted model
-COMBINERS = {"best rule": HeuristicMaxCombiner, "votes": CountVoteCombiner, "distributions": MicroVoteCombiner}
+#: a rule set's conflict resolution, all on the same fitted model (named as in the paper)
+COMBINERS = {"best rule": HeuristicMaxCombiner, "voting": CountVoteCombiner,
+             "micro distribution voting": MicroVoteCombiner, "macro distribution voting": MacroVoteCombiner}
 
 # small multi-class datasets
 QUICK_DATASETS = ["car", "vehicle", "zoo", "soybean", "primary-tumor"]
@@ -149,7 +152,11 @@ class Configuration(NativeRuleLearner):
         return f"{self.base}:{self.configuration}"
 
     def _provenance_params(self):
-        return {"base": self.base, "configuration": self.configuration, "random_state": self.random_state}
+        params = {"base": self.base, "configuration": self.configuration, "random_state": self.random_state}
+        if self.configuration == "rule set":
+            # its cached results hold one accuracy per combiner: a new combiner means fitting it again
+            params["combiners"] = list(COMBINERS)
+        return params
 
     def fit(self, data):
         construct, fit = {**CONFIGURATIONS, **BINARY_CONFIGURATIONS}[self.configuration]
@@ -215,9 +222,10 @@ base learners:
   all other classes; a conflict between covering rules of different
   classes resolved by **best rule** (the covering rule with the best
   Laplace estimate, i.e. the rules sorted by it, an ordered rule set),
-  **votes** (one vote per covering rule) or **distributions** (their class
-  counts summed, CN2's own) -- three ways of predicting with the same
-  rules.
+  **voting** (one vote per covering rule), **micro distribution voting**
+  (their class counts summed, CN2's own) or **macro distribution voting**
+  (their class proportions summed, every rule weighing the same) -- four
+  ways of predicting with the same rules.
 - **cascade** -- ordered one-vs-rest: the classes one after the other,
   each against those not yet handled, from the **rarest** class (Ripper's
   order) or the **most frequent** one; the last class is the default.
@@ -231,7 +239,7 @@ base learners:
 On two-class data (the second part), a cascade is a concept for one class
 with the other as the default; the configurations there are a concept for
 the **minority** class and one for the **majority** class, the **rule set**
-of both classes and the three **decision lists** of rules of either class.
+of both classes with its four combiners, and the three **decision lists** of rules of either class.
 
 Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
 {n_folds}-fold stratified cross-validation, one `DataSpec` per training fold
@@ -327,7 +335,7 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
     multi = var[var["dataset"].isin([d.name for d in datasets])]
     L.append("## Multi-class datasets\n\n"
              "Sorted by mean rank (accuracy rank across datasets, failures last). Rules and conditions: all "
-             "of a model's rules together; the three rule-set variants share their rules and training "
+             "of a model's rules together; the four rule-set variants share their rules and training "
              "time.\n\n")
     L += _summary(multi, BASES)
     L += _overall(multi, "multiclass", quick)

@@ -820,7 +820,7 @@ def test_conflict_resolution_line_only_where_rules_can_conflict():
     head = "% conflict resolution: "
     assert FlatRuleSet([ra, rb]).to_string(fmt="prolog").startswith(head + "max Laplace\n")
     assert FlatRuleSet([ra, rb], combiner=CountVoteCombiner()).to_string(fmt="prolog").startswith(
-        head + "vote (one vote per covering rule)\n")
+        head + "voting (one vote per covering rule)\n")
     assert DecisionList([ra, rb]).to_string(fmt="prolog").startswith(head + "first matching rule\n")
     # nothing to resolve: one head only, disjoint rules, a lone rule
     for model in (FlatRuleSet([ra, ra2]), ConceptModel([ra, ra2], label="A"),

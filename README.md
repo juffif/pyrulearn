@@ -851,7 +851,8 @@ particular strategy keeps it without every `predict` call re-passing it.
 
 A printed model whose rules predict more than one class names its conflict
 resolution in its first line -- the combiner's `describe()`, e.g.
-`% conflict resolution: max Laplace`, `... sum of covered class counts`,
+`% conflict resolution: max Laplace`, `... micro distribution voting (sum of
+covered class counts)`,
 or `... first matching rule` for a decision list (`to_string(...,
 show_resolution=False)` omits it). Together with each rule's printed
 training stats, that is everything needed to work out a prediction by hand.
