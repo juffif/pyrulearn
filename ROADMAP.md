@@ -1264,13 +1264,21 @@ differences in behaviour need understanding. Known or suspected ones:
   rule with a precision below 0.5 on the covering scope (IREP's criterion)
   or a per-rule MDL test (`EncodingLengthRestriction`), instead of Cohen's
   "total description length more than 64 bits over the minimum seen" with
-  its retroactive trim-back. In a decision list over all classes
-  (`model=DecisionList`, one loop), the first weak rule ends the whole
-  list: on `kropt` (18 classes) Pypper's head-search decision lists reach
-  only 19-22% (10-45 rules), its seeded one 61% (989 rules), and on `letter`
-  68% against 84% (`demos/rule_models_report.md`). A criterion made for one
-  class against the rest may have to end only that class's search there,
-  or be judged against the class's prior instead of 0.5.
+  its retroactive trim-back.
+- **Decision lists with head search break down on many classes.** Here the
+  benchmarks do *not* show Pypper doing well, and JRip hasn't been tested
+  on the same task: on `kropt` (18 classes) Pypper's decision lists whose
+  rules are the best of any class or of each class reach only 19-22%
+  (10-45 rules), its seeded one 61% (989 rules); on `letter`, 68% against
+  84% (`demos/rule_models_report.md`, 10-fold). Two suspects: the stopping
+  criterion above -- in one loop over all classes the first weak rule ends
+  the whole list, so a criterion made for one class against the rest may
+  have to end only that class's search, or be judged against the class's
+  prior instead of 0.5 -- and the head search under FOIL gain, which
+  chooses the head at the first refinement and keeps it (see "Rules of any
+  class"). First diagnosis: a single fit on `kropt` logging why the loop
+  ends. For comparison, JRip on the same data -- its own class cascade, as
+  it has no decision list over all classes.
 - **Numeric attributes.** JRip chooses thresholds during the search, Pypper
   works on an a-priori discretization (`TreeDiscretizer(max_intervals=8)`
   in the demos); this alone may explain part of the differences, and
