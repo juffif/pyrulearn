@@ -103,8 +103,12 @@ the class). One decision-list loop (`SeCo._decision_list_fit`) replaces
 the seed covering and the head covering; AQR's rules are identical to
 before (`SeedExample`'s own strategies still choose the seeds when no
 `seed=` is given). The defaults (which head `model=DecisionList` uses
-without a `target_class`) are still to be decided; for now a seeded
-learner's is `SeedClass()`, everyone else's `AnyClass()`.
+without a `target_class`), decided 2026-10-26: `AnyClass()` -- the fastest,
+and CN2's own ordered mode -- for every learner without a seed, CN2
+included; `SeedClass()` for a seeded learner (AQR). `EachClass()` was the
+best decision list on average in the rule-models demo, clearly so for CN2
+(about three times the training time there), and CN2's docstring points
+to it.
 
 Still to do:
 

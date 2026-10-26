@@ -47,7 +47,8 @@ rank across datasets.
 Run: `python demos/rule_models.py` with no arguments is the **quick**
 default (`QUICK_DATASETS` and `QUICK_BINARY`, `QUICK_FOLDS`-fold); its report goes to
 ``rule_models_quick_report.md`` and is not checked in. `--full` runs
-`FULL_DATASETS` and `BINARY_DATASETS` (`N_FOLDS`-fold) and writes
+`FULL_DATASETS` and `BINARY_DATASETS` (`N_FOLDS`-fold) and the large
+`LARGE_DATASETS` (`LARGE_FOLDS`-fold, `LARGE_FIT_TIMEOUT`) and writes
 ``rule_models_report.md``. Needs the `experiments` extra.
 """
 
@@ -74,6 +75,11 @@ from pyrulearn.models import ConceptCascade, ConceptModel, ConceptSet, DecisionL
 
 RANDOM_STATE = 0
 N_FOLDS = 10
+#: the two large multi-class datasets, with fewer folds and a longer cap per fit (one search per
+#: class and rule makes "decision list (each class)" expensive with many classes)
+LARGE_DATASETS = ["kropt", "letter"]
+LARGE_FOLDS = 5
+LARGE_FIT_TIMEOUT = 1800.0
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 300.0
 
@@ -213,6 +219,9 @@ def _description(datasets, binary, quick: bool, n_folds: int) -> str:
             f"**Full run.** Quick sanity check instead: `python demos/{NAME}.py`.\n\n")
     names = ", ".join(f"`{d.name}` ({d.n_classes})" for d in sorted(datasets, key=lambda d: d.n_classes))
     control = (f" Two-class datasets: {', '.join(f'`{d.name}`' for d in binary)}." if binary else "")
+    big = [d.name for d in datasets if d.name in LARGE_DATASETS]
+    large = (f" ({LARGE_FOLDS}-fold for the large {' and '.join(f'`{n}`' for n in big)})" if big else "")
+    large_cap = f" ({LARGE_FIT_TIMEOUT:.0f}s for the large ones)" if big else ""
     return f"""\
 {mode}A rule learner's covering loop can build different kinds of models from
 the same search. This demo compares them, for CN2, PFossil and Pypper as
@@ -242,9 +251,9 @@ the **minority** class and one for the **majority** class, the **rule set**
 of both classes with its four combiners, and the three **decision lists** of rules of either class.
 
 Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
-{n_folds}-fold stratified cross-validation, one `DataSpec` per training fold
+{n_folds}-fold stratified cross-validation{large}, one `DataSpec` per training fold
 (`TreeDiscretizer(max_intervals={MAX_INTERVALS})`). Each fit is capped at
-{FIT_TIMEOUT:.0f}s; a time-out fails the whole cross-validation of that
+{FIT_TIMEOUT:.0f}s{large_cap}; a time-out fails the whole cross-validation of that
 learner on that dataset. Training time is measured inside the worker process.
 """
 
@@ -329,6 +338,61 @@ def _overall(var: pd.DataFrame, group: str, quick: bool) -> list:
     return L
 
 
+#: the classes groups of `_by_classes`: (label, lowest, highest)
+CLASS_GROUPS = [("2", 2, 2), ("3", 3, 3), ("4-5", 4, 5), ("6-9", 6, 9), ("10-26", 10, 26)]
+
+
+def _by_classes(var: pd.DataFrame, n_classes: dict) -> list:
+    """Decision lists against rule sets over the number of classes: per
+    dataset and base learner, the accuracy of each decision list minus that
+    of the rule set resolved by the best rule, and of the best decision list
+    minus the best rule set, averaged within groups of datasets with similar
+    numbers of classes; then the share of pairs on which the decision list
+    is ahead, and the rank correlation with the number of classes, over all
+    datasets and over the multi-class ones alone."""
+    from scipy.stats import spearmanr
+
+    acc = var.groupby(["dataset", "base", "variant"])["accuracy"].mean().unstack("variant")
+    if "rule set (best rule)" not in acc:
+        return []
+    lists = [c for c in acc.columns if c.startswith("decision list")]
+    diff = pd.DataFrame({c: acc[c] - acc["rule set (best rule)"] for c in lists})
+    diff["best decision list - best rule set"] = (
+        acc[lists].max(axis=1) - acc[[c for c in acc.columns if c.startswith("rule set")]].max(axis=1))
+    diff = 100 * diff.dropna()
+    k = diff.index.get_level_values("dataset").map(n_classes).to_numpy()
+    cols = list(diff.columns)
+    L = ["## Decision lists against rule sets, over the number of classes\n\n"
+         "Per dataset and base learner, the accuracy of a decision list minus that of the rule set resolved "
+         "by the best rule, in percentage points (positive: the decision list is better), and of the best "
+         "decision list minus the best rule set, averaged over the datasets with the given numbers of "
+         "classes and the three base learners.\n\n"
+         "| classes | pairs | "
+         + " | ".join("best list - best set" if c.startswith("best") else c.replace("decision list ", "list ")
+                      for c in cols) + " |\n"
+         "|---|--:|" + "--:|" * len(cols) + "\n"]
+    for label, lo, hi in CLASS_GROUPS:
+        sel = (k >= lo) & (k <= hi)
+        if sel.any():
+            L.append(f"| {label} | {int(sel.sum())} | "
+                     + " | ".join(f"{diff.loc[sel, c].mean():+.2f}" for c in cols) + " |\n")
+    multi = k > 2
+    L.append("\nShare of the pairs on which the decision list is better, and Spearman's rank correlation of "
+             "the difference with the number of classes:\n\n"
+             "| | ahead, two classes | ahead, more classes | correlation, all | correlation, more classes |\n"
+             "|---|--:|--:|--:|--:|\n")
+    for c in cols:
+        ahead2 = (diff.loc[~multi, c] > 0).mean() if (~multi).any() else float("nan")
+        aheadm = (diff.loc[multi, c] > 0).mean() if multi.any() else float("nan")
+        rho_all = spearmanr(k, diff[c])
+        rho_m = spearmanr(k[multi], diff.loc[multi, c]) if multi.sum() > 2 else None
+        L.append(f"| {c} | {100 * ahead2:.0f}% | {100 * aheadm:.0f}% | {rho_all.statistic:+.2f} "
+                 f"(p = {rho_all.pvalue:.2g}) | "
+                 + (f"{rho_m.statistic:+.2f} (p = {rho_m.pvalue:.2g})" if rho_m is not None else "--") + " |\n")
+    L.append("\n")
+    return L
+
+
 def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: str) -> None:
     L = ["# Rule models: rule sets, cascades, decision lists\n\n"]
     L.append(render_setup_section(_description(datasets, binary, quick, n_folds)))
@@ -346,6 +410,7 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
                  "decision lists of rules of either class.\n\n")
         L += _summary(two, BASES)
         L += _overall(two, "twoclass", quick)
+    L += _by_classes(var, {d.name: d.n_classes for d in list(datasets) + list(binary)})
     L.append("## Per dataset (mean across folds)\n\n")
     L.append(render_results_table(var, ["accuracy", "n_rules", "train_time"], group_by=["dataset", "learner"],
                                   include_overall=False))
@@ -358,14 +423,19 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
 def main(quick: bool = True) -> None:
     catalog = Catalog.default()
     datasets = catalog.select(names=QUICK_DATASETS if quick else FULL_DATASETS)
+    large = [] if quick else catalog.select(names=LARGE_DATASETS)
     binary = catalog.select(names=QUICK_BINARY if quick else BINARY_DATASETS)
     n_folds = QUICK_FOLDS if quick else N_FOLDS
-    common = dict(n_folds=n_folds, fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
-                  random_state=RANDOM_STATE, cache_dir=CACHE_DIR, measure_fn=measure, n_jobs=_n_jobs())
-    results = pd.concat([run_cv(build_learners(CONFIGURATIONS), datasets, **common),
-                         run_cv(build_learners(BINARY_CONFIGURATIONS), binary, **common)], ignore_index=True)
+    common = dict(discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS), random_state=RANDOM_STATE,
+                  cache_dir=CACHE_DIR, measure_fn=measure, n_jobs=_n_jobs())
+    runs = [run_cv(build_learners(CONFIGURATIONS), datasets, n_folds=n_folds, fit_timeout=FIT_TIMEOUT, **common),
+            run_cv(build_learners(BINARY_CONFIGURATIONS), binary, n_folds=n_folds, fit_timeout=FIT_TIMEOUT, **common)]
+    if large:
+        runs.append(run_cv(build_learners(CONFIGURATIONS), large, n_folds=LARGE_FOLDS,
+                           fit_timeout=LARGE_FIT_TIMEOUT, **common))
+    results = pd.concat(runs, ignore_index=True)
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(variants(results), datasets, binary, quick, n_folds, report)
+    write_report(variants(results), list(datasets) + list(large), binary, quick, n_folds, report)
 
 
 if __name__ == "__main__":

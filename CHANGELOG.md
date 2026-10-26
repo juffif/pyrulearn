@@ -39,7 +39,9 @@ is in early development (alpha): until 1.0, minor versions may change the API.
   and macro distribution voting), cascades and decision
   lists of CN2, PFossil and Pypper, on multi-class and two-class data, with a
   ranking of the kinds of model over all three base learners per group, its
-  Friedman test and critical-difference diagram.
+  Friedman test and critical-difference diagram, and decision lists against
+  rule sets over the number of classes. The large `kropt` and `letter` (18 and
+  26 classes) run 5-fold, with 1800 s per fit.
 - `experiments.stats.critical_difference_groups`: the groups a
   critical-difference diagram joins by a bar.
 

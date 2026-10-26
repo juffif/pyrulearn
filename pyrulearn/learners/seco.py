@@ -3489,6 +3489,10 @@ class CN2(_ClassCountLaplace, SeCo):
     entropy over the whole class distribution. One difference remains:
     the significance test is the two-class one for the rule's head
     against the rest, not the original's statistic over all classes.
+    `target_class=EachClass()` -- one search per class, the best rule of
+    them -- may be the better choice: in `demos/rule_models.py` it was
+    clearly the best decision list for CN2, at about three times the
+    training time.
     """
 
     def __init__(
