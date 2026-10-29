@@ -279,6 +279,18 @@ def _cache_load(cache_dir: Optional[str], key: str) -> Optional[Dict[str, Any]]:
         return json.load(f)
 
 
+def _cache_load_valid(cache_dir: Optional[str], key: str, fit_timeout: Optional[float]) -> Optional[Dict[str, Any]]:
+    """`_cache_load`, except that a cached timeout counts as a miss when
+    `fit_timeout` is longer than the time that fit was given (its
+    `fit_time`; `None`: no limit at all) -- a run with a longer timeout
+    tries it again."""
+    row = _cache_load(cache_dir, key)
+    if row is not None and row.get("error") == "timeout" and (
+            fit_timeout is None or fit_timeout > (row.get("fit_time") or 0.0)):
+        return None
+    return row
+
+
 def _cache_save(cache_dir: Optional[str], key: str, row: Dict[str, Any]) -> None:
     if cache_dir is None:
         return
@@ -365,7 +377,7 @@ class _Cell:
 
 
 def _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_dir,
-                representation, verbose, max_ordinal_values=DEFAULT_MAX_ORDINAL_VALUES):
+                representation, verbose, max_ordinal_values=DEFAULT_MAX_ORDINAL_VALUES, fit_timeout=None):
     """Yield every cell in (dataset, fold, learner) order, loading and
     encoding each dataset and fold only when the consumer asks for its
     first cell -- so a parallel run holds just the folds in flight.
@@ -378,7 +390,7 @@ def _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_di
     for entry in datasets:
         if verbose:
             print(f"{entry.name} ...", flush=True)
-        cached = [[(key, _cache_load(cache_dir, key))
+        cached = [[(key, _cache_load_valid(cache_dir, key, fit_timeout))
                    for key in (_cache_key(entry, n_folds, fold, random_state, learner, representation,
                                           discretizer, max_ordinal_values) for learner in learners)]
                   for fold in range(n_folds)]
@@ -692,7 +704,8 @@ def run_cv(
 
     resolved_representation = representation or default_representation()
     cells = _iter_cells(learners, datasets, n_folds, discretizer, random_state, cache_dir,
-                        resolved_representation, verbose, max_ordinal_values=max_ordinal_values)
+                        resolved_representation, verbose, max_ordinal_values=max_ordinal_values,
+                        fit_timeout=fit_timeout)
     if n_jobs > 1:
         rows = _run_cells_parallel(cells, n_jobs, fit_timeout, measure_fn, cache_dir, verbose,
                                    stop_on_timeout)

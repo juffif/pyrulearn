@@ -368,6 +368,16 @@ def test_run_cv_stop_on_timeout_fails_the_whole_cross_validation(tmp_path, n_job
         assert later["fit_time"].isna().all()
 
 
+def test_a_cached_timeout_is_tried_again_with_a_longer_fit_timeout(tmp_path):
+    from pyrulearn.experiments.runner import _cache_load_valid, _cache_save
+    _cache_save(str(tmp_path), "t", {"error": "timeout", "fit_time": 300.4})
+    _cache_save(str(tmp_path), "ok", {"error": None, "fit_time": 1.0})
+    assert _cache_load_valid(str(tmp_path), "t", 300.0) is not None    # the same timeout: still timed out
+    assert _cache_load_valid(str(tmp_path), "t", 1800.0) is None       # a longer one: run it again
+    assert _cache_load_valid(str(tmp_path), "t", None) is None         # no limit at all: run it again
+    assert _cache_load_valid(str(tmp_path), "ok", 0.5) is not None     # a finished fold is always kept
+
+
 def test_timed_out_on_a_table_without_timeouts_and_the_closing_line(capsys):
     from pyrulearn.experiments.runner import timed_out
     entries = [_synthetic_entry("synth_a")]
