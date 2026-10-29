@@ -92,9 +92,11 @@ VOTES = {"vote": MajorityVote, "weighted_vote": WeightedVote, "accuracy_vote": A
 # small datasets with many classes (mostly symbolic, except vowel)
 QUICK_DATASETS = ["audiology", "primary-tumor", "soybean", "vowel", "zoo"]
 QUICK_FOLDS = 3
-# plus medium ones, and the two large ones with many classes
-FULL_DATASETS = QUICK_DATASETS + ["solar-flare", "segment", "yeast", "led24", "optdigits", "texture",
-                                  "kropt", "letter"]
+# the multi-class datasets of demos/rule_models.py, from 3 to 26 classes: every small and medium one
+# that is mostly symbolic or has few numeric attributes, and the two large ones
+FULL_DATASETS = ["balance-scale", "cmc", "dna", "hayes-roth", "iris", "splice", "wine", "car", "lymph",
+                 "vehicle", "anneal", "glass", "solar-flare", "ecoli", "segment", "zoo", "led24", "yeast",
+                 "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology", "kropt", "letter"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "multiclass_decomposition"
