@@ -1,11 +1,12 @@
 """
-demos/forest_rules.py
-=====================
+demos/base_vs_composite.py
+==========================
 
-A random forest as a composite model and as a base model: the trees'
-predictions combined by the forest's own vote, against the union of all
-trees' leaves as one flat rule set, its conflicts resolved by the four
-combiners of `demos/rule_models.py`. Cross-validated through
+Base against composite models, on a random forest -- one model, two views:
+as a composite model, the trees' predictions combined by the forest's own
+vote; as a base model, the union of all trees' leaves as one flat rule
+set, its conflicts resolved by the four combiners of
+`demos/rule_models.py`. Cross-validated through
 `pyrulearn.experiments.runner.run_cv` on the datasets of that demo.
 
 Every tree is a disjoint rule set, so that exactly one leaf of each tree
@@ -38,12 +39,12 @@ which both predict the same class.
 Measures: accuracy, numbers of rules (leaves) and conditions, mean rank
 across datasets.
 
-Run: `python demos/forest_rules.py` with no arguments is the **quick**
+Run: `python demos/base_vs_composite.py` with no arguments is the **quick**
 default (`QUICK_DATASETS`, `QUICK_FOLDS`-fold); its report goes to
-``forest_rules_quick_report.md`` and is not checked in. `--full` runs the
+``base_vs_composite_quick_report.md`` and is not checked in. `--full` runs the
 multi-class datasets of `demos/rule_models.py` (`FULL_DATASETS`,
 `LARGE_DATASETS`) and its two-class ones (`BINARY_DATASETS`),
-`N_FOLDS`-fold, and writes ``forest_rules_report.md``. Needs the
+`N_FOLDS`-fold, and writes ``base_vs_composite_report.md``. Needs the
 `experiments` extra.
 """
 
@@ -100,8 +101,8 @@ BINARY_DATASETS = ["SPECT", "Titanic", "banknote-authentication", "blood-transfu
                    "vote", "wdbc", "wilt"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "forest_rules"
-CACHE_DIR = os.path.join(HERE, "_forest_rules_cache")
+NAME = "base_vs_composite"
+CACHE_DIR = os.path.join(HERE, "_base_vs_composite_cache")
 PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 
 # fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
@@ -297,7 +298,7 @@ def _overall(var: pd.DataFrame, group: str, quick: bool) -> list:
 
 
 def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: str) -> None:
-    L = ["# Forest rules: the trees' vote against the rule set of their leaves\n\n"]
+    L = ["# Base against composite models: a forest's vote against the rule set of its leaves\n\n"]
     L.append(render_setup_section(_description(datasets, binary, quick, n_folds)))
     failures = var.drop_duplicates(["dataset", "fold", "depth"])["error"].notna().sum()
     if failures:
