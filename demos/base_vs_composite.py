@@ -37,7 +37,10 @@ combiners; for the two equivalences, also the share of test examples on
 which both predict the same class.
 
 Measures: accuracy, numbers of rules (leaves) and conditions, mean rank
-across datasets.
+across datasets. The report pools the multi-class and the two-class
+datasets, leaving out a (dataset, depth) pair whose cross-validation
+failed, and breaks the differences to the soft vote down by the number of
+classes.
 
 Run: `python demos/base_vs_composite.py` with no arguments is the **quick**
 default (`QUICK_DATASETS`, `QUICK_FOLDS`-fold); its report goes to
@@ -71,6 +74,10 @@ N_FOLDS = 10
 N_ESTIMATORS = 100
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 600.0
+#: the datasets whose forests of unlimited depth have too many leaves for `FIT_TIMEOUT`, with a longer cap
+#: per fit (turning a forest into a rule set measures every leaf on the training data)
+LONG_DATASETS = ["kropt", "letter", "heloc"]
+LONG_FIT_TIMEOUT = 3600.0
 
 #: name -> the trees' `max_depth`
 DEPTHS = {"depth 4": 4, "depth 8": 8, "unlimited depth": None}
@@ -231,7 +238,8 @@ Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
 features. On data with missing values, the equivalences hold only in part:
 a missing value satisfies neither a feature nor its negation, whereas a tree
 takes it as a false feature, so that an example with a missing value may be
-covered by no leaf of a tree. Each fit is capped at {FIT_TIMEOUT:.0f}s.
+covered by no leaf of a tree. Each fit is capped at {FIT_TIMEOUT:.0f}s ({LONG_FIT_TIMEOUT:.0f}s for
+{', '.join(f'`{n}`' for n in LONG_DATASETS)}).
 """
 
 
@@ -297,21 +305,67 @@ def _overall(var: pd.DataFrame, group: str, quick: bool) -> list:
     return L
 
 
+#: the classes groups of `_by_classes`: (label, lowest, highest)
+CLASS_GROUPS = [("2", 2, 2), ("3-5", 3, 5), ("6-9", 6, 9), ("10-26", 10, 26)]
+#: what `_by_classes` compares every other combination with
+REFERENCE = "forest (soft vote)"
+
+
+def _by_classes(var: pd.DataFrame, n_classes: dict) -> list:
+    """Every combination against the forest's soft vote over the number of
+    classes: per (dataset, depth), its accuracy minus that of the soft
+    vote, averaged within groups of datasets with similar numbers of
+    classes; the mean ranks of datasets with two classes and with more;
+    and the rank correlation of each difference with the number of
+    classes."""
+    from scipy.stats import spearmanr
+
+    acc = var.groupby(["dataset", "depth", "variant"])["accuracy"].mean().unstack("variant")
+    cols = [v for v in VARIANTS if v != REFERENCE]
+    diff = 100 * acc[cols].sub(acc[REFERENCE], axis=0).dropna()
+    k = diff.index.get_level_values("dataset").map(n_classes).to_numpy()
+    groups = [(label, (k >= lo) & (k <= hi)) for label, lo, hi in CLASS_GROUPS if ((k >= lo) & (k <= hi)).any()]
+    L = ["## Over the number of classes\n\n"
+         f"Per (dataset, depth) pair, the accuracy of a combination minus that of the {REFERENCE}, in percentage "
+         "points (negative: the combination is worse), averaged over the pairs of datasets with the given numbers "
+         "of classes (their count in parentheses), and Spearman's rank correlation of the difference with the "
+         "number of classes.\n\n"
+         "| combination | " + " | ".join(f"{label} ({int(sel.sum())})" for label, sel in groups)
+         + " | correlation |\n|---|" + "--:|" * (len(groups) + 1) + "\n"]
+    for c in cols:
+        rho = spearmanr(k, diff[c]) if len(set(k)) > 1 else None
+        L.append(f"| {c} | " + " | ".join(f"{diff.loc[sel, c].mean():+.2f}" for _, sel in groups) + " | "
+                 + (f"{rho.statistic:+.2f} (p = {rho.pvalue:.2g})" if rho is not None else "--") + " |\n")
+    two = var["dataset"].map(n_classes) == 2
+    parts = [(name, var[sel]) for name, sel in (("two classes", two), ("more classes", ~two)) if sel.any()]
+    if len(parts) > 1:
+        ranks = {name: mean_rank(part.assign(dataset=part["dataset"] + " / " + part["depth"],
+                                             learner=part["variant"]), "accuracy") for name, part in parts}
+        L.append("\nMean rank, ranked within each depth on each dataset, on the datasets with two classes and "
+                 "on those with more:\n\n| combination | " + " | ".join(ranks) + " |\n|---|"
+                 + "--:|" * len(ranks) + "\n")
+        for v in VARIANTS:
+            L.append(f"| {v} | " + " | ".join(f"{r[v]:.2f}" for r in ranks.values()) + " |\n")
+    L.append("\n")
+    return L
+
+
 def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: str) -> None:
     L = ["# Base against composite models: a forest's vote against the rule set of its leaves\n\n"]
     L.append(render_setup_section(_description(datasets, binary, quick, n_folds)))
-    failures = var.drop_duplicates(["dataset", "fold", "depth"])["error"].notna().sum()
-    if failures:
-        L.append(f"Failed folds: {failures}.\n\n")
-    for title, group, sets in (("Multi-class datasets", "multiclass", datasets),
-                               ("Two-class datasets", "twoclass", binary)):
-        part = var[var["dataset"].isin([d.name for d in sets])]
-        if not len(part):
-            continue
-        L.append(f"## {title}\n\nSorted by mean rank (accuracy rank across datasets). Agreement: the share of "
-                 "test examples on which a forest vote and its equivalent combiner predict the same class.\n\n")
-        L += _summary(part)
-        L += _overall(part, group, quick)
+    failed = var[var["error"].notna()].drop_duplicates(["dataset", "depth"])
+    if len(failed):
+        L.append("Left out, as a fold failed (the whole cross-validation of that forest is then counted as "
+                 "failed): " + ", ".join(f"`{r.dataset}` ({r.depth}: {r.error})" for r in failed.itertuples())
+                 + ".\n\n")
+    done = var.merge(failed[["dataset", "depth"]], how="left", indicator=True)
+    done = done[done["_merge"] == "left_only"].drop(columns="_merge")
+    L.append(f"## All datasets\n\nThe {done['dataset'].nunique()} datasets, multi-class and two-class together, "
+             "sorted by mean rank (accuracy rank across datasets). Agreement: the share of test examples on which "
+             "a forest vote and its equivalent combiner predict the same class.\n\n")
+    L += _summary(done)
+    L += _overall(done, "all", quick)
+    L += _by_classes(done, {d.name: d.n_classes for d in list(datasets) + list(binary)})
     L.append("## Per dataset (mean across folds)\n\n")
     L.append(render_results_table(var, ["accuracy", "n_rules"], group_by=["dataset", "learner"],
                                   include_overall=False))
@@ -326,11 +380,14 @@ def main(quick: bool = True) -> None:
     datasets = catalog.select(names=QUICK_DATASETS if quick else FULL_DATASETS + LARGE_DATASETS)
     binary = [] if quick else catalog.select(names=BINARY_DATASETS)
     n_folds = QUICK_FOLDS if quick else N_FOLDS
-    common = dict(n_folds=n_folds, fit_timeout=FIT_TIMEOUT, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
+    common = dict(n_folds=n_folds, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                   random_state=RANDOM_STATE, cache_dir=CACHE_DIR, measure_fn=measure, n_jobs=_n_jobs())
-    runs = [run_cv(build_learners(), datasets, **common)]
-    if binary:
-        runs.append(run_cv(build_learners(), binary, **common))
+    everything = list(datasets) + list(binary)
+    runs = []
+    for group, timeout in (([d for d in everything if d.name not in LONG_DATASETS], FIT_TIMEOUT),
+                           ([d for d in everything if d.name in LONG_DATASETS], LONG_FIT_TIMEOUT)):
+        if group:
+            runs.append(run_cv(build_learners(), group, fit_timeout=timeout, **common))
     results = pd.concat(runs, ignore_index=True)
     report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
     write_report(variants(results), list(datasets), list(binary), quick, n_folds, report)
