@@ -644,6 +644,46 @@ def _growth_section(results, growth, paths, img, n_classes: dict) -> list:
     return L
 
 
+#: the classes groups of `_by_classes`: (label, lowest, highest)
+CLASS_GROUPS = [("3", 3, 3), ("4-5", 4, 5), ("6-9", 6, 9), ("10-26", 10, 26)]
+#: the decompositions `_by_classes` compares with one-vs-rest
+BY_CLASSES = ["ordered", "pw_smaller:vote", "pw_smaller:accuracy_vote", "pw_both:vote", "pw_both:accuracy_vote"]
+
+
+def _by_classes(var: pd.DataFrame, n_classes: dict) -> list:
+    """The decompositions against one-vs-rest over the number of classes:
+    per dataset and base learner, the accuracy of each decomposition of
+    `BY_CLASSES` minus that of one-vs-rest, averaged within groups of
+    datasets with similar numbers of classes; then the share of pairs on
+    which the decomposition is ahead, and the rank correlation of the
+    difference with the number of classes."""
+    from scipy.stats import spearmanr
+
+    acc = var.groupby(["dataset", "base", "variant"])["accuracy"].mean().unstack("variant")
+    cols = [c for c in BY_CLASSES if c in acc]
+    diff = 100 * pd.DataFrame({c: acc[c] - acc["ovr"] for c in cols}).dropna()
+    k = diff.index.get_level_values("dataset").map(n_classes).to_numpy()
+    L = ["## Against one-vs-rest, over the number of classes\n\n"
+         "Per dataset and base learner, the accuracy of a decomposition minus that of one-vs-rest, in "
+         "percentage points (positive: the decomposition is better), averaged over the datasets with the "
+         "given numbers of classes and the three base learners.\n\n"
+         "| classes | pairs | " + " | ".join(cols) + " |\n|---|--:|" + "--:|" * len(cols) + "\n"]
+    for label, lo, hi in CLASS_GROUPS:
+        sel = (k >= lo) & (k <= hi)
+        if sel.any():
+            L.append(f"| {label} | {int(sel.sum())} | "
+                     + " | ".join(f"{diff.loc[sel, c].mean():+.2f}" for c in cols) + " |\n")
+    L.append("\nShare of the pairs on which the decomposition is better than one-vs-rest, and Spearman's "
+             "rank correlation of the difference with the number of classes:\n\n"
+             "| decomposition | ahead | correlation |\n|---|--:|--:|\n")
+    for c in cols:
+        rho = spearmanr(k, diff[c]) if len(set(k)) > 1 else None
+        L.append(f"| {c} | {100 * (diff[c] > 0).mean():.0f}% | "
+                 + (f"{rho.statistic:+.2f} (p = {rho.pvalue:.2g})" if rho is not None else "--") + " |\n")
+    L.append("\n")
+    return L
+
+
 def write_report(results, var, datasets, paths, quick: bool, n_folds: int, report_path: str,
                  check: pd.DataFrame, growth: Optional[pd.DataFrame] = None) -> None:
     plots = os.path.basename(PLOTS_DIR)
@@ -669,6 +709,7 @@ def write_report(results, var, datasets, paths, quick: bool, n_folds: int, repor
                  "conditions: all of a decomposition's models together. The three vote schemes of a "
                  "pairwise decomposition share its models and training time.\n\n")
 
+    L += _by_classes(var, {d.name: d.n_classes for d in datasets})
     L.append("## Training and prediction time over the number of classes\n\n")
     L.append("One point per dataset and base learner: the mean one-vs-rest time divided by the "
              "mean pairwise time. Above 1, pairwise is faster. The dashed line is what a learner "
