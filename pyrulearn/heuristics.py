@@ -1092,19 +1092,23 @@ class Correlation(RuleHeuristic):
     this module's higher-is-better convention, no sign flip needed.
     Isometrics are hyperbolic, not straight lines (pencil or parallel),
     so `Correlation` doesn't fall into either family described above.
+
+    The correlation is undefined, and scored 0, where a row or column of
+    the table is empty. With fractional row weights (boosting), a count
+    derived by subtraction (``fn = P - tp``) can come out a rounding error
+    below 0 where it should be 0; the product under the root is then
+    taken as 0 too.
     """
 
     def score(self, stats: RuleStats) -> float:
-        denom = math.sqrt(
-            (stats.tp + stats.fp) * (stats.tp + stats.fn) * (stats.fp + stats.tn) * (stats.fn + stats.tn)
-        )
-        if denom == 0.0:
+        product = (stats.tp + stats.fp) * (stats.tp + stats.fn) * (stats.fp + stats.tn) * (stats.fn + stats.tn)
+        if product <= 0:
             return 0.0
-        return (stats.tp * stats.tn - stats.fp * stats.fn) / denom
+        return (stats.tp * stats.tn - stats.fp * stats.fn) / math.sqrt(product)
 
     def batch_score(self, stats: RuleStats) -> np.ndarray:
         tp, fp, fn, tn, _ = _counts(stats)
-        denom = np.sqrt((tp + fp) * (tp + fn) * (fp + tn) * (fn + tn))
+        denom = np.sqrt(np.maximum((tp + fp) * (tp + fn) * (fp + tn) * (fn + tn), 0.0))
         return _div(tp * tn - fp * fn, denom)
 
 
@@ -1145,7 +1149,7 @@ class ChiSquare(RuleHeuristic):
     def score(self, stats: RuleStats) -> float:
         n = stats.tp + stats.fp + stats.fn + stats.tn
         denom = (stats.tp + stats.fp) * (stats.tp + stats.fn) * (stats.fp + stats.tn) * (stats.fn + stats.tn)
-        if n == 0 or denom == 0:
+        if n == 0 or denom <= 0:   # <= 0: a rounding error below 0, as for `Correlation`
             return 0.0
         diff = abs(stats.tp * stats.tn - stats.fp * stats.fn)
         if self.yates_correction:

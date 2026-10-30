@@ -715,3 +715,17 @@ if __name__ == "__main__":
     test_delta_gain_is_the_wrapped_heuristics_own_difference()
     test_delta_gain_zero_for_a_rule_scored_against_itself()
     print("\nAll tests passed.")
+
+
+def test_correlation_and_chi_square_take_a_rounding_error_below_zero_as_zero():
+    # fractional row weights: with no positives at all, fn = P - tp can come out a hair below 0,
+    # and with it the factor tp + fn under the root
+    stats = RuleStats(tp=0.0, fp=2.5, fn=-1e-15, tn=3.0)
+    for h in (Correlation(), ChiSquare()):
+        assert h.score(stats) == 0.0
+    batch = RuleStats(tp=np.array([0.0, 2.0]), fp=np.array([2.5, 1.0]),
+                      fn=np.array([-1e-15, 1.0]), tn=np.array([3.0, 2.0]))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        scores = Correlation().batch_score(batch)
+    assert scores[0] == 0.0 and scores[1] == pytest.approx(Correlation().score(RuleStats(tp=2.0, fp=1.0, fn=1.0, tn=2.0)))
