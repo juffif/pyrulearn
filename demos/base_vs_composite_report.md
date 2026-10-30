@@ -32,52 +32,53 @@ Multi-class datasets, with their numbers of classes: `balance-scale` (3), `cmc` 
 features. On data with missing values, the equivalences hold only in part:
 a missing value satisfies neither a feature nor its negation, whereas a tree
 takes it as a false feature, so that an example with a missing value may be
-covered by no leaf of a tree. Each fit is capped at 600s.
+covered by no leaf of a tree. Each fit is capped at 600s (3600s for
+`kropt`, `letter`, `heloc`).
 
-Failed folds: 30.
+Left out, as a fold failed (the whole cross-validation of that forest is then counted as failed): `kropt` (unlimited depth: timeout).
 
-## Multi-class datasets
+## All datasets
 
-Sorted by mean rank (accuracy rank across datasets). Agreement: the share of test examples on which a forest vote and its equivalent combiner predict the same class.
+The 70 datasets, multi-class and two-class together, sorted by mean rank (accuracy rank across datasets). Agreement: the share of test examples on which a forest vote and its equivalent combiner predict the same class.
 
 ### Depth 4
 
-Rules (leaves) per forest: 1275.9, conditions: 4873.8.
+Rules (leaves) per forest: 1307.8, conditions: 5005.3.
 
 | combination | accuracy | mean rank | agreement |
 |---|--:|--:|--:|
-| forest (soft vote) | 77.75% | 1.73 | 98.15% with macro distribution voting |
-| rules (macro distribution voting) | 77.25% | 2.46 |  |
-| forest (hard vote) | 75.16% | 3.69 | 98.91% with voting |
-| rules (voting) | 74.83% | 3.92 |  |
-| rules (micro distribution voting) | 73.93% | 4.52 |  |
-| rules (best rule) | 73.08% | 4.67 |  |
+| forest (soft vote) | 82.10% | 2.36 | 98.44% with macro distribution voting |
+| rules (macro distribution voting) | 81.73% | 2.85 |  |
+| forest (hard vote) | 80.93% | 3.37 | 99.07% with voting |
+| rules (voting) | 80.63% | 3.72 |  |
+| rules (best rule) | 80.48% | 3.81 |  |
+| rules (micro distribution voting) | 79.51% | 4.89 |  |
 
 ### Depth 8
 
-Rules (leaves) per forest: 7958.2, conditions: 57762.5.
+Rules (leaves) per forest: 6718.9, conditions: 47267.8.
 
 | combination | accuracy | mean rank | agreement |
 |---|--:|--:|--:|
-| forest (soft vote) | 82.37% | 2.37 | 97.58% with macro distribution voting |
-| rules (macro distribution voting) | 82.09% | 2.54 |  |
-| forest (hard vote) | 81.76% | 3.40 | 98.82% with voting |
-| rules (voting) | 81.41% | 3.42 |  |
-| rules (micro distribution voting) | 79.33% | 4.27 |  |
-| rules (best rule) | 78.82% | 5.00 |  |
+| forest (soft vote) | 85.34% | 2.43 | 97.86% with macro distribution voting |
+| rules (macro distribution voting) | 85.04% | 2.89 |  |
+| forest (hard vote) | 85.01% | 3.25 | 98.85% with voting |
+| rules (voting) | 84.66% | 3.35 |  |
+| rules (micro distribution voting) | 83.48% | 4.44 |  |
+| rules (best rule) | 83.25% | 4.64 |  |
 
 ### Unlimited depth
 
-Rules (leaves) per forest: 20683.6, conditions: 224545.3.
+Rules (leaves) per forest: 23417.8, conditions: 294768.4.
 
 | combination | accuracy | mean rank | agreement |
 |---|--:|--:|--:|
-| rules (macro distribution voting) | 83.97% | 3.00 |  |
-| forest (hard vote) | 84.27% | 3.02 | 98.48% with voting |
-| forest (soft vote) | 84.27% | 3.02 | 97.08% with macro distribution voting |
-| rules (voting) | 83.93% | 3.33 |  |
-| rules (micro distribution voting) | 83.61% | 3.69 |  |
-| rules (best rule) | 80.52% | 4.94 |  |
+| rules (macro distribution voting) | 85.75% | 3.08 |  |
+| forest (hard vote) | 86.19% | 3.10 | 98.38% with voting |
+| forest (soft vote) | 86.21% | 3.14 | 97.21% with macro distribution voting |
+| rules (voting) | 85.64% | 3.30 |  |
+| rules (micro distribution voting) | 85.55% | 3.59 |  |
+| rules (best rule) | 83.83% | 4.79 |  |
 
 ### All depths together
 
@@ -85,76 +86,39 @@ Each combination's mean rank, ranked within each depth on each dataset, and its 
 
 | combination | accuracy | mean rank |
 |---|--:|--:|
-| forest (soft vote) | 81.39% | 2.36 |
-| rules (macro distribution voting) | 81.03% | 2.66 |
-| forest (hard vote) | 80.29% | 3.38 |
-| rules (voting) | 79.95% | 3.57 |
-| rules (micro distribution voting) | 78.84% | 4.17 |
-| rules (best rule) | 77.40% | 4.87 |
+| forest (soft vote) | 84.54% | 2.64 |
+| rules (macro distribution voting) | 84.17% | 2.94 |
+| forest (hard vote) | 84.03% | 3.24 |
+| rules (voting) | 83.64% | 3.46 |
+| rules (micro distribution voting) | 82.83% | 4.31 |
+| rules (best rule) | 82.52% | 4.41 |
 
-Friedman test over the 76 (dataset, depth) pairs: p = 5e-20 (6 combinations). Nemenyi critical difference at 5%: 0.86. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
+Friedman test over the 209 (dataset, depth) pairs: p = 3e-34 (6 combinations). Nemenyi critical difference at 5%: 0.52. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
 
-![critical-difference diagram, multiclass](base_vs_composite_plots/base_vs_composite_cd_multiclass.png)
+![critical-difference diagram, all](base_vs_composite_plots/base_vs_composite_cd_all.png)
 
-## Two-class datasets
+## Over the number of classes
 
-Sorted by mean rank (accuracy rank across datasets). Agreement: the share of test examples on which a forest vote and its equivalent combiner predict the same class.
+Per (dataset, depth) pair, the accuracy of a combination minus that of the forest (soft vote), in percentage points (negative: the combination is worse), averaged over the pairs of datasets with the given numbers of classes (their count in parentheses), and Spearman's rank correlation of the difference with the number of classes.
 
-### Depth 4
+| combination | 2 (132) | 3-5 (33) | 6-9 (15) | 10-26 (29) | correlation |
+|---|--:|--:|--:|--:|--:|
+| forest (hard vote) | -0.17 | -0.20 | -0.60 | -2.33 | -0.26 (p = 0.00013) |
+| rules (best rule) | -0.83 | -3.02 | -5.63 | -4.46 | -0.42 (p = 2.3e-10) |
+| rules (voting) | -0.61 | -0.55 | -0.65 | -2.80 | -0.26 (p = 0.00016) |
+| rules (micro distribution voting) | -1.21 | -1.43 | -1.47 | -4.40 | -0.25 (p = 0.00027) |
+| rules (macro distribution voting) | -0.39 | -0.31 | -0.21 | -0.49 | -0.08 (p = 0.24) |
 
-Rules (leaves) per forest: 1326.7, conditions: 5082.9.
+Mean rank, ranked within each depth on each dataset, on the datasets with two classes and on those with more:
 
-| combination | accuracy | mean rank | agreement |
-|---|--:|--:|--:|
-| forest (soft vote) | 84.67% | 2.74 | 98.61% with macro distribution voting |
-| rules (macro distribution voting) | 84.37% | 3.08 |  |
-| forest (hard vote) | 84.34% | 3.18 | 99.16% with voting |
-| rules (best rule) | 84.85% | 3.30 |  |
-| rules (voting) | 84.06% | 3.60 |  |
-| rules (micro distribution voting) | 82.81% | 5.10 |  |
-
-### Depth 8
-
-Rules (leaves) per forest: 5986.6, conditions: 41066.3.
-
-| combination | accuracy | mean rank | agreement |
-|---|--:|--:|--:|
-| forest (soft vote) | 87.09% | 2.47 | 98.02% with macro distribution voting |
-| rules (macro distribution voting) | 86.78% | 3.10 |  |
-| forest (hard vote) | 86.93% | 3.16 | 98.87% with voting |
-| rules (voting) | 86.59% | 3.31 |  |
-| rules (best rule) | 85.87% | 4.43 |  |
-| rules (micro distribution voting) | 85.93% | 4.53 |  |
-
-### Unlimited depth
-
-Rules (leaves) per forest: 13479.6, conditions: 145534.0.
-
-| combination | accuracy | mean rank | agreement |
-|---|--:|--:|--:|
-| forest (hard vote) | 87.39% | 3.13 | 98.25% with voting |
-| rules (macro distribution voting) | 86.85% | 3.13 |  |
-| forest (soft vote) | 87.42% | 3.21 | 97.21% with macro distribution voting |
-| rules (voting) | 86.70% | 3.24 |  |
-| rules (micro distribution voting) | 86.78% | 3.57 |  |
-| rules (best rule) | 85.93% | 4.72 |  |
-
-### All depths together
-
-Each combination's mean rank, ranked within each depth on each dataset, and its accuracy, averaged over the depths.
-
-| combination | accuracy | mean rank |
+| combination | two classes | more classes |
 |---|--:|--:|
-| forest (soft vote) | 86.39% | 2.80 |
-| rules (macro distribution voting) | 85.99% | 3.10 |
-| forest (hard vote) | 86.21% | 3.16 |
-| rules (voting) | 85.77% | 3.39 |
-| rules (best rule) | 85.55% | 4.15 |
-| rules (micro distribution voting) | 85.16% | 4.41 |
-
-Friedman test over the 131 (dataset, depth) pairs: p = 3.3e-16 (6 combinations). Nemenyi critical difference at 5%: 0.66. The pairs of one dataset aren't independent of each other, so the test is on the optimistic side.
-
-![critical-difference diagram, twoclass](base_vs_composite_plots/base_vs_composite_cd_twoclass.png)
+| forest (soft vote) | 2.82 | 2.34 |
+| forest (hard vote) | 3.17 | 3.36 |
+| rules (best rule) | 4.14 | 4.88 |
+| rules (voting) | 3.40 | 3.56 |
+| rules (micro distribution voting) | 4.38 | 4.18 |
+| rules (macro distribution voting) | 3.09 | 2.68 |
 
 ## Per dataset (mean across folds)
 
@@ -658,12 +622,12 @@ Friedman test over the 131 (dataset, depth) pairs: p = 3.3e-16 (6 combinations).
 | heloc | depth 8:rules (macro distribution voting) | 71.67% | 16554.7 |
 | heloc | depth 8:rules (micro distribution voting) | 71.24% | 16554.7 |
 | heloc | depth 8:rules (voting) | 71.52% | 16554.7 |
-| heloc | unlimited depth:forest (hard vote) | n/a | n/a |
-| heloc | unlimited depth:forest (soft vote) | n/a | n/a |
-| heloc | unlimited depth:rules (best rule) | n/a | n/a |
-| heloc | unlimited depth:rules (macro distribution voting) | n/a | n/a |
-| heloc | unlimited depth:rules (micro distribution voting) | n/a | n/a |
-| heloc | unlimited depth:rules (voting) | n/a | n/a |
+| heloc | unlimited depth:forest (hard vote) | 71.51% | 224002.2 |
+| heloc | unlimited depth:forest (soft vote) | 71.51% | 224002.2 |
+| heloc | unlimited depth:rules (best rule) | 71.62% | 224002.2 |
+| heloc | unlimited depth:rules (macro distribution voting) | 71.67% | 224002.2 |
+| heloc | unlimited depth:rules (micro distribution voting) | 71.86% | 224002.2 |
+| heloc | unlimited depth:rules (voting) | 71.51% | 224002.2 |
 | hepatitis | depth 4:forest (hard vote) | 82.75% | 1094.6 |
 | hepatitis | depth 4:forest (soft vote) | 82.75% | 1094.6 |
 | hepatitis | depth 4:rules (best rule) | 81.96% | 1094.6 |
@@ -838,12 +802,12 @@ Friedman test over the 131 (dataset, depth) pairs: p = 3.3e-16 (6 combinations).
 | letter | depth 8:rules (macro distribution voting) | 79.54% | 16631.4 |
 | letter | depth 8:rules (micro distribution voting) | 69.69% | 16631.4 |
 | letter | depth 8:rules (voting) | 75.34% | 16631.4 |
-| letter | unlimited depth:forest (hard vote) | n/a | n/a |
-| letter | unlimited depth:forest (soft vote) | n/a | n/a |
-| letter | unlimited depth:rules (best rule) | n/a | n/a |
-| letter | unlimited depth:rules (macro distribution voting) | n/a | n/a |
-| letter | unlimited depth:rules (micro distribution voting) | n/a | n/a |
-| letter | unlimited depth:rules (voting) | n/a | n/a |
+| letter | unlimited depth:forest (hard vote) | 95.47% | 315794.3 |
+| letter | unlimited depth:forest (soft vote) | 95.47% | 315794.3 |
+| letter | unlimited depth:rules (best rule) | 85.48% | 315794.3 |
+| letter | unlimited depth:rules (macro distribution voting) | 95.45% | 315794.3 |
+| letter | unlimited depth:rules (micro distribution voting) | 92.84% | 315794.3 |
+| letter | unlimited depth:rules (voting) | 95.45% | 315794.3 |
 | lymph | depth 4:forest (hard vote) | 81.81% | 1122.7 |
 | lymph | depth 4:forest (soft vote) | 81.81% | 1122.7 |
 | lymph | depth 4:rules (best rule) | 79.86% | 1122.7 |
