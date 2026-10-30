@@ -29,7 +29,7 @@ one, so `EnsembleModel.staged(n)` of a fitted model is the model after
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -42,15 +42,28 @@ class AdaBoost(NativeRuleLearner):
     """Up to `n_estimators` members, each `base_learner.fit` on the
     reweighted training data, as whatever model the base learner builds
     (e.g. `OneVsRest(Pypper())` for concept sets), combined into an
-    `EnsembleModel` weighted by SAMME. Boosting stops early at a member
-    that is no better than random guessing (it is left out, unless it is
-    the first) or one without training errors (it is kept)."""
+    `EnsembleModel` weighted by SAMME. A member's training error counts at
+    least half an example, so that a member without errors doesn't get an
+    unbounded weight.
 
-    def __init__(self, base_learner: NativeRuleLearner, n_estimators: int = 10):
+    Two members end SAMME's boosting: one no better than random guessing
+    (its weight would not be positive) and one without training errors
+    (the weights would not change, and the next member would be the
+    same). With `early_stopping` (the default), boosting stops there:
+    the first is left out, unless it is the only member, and the second
+    is kept. Without it, the weights are reset to those of a bootstrap
+    sample (drawn from `random_state`) and boosting goes on -- the first
+    member left out, the second kept -- until there are `n_estimators`
+    members (or ``2 * n_estimators`` rounds have been tried)."""
+
+    def __init__(self, base_learner: NativeRuleLearner, n_estimators: int = 10,
+                 early_stopping: bool = True, random_state: Optional[int] = 0):
         if n_estimators < 1:
             raise ValueError(f"n_estimators must be at least 1, got {n_estimators}")
         self.base_learner = base_learner
         self.n_estimators = n_estimators
+        self.early_stopping = early_stopping
+        self.random_state = random_state
 
     def _default_model(self, data: DataRepresentation) -> type:
         return EnsembleModel
@@ -61,25 +74,35 @@ class AdaBoost(NativeRuleLearner):
             raise ValueError("AdaBoost needs data.y")
         y = np.asarray(data.y)
         n, k = data.n_samples, len(np.unique(y))
-        w = np.ones(n) if data.weights is None else np.asarray(data.weights, dtype=float)
-        w = w * (n / w.sum())
+        base = np.ones(n) if data.weights is None else np.asarray(data.weights, dtype=float)
+        w = base * (n / base.sum())
+        rng = np.random.default_rng(self.random_state)
         members: List[RuleModel] = []
         weights: List[float] = []
-        for _ in range(self.n_estimators):
+        for _ in range(self.n_estimators if self.early_stopping else 2 * self.n_estimators):
+            if len(members) == self.n_estimators:
+                break
             member = self.base_learner.fit(data.with_weights(w))
             wrong = np.asarray(member.predict(data)) != y
             err = float(w[wrong].sum() / w.sum())
-            if err >= 1.0 - 1.0 / k - 1e-12:   # no better than random guessing (up to rounding)
-                if not members:
-                    members.append(member)
-                    weights.append(1.0)
-                break
-            members.append(member)
-            weights.append(samme_weight(err, k))
-            if err == 0.0:
-                break
+            guessing = err >= 1.0 - 1.0 / k - 1e-12   # no better than random guessing (up to rounding)
+            if not guessing:
+                members.append(member)
+                weights.append(samme_weight(max(err, 0.5 / n), k))
+            if guessing or err == 0.0:
+                if self.early_stopping:
+                    if not members:
+                        members.append(member)
+                        weights.append(1.0)
+                    break
+                draws = np.bincount(rng.integers(0, n, size=n), minlength=n)
+                w = draws * base
+                w = w * (n / w.sum())
+                continue
             w = w * np.exp(weights[-1] * wrong)
             w = w * (n / w.sum())
+        if not members:   # every round no better than guessing
+            members, weights = [member], [1.0]
         model = EnsembleModel(members, default_prediction=MajorityClass(data), member_weights=weights)
         return annotate_default_rule(model, data)
 

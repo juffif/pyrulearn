@@ -67,3 +67,17 @@ def test_adaboost_stops_at_a_member_no_better_than_guessing():
     data = HorizontalBitmapRepresentation(neg_spec(["a", "b"]), neg_X(raw), y)
     model = AdaBoost(_Recorder(), n_estimators=5).fit(data)
     assert len(model.members) == 1 and model.member_weights[0] == 1.0   # kept, as it is the first
+
+
+def test_without_early_stopping_adaboost_restarts_from_a_bootstrap_sample():
+    raw = np.array([[1, 0], [0, 1], [1, 1], [0, 0]], dtype=bool)
+    y = np.array(["pos", "pos", "neg", "neg"])   # feature 0 is right on half of them
+    data = HorizontalBitmapRepresentation(neg_spec(["a", "b"]), neg_X(raw), y)
+    learner = _Recorder()
+    model = AdaBoost(learner, n_estimators=3, early_stopping=False).fit(data)
+    # the first member is no better than guessing: left out, and boosting goes on with redrawn weights
+    assert len(learner.seen) > 1 and not np.allclose(learner.seen[1], 1.0)
+    assert np.isclose(learner.seen[1].sum(), 4.0) and np.all(learner.seen[1] == learner.seen[1].round())
+    assert 1 <= len(model.members) <= 3
+    full = AdaBoost(OneVsRest(PFoil()), n_estimators=6, early_stopping=False).fit(_data())
+    assert len(full.members) == 6
