@@ -2,59 +2,52 @@
 demos/base_vs_composite.py
 ==========================
 
-Base against composite models, on a random forest -- one model, two views:
-as a composite model, the trees' predictions combined by the forest's own
-vote; as a base model, the union of all trees' leaves as one flat rule
-set, its conflicts resolved by the four combiners of
-`demos/rule_models.py`. Cross-validated through
-`pyrulearn.experiments.runner.run_cv` on the datasets of that demo.
+Base against composite models, on bagged rule sets: the ensemble as a
+composite model, the members' predictions combined, or as a base model,
+all of their rules combined at once. Cross-validated through
+`pyrulearn.experiments.runner.run_cv` on the multi-class datasets of
+`demos/rule_models.py` (without `kropt`) and on two-class datasets.
 
-Every tree is a disjoint rule set, so that exactly one leaf of each tree
-covers an example: the hard vote of the trees is the plain **voting** of
-the covering rules, and the forest's soft vote (sklearn's, the trees'
-class distributions averaged) is their **macro distribution voting** --
-up to the leaves' class distributions, which sklearn takes from each
-tree's bootstrap sample and the rule set from the whole training fold.
-**Best rule** (the covering leaf with the best Laplace estimate) and
-**micro distribution voting** (the covering leaves' class counts summed,
-a larger leaf weighing more) have no counterpart at the level of the
-trees.
+Each member of the ensemble is a concept set -- one concept description
+per class, learned one-vs-rest (`OneVsRest`) by `Pypper`, `PFossil` or
+`PFoil` -- from a bootstrap sample of the training fold
+(`pyrulearn.learners.bagging.Bagging`). The same fitted members are
+combined in two ways, each with the four conflict resolutions of
+`demos/rule_models.py` (`COMBINERS`):
 
-On data with missing values, the equivalences hold only in part: under
-pyrulearn's default (`MissingStrategy.NEVER_COVERS`), a missing value
-satisfies neither a feature nor its negation, whereas a tree trained on
-the Boolean features takes it as false and follows the negated branch --
-so that an example with a missing value may be covered by no leaf of a
-tree, and the rule set hears fewer trees than the forest.
+- **two-level**: every member resolves its own covering rules with the
+  conflict resolution, and the members' predictions are combined by a
+  plain vote (an `EnsembleModel` with `CountVoteCombiner`);
+- **one-level**: the union of all members' rules is one rule set, its
+  conflicts resolved by the conflict resolution
+  (`ensemblemodel_to_flatruleset`).
 
-Configurations (`DEPTHS`): a forest of `N_ESTIMATORS` trees of depth 4, of
-depth 8 and of unlimited depth, each fit once per fold
-(`RandomForestClassifier` on the Boolean features of the fold's
-`DataSpec`, the same the rule learners of the other demos see). Each
-fitted forest is scored six ways (`measure`): sklearn's own soft vote, the
-hard vote of its trees, and its rule set under each of the four
-combiners; for the two equivalences, also the share of test examples on
-which both predict the same class.
+Unlike the trees of a random forest, a concept set is not disjoint:
+several of its rules, or none, may cover an example, so that the two
+levels differ. A member whose rules don't cover an example abstains at
+both levels -- the members' own defaults are ignored -- and examples no
+member covers go to the majority class. The baseline is a single concept
+set learned from the whole training fold, with the same conflict
+resolution.
 
-Measures: accuracy, numbers of rules (leaves) and conditions, mean rank
-across datasets. The report pools the multi-class and the two-class
-datasets, leaving out a (dataset, depth) pair whose cross-validation
-failed, and breaks the differences to the soft vote down by the number of
-classes.
+Configurations: one learner per base learner (`BASES`), fitting
+`N_ESTIMATORS` members (`--n-estimators`) and the single concept set once per fold; each
+fitted learner is scored twelve ways (`measure`).
+
+Measures: accuracy, numbers of rules and conditions (of the ensemble),
+mean rank across datasets.
 
 Run: `python demos/base_vs_composite.py` with no arguments is the **quick**
 default (`QUICK_DATASETS`, `QUICK_FOLDS`-fold); its report goes to
-``base_vs_composite_quick_report.md`` and is not checked in. `--full` runs the
-multi-class datasets of `demos/rule_models.py` (`FULL_DATASETS`,
-`LARGE_DATASETS`) and its two-class ones (`BINARY_DATASETS`),
-`N_FOLDS`-fold, and writes ``base_vs_composite_report.md``. Needs the
-`experiments` extra.
+``base_vs_composite_<n>_quick_report.md``, with `<n>` the number of members, and
+is not checked in. `--full` runs the multi-class datasets (`FULL_DATASETS`)
+and the two-class ones (`BINARY_DATASETS`), `N_FOLDS`-fold, and writes
+``base_vs_composite_<n>_report.md``. Needs the `experiments` extra.
 """
 
 from __future__ import annotations
 
 import os
-import time
 
 import numpy as np
 import pandas as pd
@@ -65,39 +58,39 @@ from pyrulearn.experiments.catalog import Catalog
 from pyrulearn.experiments.report import format_accuracy, format_mean_count, render_results_table, \
     render_setup_section
 from pyrulearn.experiments.runner import run_cv
-from pyrulearn.experiments.stats import critical_difference, critical_difference_diagram, friedman_test, mean_rank
-from pyrulearn.interfaces.sklearn import RandomForestImporter, SKLRandomForest
+from pyrulearn.experiments.stats import mean_rank
+from pyrulearn.learners.bagging import Bagging
 from pyrulearn.learners.base import NativeRuleLearner
+from pyrulearn.learners.multiclass import OneVsRest
+from pyrulearn.learners.seco import PFoil, PFossil, Pypper
+from pyrulearn.models import ensemblemodel_to_flatruleset
 
 RANDOM_STATE = 0
 N_FOLDS = 10
-N_ESTIMATORS = 100
+N_ESTIMATORS = 10
 MAX_INTERVALS = 8
-FIT_TIMEOUT = 600.0
-#: the datasets whose forests of unlimited depth have too many leaves for `FIT_TIMEOUT`, with a longer cap
-#: per fit (turning a forest into a rule set measures every leaf on the training data)
-LONG_DATASETS = ["letter", "heloc"]
+FIT_TIMEOUT = 1800.0
+#: the largest datasets, with a longer cap per fit
+LONG_DATASETS = ["letter"]
 LONG_FIT_TIMEOUT = 3600.0
 
-#: name -> the trees' `max_depth`
-DEPTHS = {"depth 4": 4, "depth 8": 8, "unlimited depth": None}
-
-#: the rule set's conflict resolution, all on the same fitted forest (named as in the paper)
+#: name -> base learner class
+BASES = {"Pypper": Pypper, "PFossil": PFossil, "PFoil": PFoil}
+#: the conflict resolutions, all on the same fitted members (named as in the paper)
 COMBINERS = {"best rule": HeuristicMaxCombiner, "voting": CountVoteCombiner,
              "micro distribution voting": MicroVoteCombiner, "macro distribution voting": MacroVoteCombiner}
-#: the forest's own votes, and the combiner each one is equivalent to
-FOREST_VOTES = {"forest (soft vote)": "macro distribution voting", "forest (hard vote)": "voting"}
-#: every way a forest is scored, in the order of the report
-VARIANTS = list(FOREST_VOTES) + [f"rules ({name})" for name in COMBINERS]
+#: how a conflict resolution is applied: to a single concept set, to each member, to all rules at once
+LEVELS = ["single", "two-level", "one-level"]
+#: every way a fitted learner is scored, in the order of the report
+VARIANTS = [f"{level} ({name})" for name in COMBINERS for level in LEVELS]
 
-# small multi-class datasets
-QUICK_DATASETS = ["car", "vehicle", "zoo", "soybean", "primary-tumor"]
+# small datasets, multi-class and two-class
+QUICK_DATASETS = ["car", "zoo", "primary-tumor", "breast-cancer", "diabetes"]
 QUICK_FOLDS = 3
-# the datasets of demos/rule_models.py
+# the multi-class datasets of demos/rule_models.py, without kropt
 FULL_DATASETS = ["balance-scale", "cmc", "dna", "hayes-roth", "iris", "splice", "wine", "car", "lymph",
                  "vehicle", "anneal", "glass", "solar-flare", "ecoli", "segment", "zoo", "led24", "yeast",
-                 "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology"]
-LARGE_DATASETS = ["letter"]
+                 "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology", "letter"]
 BINARY_DATASETS = ["SPECT", "Titanic", "banknote-authentication", "blood-transfusion-service-center",
                    "breast-cancer", "breast-w", "churn", "climate-model-simulation-crashes", "colic",
                    "compas-two-years", "credit-approval", "credit-g", "cylinder-bands", "diabetes",
@@ -110,7 +103,6 @@ BINARY_DATASETS = ["SPECT", "Titanic", "banknote-authentication", "blood-transfu
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = "base_vs_composite"
 CACHE_DIR = os.path.join(HERE, "_base_vs_composite_cache")
-PLOTS_DIR = os.path.join(HERE, f"{NAME}_plots")
 
 # fits run at the same time (`run_cv`'s `n_jobs`; "N!" forces N past the available cores);
 # set by --n-jobs
@@ -121,251 +113,156 @@ def _n_jobs():
     return N_JOBS if N_JOBS.endswith("!") else int(N_JOBS)
 
 
-class Forest(NativeRuleLearner):
-    """A random forest of `N_ESTIMATORS` trees of the depth named by
-    `depth` (`DEPTHS`), named ``"forest:<depth>"``, returned as the flat
-    rule set of all its leaves (`RandomForestImporter`, each leaf's
-    statistics measured on the training data). The fitted sklearn forest
-    rides along as `forest`, for its own votes in `measure`; the time of
-    the fit as `fit_seconds`."""
+class BaggedConcepts(NativeRuleLearner):
+    """`n_estimators` concept sets of the base learner named by `base`
+    (`BASES`), each learned one-vs-rest from a bootstrap sample, as an
+    `EnsembleModel`, named ``"bagging:<base>"``. The single concept set
+    learned from the whole training data rides along as `single`, for
+    the baseline in `measure`."""
 
-    def __init__(self, depth: str, random_state: int = RANDOM_STATE):
-        self.depth = depth
+    def __init__(self, base: str, n_estimators: int = N_ESTIMATORS, random_state: int = RANDOM_STATE):
+        self.base = base
+        self.n_estimators = n_estimators
         self.random_state = random_state
 
     @property
     def display_name(self) -> str:
-        return f"forest:{self.depth}"
+        return f"bagging:{self.base}"
 
     def _provenance_params(self):
         # its cached results hold one accuracy per variant: a new combiner means fitting it again
-        return {"depth": self.depth, "n_estimators": N_ESTIMATORS, "random_state": self.random_state,
+        return {"base": self.base, "n_estimators": self.n_estimators, "random_state": self.random_state,
                 "combiners": list(COMBINERS)}
 
     def fit(self, data):
-        from sklearn.ensemble import RandomForestClassifier
-
-        data = SKLRandomForest().ensure_representation(data, None, announce=False)
-        t0 = time.perf_counter()
-        forest = RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=DEPTHS[self.depth],
-                                        random_state=self.random_state).fit(data.X, data.y)
-        fit_seconds = time.perf_counter() - t0
-        model = RandomForestImporter().import_model(forest, data.spec, data=data)
-        model.forest = forest
-        model.fit_seconds = fit_seconds
+        model = Bagging(OneVsRest(BASES[self.base]()), n_estimators=self.n_estimators,
+                        random_state=self.random_state).fit(data)
+        model.single = OneVsRest(BASES[self.base]()).fit(data)
         return model
 
 
-def build_learners():
-    return [Forest(depth) for depth in DEPTHS]
-
-
-def _hard_vote(forest, X) -> np.ndarray:
-    """The plurality of the trees' predicted classes (ties to the first
-    class of `forest.classes_`)."""
-    votes = np.stack([tree.predict(X).astype(int) for tree in forest.estimators_], axis=1)
-    counts = np.apply_along_axis(np.bincount, 1, votes, minlength=len(forest.classes_))
-    return forest.classes_[counts.argmax(axis=1)]
+def build_learners(n_estimators: int = N_ESTIMATORS):
+    return [BaggedConcepts(base, n_estimators) for base in BASES]
 
 
 def measure(model, test_rep) -> dict:
     """The accuracy of every variant (`VARIANTS`) of the same fitted
-    forest, and for each of the forest's votes the share of test examples
-    on which the equivalent combiner predicts the same class."""
+    members and single concept set."""
     y = np.asarray(test_rep.y)
-    X = SKLRandomForest().ensure_representation(test_rep, None, announce=False).X
-    forest = model.forest
-    predictions = {"forest (soft vote)": forest.predict(X), "forest (hard vote)": _hard_vote(forest, X)}
+    out = {"single_rules": len(model.single.rules)}
     for name, combiner in COMBINERS.items():
-        model.combiner = combiner()
-        predictions[f"rules ({name})"] = np.asarray(model.predict(test_rep))
-    out = {"train_time": getattr(model, "fit_seconds", np.nan)}
-    for variant, pred in predictions.items():
-        out[f"accuracy_{variant}"] = float(np.mean(pred == y))
-    for vote, name in FOREST_VOTES.items():
-        out[f"agreement_{vote}"] = float(np.mean(predictions[vote] == predictions[f"rules ({name})"]))
+        for member in model.members:
+            member.combiner = combiner()
+        model.single.combiner = combiner()
+        model.combiner = CountVoteCombiner()
+        predictions = {"single": model.single.predict(test_rep), "two-level": model.predict(test_rep),
+                       "one-level": ensemblemodel_to_flatruleset(model, combiner=combiner()).predict(test_rep)}
+        for level, pred in predictions.items():
+            out[f"accuracy_{level} ({name})"] = float(np.mean(np.asarray(pred) == y))
     return out
 
 
 def variants(results: pd.DataFrame) -> pd.DataFrame:
-    """One row per (dataset, fold, depth, variant), with that variant's
-    accuracy; a forest vote's row also carries its agreement with the
-    equivalent combiner."""
+    """One row per (dataset, fold, base learner, variant), with that
+    variant's accuracy."""
     rows = []
     for _, r in results.iterrows():
-        depth = r["learner"].split(":", 1)[1]
-        common = {"dataset": r["dataset"], "fold": r["fold"], "depth": depth, "n_rules": r["n_rules"],
-                  "n_conditions": r["n_conditions"], "train_time": r.get("train_time"), "error": r["error"]}
+        base = r["learner"].split(":", 1)[1]
+        common = {"dataset": r["dataset"], "fold": r["fold"], "base": base, "n_rules": r["n_rules"],
+                  "n_conditions": r["n_conditions"], "single_rules": r.get("single_rules"), "error": r["error"]}
         for variant in VARIANTS:
-            rows.append({**common, "learner": f"{depth}:{variant}", "variant": variant,
-                         "accuracy": r.get(f"accuracy_{variant}"),
-                         "agreement": r.get(f"agreement_{variant}", np.nan)})
+            level, name = variant.split(" (", 1)
+            rows.append({**common, "learner": f"{base}:{variant}", "variant": variant, "level": level,
+                         "combiner": name[:-1], "accuracy": r.get(f"accuracy_{variant}")})
     return pd.DataFrame(rows)
 
 
-def _description(datasets, binary, quick: bool, n_folds: int) -> str:
+def _description(datasets, binary, quick: bool, n_folds: int, n_estimators: int) -> str:
     mode = ("**Quick run** -- a fast sanity check, the default with no arguments. Full run: "
             f"`python demos/{NAME}.py --full`.\n\n" if quick else
             f"**Full run.** Quick sanity check instead: `python demos/{NAME}.py`.\n\n")
     names = ", ".join(f"`{d.name}` ({d.n_classes})" for d in sorted(datasets, key=lambda d: d.n_classes))
     control = (f" Two-class datasets: {', '.join(f'`{d.name}`' for d in binary)}." if binary else "")
     return f"""\
-{mode}A random forest combines its trees' predictions; but as every tree is a
-disjoint rule set, exactly one leaf of each tree covers an example, and the
-union of all leaves is a single flat rule set. This demo compares the two
-views on the same fitted forests of {N_ESTIMATORS} trees, of depth 4, of depth 8 and
-of unlimited depth:
+{mode}Bagging with rule sets as members: {n_estimators} concept sets -- one concept
+description per class, learned one-vs-rest by {', '.join(BASES)} -- each from a
+bootstrap sample of the training fold. The same members are combined in two
+ways, each with one of four conflict resolutions (**best rule**, the
+covering rule with the best Laplace estimate; **voting**, one vote per
+covering rule; **micro** / **macro distribution voting**, the covering
+rules' class counts / class proportions summed):
 
-- **forest (soft vote)** -- sklearn's own prediction, the trees' class
-  distributions averaged;
-- **forest (hard vote)** -- the plurality of the trees' predicted classes;
-- **rules (...)** -- the union of the leaves as one rule set, each leaf's
-  class distribution measured on the training fold, a conflict resolved by
-  **best rule** (the covering leaf with the best Laplace estimate),
-  **voting** (one vote per covering leaf), **micro distribution voting**
-  (their class counts summed) or **macro distribution voting** (their
-  class proportions summed).
+- **two-level** -- every member resolves its own covering rules, and the
+  members' predictions are combined by a plain vote;
+- **one-level** -- the union of all members' rules as one rule set, its
+  conflicts resolved directly.
 
-The hard vote is the same as voting, and the soft vote as macro
-distribution voting, except that sklearn's leaf distributions come from
-each tree's bootstrap sample (and ties are broken differently); the
-agreement columns give the share of test examples on which each pair
-predicts the same class.
+A member whose rules don't cover an example abstains at both levels (the
+members' defaults are ignored); examples no member covers go to the
+majority class. **single** is the baseline: one concept set learned from the
+whole training fold, with the same conflict resolution.
 
-Multi-class datasets, with their numbers of classes: {names}.{control} Protocol:
+Datasets, with their numbers of classes: {names}.{control} Protocol:
 {n_folds}-fold stratified cross-validation, one `DataSpec` per training fold
-(`TreeDiscretizer(max_intervals={MAX_INTERVALS})`), the forest trained on its Boolean
-features. On data with missing values, the equivalences hold only in part:
-a missing value satisfies neither a feature nor its negation, whereas a tree
-takes it as a false feature, so that an example with a missing value may be
-covered by no leaf of a tree. Each fit is capped at {FIT_TIMEOUT:.0f}s ({LONG_FIT_TIMEOUT:.0f}s for
+(`TreeDiscretizer(max_intervals={MAX_INTERVALS})`). Each fit -- the members and the
+single concept set together -- is capped at {FIT_TIMEOUT:.0f}s ({LONG_FIT_TIMEOUT:.0f}s for
 {', '.join(f'`{n}`' for n in LONG_DATASETS)}).
 """
 
 
-def _summary(var: pd.DataFrame) -> list:
-    """Per depth: the variants sorted by mean accuracy rank, with the
-    agreement of the forest's votes with their equivalent combiners."""
+def _per_base(var: pd.DataFrame) -> list:
+    """Per base learner: accuracy and mean rank (among the twelve
+    variants) of every conflict resolution at every level."""
     L = []
-    for depth in DEPTHS:
-        v = var[var["depth"] == depth]
+    for base in BASES:
+        v = var[var["base"] == base]
         if not len(v):
             continue
         ranks = mean_rank(v, "accuracy")
-        means = v.groupby("learner")[["accuracy", "agreement", "n_rules", "n_conditions"]].mean(numeric_only=True)
-        L.append(f"### {depth[0].upper() + depth[1:]}\n\n"
-                 f"Rules (leaves) per forest: {format_mean_count(v['n_rules'].mean())}, conditions: "
-                 f"{format_mean_count(v['n_conditions'].mean())}.\n\n"
-                 "| combination | accuracy | mean rank | agreement |\n|---|--:|--:|--:|\n")
-        for learner in ranks.sort_values().index:
-            m = means.loc[learner]
-            variant = learner.split(":", 1)[1]
-            agreement = (f"{100 * m['agreement']:.2f}% with {FOREST_VOTES[variant]}"
-                         if variant in FOREST_VOTES else "")
-            L.append(f"| {variant} | {format_accuracy(m['accuracy'])} | {ranks[learner]:.2f} | {agreement} |\n")
-        L.append("\n")
+        acc = v.groupby("learner")["accuracy"].mean()
+        L.append(f"## {base}\n\nRules per ensemble: {format_mean_count(v['n_rules'].mean())}, conditions: "
+                 f"{format_mean_count(v['n_conditions'].mean())}; rules of the single concept set: "
+                 f"{format_mean_count(v['single_rules'].mean())}.\n\n"
+                 "| conflict resolution | " + " | ".join(LEVELS) + " |\n|---|" + "--:|" * len(LEVELS) + "\n")
+        for name in COMBINERS:
+            cells = [f"{format_accuracy(acc[f'{base}:{lv} ({name})'])} ({ranks[f'{base}:{lv} ({name})']:.2f})"
+                     for lv in LEVELS]
+            L.append(f"| {name} | " + " | ".join(cells) + " |\n")
+        L.append("\nAccuracy, and in parentheses the mean rank among the twelve variants.\n\n")
     return L
 
 
-def _overall(var: pd.DataFrame, group: str, quick: bool) -> list:
-    """The variants across the depths: ranked within each (dataset, depth)
-    pair, the ranks averaged over all pairs; then the Friedman test over
-    those pairs and the critical-difference diagram."""
-    blocks = var.assign(dataset=lambda d: d["dataset"] + " / " + d["depth"], learner=lambda d: d["variant"])
-    ranks = mean_rank(blocks, "accuracy")
-    means = blocks.groupby("learner")["accuracy"].mean()
-    L = ["### All depths together\n\n"
-         "Each combination's mean rank, ranked within each depth on each dataset, and its accuracy, "
-         "averaged over the depths.\n\n| combination | accuracy | mean rank |\n|---|--:|--:|\n"]
-    for learner in ranks.index:
-        L.append(f"| {learner} | {format_accuracy(means[learner])} | {ranks[learner]:.2f} |\n")
-    try:
-        f = friedman_test(blocks, "accuracy")
-        cd = critical_difference(f.n_learners, f.n_datasets)
-        L.append(f"\nFriedman test over the {f.n_datasets} (dataset, depth) pairs: p = {f.pvalue:.2g} "
-                 f"({f.n_learners} combinations). Nemenyi critical difference at 5%: {cd:.2f}. The pairs of one "
-                 "dataset aren't independent of each other, so the test is on the optimistic side.\n\n")
-    except ValueError as exc:
-        L.append(f"\nNo Friedman test ({exc}).\n\n")
-    path = os.path.join(PLOTS_DIR, f"{NAME}_{'quick_' if quick else ''}cd_{group}.png")
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        os.makedirs(PLOTS_DIR, exist_ok=True)
-        ax = critical_difference_diagram(blocks, "accuracy")
-        ax.figure.tight_layout()
-        ax.figure.savefig(path, dpi=110)
-        plt.close(ax.figure)
-        L.append(f"![critical-difference diagram, {group}]({os.path.basename(PLOTS_DIR)}/{os.path.basename(path)})\n\n")
-        print(f"Plot   -> {path}")
-    except Exception as e:  # noqa: BLE001 -- a plot failure shouldn't sink the rest of the report
-        print(f"Critical-difference diagram ({group}) skipped: {type(e).__name__}: {e}")
-    return L
-
-
-#: the classes groups of `_by_classes`: (label, lowest, highest)
-CLASS_GROUPS = [("2", 2, 2), ("3-5", 3, 5), ("6-9", 6, 9), ("10-26", 10, 26)]
-#: what `_by_classes` compares every other combination with
-REFERENCE = "forest (soft vote)"
-
-
-def _by_classes(var: pd.DataFrame, n_classes: dict) -> list:
-    """Every combination against the forest's soft vote over the number of
-    classes: per (dataset, depth), its accuracy minus that of the soft
-    vote, averaged within groups of datasets with similar numbers of
-    classes; the mean ranks of datasets with two classes and with more;
-    and the rank correlation of each difference with the number of
-    classes."""
-    from scipy.stats import spearmanr
-
-    acc = var.groupby(["dataset", "depth", "variant"])["accuracy"].mean().unstack("variant")
-    cols = [v for v in VARIANTS if v != REFERENCE]
-    diff = 100 * acc[cols].sub(acc[REFERENCE], axis=0).dropna()
-    k = diff.index.get_level_values("dataset").map(n_classes).to_numpy()
-    groups = [(label, (k >= lo) & (k <= hi)) for label, lo, hi in CLASS_GROUPS if ((k >= lo) & (k <= hi)).any()]
-    L = ["## Over the number of classes\n\n"
-         f"Per (dataset, depth) pair, the accuracy of a combination minus that of the {REFERENCE}, in percentage "
-         "points (negative: the combination is worse), averaged over the pairs of datasets with the given numbers "
-         "of classes (their count in parentheses), and Spearman's rank correlation of the difference with the "
-         "number of classes.\n\n"
-         "| combination | " + " | ".join(f"{label} ({int(sel.sum())})" for label, sel in groups)
-         + " | correlation |\n|---|" + "--:|" * (len(groups) + 1) + "\n"]
-    for c in cols:
-        rho = spearmanr(k, diff[c]) if len(set(k)) > 1 else None
-        L.append(f"| {c} | " + " | ".join(f"{diff.loc[sel, c].mean():+.2f}" for _, sel in groups) + " | "
-                 + (f"{rho.statistic:+.2f} (p = {rho.pvalue:.2g})" if rho is not None else "--") + " |\n")
-    two = var["dataset"].map(n_classes) == 2
-    parts = [(name, var[sel]) for name, sel in (("two classes", two), ("more classes", ~two)) if sel.any()]
-    if len(parts) > 1:
-        ranks = {name: mean_rank(part.assign(dataset=part["dataset"] + " / " + part["depth"],
-                                             learner=part["variant"]), "accuracy") for name, part in parts}
-        L.append("\nMean rank, ranked within each depth on each dataset, on the datasets with two classes and "
-                 "on those with more:\n\n| combination | " + " | ".join(ranks) + " |\n|---|"
-                 + "--:|" * len(ranks) + "\n")
-        for v in VARIANTS:
-            L.append(f"| {v} | " + " | ".join(f"{r[v]:.2f}" for r in ranks.values()) + " |\n")
+def _two_vs_one(var: pd.DataFrame) -> list:
+    """Per conflict resolution, pooled over the base learners: how often
+    the two-level combination is more accurate than the one-level one, and
+    by how much on average."""
+    acc = var.groupby(["dataset", "base", "combiner", "level"])["accuracy"].mean().unstack("level")
+    diff = 100 * (acc["two-level"] - acc["one-level"])
+    L = ["## Two-level against one-level\n\n"
+         "Per (dataset, base learner) pair, the accuracy of the two-level combination minus that of the "
+         "one-level one, in percentage points, and the number of pairs on which either is ahead.\n\n"
+         "| conflict resolution | mean difference | two-level ahead | one-level ahead | ties |\n"
+         "|---|--:|--:|--:|--:|\n"]
+    for name in COMBINERS:
+        d = diff.xs(name, level="combiner").dropna()
+        L.append(f"| {name} | {d.mean():+.2f} | {(d > 0).sum()} | {(d < 0).sum()} | {(d == 0).sum()} |\n")
     L.append("\n")
     return L
 
 
-def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: str) -> None:
-    L = ["# Base against composite models: a forest's vote against the rule set of its leaves\n\n"]
-    L.append(render_setup_section(_description(datasets, binary, quick, n_folds)))
-    failed = var[var["error"].notna()].drop_duplicates(["dataset", "depth"])
+def write_report(var, datasets, binary, quick: bool, n_folds: int, n_estimators: int,
+                 report_path: str) -> None:
+    L = ["# Base against composite models: bagged rule sets, combined at two levels or one\n\n"]
+    L.append(render_setup_section(_description(datasets, binary, quick, n_folds, n_estimators)))
+    failed = var[var["error"].notna()].drop_duplicates(["dataset", "base"])
     if len(failed):
-        L.append("Left out, as a fold failed (the whole cross-validation of that forest is then counted as "
-                 "failed): " + ", ".join(f"`{r.dataset}` ({r.depth}: {r.error})" for r in failed.itertuples())
+        L.append("Left out, as a fold failed (the whole cross-validation of that learner is then counted as "
+                 "failed): " + ", ".join(f"`{r.dataset}` ({r.base}: {r.error})" for r in failed.itertuples())
                  + ".\n\n")
-    done = var.merge(failed[["dataset", "depth"]], how="left", indicator=True)
+    done = var.merge(failed[["dataset", "base"]], how="left", indicator=True)
     done = done[done["_merge"] == "left_only"].drop(columns="_merge")
-    L.append(f"## All datasets\n\nThe {done['dataset'].nunique()} datasets, multi-class and two-class together, "
-             "sorted by mean rank (accuracy rank across datasets). Agreement: the share of test examples on which "
-             "a forest vote and its equivalent combiner predict the same class.\n\n")
-    L += _summary(done)
-    L += _overall(done, "all", quick)
-    L += _by_classes(done, {d.name: d.n_classes for d in list(datasets) + list(binary)})
+    L += _per_base(done)
+    L += _two_vs_one(done)
     L.append("## Per dataset (mean across folds)\n\n")
     L.append(render_results_table(var, ["accuracy", "n_rules"], group_by=["dataset", "learner"],
                                   include_overall=False))
@@ -375,22 +272,22 @@ def write_report(var, datasets, binary, quick: bool, n_folds: int, report_path: 
     print(f"Report -> {report_path}")
 
 
-def main(quick: bool = True) -> None:
+def main(quick: bool = True, n_estimators: int = N_ESTIMATORS) -> None:
     catalog = Catalog.default()
-    datasets = catalog.select(names=QUICK_DATASETS if quick else FULL_DATASETS + LARGE_DATASETS)
-    binary = [] if quick else catalog.select(names=BINARY_DATASETS)
+    datasets = [d for d in catalog.select(names=QUICK_DATASETS if quick else FULL_DATASETS) if d.n_classes > 2]
+    binary = [d for d in catalog.select(names=QUICK_DATASETS if quick else BINARY_DATASETS) if d.n_classes == 2]
     n_folds = QUICK_FOLDS if quick else N_FOLDS
     common = dict(n_folds=n_folds, discretizer=TreeDiscretizer(max_intervals=MAX_INTERVALS),
                   random_state=RANDOM_STATE, cache_dir=CACHE_DIR, measure_fn=measure, n_jobs=_n_jobs())
-    everything = list(datasets) + list(binary)
+    everything = datasets + binary
     runs = []
     for group, timeout in (([d for d in everything if d.name not in LONG_DATASETS], FIT_TIMEOUT),
                            ([d for d in everything if d.name in LONG_DATASETS], LONG_FIT_TIMEOUT)):
         if group:
-            runs.append(run_cv(build_learners(), group, fit_timeout=timeout, **common))
+            runs.append(run_cv(build_learners(n_estimators), group, fit_timeout=timeout, **common))
     results = pd.concat(runs, ignore_index=True)
-    report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
-    write_report(variants(results), list(datasets), list(binary), quick, n_folds, report)
+    report = os.path.join(HERE, f"{NAME}_{n_estimators}_{'quick_' if quick else ''}report.md")
+    write_report(variants(results), datasets, binary, quick, n_folds, n_estimators, report)
 
 
 if __name__ == "__main__":
@@ -398,11 +295,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true",
-                        help=f"{len(FULL_DATASETS) + len(LARGE_DATASETS)} multi-class and "
-                             f"{len(BINARY_DATASETS)} two-class datasets, {N_FOLDS}-fold")
+                        help=f"{len(FULL_DATASETS)} multi-class and {len(BINARY_DATASETS)} two-class "
+                             f"datasets, {N_FOLDS}-fold")
     parser.add_argument("--n-jobs", default="1",
                         help="fits to run at the same time (default 1); capped at the available cores "
                              "unless given as 'N!'")
+    parser.add_argument("--n-estimators", type=int, default=N_ESTIMATORS,
+                        help=f"members per ensemble (default {N_ESTIMATORS})")
     args = parser.parse_args()
     N_JOBS = args.n_jobs
-    main(quick=not args.full)
+    main(quick=not args.full, n_estimators=args.n_estimators)

@@ -1,8 +1,8 @@
-# Bagged rule sets: two-level against one-level combination
+# Base against composite models: bagged rule sets, combined at two levels or one
 
 ## Setup
 
-**Full run.** Quick sanity check instead: `python demos/bagging_levels.py`.
+**Full run.** Quick sanity check instead: `python demos/base_vs_composite.py`.
 
 Bagging with rule sets as members: 50 concept sets -- one concept
 description per class, learned one-vs-rest by Pypper, PFossil, PFoil -- each from a
