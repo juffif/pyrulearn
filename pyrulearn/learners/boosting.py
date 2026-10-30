@@ -122,14 +122,22 @@ class Slipper(NativeRuleLearner):
         else:
             targets = classes
         rules: List[WeightedRule] = []
+        runs = []
         for c in targets:
-            rules += self._boost(data, c)
-        return LinearRuleModel(annotate_rules(rules, data), classes=classes)
+            learned = self._boost(data, c)
+            rules += self._merge(learned, c, data.spec)
+            runs.append((c, learned))
+        model = LinearRuleModel(annotate_rules(rules, data), classes=classes)
+        # round t of the model is round t of every class's run
+        model.stages = [[]] + [[(c, learned[t][0], learned[t][1]) for c, learned in runs]
+                               for t in range(self.n_rounds)]
+        return model
 
     # -- one boosting run -----------------------------------------------------
 
-    def _boost(self, data: Any, target: Any) -> List[WeightedRule]:
-        spec = data.spec
+    def _boost(self, data: Any, target: Any) -> List[Tuple[Tuple[int, ...], float]]:
+        """One boosting run for `target`: per round, the body taken (``()``
+        for the default rule) and its confidence."""
         base = data.with_weights(None)              # the boosting weights carry the data's weights
         positive = np.asarray(data.y) == target
         n = data.n_samples
@@ -165,7 +173,7 @@ class Slipper(NativeRuleLearner):
             body = () if rule is None else tuple(l.feature for l in rule.conditions)
             learned.append((body, confidence))
 
-        return self._merge(learned, target, spec)
+        return learned
 
     def _prune(self, rule: Rule, base: Any, positive: np.ndarray, grow: np.ndarray,
                prune: np.ndarray, reweighting: AdaBoostReweighting) -> Rule:
@@ -535,6 +543,8 @@ class _ENDERBase(NativeRuleLearner):
         k0, alpha0 = self._default_rule(F, Y, d)
         F[:, k0] += alpha0                                  # the default rule, not shrunk
         learned: List[Tuple[Tuple[int, ...], int, float]] = [((), k0, alpha0)]
+        # per iteration, what it added (nothing if no rule was found or kept)
+        stages: List[List[Tuple[Any, Tuple[int, ...], float]]] = [[(classes[k0], (), alpha0)]]
 
         size = max(1, int(round(self.subsample * n)))
         verdicts: List[bool] = []
@@ -543,6 +553,7 @@ class _ENDERBase(NativeRuleLearner):
             in_sample = np.zeros(n, dtype=bool)
             in_sample[rng.choice(n, size=size, replace=False)] = True
             found = grow(self._impurity_terms(F, Y, d, G, H, in_sample))
+            stages.append([])
             if found is None:
                 continue
             body, k, cov = found
@@ -551,6 +562,7 @@ class _ENDERBase(NativeRuleLearner):
                 continue
             F[cov, k] += self.shrinkage * alpha
             learned.append((body, k, self.shrinkage * alpha))
+            stages[-1].append((classes[k], tuple(sorted(body)), self.shrinkage * alpha))
             if self.early_stopping:
                 verdicts.append(self._acceptable(cov & ~in_sample, y_idx, k, d, K))
                 if len(verdicts) >= 10 and sum(not v for v in verdicts[-10:]) >= 8:
@@ -562,7 +574,9 @@ class _ENDERBase(NativeRuleLearner):
             total[key] = total.get(key, 0.0) + a
         rules = [WeightedRule(list(body), target=classes[k], dataspec=data.spec, weight=a)
                  for (body, k), a in total.items() if a != 0]
-        return LinearRuleModel(annotate_rules(rules, data), classes=classes)
+        model = LinearRuleModel(annotate_rules(rules, data), classes=classes)
+        model.stages = stages
+        return model
 
     def _response(self, g: float, h: float) -> float:
         """The loss's rule weight; Newton steps get the L2 penalty."""

@@ -22,7 +22,9 @@ member votes with the rule that decides its prediction, members whose
 rules don't cover an example abstain, and examples no member decides go
 to the majority class. `pyrulearn.models.ensemblemodel_to_flatruleset`
 (or `fit(data, model=FlatRuleSet)`) resolves the same members at the
-level of their rules instead.
+level of their rules instead. The members are learned one after the
+other, so `EnsembleModel.staged(n)` of a fitted model is the model with
+`n` members.
 """
 
 from __future__ import annotations

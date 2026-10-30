@@ -75,7 +75,7 @@ from .combiners import (
 )
 from .data import DataRepresentation
 from .data import DataSpec
-from .rule import Rule
+from .rule import Rule, WeightedRule
 
 if TYPE_CHECKING:
     from .evaluation import ConfusionMatrix, ModelStats
@@ -1846,11 +1846,57 @@ class LinearRuleModel(_FlatRules, RuleSet):
     def _rebuild_kwargs(self) -> Dict[str, Any]:
         return {"classes": self._classes, "default_prediction": self._default_prediction}
 
+    #: the boosting rounds that built the model, recorded by a boosting
+    #: learner (`Slipper`, `ENDER`, `Boomer`): ``stages[0]`` what was there
+    #: before the first round (e.g. ENDER's default rule), ``stages[t]``
+    #: what round ``t`` added -- each a list of ``(target, body, weight)``
+    #: increments, ``body`` a tuple of feature indices. `None` for a model
+    #: not built in rounds.
+    stages: Optional[List[List[Tuple[Any, Tuple[int, ...], float]]]] = None
+
     def scores(self, data: DataRepresentation) -> np.ndarray:
         """`(n_samples, n_classes)`: each class's summed rule weight per
         row, classes in `labels` order -- the linear model's decision
         function (the highest wins)."""
         return self.resolution.scores(self.rules, self.coverage_matrix(data)).T
+
+    @property
+    def n_stages(self) -> int:
+        """The number of boosting rounds recorded in `stages`."""
+        if self.stages is None:
+            raise ValueError("this model has no recorded boosting rounds")
+        return len(self.stages) - 1
+
+    def staged(self, n: int) -> "LinearRuleModel":
+        """The model after its first `n` boosting rounds -- the same model
+        the learner builds with `n` rounds, as later rounds never change
+        earlier ones. A rule's weights from those rounds are summed, as
+        the learners do (a body taken in another order of its conditions
+        is another rule, as for `Slipper`; `ENDER` records its bodies
+        sorted); rules keep this model's order and its training stats
+        (which depend on the body alone)."""
+        if not 0 <= n <= self.n_stages:
+            raise ValueError(f"n must be between 0 and {self.n_stages}, got {n}")
+        total: Dict[Tuple[Any, Tuple[int, ...]], float] = {}
+        for stage in self.stages[:n + 1]:
+            for target, body, weight in stage:
+                key = (target, tuple(body))
+                total[key] = total.get(key, 0.0) + weight
+        position = {(r.target, tuple(c.feature for c in r.conditions)): i for i, r in enumerate(self.rules)}
+        spec = self._rule_dataspec()
+        rules: List[SingleRule] = []
+        for key in sorted(total, key=lambda k: position.get(k, len(position))):
+            weight = total[key]
+            if weight == 0 and key[1]:
+                continue
+            rule = SingleRule(WeightedRule(list(key[1]), target=key[0], dataspec=spec, weight=weight))
+            if key in position:
+                rule._stats = self.rules[position[key]].stats()
+            rules.append(rule)
+        model = LinearRuleModel(rules, classes=self._classes, default_prediction=self._default_prediction)
+        model.stages = self.stages[:n + 1]
+        model._default_rule = self._default_rule
+        return _carry_provenance(self, model)
 
 
 class DecisionList(_FlatRules, RuleList):
@@ -2069,6 +2115,20 @@ class EnsembleModel(CompositeModel):
                 tied = [min(tied, key=lambda c: (-freq.get(c, 0), _label_sortkey(c)))]
             out[j] = tied[0]
         return out
+
+    def staged(self, n: int) -> "EnsembleModel":
+        """The ensemble of its first `n` members (with their weights) --
+        for members learned one after the other (`Bagging`, `AdaBoost`),
+        the same model the learner builds with `n` members, as later
+        members never change earlier ones."""
+        if not 1 <= n <= len(self.members):
+            raise ValueError(f"n must be between 1 and {len(self.members)}, got {n}")
+        model = EnsembleModel(
+            self.members[:n], default_prediction=self._default_prediction,
+            member_weights=None if self.member_weights is None else self.member_weights[:n],
+            combiner=self.combiner, member_defaults=self.member_defaults)
+        model._default_rule = self._default_rule
+        return _carry_provenance(self, model)
 
     def _predict_by_deciding_rules(self, data: DataRepresentation) -> np.ndarray:
         cols = [m.deciding_rules(data, with_default=self.member_defaults) for m in self.members]
