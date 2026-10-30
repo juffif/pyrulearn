@@ -38,10 +38,10 @@ mean rank across datasets.
 
 Run: `python demos/bagging_levels.py` with no arguments is the **quick**
 default (`QUICK_DATASETS`, `QUICK_FOLDS`-fold); its report goes to
-``bagging_levels_quick_report.md`` and is not checked in. `--full` runs the
-multi-class and two-class datasets of `demos/base_vs_composite.py`,
-`N_FOLDS`-fold, and writes ``bagging_levels_report.md``. Needs the
-`experiments` extra.
+``bagging_levels_<n>_quick_report.md``, with `<n>` the number of members, and
+is not checked in. `--full` runs the multi-class and two-class datasets of
+`demos/base_vs_composite.py`, `N_FOLDS`-fold, and writes
+``bagging_levels_<n>_report.md``. Needs the `experiments` extra.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ N_ESTIMATORS = 10
 MAX_INTERVALS = 8
 FIT_TIMEOUT = 1800.0
 #: the largest datasets, with a longer cap per fit
-LONG_DATASETS = ["kropt", "letter"]
+LONG_DATASETS = ["letter"]
 LONG_FIT_TIMEOUT = 3600.0
 
 #: name -> base learner class
@@ -89,7 +89,7 @@ QUICK_FOLDS = 3
 # the datasets of demos/base_vs_composite.py
 FULL_DATASETS = ["balance-scale", "cmc", "dna", "hayes-roth", "iris", "splice", "wine", "car", "lymph",
                  "vehicle", "anneal", "glass", "solar-flare", "ecoli", "segment", "zoo", "led24", "yeast",
-                 "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology", "kropt", "letter"]
+                 "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology", "letter"]
 BINARY_DATASETS = ["SPECT", "Titanic", "banknote-authentication", "blood-transfusion-service-center",
                    "breast-cancer", "breast-w", "churn", "climate-model-simulation-crashes", "colic",
                    "compas-two-years", "credit-approval", "credit-g", "cylinder-bands", "diabetes",
@@ -285,7 +285,7 @@ def main(quick: bool = True, n_estimators: int = N_ESTIMATORS) -> None:
         if group:
             runs.append(run_cv(build_learners(n_estimators), group, fit_timeout=timeout, **common))
     results = pd.concat(runs, ignore_index=True)
-    report = os.path.join(HERE, f"{NAME}_{'quick_' if quick else ''}report.md")
+    report = os.path.join(HERE, f"{NAME}_{n_estimators}_{'quick_' if quick else ''}report.md")
     write_report(variants(results), datasets, binary, quick, n_folds, n_estimators, report)
 
 
