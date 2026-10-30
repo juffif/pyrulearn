@@ -76,7 +76,7 @@ MAX_INTERVALS = 8
 FIT_TIMEOUT = 600.0
 #: the datasets whose forests of unlimited depth have too many leaves for `FIT_TIMEOUT`, with a longer cap
 #: per fit (turning a forest into a rule set measures every leaf on the training data)
-LONG_DATASETS = ["kropt", "letter", "heloc"]
+LONG_DATASETS = ["letter", "heloc"]
 LONG_FIT_TIMEOUT = 3600.0
 
 #: name -> the trees' `max_depth`
@@ -97,7 +97,7 @@ QUICK_FOLDS = 3
 FULL_DATASETS = ["balance-scale", "cmc", "dna", "hayes-roth", "iris", "splice", "wine", "car", "lymph",
                  "vehicle", "anneal", "glass", "solar-flare", "ecoli", "segment", "zoo", "led24", "yeast",
                  "optdigits", "texture", "vowel", "soybean", "primary-tumor", "audiology"]
-LARGE_DATASETS = ["kropt", "letter"]
+LARGE_DATASETS = ["letter"]
 BINARY_DATASETS = ["SPECT", "Titanic", "banknote-authentication", "blood-transfusion-service-center",
                    "breast-cancer", "breast-w", "churn", "climate-model-simulation-crashes", "colic",
                    "compas-two-years", "credit-approval", "credit-g", "cylinder-bands", "diabetes",
