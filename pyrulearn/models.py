@@ -475,6 +475,21 @@ class RuleModel(ABC):
             out.append([r for t in heads for r in blocks[t]])
         return out
 
+    def deciding_rules(self, data: DataRepresentation,
+                       with_default: bool = False) -> List[Optional[Rule]]:
+        """For each row of `data`, the rule that decides this model's
+        prediction -- the strongest covering rule of the predicted label
+        (`covered_by`'s first entry). Where no rule covers the row:
+        `default_rule` if `with_default` (`None` if there is none, or
+        the default varies per row), else `None`. What a member
+        contributes when an `EnsembleModel` resolves its members' votes
+        with a `RuleCombiner`."""
+        cov = self.coverage_matrix(data)
+        covered = cov.any(axis=0) if cov.size else np.zeros(data.n_samples, dtype=bool)
+        default = self.default_rule if with_default else None
+        return [(expl[0] if expl else None) if covered[j] else default
+                for j, expl in enumerate(self.covered_by(data))]
+
     # -- coverage / stats -------------------------------------------
 
     def coverage_matrix(self, data: DataRepresentation) -> np.ndarray:
@@ -1232,6 +1247,20 @@ class RuleList(RuleModel):
         cov = self.coverage_matrix(data)
         return self.resolution.predict(self.rules, cov, self._fallback(data), data.n_samples)
 
+    def deciding_rules(self, data: DataRepresentation,
+                       with_default: bool = False) -> List[Optional[Rule]]:
+        """The first covering rule in list order -- the one that fires --
+        or, where none covers the row, `default_rule` if `with_default`,
+        else `None`."""
+        rules = self.rules
+        default = self.default_rule if with_default else None
+        if not rules:
+            return [default] * data.n_samples
+        cov = self.coverage_matrix(data)
+        first = cov.argmax(axis=0)
+        covered = cov.any(axis=0)
+        return [rules[first[j]] if covered[j] else default for j in range(data.n_samples)]
+
     def _unique_mask(self, cov: np.ndarray) -> np.ndarray:
         return self.resolution.unique_mask(cov, self.rules)
 
@@ -1940,6 +1969,12 @@ class CompositeModel(RuleModel):
         # one rule's" isn't meaningful here; report none.
         return np.zeros_like(cov)
 
+    def deciding_rules(self, data: DataRepresentation,
+                       with_default: bool = False) -> List[Optional[Rule]]:
+        raise NotImplementedError(
+            f"{type(self).__name__} combines its members' predictions -- no single rule decides them"
+        )
+
     def _with_members(self, members: Sequence[RuleModel]) -> "CompositeModel":
         raise NotImplementedError
 
@@ -1963,7 +1998,24 @@ class EnsembleModel(CompositeModel):
     Ties follow the combiners' convention (see `pyrulearn.combiners`),
     never member order: the label more frequent in the training data
     (read from the members' rules' frozen stats), then the one that
-    sorts first."""
+    sorts first.
+
+    With a `combiner` (a `pyrulearn.combiners.RuleCombiner`), the members
+    vote with their *deciding rules* instead (`RuleModel.deciding_rules`:
+    per row, the rule that decides a member's prediction), and the
+    combiner resolves them as it resolves a rule set's covering rules --
+    so every conflict resolution works at the level of the members, too:
+    `CountVoteCombiner` gives one vote per member, `MacroVoteCombiner`
+    averages the deciding rules' class distributions, and so on. A
+    member whose rules don't cover a row abstains on it -- the members'
+    own defaults are ignored, and rows no member decides go to this
+    model's `default_prediction` -- unless `member_defaults`, where it
+    votes with its default rule instead. Ignoring them suits members with
+    rules for every class (one-vs-rest concept sets); a member that
+    leaves a class to its default (a cascade, a decision list) never
+    votes for that class otherwise. Not combinable with `member_weights`.
+    `ensemblemodel_to_flatruleset` is the same at the level of the rules:
+    one rule set of all the members' rules, resolved by a combiner."""
 
     def __init__(
         self,
@@ -1971,20 +2023,29 @@ class EnsembleModel(CompositeModel):
         *,
         default_prediction: Any = None,
         member_weights: Optional[Sequence[float]] = None,
+        combiner: Optional[RuleCombiner] = None,
+        member_defaults: bool = False,
     ):
         super().__init__(members, default_prediction=default_prediction)
         if member_weights is not None and len(member_weights) != len(self.members):
             raise ValueError(
                 f"member_weights has {len(member_weights)} entries, expected {len(self.members)}"
             )
+        if member_weights is not None and combiner is not None:
+            raise ValueError("member_weights and combiner can't be combined")
         self.member_weights = (None if member_weights is None
                                else np.asarray(member_weights, dtype=float))
+        self.combiner = None if combiner is None else _resolve_combiner(combiner)
+        self.member_defaults = member_defaults
 
     def _with_members(self, members: Sequence[RuleModel]) -> "EnsembleModel":
         return EnsembleModel(members, default_prediction=self._default_prediction,
-                             member_weights=self.member_weights)
+                             member_weights=self.member_weights, combiner=self.combiner,
+                             member_defaults=self.member_defaults)
 
     def predict(self, data: DataRepresentation) -> np.ndarray:
+        if self.combiner is not None:
+            return self._predict_by_deciding_rules(data)
         cols = [np.asarray(m.predict(data)) for m in self.members]
         fb = self._fallback(data)
         out = np.empty(data.n_samples, dtype=object)
@@ -2009,7 +2070,20 @@ class EnsembleModel(CompositeModel):
             out[j] = tied[0]
         return out
 
+    def _predict_by_deciding_rules(self, data: DataRepresentation) -> np.ndarray:
+        cols = [m.deciding_rules(data, with_default=self.member_defaults) for m in self.members]
+        fb = self._fallback(data)
+        out = np.empty(data.n_samples, dtype=object)
+        for j in range(data.n_samples):
+            deciding = [col[j] for col in cols if col[j] is not None]
+            out[j] = (self.combiner.resolve(deciding, range(len(deciding))) if deciding
+                      else fb(j))
+        return out
+
     def _resolution_description(self) -> str:
+        if self.combiner is not None:
+            defaults = " and defaults" if self.member_defaults else ""
+            return f"{self.combiner.describe()}, over the members' deciding rules{defaults}"
         return "weighted vote of members" if self.member_weights is not None else "vote of members"
 
     def to_string(
@@ -2426,11 +2500,14 @@ def ensemblemodel_to_flatruleset(ens: EnsembleModel, *, combiner: Optional[RuleC
     """Pool every member's rules into one flat bag, resolved by a single
     `combiner` (default `CountVoteCombiner()` -- an unweighted plurality vote over all
     covering rules, the closest flat analogue of the ensemble's own
-    per-member vote). Lossy: the per-member grouping, any
-    `member_weights`, and each member's own resolution (e.g. a tree's
-    `Exclusive`) are dropped -- a forest's soft, per-tree-distribution
-    vote is *not* reproduced. Use it when a downstream consumer needs a
-    single rule list and an approximate vote is acceptable."""
+    per-member vote) -- the ensemble resolved at the level of its rules
+    rather than of its members. The per-member grouping, any
+    `member_weights`, each member's own resolution and the members' own
+    defaults are dropped; the ensemble's default is kept. For members
+    that are disjoint rule sets (a forest's trees) the two levels
+    coincide, as exactly one rule of each member covers a row; otherwise
+    a member with several covering rules gets several votes here, and
+    one whose rules don't cover the row none."""
     return _carry_provenance(ens, FlatRuleSet(
         list(ens.rules), default_prediction=ens.default_prediction,
         combiner=combiner if combiner is not None else CountVoteCombiner()))
