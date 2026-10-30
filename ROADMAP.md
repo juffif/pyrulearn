@@ -969,7 +969,13 @@ different orders, so it only works while every value is `True`.
   model is learned per code bit, and an example is assigned the class
   whose code word is nearest to the models' predictions. It would fit as
   another model type of `DecomposingLearner` (`fit(data, model=...)`) and
-  as another method in the multi-class decomposition demo.
+  as another method in the multi-class decomposition demo. With ternary
+  codes (a class may also be left out of a bit's problem), one-vs-rest
+  and pairwise are themselves special cases, so they could be expressed
+  as codes; the codes to try: exhaustive, random and dense/sparse random
+  codes, decoded by Hamming distance or by the members' confidences. The
+  paper reviews ECOC in its binarization section (2026-10-30), without
+  an experiment so far.
 - **Accuracy as percentages, four digits** (the user's preference,
   2026-10-10): every demo report, verdict sentence and plot axis shows
   accuracy as ``86.31%``, not ``0.863`` -- `experiments.report`'s
