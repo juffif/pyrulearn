@@ -283,13 +283,15 @@ def _plot(var: pd.DataFrame, quick: bool) -> list:
         means = var.groupby(["name", "rounds"])[["n_rules", "accuracy"]].mean()
         os.makedirs(PLOTS_DIR, exist_ok=True)
         fig, ax = plt.subplots(figsize=(8, 5))
-        for name, (_, strategy) in CURVES.items():
+        # the two curves of an AdaBoost fit share its colour
+        colors = dict(zip(LEARNERS, plt.rcParams["axes.prop_cycle"].by_key()["color"]))
+        for name, (fitted, strategy) in CURVES.items():
             m = means.loc[name] if name in means.index.get_level_values(0) else None
             if m is None:
                 continue
             ax.plot(m["n_rules"], m["accuracy"], ":^" if name.endswith(DEFAULTS) else
-                    "-o" if strategy == "model weighting" else "--s",
-                    markersize=4, label=f"{name} ({strategy})")
+                    "--o" if strategy == "model weighting" else "-s",
+                    color=colors[fitted], markersize=4, label=f"{name} ({strategy})")
         ax.set_xscale("log")
         ax.set_xlabel("rules (log scale)")
         ax.set_ylabel("accuracy")
