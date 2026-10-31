@@ -12,7 +12,11 @@ datasets of `demos/base_vs_composite.py`.
   class learned one-vs-rest (`OneVsRest`) by `Pypper`, `PFossil` or
   `PFoil`: each member is a whole rule set, learned from the examples
   reweighted by the errors of its predecessors, and the members vote with
-  weights. Any learner can be boosted this way.
+  weights. Any learner can be boosted this way. Each fit is scored with two
+  votes (`DEFAULTS`). As in `demos/base_vs_composite.py`, a member whose
+  rules don't cover an example abstains (`abstain`, the default): the members' own
+  defaults are ignored, and examples no member covers go to the majority
+  class. Or the defaults vote too, with the member's weight.
 - **Rule weighting** -- `Slipper`, `ENDER` and `Boomer`: each boosting
   round adds a single rule with a weight, and a prediction sums the
   weights of the covering rules. This is unique to rule learning: a rule,
@@ -74,11 +78,15 @@ FIT_TIMEOUT = 1800.0
 LONG_DATASETS = ["letter"]
 LONG_FIT_TIMEOUT = 3600.0
 
+def _boosted(base, n):
+    return AdaBoost(OneVsRest(base()), n_estimators=n, early_stopping=False)
+
+
 #: name -> (strategy, the learner at `n` rounds)
 LEARNERS = {
-    "AdaBoost:Pypper": ("model weighting", lambda n: AdaBoost(OneVsRest(Pypper()), n_estimators=n, early_stopping=False)),
-    "AdaBoost:PFossil": ("model weighting", lambda n: AdaBoost(OneVsRest(PFossil()), n_estimators=n, early_stopping=False)),
-    "AdaBoost:PFoil": ("model weighting", lambda n: AdaBoost(OneVsRest(PFoil()), n_estimators=n, early_stopping=False)),
+    "AdaBoost:Pypper": ("model weighting", lambda n: _boosted(Pypper, n)),
+    "AdaBoost:PFossil": ("model weighting", lambda n: _boosted(PFossil, n)),
+    "AdaBoost:PFoil": ("model weighting", lambda n: _boosted(PFoil, n)),
     "Slipper": ("rule weighting", lambda n: Slipper(n_rounds=n, random_state=RANDOM_STATE)),
     "ENDER": ("rule weighting", lambda n: ENDER(n_rules=n, random_state=RANDOM_STATE)),
     "Boomer": ("rule weighting", lambda n: Boomer(n_rules=n, random_state=RANDOM_STATE)),
@@ -92,6 +100,14 @@ STAGES = {
     "ENDER": [10, 25, 50, 100, 250, 500],
     "Boomer": [10, 25, 50, 100, 250, 500],
 }
+#: marks the curve of an AdaBoost fit scored with the members' defaults voting
+DEFAULTS = " (defaults vote)"
+#: name in the report -> (the fit it is scored from, strategy)
+CURVES = {}
+for name, (strategy, _) in LEARNERS.items():
+    CURVES[name] = (name, strategy)
+    if strategy == "model weighting":
+        CURVES[name + DEFAULTS] = (name, strategy)
 
 QUICK_FOLDS = 3
 
@@ -122,8 +138,9 @@ class Staged(NativeRuleLearner):
 
     def _provenance_params(self):
         # its cached results hold one accuracy per stage: other stages mean fitting it again
-        return {"name": self.name, "stages": STAGES[self.name], "random_state": RANDOM_STATE,
-                "early_stopping": False}
+        params = {"name": self.name, "stages": STAGES[self.name], "random_state": RANDOM_STATE,
+                  "early_stopping": False}
+        return {**params, "votes": "both"} if LEARNERS[self.name][0] == "model weighting" else params
 
     def fit(self, data):
         model = LEARNERS[self.name][1](max(STAGES[self.name])).fit(data)
@@ -145,7 +162,7 @@ def _prefix(model, n):
 
 def measure(model, test_rep) -> dict:
     """Accuracy and number of rules after each number of rounds the model
-    is scored at."""
+    is scored at; for an ensemble, also with the members' defaults voting."""
     y = np.asarray(test_rep.y)
     out = {}
     for n in model.stages_scored:
@@ -153,20 +170,26 @@ def measure(model, test_rep) -> dict:
         out[f"accuracy@{n}"] = float(np.mean(np.asarray(prefix.predict(test_rep)) == y))
         out[f"rules@{n}"] = len(prefix.rules)
         out[f"members@{n}"] = len(prefix.members) if hasattr(prefix, "members") else np.nan
+        if hasattr(prefix, "members"):
+            prefix.abstain = False
+            out[f"accuracy_defaults@{n}"] = float(np.mean(np.asarray(prefix.predict(test_rep)) == y))
     return out
 
 
 def variants(results: pd.DataFrame) -> pd.DataFrame:
-    """One row per (dataset, fold, learner, number of rounds)."""
+    """One row per (dataset, fold, curve, number of rounds)."""
     rows = []
     for _, r in results.iterrows():
-        name = r["learner"]
-        for n in STAGES[name]:
-            rows.append({"dataset": r["dataset"], "fold": r["fold"], "name": name,
-                         "strategy": LEARNERS[name][0], "rounds": n, "learner": f"{name}@{n}",
-                         "accuracy": r.get(f"accuracy@{n}"), "n_rules": r.get(f"rules@{n}"),
-                         "members": r.get(f"members@{n}"),
-                         "error": r["error"]})
+        for name, (fitted, strategy) in CURVES.items():
+            if fitted != r["learner"]:
+                continue
+            key = "accuracy_defaults" if name.endswith(DEFAULTS) else "accuracy"
+            for n in STAGES[fitted]:
+                rows.append({"dataset": r["dataset"], "fold": r["fold"], "name": name,
+                             "strategy": strategy, "rounds": n, "learner": f"{name}@{n}",
+                             "accuracy": r.get(f"{key}@{n}"), "n_rules": r.get(f"rules@{n}"),
+                             "members": r.get(f"members@{n}"),
+                             "error": r["error"]})
     return pd.DataFrame(rows)
 
 
@@ -183,7 +206,13 @@ def _description(datasets, binary, quick: bool, n_folds: int) -> str:
 - **model weighting** -- AdaBoost (SAMME) over concept sets learned
   one-vs-rest by Pypper, PFossil or PFoil: every member is a whole rule set,
   learned from the examples reweighted by its predecessors' errors, and the
-  members vote with weights. This works with any learner.
+  members vote with weights. This works with any learner. Every fit is
+  scored with two votes. **AdaBoost:...**: as in
+  `demos/base_vs_composite.py`, the concept sets vote without their defaults:
+  a member whose rules don't cover an example abstains, and examples no
+  member covers go to the majority class. **AdaBoost:...{DEFAULTS}**: such a
+  member votes for its default class, with its full weight. The members are
+  the same; a member's training error counts its default in both.
 - **rule weighting** -- Slipper, ENDER and Boomer: every round adds one rule
   with a weight, and the weights of the covering rules are summed. This is
   unique to rule learning, as a rule abstains where it doesn't cover an
@@ -216,8 +245,8 @@ def _per_learner(var: pd.DataFrame) -> list:
     means = var.groupby(["name", "rounds"])[["members", "n_rules", "accuracy"]].mean()
     L = ["## Accuracy against the number of rules\n\n"
          "| strategy | learner | rounds | members | rules | accuracy |\n|---|---|--:|--:|--:|--:|\n"]
-    for name, (strategy, _) in LEARNERS.items():
-        for n in STAGES[name]:
+    for name, (fitted, strategy) in CURVES.items():
+        for n in STAGES[fitted]:
             if (name, n) in means.index:
                 m = means.loc[(name, n)]
                 members = format_mean_count(m["members"]) if m["members"] == m["members"] else ""
@@ -230,13 +259,13 @@ def _per_learner(var: pd.DataFrame) -> list:
 
 def _largest(var: pd.DataFrame) -> list:
     """Every learner at its largest size: mean rank across datasets."""
-    top = var[var["rounds"] == var["name"].map(lambda n: max(STAGES[n]))]
+    top = var[var["rounds"] == var["name"].map(lambda n: max(STAGES[CURVES[n][0]]))]
     ranks = mean_rank(top.assign(learner=top["name"]), "accuracy")
     means = top.groupby("name")[["n_rules", "accuracy"]].mean()
     L = ["## At the largest size\n\nEvery learner after its last round, sorted by mean rank (accuracy rank "
          "across datasets).\n\n| learner | strategy | rules | accuracy | mean rank |\n|---|---|--:|--:|--:|\n"]
     for name in ranks.index:
-        L.append(f"| {name} | {LEARNERS[name][0]} | {format_mean_count(means.loc[name, 'n_rules'])} | "
+        L.append(f"| {name} | {CURVES[name][1]} | {format_mean_count(means.loc[name, 'n_rules'])} | "
                  f"{format_accuracy(means.loc[name, 'accuracy'])} | {ranks[name]:.2f} |\n")
     L.append("\n")
     return L
@@ -254,11 +283,12 @@ def _plot(var: pd.DataFrame, quick: bool) -> list:
         means = var.groupby(["name", "rounds"])[["n_rules", "accuracy"]].mean()
         os.makedirs(PLOTS_DIR, exist_ok=True)
         fig, ax = plt.subplots(figsize=(8, 5))
-        for name, (strategy, _) in LEARNERS.items():
+        for name, (_, strategy) in CURVES.items():
             m = means.loc[name] if name in means.index.get_level_values(0) else None
             if m is None:
                 continue
-            ax.plot(m["n_rules"], m["accuracy"], "-o" if strategy == "model weighting" else "--s",
+            ax.plot(m["n_rules"], m["accuracy"], ":^" if name.endswith(DEFAULTS) else
+                    "-o" if strategy == "model weighting" else "--s",
                     markersize=4, label=f"{name} ({strategy})")
         ax.set_xscale("log")
         ax.set_xlabel("rules (log scale)")
