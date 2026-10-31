@@ -46,15 +46,15 @@ class Bagging(NativeRuleLearner):
     `OneVsRest(Pypper())` for unordered concept sets instead of
     `Pypper`'s cascades -- combined into an `EnsembleModel` with
     `combiner` (default `CountVoteCombiner()`) and the training data's
-    majority class as its default. The members' own defaults are ignored
-    unless `member_defaults` (see `EnsembleModel`)."""
+    majority class as its default. With `abstain` (the default), the
+    members' own defaults are ignored (see `EnsembleModel`)."""
 
     def __init__(
         self,
         base_learner: NativeRuleLearner,
         n_estimators: int = 10,
         combiner: Optional[RuleCombiner] = None,
-        member_defaults: bool = False,
+        abstain: bool = True,
         random_state: Optional[int] = None,
     ):
         if n_estimators < 1:
@@ -62,7 +62,7 @@ class Bagging(NativeRuleLearner):
         self.base_learner = base_learner
         self.n_estimators = n_estimators
         self.combiner = combiner
-        self.member_defaults = member_defaults
+        self.abstain = abstain
         self.random_state = random_state
 
     def _default_model(self, data: DataRepresentation) -> type:
@@ -77,7 +77,7 @@ class Bagging(NativeRuleLearner):
                                     for sample in bootstrap_samples(data, self.n_estimators, rng)]
         model = EnsembleModel(members, default_prediction=MajorityClass(data),
                               combiner=self.combiner if self.combiner is not None else CountVoteCombiner(),
-                              member_defaults=self.member_defaults)
+                              abstain=self.abstain)
         return annotate_default_rule(model, data)
 
 

@@ -2052,16 +2052,18 @@ class EnsembleModel(CompositeModel):
     combiner resolves them as it resolves a rule set's covering rules --
     so every conflict resolution works at the level of the members, too:
     `CountVoteCombiner` gives one vote per member, `MacroVoteCombiner`
-    averages the deciding rules' class distributions, and so on. A
-    member whose rules don't cover a row abstains on it -- the members'
-    own defaults are ignored, and rows no member decides go to this
-    model's `default_prediction` -- unless `member_defaults`, where it
-    votes with its default rule instead. Ignoring them suits members with
-    rules for every class (one-vs-rest concept sets); a member that
-    leaves a class to its default (a cascade, a decision list) never
-    votes for that class otherwise. Not combinable with `member_weights`.
+    averages the deciding rules' class distributions, and so on. Not
+    combinable with `member_weights`.
     `ensemblemodel_to_flatruleset` is the same at the level of the rules:
-    one rule set of all the members' rules, resolved by a combiner."""
+    one rule set of all the members' rules, resolved by a combiner.
+
+    With `abstain` (the default), a member whose rules don't cover a row
+    doesn't vote on it: the members' own defaults are ignored, and rows
+    no member decides go to this model's `default_prediction`. This suits
+    members with rules for every class (one-vs-rest concept sets); a
+    member that leaves a class to its default (a cascade, a decision
+    list) never votes for that class then -- without `abstain`, it votes
+    with its default."""
 
     def __init__(
         self,
@@ -2070,7 +2072,7 @@ class EnsembleModel(CompositeModel):
         default_prediction: Any = None,
         member_weights: Optional[Sequence[float]] = None,
         combiner: Optional[RuleCombiner] = None,
-        member_defaults: bool = False,
+        abstain: bool = True,
     ):
         super().__init__(members, default_prediction=default_prediction)
         if member_weights is not None and len(member_weights) != len(self.members):
@@ -2082,17 +2084,24 @@ class EnsembleModel(CompositeModel):
         self.member_weights = (None if member_weights is None
                                else np.asarray(member_weights, dtype=float))
         self.combiner = None if combiner is None else _resolve_combiner(combiner)
-        self.member_defaults = member_defaults
+        self.abstain = abstain
 
     def _with_members(self, members: Sequence[RuleModel]) -> "EnsembleModel":
         return EnsembleModel(members, default_prediction=self._default_prediction,
                              member_weights=self.member_weights, combiner=self.combiner,
-                             member_defaults=self.member_defaults)
+                             abstain=self.abstain)
+
+    def _votes(self, member: RuleModel, data: DataRepresentation) -> np.ndarray:
+        """`member`'s prediction per row, `None` where it abstains."""
+        votes = np.array(member.predict(data), dtype=object)
+        if self.abstain:
+            votes[[rule is None for rule in member.deciding_rules(data)]] = None
+        return votes
 
     def predict(self, data: DataRepresentation) -> np.ndarray:
         if self.combiner is not None:
             return self._predict_by_deciding_rules(data)
-        cols = [np.asarray(m.predict(data)) for m in self.members]
+        cols = [self._votes(m, data) for m in self.members]
         fb = self._fallback(data)
         out = np.empty(data.n_samples, dtype=object)
         freq: Optional[Dict[Any, int]] = None  # training frequencies, read only if a tie occurs
@@ -2126,12 +2135,12 @@ class EnsembleModel(CompositeModel):
         model = EnsembleModel(
             self.members[:n], default_prediction=self._default_prediction,
             member_weights=None if self.member_weights is None else self.member_weights[:n],
-            combiner=self.combiner, member_defaults=self.member_defaults)
+            combiner=self.combiner, abstain=self.abstain)
         model._default_rule = self._default_rule
         return _carry_provenance(self, model)
 
     def _predict_by_deciding_rules(self, data: DataRepresentation) -> np.ndarray:
-        cols = [m.deciding_rules(data, with_default=self.member_defaults) for m in self.members]
+        cols = [m.deciding_rules(data, with_default=not self.abstain) for m in self.members]
         fb = self._fallback(data)
         out = np.empty(data.n_samples, dtype=object)
         for j in range(data.n_samples):
@@ -2142,9 +2151,10 @@ class EnsembleModel(CompositeModel):
 
     def _resolution_description(self) -> str:
         if self.combiner is not None:
-            defaults = " and defaults" if self.member_defaults else ""
+            defaults = "" if self.abstain else " and defaults"
             return f"{self.combiner.describe()}, over the members' deciding rules{defaults}"
-        return "weighted vote of members" if self.member_weights is not None else "vote of members"
+        vote = "weighted vote of members" if self.member_weights is not None else "vote of members"
+        return vote if self.abstain else f"{vote} and defaults"
 
     def to_string(
         self, fmt: Optional[str] = None, ascii: bool = False, show_stats: bool = True,

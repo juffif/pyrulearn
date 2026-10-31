@@ -19,8 +19,9 @@ number of rows, so that a learner's counts stay on the scale of the
 data.
 
 The model is an `pyrulearn.models.EnsembleModel` with `member_weights`:
-each member predicts, its own default included, and the members' votes
-are summed with their weights. This weights *models*; the rule boosting
+a member votes where its rules cover the example, and the votes are
+summed with their weights (`abstain`; without it, a member also votes
+with its own default). This weights *models*; the rule boosting
 learners of `pyrulearn.learners.boosting` (`Slipper`, `ENDER`, `Boomer`)
 weight single *rules* instead. A later member never changes an earlier
 one, so `EnsembleModel.staged(n)` of a fitted model is the model after
@@ -54,16 +55,25 @@ class AdaBoost(NativeRuleLearner):
     is kept. Without it, the weights are reset to those of a bootstrap
     sample (drawn from `random_state`) and boosting goes on -- the first
     member left out, the second kept -- until there are `n_estimators`
-    members (or ``2 * n_estimators`` rounds have been tried)."""
+    members (or ``2 * n_estimators`` rounds have been tried).
+
+    With `abstain` (the default), a member doesn't vote where its rules
+    don't cover an example (`EnsembleModel`'s `abstain`), which suits
+    members with rules for every class (one-vs-rest concept sets):
+    boosting moves the weight onto few examples, so that a later member's
+    default would decide most of the rest, with the full weight of the
+    member. Only the vote changes: a member's training error still counts
+    its default."""
 
     def __init__(self, base_learner: NativeRuleLearner, n_estimators: int = 10,
-                 early_stopping: bool = True, random_state: Optional[int] = 0):
+                 early_stopping: bool = True, random_state: Optional[int] = 0, abstain: bool = True):
         if n_estimators < 1:
             raise ValueError(f"n_estimators must be at least 1, got {n_estimators}")
         self.base_learner = base_learner
         self.n_estimators = n_estimators
         self.early_stopping = early_stopping
         self.random_state = random_state
+        self.abstain = abstain
 
     def _default_model(self, data: DataRepresentation) -> type:
         return EnsembleModel
@@ -103,7 +113,8 @@ class AdaBoost(NativeRuleLearner):
             w = w * (n / w.sum())
         if not members:   # every round no better than guessing
             members, weights = [member], [1.0]
-        model = EnsembleModel(members, default_prediction=MajorityClass(data), member_weights=weights)
+        model = EnsembleModel(members, default_prediction=MajorityClass(data), member_weights=weights,
+                              abstain=self.abstain)
         return annotate_default_rule(model, data)
 
 

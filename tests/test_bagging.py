@@ -67,19 +67,19 @@ def test_bagging_members_are_whatever_the_base_learner_builds():
     assert all(isinstance(m, ConceptCascade) for m in cascades.members)
 
 
-def test_member_defaults_let_cascades_vote_for_their_default_class():
+def test_without_abstain_cascades_vote_for_their_default_class():
     data = _data(n=50)
     # three members with rules for "pos" only, leaving "neg" to their default;
     # only the first covers the rows where feature 0 holds and feature 2 doesn't
     members = [DecisionList([Rule([f], target="pos", dataspec=data.spec)], default_prediction="neg")
                for f in (0, 2, 2)]
     ignored = EnsembleModel(members, default_prediction="mid", combiner=CountVoteCombiner())
-    kept = EnsembleModel(members, default_prediction="mid", combiner=CountVoteCombiner(),
-                         member_defaults=True)
+    kept = EnsembleModel(members, default_prediction="mid", combiner=CountVoteCombiner(), abstain=False)
     row = int(np.flatnonzero(data.X[:, 0].astype(bool) & ~data.X[:, 2].astype(bool))[0])
     assert ignored.predict(data)[row] == "pos"   # the two others abstain
     assert kept.predict(data)[row] == "neg"      # the two others vote for their default
-    assert Bagging(Pypper(), n_estimators=2, member_defaults=True).fit(data).member_defaults
+    assert Bagging(Pypper(), n_estimators=2).fit(data).abstain
+    assert not Bagging(Pypper(), n_estimators=2, abstain=False).fit(data).abstain
 
 
 @pytest.mark.parametrize("combiner", [CountVoteCombiner, MacroVoteCombiner, MicroVoteCombiner,

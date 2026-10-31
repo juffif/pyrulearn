@@ -5,7 +5,7 @@ from pyrulearn.data import HorizontalBitmapRepresentation
 from pyrulearn.learners.adaboost import AdaBoost, samme_weight
 from pyrulearn.learners.base import NativeRuleLearner
 from pyrulearn.learners.multiclass import OneVsRest
-from pyrulearn.learners.seco import PFoil
+from pyrulearn.learners.seco import PFoil, Pypper
 from pyrulearn.models import ConceptSet, EnsembleModel, FlatRuleSet
 from pyrulearn.rule import Rule
 
@@ -81,3 +81,24 @@ def test_without_early_stopping_adaboost_restarts_from_a_bootstrap_sample():
     assert 1 <= len(model.members) <= 3
     full = AdaBoost(OneVsRest(PFoil()), n_estimators=6, early_stopping=False).fit(_data())
     assert len(full.members) == 6
+
+
+def test_abstain_leaves_out_the_members_defaults():
+    data = _data()
+    model = AdaBoost(OneVsRest(Pypper()), n_estimators=6, early_stopping=False).fit(data)
+    assert any(rule is None for member in model.members for rule in member.deciding_rules(data))
+    out = model.predict(data)
+    for j in range(data.n_samples):
+        tally = {}
+        for member, weight in zip(model.members, model.member_weights):
+            if member.deciding_rules(data)[j] is not None:
+                label = member.predict(data)[j]
+                tally[label] = tally.get(label, 0.0) + weight
+        assert not tally or tally[out[j]] == max(tally.values())
+
+
+def test_abstain_reaches_the_ensemble_and_its_stages():
+    model = AdaBoost(OneVsRest(PFoil()), n_estimators=3, early_stopping=False).fit(_data())
+    assert model.abstain and model.staged(2).abstain
+    voting = AdaBoost(OneVsRest(PFoil()), n_estimators=3, abstain=False).fit(_data())
+    assert not voting.abstain and "weighted vote of members and defaults" in voting.to_string()

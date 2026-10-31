@@ -7,6 +7,11 @@ is in early development (alpha): until 1.0, minor versions may change the API.
 
 ### Added
 
+- `abstain=` for `EnsembleModel`, `Bagging` and `AdaBoost`, on by default: a
+  member votes only where its rules cover the example, its default ignored,
+  with a combiner as well as for the plain and the `member_weights` vote.
+  Suits one-vs-rest concept sets: with their defaults
+  voting, boosted Pypper loses accuracy on data with many classes.
 - Rules of any class: a search with no target class looks for the best rule of
   any class, its heuristic choosing the rule's head. Every heuristic gets this
   from its `batch_score` alone (`RuleHeuristic.best_head`: each class scored
